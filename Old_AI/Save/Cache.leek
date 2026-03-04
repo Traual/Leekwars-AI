@@ -2,7 +2,7 @@
  * Here we put cache globals 
  **/
 
-include("../includes")
+include("../includes.leek")
 
 //BENCHMARK
 

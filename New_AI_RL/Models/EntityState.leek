@@ -2,7 +2,7 @@
  * Class State : Variables of a state
 **/
 
-include("../includes")
+include("../includes.leek")
 
 class EntityStateClass extends EntityClass {
 	ABSOLUTE_SHIELD

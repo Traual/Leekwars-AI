@@ -2,7 +2,7 @@
  * For a global ATM, might be just scoring thing
 **/
 
-include("../includes")
+include("../includes.leek")
 
 //SCORING OF GRAVITY MAP
 

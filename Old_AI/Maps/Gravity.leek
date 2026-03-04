@@ -2,7 +2,7 @@
  * This is a map of gravity, i'm attracted by leeks / some obstacles to see were i want to go at the end of the turn (next to my bulbs and near the enemy)
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class Gravity {
 	/* Returns a gravity score map with covid (score of closeness to allies / enemies / center of map with locked cells (me or enemy) and covid cells)

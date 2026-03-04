@@ -1,4 +1,4 @@
-include("Fonctions");
+include("Fonctions.leek");
 var enemy = getNearestEnemy();
 var mycell = getCell();
 var enemycell = getCell(enemy);

@@ -1,4 +1,4 @@
-include('auto');
+include('auto.leek');
 
 function getDmgMap(@enemy, @item){
 	var eCell = getCell(enemy), eMp = getMP(enemy), ignored, map = [], map_mp = [];

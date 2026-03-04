@@ -2,7 +2,7 @@
  * Fight constants
 **/
 
-include("../includes")
+include("../includes.leek")
 
 class Fight {
 	ALIVEALLIES = []

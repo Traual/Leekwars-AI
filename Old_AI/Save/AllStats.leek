@@ -2,7 +2,7 @@
  * Saving every stats for an ID
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class AllStats {
 	MAP = [:]

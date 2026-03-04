@@ -2,7 +2,7 @@
  * Preload Class (turn 1)
 **/
 
-include("../includes")
+include("../includes.leek")
 
 class Preload {
     static InitEverything() {

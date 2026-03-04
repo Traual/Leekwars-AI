@@ -1,4 +1,4 @@
-include("include");
+include("include.leek");
 
 function getItemRealDmg(@Item) {
 	var NumberOfDMG = 0;

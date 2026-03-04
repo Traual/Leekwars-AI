@@ -1,4 +1,4 @@
-include('AUTO2');
+include('AUTO2.leek');
 
 /* uep y'a ça aussi comme astuce
 tu ajoute motiv et rage à la global _TO_REMOVE_STUFF

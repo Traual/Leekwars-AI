@@ -1,4 +1,4 @@
-include('auto');
+include('auto.leek');
 // INSTRUCTION: lancer un combat de test avec le leek et cette IA pour rÃ©cupÃ©rer la liste des combos disponibles en dur dans le registre, en clÃ© le nb de TP, en value les set de combos selon l'arme.
 // si pas d'arme en main, prendre la clÃ© "EMPTY" sous forme de string.
 // NB je fais des blocks de 4999 char par registre pour contourner la limite de 5000char (Ã§a bug Ã  5000 par bloc), utiliser la fonction getFullRegister(key) pour avoir le registre complÃªt aprÃ¨s rÃ©assemblage.

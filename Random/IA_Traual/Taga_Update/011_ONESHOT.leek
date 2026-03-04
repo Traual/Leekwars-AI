@@ -1,4 +1,4 @@
-include("auto");
+include("auto.leek");
 
 function TpOs() {
 var c ;

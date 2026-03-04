@@ -2,7 +2,7 @@
  * Walkable cells from a state (allstats and an entity) TODO: Jump + walk + tp cells
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class WalkCells {
 	WALK //Map : Cell:Mp

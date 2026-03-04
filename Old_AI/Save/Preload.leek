@@ -2,7 +2,7 @@
  * Here is the first turn preload
 **/
 
-include("../includes")
+include("../includes.leek")
 
 function Preload() {
 	var Bnch = new Benchmark

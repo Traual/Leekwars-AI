@@ -1,4 +1,4 @@
-include("z*");
+include("z_.leek");
 global leek2 = nearestrealenemy();
 if (getLife(leek2) == 0) {leek2 = nearestrealenemy();	
 }

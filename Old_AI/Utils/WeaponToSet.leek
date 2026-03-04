@@ -2,7 +2,7 @@
  * Here we are preshotting average enemies plays !
 **/
 
-include("../includes")
+include("../includes.leek")
 
 class WeaponToSet { 
 	static get(EveryStats, MyStats) {

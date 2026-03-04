@@ -2,7 +2,7 @@
  * This is the BulbAI
 **/
 
-include("../includes")
+include("../includes.leek")
 
 class Bulb {
 	static AI() {

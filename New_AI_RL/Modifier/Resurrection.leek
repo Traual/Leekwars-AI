@@ -6,7 +6,7 @@
  * Class to add to ActualStats on the consequences of an action (Only RESURRECT Type) : Item To X (For ResurrectCell)
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class ResurrectionClass {
 	ID

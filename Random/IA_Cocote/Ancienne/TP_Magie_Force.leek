@@ -1,4 +1,4 @@
-include("z*");
+include("z_.leek");
 global leek2 = nearestrealenemy();
 var enemy = getNearestEnemy();
 var PotoRandom = getNearestAlly();

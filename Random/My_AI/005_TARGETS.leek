@@ -1,4 +1,4 @@
-include('include');
+include('include.leek');
 function BestTarget(@item) {
 	var summ = isOnlyBulb(@item);
 	var IE = _ITEM_EFFECTS[item];

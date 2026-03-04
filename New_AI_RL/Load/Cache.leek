@@ -2,7 +2,7 @@
  * Here we put cache globals 
  **/
 
-include("../includes")
+include("../includes.leek")
 
 function ReloadCacheNewTurn() { //Simple function that refresh cache that need to be refreshed
     TARGETABLECACHE = [: ]

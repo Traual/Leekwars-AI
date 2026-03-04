@@ -1,5 +1,5 @@
 
-include("Fonctions_Utiles");
+include("Fonctions_Utiles.leek");
 if (getLife(leek2) == 0) {leek2 = nearestrealenemy();	
 }
 var enemy = getNearestEnemy();

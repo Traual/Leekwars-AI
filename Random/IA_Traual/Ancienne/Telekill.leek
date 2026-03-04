@@ -1,4 +1,4 @@
-include("Fonctions_Utiles");
+include("Fonctions_Utiles.leek");
 
 if (getStrength()<=700) {
 	poisoncounter();

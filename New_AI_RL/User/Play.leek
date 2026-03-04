@@ -2,7 +2,7 @@
  * Here we are creating a random action
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class Play { 
 	//TODO CHANGE VAR NAMES HERE

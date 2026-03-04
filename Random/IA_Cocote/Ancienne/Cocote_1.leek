@@ -1,4 +1,4 @@
-include("Fonctions_Utiles");
+include("Fonctions_Utiles.leek");
 global leek2 = nearestrealenemy();
 if (getLife(leek2) == 0) {leek2 = nearestrealenemy();	
 }

@@ -1,4 +1,4 @@
-include("Fonction_Utiles");
+include("Fonction_Utiles.leek");
 global leek2 = nearestrealenemy();
 var dist = getCellDistance(getCell(), getCell(leek2));
 var disto = getPathLength(getCell(), getCell(leek2));

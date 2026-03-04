@@ -6,7 +6,7 @@
  * Listing possible actions
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class ActionsClass {
 	//TODO add Shoot allies for lazers to go through

@@ -2,7 +2,7 @@
  * Class that define what to aim for (ally or enemy or both or neither)
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class Target {
 

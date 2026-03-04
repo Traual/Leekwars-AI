@@ -6,7 +6,7 @@
  * Class to add to ActualStats on the consequences of an action (Only SUMMON Type) : Item To X (For SummonCell)
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class BulbState {
 	//Create a new class very close to stats (constructor asks : id, SummonerLevelTimes, Chip, To, Summoner, SummonerStats) and on this new class, build the bulb stats (with all same names then stats, .LIFE ETC) so both are used the same way and can be mixed in AllStats

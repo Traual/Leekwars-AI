@@ -1,4 +1,4 @@
-include("Auto")
+include("Auto.leek")
 function addActionToMAPS(@item, @from, @to, @targets){
 	var dist = reachableCells[from];
     if(dist==null && from!=_action_SELFCELL)return; // filtering all action I can't reach

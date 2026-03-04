@@ -2,7 +2,7 @@
  * Class Walkcells
 **/
 
-include("../../includes")
+include("../../includes.leek")
 
 class WalkCellsClass {
 	WALK //Map : Cell:Mp

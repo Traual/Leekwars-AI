@@ -2,7 +2,7 @@
  * Here we are going to do the Tree Class (Everything usefull in a tree) !
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class Tree {
 

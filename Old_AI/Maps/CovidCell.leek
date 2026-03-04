@@ -2,7 +2,7 @@
  * This is a map lockable / locked cells
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class CovidCell {
     /* Returns a map of Cell:Array<Entity Id> hit by my covid. This gives me for each cell that is 2 dist from an entity everyone of its covid propagation if i place there

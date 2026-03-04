@@ -1,4 +1,4 @@
-include('auto');
+include('auto.leek');
 // TODO one day : http://www.mathe-fa.de/fr#result
 //debut de chaque tour aprÃ¨s avoir init la map de danger
 function updateCoef(idbulb){

@@ -1,4 +1,4 @@
-include('AUTO2');
+include('AUTO2.leek');
 
 function addActionToMAPS(@item, @from, @to, @targets){
 	var dist = reachableCells[from];

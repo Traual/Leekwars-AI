@@ -5,11 +5,10 @@
 
 //TODO: revoir l'ordre de toutes mes conditions (opti)
 
-include("../includes")
+include("../includes.leek")
 Benchmark.Init()
 Preload()
 Me = getEntity()
-
 
 //var ASSS = new AllStats()
 
@@ -110,7 +109,6 @@ for (var c:var TmpMap in CellDanger.getMapCellItemAoe(ASSS.MAP[getNearestEnemy()
 pause()
 */
 
-
 //debug(CellDanger.getMapCellDanger(ASSS.MAP[getNearestEnemy()], MyStats, EnemyWalkCells[getNearestEnemy()]))
 
 //debug(EntityDangerMap.get(ASSS.MAP[getNearestEnemy()], MyStats))
@@ -194,7 +192,6 @@ for (var c:var bool in TmpFinal) {
 
 //debug(Tmp)
 
-
 //debug(new TeamIndexes(ASSS.MAP, true))
 //var BaseScore = new Fitness(EveryStats, ASSS.MAP, Fight.SELF).SCORE
 //debug("Zero Score ? "+BaseScore)
@@ -245,11 +242,11 @@ mapIter(LineMap, function(value, key) {
 new Play()
 var ASSS = new AllStats()
 var WeaponToPut = WeaponToSet.get(ASSS.MAP, ASSS.MAP[Me])
-if (WeaponToPut && getWeapon()!=WeaponToPut) setWeapon(WeaponToPut)
+if (WeaponToPut && getWeapon() != WeaponToPut) setWeapon(WeaponToPut)
 Benchmark.DebugAllOps()
 Pipotron.ReRollRand() //If i don't re roll the rands, then i will have the same says for every entities on turn T
 say(Pipotron.generate(100))
-debug("Total Opés Used : "+getOperations()/1000000+" m opés")
+debug("Total Opés Used : " + getOperations() / 1000000 + " m opés")
 //debug(ThisTree)
 //Bench.StopOp("Tree Loading")
 //var Bnch = new Benchmark

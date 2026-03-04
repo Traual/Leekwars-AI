@@ -2,7 +2,7 @@
  * Walkable cells binary functions file
  **/
 
-include("../../includes")
+include("../../includes.leek")
 
 function CellToLine(cell) { //Used Only In Init
 	var couple = floor(cell / 35) // Couple de ligne

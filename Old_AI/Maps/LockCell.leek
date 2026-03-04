@@ -2,7 +2,7 @@
  * This is a map lockable / locked cells
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class LockCell {
     ENTITY_CELL

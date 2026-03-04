@@ -2,7 +2,7 @@
  * Here we are creating a random action
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class FinalCell {
 	//Finding the cell to end my turn :

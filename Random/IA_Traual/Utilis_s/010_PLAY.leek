@@ -1,4 +1,4 @@
-include('auto');
+include('auto.leek');
 
 function playBestMove(bestMove){
 	debug("danger: "+ bestMove[_danger]);

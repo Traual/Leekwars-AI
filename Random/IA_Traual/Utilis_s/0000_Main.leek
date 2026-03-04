@@ -1,4 +1,4 @@
-include('auto');
+include('auto.leek');
 /* if (getFightContext()==FIGHT_CONTEXT_CHALLENGE) {
  var i;
  	say("Attends je reflechis");

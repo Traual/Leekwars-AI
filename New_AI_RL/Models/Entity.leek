@@ -2,7 +2,7 @@
  * Class Entity : Doesn't move during a turn
 **/
 
-include("../includes")
+include("../includes.leek")
 
 class EntityClass {
     SUMMONER

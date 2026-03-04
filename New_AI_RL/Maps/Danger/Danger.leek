@@ -2,7 +2,7 @@
  * Here i will calculate the danger of a cell or the best walkable cell to go to for danger/gravity cells
  **/
 
-include("../../includes")
+include("../../includes.leek")
 
 class DangerClass {
 	EndState

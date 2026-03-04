@@ -2,7 +2,7 @@
  * Here we are Scoring Actions for quickly taking the best one in BFS
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class ScoredAction {
 	ACTION

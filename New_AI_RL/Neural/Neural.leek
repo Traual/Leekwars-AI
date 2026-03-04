@@ -2,7 +2,7 @@
  * Here we are doing neural layers
 **/
 
-include("../includes")
+include("../includes.leek")
 
 global MeanBulbs = [
 	CHIP_ROCKY_BULB,

@@ -1,4 +1,4 @@
-include('include');
+include('include.leek');
 
 if (getTurn()==1) {
 	for (var item = 0; item <= 110; item++) {

@@ -1,4 +1,4 @@
-include('auto');
+include('auto.leek');
 
 global _CACHE_CLOSEST_ITEM = [];
 function getCellToUseItemWithTele(@enemy, @item){

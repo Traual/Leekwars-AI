@@ -1,4 +1,4 @@
-include("include");
+include("include.leek");
 
 function getArrayComboBulbSorted(@entity) {
 	if (entity == ENTITY_ICED_BULB) return [CHIP_ICEBERG, CHIP_STALACTITE, CHIP_REFLEXES, CHIP_ICE];

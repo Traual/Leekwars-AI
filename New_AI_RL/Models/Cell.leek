@@ -2,7 +2,7 @@
  * Saving every Map information
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class CellClass {
 	OBSTACLE

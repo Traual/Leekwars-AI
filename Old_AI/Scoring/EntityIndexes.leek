@@ -2,7 +2,7 @@
  * This method will help me give stats buff to entities and to know if i should shield, which bulb to summon etc
  **/
 
-include("../includes")
+include("../includes.leek")
 
 class EntityIndexes {
     STRENGTH_INDEX
