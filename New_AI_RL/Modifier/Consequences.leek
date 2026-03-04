@@ -51,7 +51,7 @@ class ConsequencesClass {
 				ConsequencesClass.getEntityBuffAgilityConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
 			}
 		},
-		EFFECT_BUFF_MP: function(State, From, To, Effect, Caster,Multiplier, Item, RealTargets, CastStats) {
+		EFFECT_BUFF_MP: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
 			for (var Tar: var Dist in RealTargets) {
 				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
 				ConsequencesClass.getEntityBuffMpConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
@@ -69,7 +69,7 @@ class ConsequencesClass {
 				ConsequencesClass.getEntityBuffStrengthConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
 			}
 		},
-		EFFECT_BUFF_TP: function(State, From, To, Effect, Caster,Multiplier, Item, RealTargets, CastStats) {
+		EFFECT_BUFF_TP: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
 			for (var Tar: var Dist in RealTargets) {
 				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
 				ConsequencesClass.getEntityBuffTpConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
@@ -84,7 +84,7 @@ class ConsequencesClass {
 		EFFECT_DAMAGE: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
 			for (var Tar: var Dist in RealTargets) {
 				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//Can't happen in damage
-				ConsequencesClass.getEntityDamageConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster,State)
+				ConsequencesClass.getEntityDamageConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster, State)
 			}
 		},
 		EFFECT_DAMAGE_RETURN: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
@@ -115,7 +115,7 @@ class ConsequencesClass {
 		},
 		EFFECT_KILL: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
 			for (var Tar: var Dist in RealTargets) {
-				ConsequencesClass.getKillConsequences(Dist, Multiplier, Effect,State[Tar], CastStats, Tar == Caster, State, true)
+				ConsequencesClass.getKillConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster, State, true)
 			}
 		},
 		EFFECT_LIFE_DAMAGE: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
@@ -281,6 +281,12 @@ class ConsequencesClass {
 				ConsequencesClass.getEntityStealAbsoluteShieldConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
 			}
 		},
+		EFFECT_STEAL_LIFE: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//No need (yet)
+				ConsequencesClass.getEntityStealLifeConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
 		EFFECT_TELEPORT: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
 			for (var Tar: var Dist in RealTargets) {
 				State[Caster].CELL = To
@@ -312,7 +318,7 @@ class ConsequencesClass {
 			var Multiplier = (Effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) ? mapSize(TmpTargets) : 1 //Saving Multiplier
 			if (CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) Multiplier *= CRITICAL_FACTOR
 			var RealTargets = Effect[5] & EFFECT_MODIFIER_ON_CASTER ? [Caster: 0] : TmpTargets
-			ConsMap[EffectType](State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) //TODO : CHECK AND ADD NEW EFFECTS LIKE LIFE STEAL
+			ConsMap[EffectType](State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) //TODO : CHECK AND ADD NEW EFFECTS LIKE STEAL LIFE
 		}
 	}
 
@@ -786,7 +792,7 @@ class ConsequencesClass {
 
 	static getEntityRawHealConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
 		//No dist No Multiplier (yet)
-		TarStats.LIFE += min(getRealEffect(Effect, Dist, Multiplier) , TarStats.TOTAL_LIFE - TarStats.LIFE)
+		TarStats.LIFE += min(getRealEffect(Effect, Dist, Multiplier), TarStats.TOTAL_LIFE - TarStats.LIFE)
 	}
 
 	static getEntityRawRelativeShieldConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
@@ -870,6 +876,11 @@ class ConsequencesClass {
 		TarStats.ABSOLUTE_SHIELD += getRealEffect(Effect, Dist, Multiplier)
 	}
 
+	static getEntityStealLifeConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
+		//No Dist no Multiplier (Yet)
+		//TODO :
+	}
+
 	static getEntitySummonConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
 		debugW("Summon, special effect Not Handeled in consequences")
 	}
@@ -888,134 +899,134 @@ class ConsequencesClass {
 	}
 
 	static FunctionMapForConsequenceTargets = [
-			AREA_CIRCLE_1: function(_final, Item, From, To, EveryStats, Me) {
-				var MapAoe = ActionsClass.AoeDistItem(Item, To)//TODO : Fct all this with MapAoe in Param So its easier to change things
-				var MapFrom = MapAoe[From]
-				if (MapFrom != null) _final[Me] = MapFrom
-				for (var e: var stat in EveryStats) { //I can't put MapAoe[stat.CELL] cuz it can be 0 dist so i need != null
-					if (e == Me || stat.LIFE <= 0) continue
-					var Dist = MapAoe[stat.CELL]
-					if (Dist != null) _final[e] = Dist
-				}
-			},
-			AREA_CIRCLE_2: function(_final, Item, From, To, EveryStats, Me) {
-				var MapAoe = ActionsClass.AoeDistItem(Item, To)
-				var MapFrom = MapAoe[From]
-				if (MapFrom != null) _final[Me] = MapFrom
-				for (var e: var stat in EveryStats) {
-					if (e == Me || stat.LIFE <= 0) continue
-					var Dist = MapAoe[stat.CELL]
-					if (Dist != null) _final[e] = Dist
-				}
-			},
-			AREA_CIRCLE_3: function(_final, Item, From, To, EveryStats, Me) {
-				var MapAoe = ActionsClass.AoeDistItem(Item, To)
-				var MapFrom = MapAoe[From]
-				if (MapFrom != null) _final[Me] = MapFrom
-				for (var e: var stat in EveryStats) {
-					if (e == Me || stat.LIFE <= 0) continue
-					var Dist = MapAoe[stat.CELL]
-					if (Dist != null) _final[e] = Dist
-				}
-			},
-			AREA_FIRST_INLINE: function(_final, Item, From, To, EveryStats, Me) {
-				var MapEntity = [: ]
-				for (var e: var stat in EveryStats) {
-					if (e != Me && stat.LIFE >= 0) MapEntity[stat.CELL] = true
-				}
-				var MapAoe = From == To ? [From: true] : CellClass.getFirstInlineAoe(From, To, ITEMINFO[Item].MINRANGE, ITEMINFO[Item].MAXRANGE, MapEntity)
-				for (var e: var stat in EveryStats) {
-					if (MapAoe[stat.CELL]) _final[e] = 0
-				}
-			},
-			AREA_LASER_LINE: function(_final, Item, From, To, EveryStats, Me) {
-				var MapAoe = From == To ? [From: true] : CellClass.getLaserAoe(From, To, ITEMINFO[Item].MINRANGE, ITEMINFO[Item].MAXRANGE)
-				for (var e: var stat in EveryStats) {
-					if (e == Me || stat.LIFE <= 0) continue
-					if (MapAoe[stat.CELL]) _final[e] = 0
-				}
-			}, //NOT +1 CUZ SAME AS CIRCLE 1
-			AREA_PLUS_2: function(_final, Item, From, To, EveryStats, Me) {
-				var MapAoe = ActionsClass.AoeDistItem(Item, To)
-				var MapFrom = MapAoe[From]
-				if (MapFrom != null) _final[Me] = MapFrom
-				for (var e: var stat in EveryStats) {
-					if (e == Me || stat.LIFE <= 0) continue
-					var Dist = MapAoe[stat.CELL]
-					if (Dist != null) _final[e] = Dist
-				}
-			},
-			AREA_PLUS_3: function(_final, Item, From, To, EveryStats, Me) {
-				var MapAoe = ActionsClass.AoeDistItem(Item, To)
-				var MapFrom = MapAoe[From]
-				if (MapFrom != null) _final[Me] = MapFrom
-				for (var e: var stat in EveryStats) {
-					if (e == Me || stat.LIFE <= 0) continue
-					var Dist = MapAoe[stat.CELL]
-					if (Dist != null) _final[e] = Dist
-				}
-			},
-			AREA_POINT: function(_final, Item, From, To, EveryStats, Me) {
-				var MapAoe = ActionsClass.AoeDistItem(Item, To)
-				var MapFrom = MapAoe[From]
-				if (MapFrom != null) _final[Me] = MapFrom
-				for (var e: var stat in EveryStats) {
-					if (e == Me || stat.LIFE <= 0) continue
-					if (MapAoe[stat.CELL] != null) _final[e] = 0 //FORCED cuz point
-				}
-			},
-			AREA_SQUARE_1: function(_final, Item, From, To, EveryStats, Me) {
-				var MapAoe = ActionsClass.AoeDistItem(Item, To)
-				var MapFrom = MapAoe[From]
-				if (MapFrom != null) _final[Me] = MapFrom
-				for (var e: var stat in EveryStats) {
-					if (e == Me || stat.LIFE <= 0) continue
-					var Dist = MapAoe[stat.CELL]
-					if (Dist != null) _final[e] = Dist
-				}
-			},
-			AREA_SQUARE_2: function(_final, Item, From, To, EveryStats, Me) {
-				var MapAoe = ActionsClass.AoeDistItem(Item, To)
-				var MapFrom = MapAoe[From]
-				if (MapFrom != null) _final[Me] = MapFrom
-				for (var e: var stat in EveryStats) {
-					if (e == Me || stat.LIFE <= 0) continue
-					var Dist = MapAoe[stat.CELL]
-					if (Dist != null) _final[e] = Dist
-				}
-			},
-			AREA_X_1: function(_final, Item, From, To, EveryStats, Me) {
-				var MapAoe = ActionsClass.AoeDistItem(Item, To)
-				var MapFrom = MapAoe[From]
-				if (MapFrom != null) _final[Me] = MapFrom
-				for (var e: var stat in EveryStats) {
-					if (e == Me || stat.LIFE <= 0) continue
-					var Dist = MapAoe[stat.CELL]
-					if (Dist != null) _final[e] = Dist
-				}
-			},
-			AREA_X_2: function(_final, Item, From, To, EveryStats, Me) {
-				var MapAoe = ActionsClass.AoeDistItem(Item, To)
-				var MapFrom = MapAoe[From]
-				if (MapFrom != null) _final[Me] = MapFrom
-				for (var e: var stat in EveryStats) {
-					if (e == Me || stat.LIFE <= 0) continue
-					var Dist = MapAoe[stat.CELL]
-					if (Dist != null) _final[e] = Dist
-				}
-			},
-			AREA_X_3: function(_final, Item, From, To, EveryStats, Me) {
-				var MapAoe = ActionsClass.AoeDistItem(Item, To)
-				var MapFrom = MapAoe[From]
-				if (MapFrom != null) _final[Me] = MapFrom
-				for (var e: var stat in EveryStats) {
-					if (e == Me || stat.LIFE <= 0) continue
-					var Dist = MapAoe[stat.CELL]
-					if (Dist != null) _final[e] = Dist
-				}
+		AREA_CIRCLE_1: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To) //TODO : Fct all this with MapAoe in Param So its easier to change things
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) { //I can't put MapAoe[stat.CELL] cuz it can be 0 dist so i need != null
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
 			}
-		]
-	
+		},
+		AREA_CIRCLE_2: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_CIRCLE_3: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_FIRST_INLINE: function(_final, Item, From, To, EveryStats, Me) {
+			var MapEntity = [: ]
+			for (var e: var stat in EveryStats) {
+				if (e != Me && stat.LIFE >= 0) MapEntity[stat.CELL] = true
+			}
+			var MapAoe = From == To ? [From: true] : CellClass.getFirstInlineAoe(From, To, ITEMINFO[Item].MINRANGE, ITEMINFO[Item].MAXRANGE, MapEntity)
+			for (var e: var stat in EveryStats) {
+				if (MapAoe[stat.CELL]) _final[e] = 0
+			}
+		},
+		AREA_LASER_LINE: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = From == To ? [From: true] : CellClass.getLaserAoe(From, To, ITEMINFO[Item].MINRANGE, ITEMINFO[Item].MAXRANGE)
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				if (MapAoe[stat.CELL]) _final[e] = 0
+			}
+		}, //NOT +1 CUZ SAME AS CIRCLE 1
+		AREA_PLUS_2: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_PLUS_3: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_POINT: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				if (MapAoe[stat.CELL] != null) _final[e] = 0 //FORCED cuz point
+			}
+		},
+		AREA_SQUARE_1: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_SQUARE_2: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_X_1: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_X_2: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_X_3: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		}
+	]
+
 	static ConsequenceTargets(Item, From, To, EveryStats, Me, BaseHash) {
 		var Hash = ConsequenceTargetsHash(BaseHash, Item, From, To)
 		if (Hash in CONSEQUENCE_TARGET_CACHE) return CONSEQUENCE_TARGET_CACHE[Hash]
@@ -1025,7 +1036,7 @@ class ConsequencesClass {
 		return Tars
 	}
 
-	static ConsequenceTargetsHash(BaseHash, Item, From, To) {//BaseHash is Cell:Id Hash
+	static ConsequenceTargetsHash(BaseHash, Item, From, To) { //BaseHash is Cell:Id Hash
 		// ——— INITIALISATION ———
 		var hash_value = (OFFSET_BASIS ^ BaseHash)
 
@@ -1064,7 +1075,7 @@ class ConsequencesClass {
 			return ((Effect[2] * (1 + casterstats.POWER / 100)) * (casterstats.LIFE / 100) * (1 - targetstats.RELATIVE_SHIELD / 100) - targetstats.ABSOLUTE_SHIELD)
 		},
 		EFFECT_POISON: function(casterstats, targetstats, Effect, Distance, Multiplier) {
-			return (Effect[2] * (1 + casterstats.POWER / 100)) * ConsequencesClass.DistToAoeNumber(Distance) * (1 + casterstats.MAGIC / 100) * min(Effect[3], targetstats.COOLDOWNS[CHIP_ANTIDOTE]+1)
+			return (Effect[2] * (1 + casterstats.POWER / 100)) * ConsequencesClass.DistToAoeNumber(Distance) * (1 + casterstats.MAGIC / 100) * min(Effect[3], targetstats.COOLDOWNS[CHIP_ANTIDOTE] + 1)
 		}
 	]
 }
