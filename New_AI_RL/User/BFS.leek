@@ -7,11 +7,11 @@ include("../includes.leek")
 class ActionSuite {
 
 	/* Gives me the best action to do in the State game state
-    *
-	* @param State Map of Stats Class (id : stats)
-    *
-    * @return Node
-    */
+	 *
+	 * @param State Map of Stats Class (id : stats)
+	 *
+	 * @return Node
+	 */
 
 	static getBestActionTreeInState(State) {
 		var Tree_Array = []
@@ -23,7 +23,7 @@ class ActionSuite {
 		//Then We Add The No Play Node (Not Above because we don't want to find plays on it)
 		AddNoPlayNode(Tree_Array, State)
 
-		debug("Number of leafs : "+count(Tree_Array))
+		debug("Number of leafs : " + count(Tree_Array))
 		//debug(Tree_Array)
 
 		//Then We Look at Every Node in the Tree and find the Best One : 
@@ -34,12 +34,12 @@ class ActionSuite {
 	}
 
 	/* Adds the No Play Node Into the Tree Array (to be able to do nothing and go hide myself)
-    *
-	* @param Tree_Array Array of nodes <Node, Node ...>
-	* @param State Map of Stats Class (id : stats)
-    *
-    * @return Nothing
-    */
+	 *
+	 * @param Tree_Array Array of nodes <Node, Node ...>
+	 * @param State Map of Stats Class (id : stats)
+	 *
+	 * @return Nothing
+	 */
 
 	static AddNoPlayNode(Tree_Array, State) {
 		var NoPlayAction = new ActionClass(null, null, null)
@@ -48,12 +48,12 @@ class ActionSuite {
 	}
 
 	/* Returns the best scored node in Tree_Array, takes into account node score, node danger, node gravity
-    *
-	* @param State Map of Stats Class (id : stats)
-	* @param Tree_Array Array of nodes <Node, Node ...>
-    *
-    * @return Node
-    */
+	 *
+	 * @param State Map of Stats Class (id : stats)
+	 * @param Tree_Array Array of nodes <Node, Node ...>
+	 *
+	 * @return Node
+	 */
 
 	static getBestScoredNode(Tree_Array) {
 		//Then Find the best Scored Node in tree :
@@ -84,13 +84,13 @@ class ActionSuite {
 	}
 
 	/* Adds the full "BFS Tree" to Tree Array. It adds every plays possible then for every play it adds to tree Array Every Best Move From Score of action
-    *
-	* @param State Map of Stats Class (id : stats)
-	* @param Tree_Array Array of nodes <Node, Node ...>
-	* @param BaseHash Hash of Id and Cells of everyone
-    *
-    * @return Nothing
-    */
+	 *
+	 * @param State Map of Stats Class (id : stats)
+	 * @param Tree_Array Array of nodes <Node, Node ...>
+	 * @param BaseHash Hash of Id and Cells of everyone
+	 *
+	 * @return Nothing
+	 */
 
 	static getFullBFSTree(Tree_Array, State, BaseHash) {
 		//We start by loading every playable actions
@@ -102,7 +102,7 @@ class ActionSuite {
 			push(Tree_Array, ThisNode)
 		}
 		//Trying full tree : 
-		for (var Node in Tree_Array) {
+		/*for (var Node in Tree_Array) {
 			var NodeBaseHash = StateClass.getBaseHash(Node.END_STATS)
 			var TotalPossibleActions = getBaseActions(Node.END_STATS, NodeBaseHash)
 			for (var Act in TotalPossibleActions) {
@@ -110,16 +110,16 @@ class ActionSuite {
 				ChildNode.PARENT = Node
 				push(Tree_Array, ChildNode)
 			}
-		}
+		}*/
 	}
 
 	/* Returns the full list of possible actions for this turn
-    *
-	* @param State Map of Stats Class (id : stats)
-	* @param BaseHash Hash of Id and Cells of everyone
-    *
-    * @return Array <Action Class>
-    */
+	 *
+	 * @param State Map of Stats Class (id : stats)
+	 * @param BaseHash Hash of Id and Cells of everyone
+	 *
+	 * @return Array<ActionClass>
+	 */
 
 	static getBaseActions(State, BaseHash) {
 		var _final = []
@@ -140,7 +140,7 @@ class ActionSuite {
 			var Cost = Info.IS_WEAPON && MyWeapon != Item ?
 				Info.COST + 1 :
 				Info.COST
-			if (!(From in MyWalkCells.WALK)) {//I need to add the item to move to the cost
+			if (!(From in MyWalkCells.WALK)) { //I need to add the item to move to the cost
 				if (From in MyWalkCells.JUMP) {
 					Cost += JumpCost
 				} else if (From in MyWalkCells.TELEPORTATION) {
