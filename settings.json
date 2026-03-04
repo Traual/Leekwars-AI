@@ -1,0 +1,4 @@
+{
+    "leekscript.leekwarsApiToken": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3NzI2Mjk0OTQsImlkIjo1MTIyNSwia2VlcCI6ZmFsc2UsImhhc2giOiIkMnkkMTAkRlo5c3hPUXhDcFpHayIsImlwIjoiMzcuNjcuNzkuMiIsImlzcyI6Imh0dHBzOi8vbGVla3dhcnMuY29tIiwiYXVkIjoiaHR0cHM6Ly9sZWVrd2Fycy5jb20ifQ.4mJ5_yGchX7uGIExODxw9XXcqT1Puul0j-hF0zA61ck",
+    "leekscript.javaApiUrl": "http://localhost:8080/"
+}
