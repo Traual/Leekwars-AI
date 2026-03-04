@@ -1,0 +1,168 @@
+include("Fonctions_Utiles");
+
+if (getStrength()<=700) {
+	poisoncounter();
+}
+
+if (getTurn()==1) {
+	setWeapon(WEAPON_M_LASER);
+}
+
+if (getFightType()==FIGHT_TYPE_SOLO) {
+if (getStrength()<1000 && PeutMettreLibe()==false) {
+	useChip(CHIP_PROTEIN, getLeek());
+	useChip(CHIP_DOPING, getLeek());
+}
+
+if (getTP()<24 && PeutMettreLibe()==false) {
+    useChip(CHIP_MOTIVATION, getLeek());
+	useChip(CHIP_RAGE, getLeek());
+}
+
+if (getTurn()==1 && PeutMettreLibe()==false) {
+	useChip(CHIP_SEVEN_LEAGUE_BOOTS, getLeek());
+	useChip(CHIP_LEATHER_BOOTS, getLeek());
+}
+
+if (getStrength()>=900 && getTP()>=24) {
+	if (getPathLength(getCell(), getCellsToUseWeapon(WEAPON_M_LASER, leek2))<=getMP()) {
+		moveTowardCell(getCellToUseWeapon(WEAPON_M_LASER, leek2));
+		
+		if (bouclier()==true) {
+			 useChip(CHIP_LIBERATION, leek2);
+		}
+		
+		if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+		if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+		if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+		if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+	}
+	
+	if (getTP()>=24 && getPathLength(getCell(), getCellsToUseWeapon(WEAPON_M_LASER, leek2))>getMP() && getCooldown(CHIP_TELEPORTATION)==0) {
+	useChipOnCell(CHIP_TELEPORTATION, getCellToUseWeapon(WEAPON_M_LASER, leek2));
+	
+	if (bouclier()==true) {
+			 useChip(CHIP_LIBERATION, leek2);
+		}
+		while (getPathLength(getCell(), getCellToUseChip(CHIP_TELEPORTATION, leek2))>=13 && getMP()>=1) {
+		moveTowardCell(getCellToUseWeapon(leek2 , 1));	
+		}
+	
+	if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+		if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+		if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+		if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+	
+	}
+}
+moveTowardCell(tableaucellscacher());
+}
+
+if (getFightType()==FIGHT_TYPE_FARMER or getFightType()==FIGHT_TYPE_TEAM) {
+	moveTowardCell(getCellToUseChip(CHIP_PROTEIN, LeekABoost()));
+	useChip(CHIP_STEROID, LeekABoost());
+	useChip(CHIP_PROTEIN, LeekABoost());
+	if (getLife(LeekABoost())>=400) {
+		useChip(CHIP_DOPING, LeekABoost());
+	}
+	
+	if (getStrength()>=900 && getTP()>=24) {
+	if (getPathLength(getCell(), getCellToUseWeapon(WEAPON_M_LASER, leek2))<=getMP()) {
+		moveTowardCell(getCellToUseWeapon(WEAPON_M_LASER, leek2));
+		
+		if (bouclier()==true) {
+			 useChip(CHIP_LIBERATION, leek2);
+		}
+		
+		if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+		if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+		if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+		if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+	}
+	
+	if (getTP()>=24 && getPathLength(getCell(), getCellToUseWeapon(WEAPON_M_LASER, leek3))>getMP() && getCooldown(CHIP_TELEPORTATION)==0) {
+	useChipOnCell(CHIP_TELEPORTATION, getCellToUseWeapon(WEAPON_M_LASER, leek2));
+	
+	if (bouclier()==true) {
+			 useChip(CHIP_LIBERATION, leek2);
+		}
+	
+	if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+		if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+		if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+		if (isAlive(leek2)) {
+			useWeapon(leek2);
+		}
+	
+	}
+}
+moveTowardCell(tableaucellscacher());
+	
+
+}
+
+if (getFightType()==FIGHT_TYPE_BATTLE_ROYALE) {
+	say("Je ne suis pas fais pour les br *");
+	useChip(CHIP_PROTEIN, getNearestEnemy());
+	say("Tien cadeau :D");
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

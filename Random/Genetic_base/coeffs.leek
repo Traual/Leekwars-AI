@@ -1,0 +1,4764 @@
+//TODO : If score play safe is low, moves on it should be less powerfull
+//TODO : Damage map : look number of items i can put on enemy / pm  and not pm enemy left after hiting (seems impossible) 
+//TODO : add all new effect (Nova vitality | shackle agi / wisdom)
+//TODO : Play manumission with libe
+//TODO : play plasma ( dmg * count(targets) )
+//TODO : tactitian bulb (bring me to less dangerous cells (thinked in best0nlyitem))
+//TODO : tactitian bulb ( push me to more good gravity cellz ( or enemy to less good gravity cellz))
+//TODO : Play repoting tu push enemy to corners
+//TODO : Upgrade pipotron
+//Try : build science to delete max life and lot of wisdom / magical dmg
+/////////////////////////////////////////////////////////////////////////////////////////////
+//Les Globals Utiles
+/////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////
+global Million = 1000000;
+global _COEF_SUMMON_GENTLE = 5000000;
+global _COEF_SUMMON_FOCUS = 4700000;
+_COEF_SUMMON_GENTLE = 0.9660797119140625*Million;
+_COEF_SUMMON_FOCUS = 0.9743804931640625*Million;
+global _COEF_FOCUS_LEEK = 0.1117095947265625;
+global _SCORE_PLAY_SAFE; 
+global _MIN_MAP_DAMAGE;
+if (getStrength() >= str_limit) _COEF_FOCUS_LEEK = 0.230804443359375;
+if (getMagic() >= str_limit) _COEF_FOCUS_LEEK = 0.7682342529296875;
+if (getStrength() >= str_limit) _SCORE_PLAY_SAFE = 0.9660797119140625; 
+else _SCORE_PLAY_SAFE = 0.9743804931640625;
+if (getMagic() >= str_limit) _SCORE_PLAY_SAFE = 0.1117095947265625;
+if (inArray(getWeapons(), WEAPON_MYSTERIOUS_ELECTRISOR)) _SCORE_PLAY_SAFE -= 0.230804443359375;
+if (inArray(getWeapons(), WEAPON_REVOKED_M_LASER)) _SCORE_PLAY_SAFE += 0.7682342529296875; 
+if (getStrength() >= str_limit) _MIN_MAP_DAMAGE = 0.548736572265625; 
+else _MIN_MAP_DAMAGE = 0.38604736328125;
+if (getMagic() >= str_limit) _MIN_MAP_DAMAGE = 0.7908477783203125;
+global _GRAVITY_SCORE = 1000;
+global _TIMES_ENEMY_MP_COUNT = 11;
+global MinDistBulb = 3;
+global coefKillAlly = 100;
+global TimesMpGentle = 1.6;
+global TimesMpFocus = 0.2;
+global _STAY_WITH_METALLIC = 5000;
+global _SCORE_LOCK = 500000;
+global _SCORE_DEATH = 5000000;
+global _SCORE_DEATH_PERCENT = 0.85;
+global _SCORE_RISK_DEATH = 500001;
+global _TARGET_POWER = 0.003;
+global CareFullDead = 0.60; 
+global _COEF_DIVIDE_COEFS = 1500;
+global _SCORE_KILL = 300000;
+global _SCORE_PLAY_SAFE_BULB = 100;
+global str_limit = 400;
+/*if (getMagic(EnemyLeekG) >= getStrength(EnemyLeekG) && getMagic() < 50/1) {
+	_MIN_MAP_DAMAGE = 0.02;
+	_SCORE_PLAY_SAFE = 8;
+	_COEF_SUMMON_FOCUS = 19000000;
+} else if (getMagic(EnemyLeekG) >= getStrength(EnemyLeekG)) {
+	_MIN_MAP_DAMAGE = 0.10;
+	_SCORE_PLAY_SAFE = 7;
+	//_COEF_SUMMON_FOCUS = 15000000;
+}*/
+global _TIMES_BULB_FOCUS_BULBS = 5;
+global _COEF_TIMES_BOOST_MAX_LIFE = 18000; 
+global _COEF_TIMES_BOOST_AGILITY = 600;
+global _COEF_TIMES_BOOST_STRENGTH = 8000;
+global _COEF_TIMES_BOOST_MP = 60300; 
+global _COEF_TIMES_BOOST_TP = 550500;
+global _COEF_TIMES_BOOST_RESI = 1500;
+global _COEF_TIMES_DAMAGE_RETURN = 60000;
+global _COEF_TIMES_HEAL = 75000; 
+if (getMagic() <= 0/1) _COEF_TIMES_HEAL = 30000;
+global _COEF_TIMES_RELATIVE_SHIELD = 8200; 
+global _COEF_TIMES_ABSOLUTE_SHIELD = 4200; 
+global _COEF_TIMES_DMG = 4350;
+global _COEF_TIMES_NOVA = getScience() >= 200 ? 120000 : zero;
+global _COEF_TIMES_BUFF_WISDOM = 30000;
+global _COEF_TIMES_BUFF_MAGIC = 18000;
+if (getStrength() >= 400/1) _COEF_TIMES_DMG = 6400; 
+global _COEF_TIMES_SHACKLE_STR = 150; 
+if (getMagic() >= 200/1) _COEF_TIMES_SHACKLE_STR = 12000;
+global _COEF_TIMES_SHACKLE_TP = !isSummon() ? 8000 : 60; 
+global _COEF_TIMES_SHACKLE_MP = !isSummon() ? 16000 : 80;
+
+global _COEF_OPS_BULB = [
+	"wizard_bulb": 2,
+	"lightning_bulb": 2,
+	"fire_bulb": 1,
+	"metallic_bulb": 2,
+	"healer_bulb": 4,
+	"iced_bulb": 1.5,
+	"rocky_bulb": 1,
+	"puny_bulb": 0.5,
+	"savant_bulb": 9
+];
+global GentleIcy = getAgility() >= 200/1 ? true : false;
+function bulbname(entity, leekatq) {
+	var MetaBulbCoef = (getStrength(leekatq) > 0/1 || getScience(leekatq) >= 400/1) ? 8 : 0;
+	var GueriBulbCoef = getMagic(leekatq) > 0 ? 10 : 7;
+	if (isSummon(entity)) {
+		var name = getName(entity);
+		if (name == "metallic_bulb") {
+			return [ENTITY_METALLIC_BULB, (MetaBulbCoef)];
+		} else if (name == "healer_bulb") {
+			return [ENTITY_HEALER_BULB, GueriBulbCoef];
+		} else if (name == "lightning_bulb") {
+			return [ENTITY_LIGHTNING_BULB, 5];
+		} else if (name == "fire_bulb") {
+			return [ENTITY_FIRE_BULB, 2];
+		} else if (name == "wizard_bulb") {
+			return [ENTITY_WIZARD_BULB, 11];
+		} else if (name == "iced_bulb") {
+			return [ENTITY_ICED_BULB, 2];
+		} else if (name == "rocky_bulb") {
+			return [ENTITY_ROCKY_BULB, 1];
+		} else if (name == "puny_bulb") {
+			return [ENTITY_PUNY_BULB, 0.5];
+		} else if (name == "savant_bulb") {
+			return [ENTITY_SAVANT_BULB, 7];
+		}
+	} else {
+		return [ENTITY_LEEK_, 10];
+	}
+}
+
+function killCoefs(entity) {
+	var MetaBulbCoef = (getStrength() > 1/1 || getScience() >= 400/1) ? 0.2 : 0.00001;
+	var GueriBulbCoef = getMagic() > 0 ? 0.1 : 0.04;
+	if (isSummon(entity)) {
+		var name = getName(entity);
+		if (name == "metallic_bulb") {
+			return MetaBulbCoef;
+		} else if (name == "healer_bulb") {
+			return GueriBulbCoef;
+		} else if (name == "lightning_bulb") {
+			return 0.05;
+		} else if (name == "wizard_bulb") {
+			return 0.04;
+		} else if (name == "fire_bulb") {
+			return 0.02;
+		} else if (name == "iced_bulb") {
+			return 0.03;
+		} else if (name == "rocky_bulb") {
+			return 0.01;
+		} else if (name == "puny_bulb") {
+			return 0.0005;
+		} else if (name == "savant_bulb") {
+			return 0.04;
+		}
+	} else {
+		return 2;
+	}
+}
+
+function HelpLibeScoreEnemy(leek) {
+	var effects = getEffects(leek);
+	var Score = 0;
+	for (var eff in effects) {
+		//if (eff[0] == EFFECT_RELATIVE_SHIELD) Score += (eff[1] * 55);
+		//if (eff[0] == EFFECT_ABSOLUTE_SHIELD) Score += (eff[1] * 25);
+		if (eff[zero] == EFFECT_POISON) Score -= (eff[one] * 25);
+		if (eff[zero] == EFFECT_BUFF_AGILITY) Score += (eff[one] * 5);
+		if (eff[zero] == EFFECT_BUFF_MP) Score += (eff[one] * 100);
+		if (eff[zero] == EFFECT_BUFF_RESISTANCE) Score += (eff[one] * 80);
+		if (eff[zero] == EFFECT_BUFF_STRENGTH) Score += (eff[one] * 15);
+		if (eff[zero] == EFFECT_BUFF_TP) Score += (eff[one] * 105);
+		if (eff[zero] == EFFECT_BUFF_WISDOM) Score += (eff[one] * 70);
+		if (eff[zero] == EFFECT_DAMAGE_RETURN) Score += (eff[one] * 100);
+		if (eff[zero] == EFFECT_HEAL) Score += (eff[one] * 15);
+		if (eff[zero] == EFFECT_SHACKLE_MAGIC) Score -= (eff[one] * 30);
+		if (eff[zero] == EFFECT_SHACKLE_MP) Score -= (eff[one] * 100);
+		if (eff[zero] == EFFECT_SHACKLE_STRENGTH) Score -= (eff[one] * 30);
+		if (eff[zero] == EFFECT_SHACKLE_TP) Score -= (eff[one] * 100);
+		if (eff[zero] == EFFECT_VULNERABILITY) Score -= (eff[one] * 40);
+	}
+	return Score;
+}
+
+function bulbcoef(chip, enemyPrincipal) {
+	var MetaBulbCoef = getStrength(enemyPrincipal) > 0/1 ? 21 : 1;
+	if (getScience(enemyPrincipal) >= 400/1 || getWisdom(enemyPrincipal) > 400/1) MetaBulbCoef += 26;
+	var GueriBulbCoef = getMagic(enemyPrincipal) > 0 ? 16 : 13;
+	if (_COUNT_METALLIC_ALLY > 1) MetaBulbCoef -= 9;
+	if (chip == CHIP_METALLIC_BULB) {
+		return [ENTITY_METALLIC_BULB, MetaBulbCoef];
+	} else if (chip == CHIP_HEALER_BULB) {
+		return [ENTITY_HEALER_BULB, GueriBulbCoef];
+	} else if (chip == CHIP_LIGHTNING_BULB) {
+		return [ENTITY_LIGHTNING_BULB, 17];
+	} else if (chip == CHIP_WIZARD_BULB) {
+		return [ENTITY_WIZARD_BULB, 15];
+	} else if (chip == CHIP_FIRE_BULB) {
+		return [ENTITY_FIRE_BULB, 13];
+	} else if (chip == CHIP_ICED_BULB) {
+		return [ENTITY_ICED_BULB, 12];
+	} else if (chip == CHIP_ROCKY_BULB) {
+		return [ENTITY_ROCKY_BULB, 9];
+	} else if (chip == CHIP_PUNY_BULB) {
+		return [ENTITY_PUNY_BULB, 6];
+	} else if (chip == CHIP_SAVANT_BULB) {
+		return [ENTITY_SAVANT_BULB, 19];
+	} else return [ENTITY_LEEK_, _COEF_FOCUS_LEEK];
+}
+
+function Dmgbulbcoef(chip, enemyPrincipal) {
+	var MetaBulbCoef = getStrength(enemyPrincipal) > 0 ? 2 : 0.6;
+	//if (_SCIENCE[enemyPrincipal] >= 400 || _WISDOM[enemyPrincipal] > 400) MetaBulbCoef += 26;
+	var GueriBulbCoef = getMagic(enemyPrincipal) > 0 ? 2.7 : 1.7;
+	//if (_COUNT_METALLIC_ALLY > 1) MetaBulbCoef -= 2;
+	if (chip == CHIP_METALLIC_BULB) {
+		return [ENTITY_METALLIC_BULB, MetaBulbCoef];
+	} else if (chip == CHIP_HEALER_BULB) {
+		return [ENTITY_HEALER_BULB, GueriBulbCoef];
+	} else if (chip == CHIP_LIGHTNING_BULB) {
+		return [ENTITY_LIGHTNING_BULB, 2.2];
+	} else if (chip == CHIP_WIZARD_BULB) {
+		return [ENTITY_WIZARD_BULB, 1.9];
+	} else if (chip == CHIP_FIRE_BULB) {
+		return [ENTITY_FIRE_BULB, 1.7];
+	} else if (chip == CHIP_ICED_BULB) {
+		return [ENTITY_ICED_BULB, 1.1];
+	} else if (chip == CHIP_ROCKY_BULB) {
+		return [ENTITY_ROCKY_BULB, 0.47];
+	} else if (chip == CHIP_PUNY_BULB) {
+		return [ENTITY_PUNY_BULB, 0.20];
+	} else if (chip == CHIP_SAVANT_BULB) {
+		return [ENTITY_SAVANT_BULB, 2.3];
+	} else return [ENTITY_LEEK_, 15];
+}
+function setCoef() {
+	ResetCoefs();
+	for (var target in _ALL_LEEKS) {
+		var sum = isSummon(target);
+		var tran = inArray(getChips(), CHIP_TRANQUILIZER);
+		if (sum && count(EnemyLeekArray()) > one+one+one) continue;
+		var nBulb = getNumberOfBulb();
+		var str = getStrength(target);
+		var mgc = getMagic(target);
+		var wsd = getWisdom(target);
+		var rs = getRelativeShield(target);
+		var as = getAbsoluteShield(target);
+		var tp = getTP(target);
+		var life = getLife(target);
+		var totallife = getTotalLife(target);
+		var melife = getLife();
+		var dist = getCellDistance(getCell(), getCell(target));
+		var lp = LifePercent(RealLeeklife(target), totallife);
+		var novalp = LifePercent(life, totallife);
+		var dft = DmgForTurn(target);
+		var mestr = getStrength();
+		var memgc = getMagic();
+		var resi = getResistance(target);
+		var aglty = getAgility(target);
+		var dmgreturn = getDamageReturn(target);
+		var strleekg = getStrength(EnemyLeekG);
+		var mp = getMP(target);
+		var ashield = getAbsoluteShield(target);
+		var relshield = getRelativeShield(target);
+		var StrShield = strleekg / 100;
+		var NAreaBulb = getNumberOfBulbInAnArea(mp, getCell(target));
+		// End INIT
+		if (isEnemy(target)) {
+			//if (mestr < 400) _COEF_VULNERABILITY[target] -= 20;
+			if (getTurn() > 55/1) _COEF_NOVA[target] -= 5;
+			if (totallife > 2000/1) _COEF_NOVA[target] += 5;
+			if (totallife > 1600/1) _COEF_NOVA[target] += 5;
+			if (totallife > 1200/1) _COEF_NOVA[target] += 5;
+			if (totallife > 800/1) _COEF_NOVA[target] += 5;
+			if (totallife > 400/1) _COEF_NOVA[target] += 3;
+			if (sum) _COEF_NOVA[target] -= 999;
+			if (getTurn() > 55/1) _COEF_DMG[target] += 3;
+			if (lp < 90/1) _COEF_DMG[target] += 2;
+			if (lp < 80/1) _COEF_DMG[target] += 3;
+			if (lp < 70/1) _COEF_DMG[target] += 4;
+			if (lp < 60/1) _COEF_DMG[target] += 5;
+			if (lp < 50/1) _COEF_DMG[target] += 6;
+			if (wsd < 200/1) _COEF_DMG[target] += 2;
+			if (str >= 200/1) _COEF_DMG[target] += 1;
+			if (mgc >= 200/1) _COEF_DMG[target] += 1;
+			if (str >= 400/1) _COEF_DMG[target] += 1.5;
+			if (mgc >= 400/1) _COEF_DMG[target] += 1.5;
+			if (str >= 600/1) _COEF_DMG[target] += 2;
+			if (mgc >= 600/1) _COEF_DMG[target] += 2;
+			if (str >= 800/1) _COEF_DMG[target] += 2.5;
+			if (str >= 1000/1) _COEF_DMG[target] += 3;
+			if (str >= 1200/1) _COEF_DMG[target] += 3.5;
+			_COEF_DMG[target] = ((inArray(getChips(target), CHIP_ANTIDOTE) && memgc > 200/1) || !inArray(getChips(target), CHIP_ANTIDOTE)) ? (_COEF_DMG[target] + getCooldown(CHIP_ANTIDOTE, target) * 12/1) : _COEF_DMG[target];
+			if (totallife < 2000/1) _COEF_DMG[target] += 1;
+			if (totallife < 1600/1) _COEF_DMG[target] += 2;
+			if (totallife < 1200/1) _COEF_DMG[target] += 5;
+			if (totallife < 800/1) _COEF_DMG[target] += 7;
+			if (getWisdom(target) > 500/1) _COEF_DMG[target] -= 5;
+			//if ((getDamageReturn(target) >= 100 || getDamageReturn(target) > 10 && getWisdom(target) >= 400) && getStrength() > 0) _COEF_DMG[target] -= 9999;
+			if (str >= 200/1) _COEF_SHACKLE_STRENGTH[target] += 10;
+			if (mgc >= 200/1) _COEF_SHACKLE_STRENGTH[target] += 10;
+			if (str >= 400/1) _COEF_SHACKLE_STRENGTH[target] += 5;
+			if (mgc >= 400/1) _COEF_SHACKLE_STRENGTH[target] += 5;
+			if (str >= 600/1) _COEF_SHACKLE_STRENGTH[target] += 5;
+			if (mgc >= 600/1) _COEF_SHACKLE_STRENGTH[target] += 5;
+			if (str >= 800/1) _COEF_SHACKLE_STRENGTH[target] += 4;
+			if (str >= 1000/1) _COEF_SHACKLE_STRENGTH[target] += 10;
+			if (str >= 1200/1) _COEF_SHACKLE_STRENGTH[target] += 15;
+			if (NAreaBulb > 1/1) _COEF_SHACKLE_STRENGTH[target] += 2;
+			if (NAreaBulb > 2/1) _COEF_SHACKLE_STRENGTH[target] += 3;
+			if (NAreaBulb > 4/1) _COEF_SHACKLE_STRENGTH[target] += 4;
+			if (NAreaBulb > 6/1) _COEF_SHACKLE_STRENGTH[target] += 5;
+			if (NAreaBulb > 8/1) _COEF_SHACKLE_STRENGTH[target] += 6;
+			if (NAreaBulb > 10/1) _COEF_SHACKLE_STRENGTH[target] += 7;
+			/*if (dist < 15 && str > 1 || dist < 15 && mgc > 1) _COEF_SHACKLE_STRENGTH[target] += 1;
+			if (dist < 10 && str > 1 || dist < 10 && mgc > 1) _COEF_SHACKLE_STRENGTH[target] += 2;
+			if (dist < 5 && str > 1 || dist < 5 && mgc > 1) _COEF_SHACKLE_STRENGTH[target] += 3;
+			if (dist < 1 && str > 1 || dist < 1 && mgc > 1) _COEF_SHACKLE_STRENGTH[target] += 4;*/
+			//if (dft >= 500) _COEF_SHACKLE_STRENGTH[target] += 2;
+			//if (dft >= 300) _COEF_SHACKLE_STRENGTH[target] += 1;
+			_COEF_SHACKLE_STRENGTH[target] *= tp;
+			//if (sum) _COEF_SHACKLE_STRENGTH /= 15;
+			if (str <= zero && mgc <= zero) _COEF_SHACKLE_STRENGTH[target] = zero;
+			if (sum) _COEF_SHACKLE_STRENGTH[target] /= 1000;
+			if (as <= 1/1 && rs <= 1/1 && mestr >= 300/1) _COEF_DMG[target] += 2.5;
+			//if (dft == 0 && !sum && memgc>0) _COEF_DMG[target] += 3;
+			if (tp > 20/1) _COEF_SHACKLE_TP[target] += 10;
+			if (tp > 16/1) _COEF_SHACKLE_TP[target] += 8;
+			if (tp > 14/1) _COEF_SHACKLE_TP[target] += 6;
+			if (tp > 12/1) _COEF_SHACKLE_TP[target] += 4;
+			if (tp >= 3/1 && tran) _COEF_SHACKLE_TP[target] += 100;
+			if (NAreaBulb > 0/1) _COEF_SHACKLE_TP[target] += 3;
+			if (NAreaBulb > 1/1) _COEF_SHACKLE_TP[target] += 4;
+			if (NAreaBulb > 2/1) _COEF_SHACKLE_TP[target] += 5;
+			if (NAreaBulb > 3/1) _COEF_SHACKLE_TP[target] += 6;
+			if (NAreaBulb > 4/1) _COEF_SHACKLE_TP[target] += 7;
+			if (NAreaBulb > 5/1) _COEF_SHACKLE_TP[target] += 8;
+			if (sum) _COEF_SHACKLE_TP[target] /= 10000000/1;
+			_COEF_SHACKLE_TP[target] *= _COEF_TIMES_SHACKLE_TP;
+			//if (str >= 200) _COEF_SHACKLE_MP[target] += 7;
+			if (mgc <= 200/1) _COEF_SHACKLE_MP[target] += 6;
+			//if (str >= 400) _COEF_SHACKLE_MP[target] += 5;
+			if (mgc <= 300/1) _COEF_SHACKLE_MP[target] += 4;
+			if (mgc <= 400/1) _COEF_SHACKLE_MP[target] += 2;
+			if (mgc <= 500/1) _COEF_SHACKLE_MP[target] += 1;
+			//if (str >= 600) _COEF_SHACKLE_MP[target] += 2;
+			//if (mgc <= 600) _COEF_SHACKLE_MP[target] -= 1;
+			//if (str <= 800) _COEF_SHACKLE_MP[target] -= 4;
+			if (mp > 10/1) _COEF_SHACKLE_MP[target] += 10;
+			if (mp > 8/1) _COEF_SHACKLE_MP[target] += 8;
+			if (mp > 7/1) _COEF_SHACKLE_MP[target] += 6;
+			if (mp > 6/1) _COEF_SHACKLE_MP[target] += 4;
+			if (mp > 4/1) _COEF_SHACKLE_MP[target] += 4;
+			if (mp > 2/1) _COEF_SHACKLE_MP[target] += 4;
+			//if (mp >= 3 && tran) _COEF_SHACKLE_TP[target] += 100;
+			if (NAreaBulb > 0/1) _COEF_SHACKLE_MP[target] += 1;
+			if (NAreaBulb > 1/1) _COEF_SHACKLE_MP[target] += 2;
+			if (NAreaBulb > 2/1) _COEF_SHACKLE_MP[target] += 3;
+			if (NAreaBulb > 3/1) _COEF_SHACKLE_MP[target] += 3;
+			if (NAreaBulb > 4/1) _COEF_SHACKLE_MP[target] += 4;
+			if (NAreaBulb > 5/1) _COEF_SHACKLE_MP[target] += 4;
+			if (sum) _COEF_SHACKLE_MP[target] /= 10000000;
+			_COEF_SHACKLE_MP[target] *= _COEF_TIMES_SHACKLE_MP;
+			/*if (melife > life) {
+				_COEF_DMG[target] += 2;
+				_COEF_VULNERABILITY[target] += 6;
+			}*/
+			/*if (getTP() == getTotalTP()) _COEF_VULNERABILITY[target] += 15;
+			else _COEF_VULNERABILITY[target] -= 10;*/
+			if (ashield <= -150/1) _COEF_VULNERABILITY[target] += 50;
+			if (ashield <= 0/1) _COEF_VULNERABILITY[target] += 20;
+			if (ashield < 50/1) _COEF_VULNERABILITY[target] += 15;
+			if (ashield < 100/1) _COEF_VULNERABILITY[target] += 10;
+			if (ashield < 150/1) _COEF_VULNERABILITY[target] += 10;
+
+			//if (life == RealLeeklife(target) && memgc >= 200) _COEF_DMG[target] += 7;
+			if (Dmgbulbcoef(FromNameToChip(target), _MY_SELF)[one] > 0) {
+				var dmgbulbcoef = Dmgbulbcoef(FromNameToChip(target), _MY_SELF);
+				_COEF_DMG[target] *= dmgbulbcoef[one];
+				_COEF_NOVA[target] *= dmgbulbcoef[one];
+				_COEF_VULNERABILITY[target] *= dmgbulbcoef[one];
+			} else {
+				_COEF_DMG[target] = 0;
+				_COEF_NOVA[target] = 0;
+				_COEF_VULNERABILITY[target] = 0;
+			}
+			_COEF_DMG[target] *= _COEF_TIMES_DMG;
+			_COEF_NOVA[target] *= _COEF_TIMES_NOVA;
+			//if (novalp>=90) _COEF_NOVA[target] = 0;
+			if (getFightType() == FIGHT_TYPE_FARMER || getFightType() == FIGHT_TYPE_TEAM) {
+				_COEF_DMG[target] *= 2/1;
+			}
+			if (RealLeeklife(target) <= zero) _COEF_DMG[target] -= 20000;
+			if (RealLeeklife(target) <= zero) _COEF_NOVA[target] -= 20000;
+			_COEF_VULNERABILITY[target] *= 100; // J'ai jamais pris le temps de le regler 
+			_COEF_SHACKLE_STRENGTH[target] *= _COEF_TIMES_SHACKLE_STR;
+		}
+		if (isAlly(target)) {
+			_COEF_ABS_SHIELD[target] += StrShield;
+			_COEF_REL_SHIELD[target] += StrShield;
+			if (dmgreturn == zero) _COEF_DAMAGE_RETURN[target] += 5;
+			if (dmgreturn < 10/1) _COEF_DAMAGE_RETURN[target] += 4.5;
+			if (dmgreturn < 20/1) _COEF_DAMAGE_RETURN[target] += 4;
+			if (dmgreturn < 30/1) _COEF_DAMAGE_RETURN[target] += 3.5;
+			if (dmgreturn < 40/1) _COEF_DAMAGE_RETURN[target] += 3;
+			if (dmgreturn < 50/1) _COEF_DAMAGE_RETURN[target] += 2.5;
+			if (dmgreturn < 60/1) _COEF_DAMAGE_RETURN[target] += 2;
+			if (dmgreturn < 70/1) _COEF_DAMAGE_RETURN[target] += 1.5;
+			if (dmgreturn < 80/1) _COEF_DAMAGE_RETURN[target] += 1;
+			if (dmgreturn < 90/1) _COEF_DAMAGE_RETURN[target] += 0.5;
+
+			if (aglty > zero) _COEF_BOOST_AGILITY[target] += 15;
+			if (aglty >= 100/1) _COEF_BOOST_AGILITY[target] += 5;
+			if (aglty >= 200/1) _COEF_BOOST_AGILITY[target] += 5;
+			if (aglty >= 300/1) _COEF_BOOST_AGILITY[target] += 5;
+			if (aglty >= 400/1) _COEF_BOOST_AGILITY[target] += 10;
+			if (aglty >= 600/1) _COEF_BOOST_AGILITY[target] += 15;
+			if (aglty >= 1000/1) _COEF_BOOST_AGILITY[target] = zero;
+			//if (sum) _COEF_BOOST_AGILITY[target] = 0;
+
+			if (resi > 0/1) _COEF_BOOST_RESI[target] += 15;
+			if (resi >= 200/1) _COEF_BOOST_RESI[target] += 5;
+			if (resi >= 300/1) _COEF_BOOST_RESI[target] += 5;
+			if (resi >= 400/1) _COEF_BOOST_RESI[target] += 10;
+			if (resi >= 600/1) _COEF_BOOST_RESI[target] += 15;
+			if (resi == zero) _COEF_BOOST_RESI[target] = zero;
+			if (sum) _COEF_BOOST_RESI[target] /= 5;
+			if (wsd > 0/1) _COEF_BUFF_WISDOM[target] += 15;
+			if (wsd >= 200/1) _COEF_BUFF_WISDOM[target] += 5;
+			if (wsd >= 300/1) _COEF_BUFF_WISDOM[target] += 5;
+			if (wsd >= 400/1) _COEF_BUFF_WISDOM[target] += 10;
+			if (wsd >= 600/1) _COEF_BUFF_WISDOM[target] += 15;
+			if (wsd == zero) _COEF_BUFF_WISDOM[target] = zero;
+			if (sum) _COEF_BUFF_WISDOM[target] /= 5;
+			if (str >= 200/1) {
+				_COEF_BOOST_STR[target] += 5;
+				_COEF_BOOST_MP[target] += 5;
+				_COEF_BOOST_TP[target] += 5;
+			}
+			if (str >= 300/1) {
+				_COEF_BOOST_STR[target] += 7.5;
+				_COEF_BOOST_MP[target] += 7.5;
+				_COEF_BOOST_TP[target] += 7.5;
+			}
+			if (str >= 400/1) {
+				_COEF_BOOST_STR[target] += 10;
+				_COEF_BOOST_MP[target] += 10;
+				_COEF_BOOST_TP[target] += 10;
+			}
+			if (str >= 500/1) {
+				_COEF_BOOST_STR[target] += 15;
+				_COEF_BOOST_MP[target] += 15;
+				_COEF_BOOST_TP[target] += 15;
+			}
+			if (str > 1100/1) _COEF_BOOST_STR[target] -= 30;
+
+			if (tp >= 24/1) _COEF_BOOST_TP[target] -= 45;
+			if (mp >= 20/1) _COEF_BOOST_MP[target] -= 45;
+			if (str < 200/1) _COEF_BOOST_STR[target] = 0;
+			if (sum) {
+				_COEF_BOOST_STR[target] /= 15;
+				_COEF_BOOST_MP[target] /= 15;
+				_COEF_BOOST_TP[target] /= 15;
+			}
+			if (mgc >= 200/1) _COEF_BUFF_MAGIC[target] += 5;
+			if (mgc >= 300/1) _COEF_BUFF_MAGIC[target] += 7.5;
+			if (mgc >= 400/1) _COEF_BUFF_MAGIC[target] += 10;
+			if (mgc >= 500/1) _COEF_BUFF_MAGIC[target] += 15;
+			if (mgc > 1100/1) _COEF_BUFF_MAGIC[target] -= 30;
+			if (mgc < 200/1) _COEF_BUFF_MAGIC[target] = 0;
+			if (sum) _COEF_BUFF_MAGIC[target] /= 15;
+			if (IsStrEnemies()) {
+				if (ashield <= 0/1) _COEF_ABS_SHIELD[target] += 50;
+				if (ashield < 50/1) _COEF_ABS_SHIELD[target] += 20;
+				if (ashield < 100/1) _COEF_ABS_SHIELD[target] += 10;
+				if (ashield < 150/1) _COEF_ABS_SHIELD[target] += 5;
+				else _COEF_ABS_SHIELD[target] = 1;
+				if (relshield == 0/1) _COEF_REL_SHIELD[target] += 50;
+				if (relshield < 10/1) _COEF_REL_SHIELD[target] += 20;
+				if (relshield < 20/1) _COEF_REL_SHIELD[target] += 10;
+				if (relshield < 30/1) _COEF_REL_SHIELD[target] += 5;
+				else _COEF_REL_SHIELD[target] = 1;
+				if (sum) {
+					_COEF_REL_SHIELD[target] /= 10/1;
+					_COEF_ABS_SHIELD[target] /= 10/1;
+				}
+			}
+
+			if (life < totallife) _COEF_HEAL[target] += 1;
+			if (lp < 80/1) _COEF_HEAL[target] += 1;
+			if (lp < 60/1) _COEF_HEAL[target] += 4;
+			if (lp < 40/1) _COEF_HEAL[target] += 8;
+			if (lp < 20/1) _COEF_HEAL[target] += 16;
+			if (lp < 5/1) _COEF_HEAL[target] += 25;
+			if (sum) _COEF_HEAL[target] /= 10000;
+			if (life == totallife) _COEF_HEAL[target] = zero;
+			_COEF_BOOST_MAX_LIFE[target] = 1;
+			if (totallife < 3000/1) _COEF_BOOST_MAX_LIFE[target] += 2;
+			if (totallife < 2000/1) _COEF_BOOST_MAX_LIFE[target] += 3;
+			if (totallife < 1600/1) _COEF_BOOST_MAX_LIFE[target] += 4;
+			if (totallife < 1200/1) _COEF_BOOST_MAX_LIFE[target] += 5;
+			if (totallife < 800/1) _COEF_BOOST_MAX_LIFE[target] += 6;
+			if (totallife < 400/1) _COEF_BOOST_MAX_LIFE[target] += 7;
+			_COEF_BOOST_MAX_LIFE[target] += bulbname(target, EnemyLeekG)[one] / 3;
+			if (sum) _COEF_BOOST_MAX_LIFE[target] /= 10000;
+			_COEF_BOOST_AGILITY[target] *= _COEF_TIMES_BOOST_AGILITY;
+			_COEF_BOOST_MAX_LIFE[target] *= _COEF_TIMES_BOOST_MAX_LIFE;
+			_COEF_HEAL[target] *= _COEF_TIMES_HEAL;
+			_COEF_ABS_SHIELD[target] *= _COEF_TIMES_ABSOLUTE_SHIELD;
+			_COEF_REL_SHIELD[target] *= _COEF_TIMES_RELATIVE_SHIELD;
+			_COEF_DAMAGE_RETURN[target] *= _COEF_TIMES_DAMAGE_RETURN;
+			_COEF_BOOST_STR[target] *= _COEF_TIMES_BOOST_STRENGTH;
+			_COEF_BUFF_MAGIC[target] *= _COEF_TIMES_BUFF_MAGIC;
+			_COEF_BOOST_MP[target] *= _COEF_TIMES_BOOST_MP;
+			_COEF_BOOST_TP[target] *= _COEF_TIMES_BOOST_TP;
+			_COEF_BOOST_RESI[target] *= _COEF_TIMES_BOOST_RESI;
+			_COEF_BUFF_WISDOM[target] *= _COEF_TIMES_BUFF_WISDOM;
+		} else _COEF_HEAL[target] = -_COEF_DMG[target];
+	}
+}
+
+function MustFocusEnemy(enemy) {
+	var totalLife = getTotalLife(enemy);
+	var enemymgc = getMagic(enemy);
+	var EnemyRealLife = RealLeeklife(enemy);
+	var MyRealLife = RealLeeklife(_MY_SELF);
+	var NbBulb = getNumberOfBulb();
+	var EnemyChips = getChips(enemy);
+	var MyMgc = getMagic();
+	var MyStr = getStrength();
+	var MyPwr = MyMgc > MyStr ? MyMgc : MyStr;
+	var Life = getLife(enemy);
+	var EnemyPwr = getMagic(enemy) > getStrength(enemy) ? getMagic(enemy) : getStrength(enemy);
+	var Score = 0;
+	var e_life = EnemyRealLife + 200/1 * _COUNT_HEALER_ENEMY;
+	var my_life = MyRealLife + 200/1 * _COUNT_HEALER_ALLY;
+	var e_shscore = _COUNT_METALLIC_ENEMY > 0 ? ShieldScore(enemy) >= 280 ? ShieldScore(enemy) : 280 : ShieldScore(enemy);
+	var my_shscore = _COUNT_METALLIC_ALLY > 0 ? ShieldScore(_MY_SELF) >= 280 ? ShieldScore(_MY_SELF) : 280 : ShieldScore(_MY_SELF);
+	if (MyMgc >= MyStr) {
+		Score += (getCooldown(CHIP_LIBERATION, enemy) * 0.3);
+		Score += (getCooldown(CHIP_ANTIDOTE, enemy) * 0.8);
+		if (!inArray(EnemyChips, CHIP_ANTIDOTE)) Score += 6;
+		if (!inArray(EnemyChips, CHIP_LIBERATION) && MyMgc >= 400/1) Score += 4;
+		if (_COUNT_HEALER_ALLY > 0) Score += 3;
+		if (_COUNT_HEALER_ALLY < _COUNT_HEALER_ENEMY) Score -= 5;
+		//Score += _COUNT_HEALER_ALLY*HealerImportance;
+	} else {
+		if (getStrength(enemy) > 199/1) {
+			if (e_shscore == 0/1) Score += 4;
+			if (e_shscore <= 100/1) Score += 3;
+			if (e_shscore <= 200/1) Score += 2;
+			if (e_shscore >= 280/1) Score -= 6;
+		}
+	}
+	if (getStrength(enemy) > 199/1) {
+		if (my_shscore == 0/1) Score -= 5;
+		if (my_shscore <= 200/1) Score -= 1;
+		if (my_shscore >= 280/1) Score += 4;
+	}
+	if (EnemyPwr <= 400/1) Score += 3;
+	else Score -= 4;
+	if (EnemyPwr <= 200/1) Score += 4;
+	if (e_life < my_life) Score += 5;
+	else Score -= 5;
+	Score += (MyPwr / 100/1);
+	Score -= (EnemyPwr / 100/1);
+	//Just to adjust
+	//var Times = 0.08;
+	//if (_MAGIC[EnemyLeekG]==0) Times -= 0.6; 
+	_MIN_MAP_DAMAGE += (NbBulb[zero] - NbBulb[one] * TimesEnemyBulbsPower) * 0.01/1;
+	//_MIN_MAP_DAMAGE += _REAL_LIFES[_MY_SELF]/20000;
+	//_MIN_MAP_DAMAGE += (_REAL_LIFES[_MY_SELF] / _REAL_LIFES[EnemyLeekG]) * 0.04;
+	if (inArray(getChips(EnemyLeekG), CHIP_ANTIDOTE) && getMagic() >= 400) _MIN_MAP_DAMAGE += getCooldown(CHIP_ANTIDOTE, EnemyLeekG) / 48/1;
+	if (_MIN_MAP_DAMAGE >= 0.6) _MIN_MAP_DAMAGE = 0.60/1;
+	if (_MIN_MAP_DAMAGE < zero) _MIN_MAP_DAMAGE = zero;
+	//_SCORE_PLAY_SAFE -= (RealLeeklife(_MY_SELF) / RealLeeklife(EnemyLeekG)) * 1.15; //1.2
+	//if (inArray(getChips(EnemyLeekG), CHIP_ANTIDOTE)) _SCORE_PLAY_SAFE -= getCooldown(CHIP_ANTIDOTE, EnemyLeekG) / 4;
+	_SCORE_PLAY_SAFE -= ((NbBulb[zero] - NbBulb[one]) * TimesEnemyBulbsPower) * 0.1;
+	if (_SCORE_PLAY_SAFE < 0) _SCORE_PLAY_SAFE = 0;
+	//if (getFightType() != FIGHT_TYPE_SOLO) _SCORE_PLAY_SAFE *= 0.9;
+	//Part Coef build beewiz like : 
+	//if (getMagic() == 400) {
+	//if (_COUNT_HEALER_ENEMY == 0 && _COUNT_HEALER_ALLY > 1) _COEF_SUMMON_GENTLE -= 600000;
+	if (_COUNT_ICED_ALLY + _COUNT_ROCKY_ALLY + _COUNT_FIRE_ALLY + _COUNT_WIZARD_ALLY + 2/1 > _COUNT_ICED_ENEMY + _COUNT_ROCKY_ENEMY + _COUNT_FIRE_ENEMY + _COUNT_WIZARD_ENEMY + 2/1) _COEF_SUMMON_FOCUS -= 800000/1;
+	if (_COUNT_HEALER_ALLY > 2/1) _COEF_SUMMON_GENTLE -= 1200000/1;
+	if (_COUNT_METALLIC_ALLY > 1/1) _COEF_SUMMON_GENTLE -= 1100000/1;
+	if (_COUNT_ICED_ALLY + _COUNT_ROCKY_ALLY + _COUNT_FIRE_ALLY + _COUNT_WIZARD_ALLY <= 2/1) _COEF_SUMMON_FOCUS += 300000/1;
+	//_COEF_FOCUS_LEEK = 9;
+	//if (_COUNT_ICED_ALLY + _COUNT_ROCKY_ALLY + _COUNT_FIRE_ALLY + _COUNT_WIZARD_ALLY >= 2) _COEF_FOCUS_LEEK += 8;
+	if (_COUNT_HEALER_ALLY > 2/1) _COEF_FOCUS_LEEK += 5;
+	if (_COUNT_METALLIC_ALLY > 1/1) _COEF_FOCUS_LEEK += 3;
+	if (_COUNT_HEALER_ALLY >= 2/1 && _COUNT_METALLIC_ALLY >= 1/1) _MIN_MAP_DAMAGE += 0.03;
+	if (_COUNT_HEALER_ALLY > 2/1) {
+		_MIN_MAP_DAMAGE += 0.02;
+		_SCORE_PLAY_SAFE -= 0.3;
+	}
+	if (getLife() > 2500/1) {
+		_MIN_MAP_DAMAGE += 0.02;
+		_SCORE_PLAY_SAFE -= 0.3;
+	}
+	/*	if (getMagic(EnemyLeekG)==0 && getStrength(EnemyLeekG)<400) {
+			_MIN_MAP_DAMAGE += 0.05;
+			_SCORE_PLAY_SAFE -= 0.1;
+		}
+		if (getMagic(EnemyLeekG)==0 && getStrength(EnemyLeekG)<200) {
+			_MIN_MAP_DAMAGE += 0.06;
+			_SCORE_PLAY_SAFE -= 0.3;
+		}*/
+	//_MIN_MAP_DAMAGE += (1-getTotalLife(EnemyLeekG)/2000)*0.04;
+	//_SCORE_PLAY_SAFE -= (1-getTotalLife(EnemyLeekG)/2000);
+	//if (_COUNT_HEALER_ENEMY == 0 && _COUNT_HEALER_ALLY > 1) _COEF_FOCUS_LEEK += 15;
+	//_COEF_FOCUS_LEEK += getCooldown(CHIP_ANTIDOTE, EnemyLeekG)*10;
+	//if (_COUNT_ICED_ALLY + _COUNT_ROCKY_ALLY + _COUNT_FIRE_ALLY + _COUNT_WIZARD_ALLY >= 2) _MIN_MAP_DAMAGE += 0.05;
+	var Healer = 0;
+	var Metallic = 0;
+	for (var ally in getAliveAllies()) {
+		if (!isSummon(ally)) continue;
+		if (getCellDistance(getCell(), getCell(ally)) < 6) {
+			var type = bulbname(ally, EnemyLeekG)[zero];
+			if (type == ENTITY_HEALER_BULB) Healer++;
+			if (type == ENTITY_METALLIC_BULB) Metallic++;
+			if (type == ENTITY_PUNY_BULB) {
+				Healer += 0.1;
+				Metallic += 0.1;
+			}
+		}
+	}
+	if (Healer >= 2) {
+		if (getStrength(EnemyLeekG) > 50/1 && Metallic >= 1/1) {
+			_SCORE_PLAY_SAFE *= 0.8;
+			_MIN_MAP_DAMAGE *= 1.2/1;
+			_COEF_TIMES_DMG *= 1.2/1;
+			_COEF_TIMES_SHACKLE_STR *= 1.2/1;
+			_COEF_TIMES_HEAL *= 0.8;
+			_COEF_TIMES_BOOST_MAX_LIFE *= 0.8;
+		}
+	} else if (Healer >= 1) {
+		if (getStrength(EnemyLeekG) > 50/1 && Metallic >= 1/1) {
+			_SCORE_PLAY_SAFE *= 0.9;
+			_MIN_MAP_DAMAGE *= 1.1/1;
+			_COEF_TIMES_DMG *= 1.1/1;
+			_COEF_TIMES_SHACKLE_STR *= 1.1/1;
+			_COEF_TIMES_HEAL *= 0.9;
+			_COEF_TIMES_BOOST_MAX_LIFE *= 0.9;
+		}
+	}
+	if (getFightType() != FIGHT_TYPE_SOLO) {
+		for (var a in getAliveAllies()) {
+			if (a == getEntity()) continue;
+			if (isSummon(a)) continue;
+			for (var e in getAliveEnemies()) {
+				if (isSummon(e)) continue;
+				if (getCellDistance(getCell(a), getCell(e)) <= 8/1) {
+					_MIN_MAP_DAMAGE += 0.10;
+					_SCORE_PLAY_SAFE -= 0.8;
+				}
+			}
+
+		}
+	}
+	for (var e in getAliveEnemies()) {
+		if (isSummon(e)) continue;
+		for (var b in getAliveAllies()) {
+			if (!isSummon(b)) continue;
+			if (getCellDistance(getCell(b), getCell(e)) < 6/1) {
+				_SCORE_PLAY_SAFE /= 1.1;
+				_MIN_MAP_DAMAGE *= 1.02;
+				_COEF_TIMES_DMG *= 1.1;
+				_COEF_TIMES_SHACKLE_STR *= 1.1;
+				_COEF_TIMES_SHACKLE_TP *= 1.1;
+			}
+		}
+	}
+	//_MIN_MAP_DAMAGE = 0;
+	//_SCORE_PLAY_SAFE = 1000000;
+	debug('Min map damage : ' + _MIN_MAP_DAMAGE);
+	debug('Score play safe : ' + _SCORE_PLAY_SAFE);
+	return Score;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////END Scores.leek
+//////////////////////////////////////////////////////////////////////////////////////////
+
+
+include("scores.leek");
+
+global _DEBUG = false;
+global TryRisksKill = false;
+global _WEAP_TO_SET;
+global _ALL_CELLZ;
+global _CELL_AREA = [];
+global _AOE0 = [];
+global _AOE1 = [];
+global _AOE2 = [];
+global _AOE3 = [];
+global _AOEP1 = [];
+global _AOEP2 = [];
+global _AOEP3 = [];
+global _AOEX1 = [];
+global _AOEX2 = [];
+global _AOEX3 = [];
+global _AOES1 = [];
+global _AOES2 = [];
+global _AOES3 = [];
+global PourChanterEnRythme = 0;
+global _OPS = 0;
+global _MAP_ACTION = [];
+global _MAP_DANGER = [];
+global _BULB_MAP_DANGER = [];
+global _CELLZ_TO_USE = [];
+global _BULB_MOVES = [];
+global _BEST_DMG_CELL = []; //Cell : [BestCellToHide , BestScoreOfCell]
+global _ACCESCELLS = []; //Pour Load les accescellz dans la map de danger
+global _ACCES_BY_2 = [];
+global _MOST_DANGEROUS; //Array[cell] = leek wich do the more dmg
+global _MOST_DANGEROUS_ITEM; //Array[cell] = [item , percentage , ?libe]
+global _MY_ACCES_CELLZ;
+global _MY_POSSIBLE_ACCES_CELLZ;
+global _MAP_ACTION_SCORED = [];
+global _USABLE_ITEMS = [];
+global _GRAVITY_CELLZ = [];
+global _BEST_CELLS_ATTACK_ENEMY = [];
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+//Les Globals Pour la function bulbname
+/////////////////////////////////////////////////////////////////////////////////////////////
+global ENTITY_LEEK_ = 0;
+global ENTITY_PUNY_BULB = 1;
+global ENTITY_ROCKY_BULB = 2;
+global ENTITY_ICED_BULB = 3;
+global ENTITY_HEALER_BULB = 4;
+global ENTITY_METALLIC_BULB = 5;
+global ENTITY_FIRE_BULB = 6;
+global ENTITY_LIGHTNING_BULB = 7;
+global ENTITY_WIZARD_BULB = 8;
+global ENTITY_SAVANT_BULB = 9;
+global _COEF_DMG = [];
+global _COEF_NOVA = [];
+global _COEF_ABS_SHIELD = [];
+global _COEF_HEAL = [];
+global _COEF_BOOST_STR = [];
+global _COEF_BOOST_MP = [];
+global _COEF_BOOST_TP = [];
+global _COEF_BOOST_AGILITY = [];
+global _COEF_REL_SHIELD = [];
+
+//if (getMagic() >= 400) _COEF_SUMMON_GENTLE = 5400000;
+//if (getMagic() >= 400) _COEF_SUMMON_FOCUS = 2900000;
+global _COEF_BOOST_MAX_LIFE = [];
+global _COEF_BUFF_RESI = [];
+global _COEF_BUFF_WISDOM = [];
+global _COEF_BUFF_MAGIC = [];
+global _COEF_SHACKLE_STRENGTH = [];
+global _COEF_SHACKLE_MP = [];
+global _COEF_VULNERABILITY = [];
+global _COEF_SHACKLE_TP = [];
+global _COEF_BOOST_RESI = [];
+global _COEF_DAMAGE_RETURN = [];
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+//Les Globals De Score 
+/////////////////////////////////////////////////////////////////////////////////////////////
+global _MAP_DANGER_OP_LIMIT = 11000000;
+global _MAP_DANGER_CRIT_OP_LIMIT = 11800000;
+global _MAP_ACTION_OP_LIMIT = 5000000;
+global _BEST_ITEM_OP_LIMIT = 18400000; 
+global _PLAY_OP_LIMIT = 18500000; 
+global _OPS_BULB = [
+	"wizard_bulb": 400000,
+	"lightning_bulb": 400000,
+	"fire_bulb": 400000,
+	"metallic_bulb": 300000,
+	"healer_bulb": 700000,
+	"iced_bulb": 300000,
+	"rocky_bulb": 150000,
+	"puny_bulb": 300000,
+	"savant_bulb": 600000
+];
+global _ALL_TESTED_SHOOTABLE_CELLZ = 0;
+global TimesEnemyBulbsPower = 0.2;
+//global StayWithAlly = 190;//Times dist ally is important in choice of the bestcellbulb 55
+//if (getResistance() >= 200) StayWithAlly = 590;
+//global HealerImportance = 1.8; // Importance of healer bulbs in decisions
+global DivideTP = true;
+//if (getResistance(EnemyLeekG) >= 200) _MIN_MAP_DAMAGE = 0; //0.16
+global _TP_KILL_NEXT_TURN = getTotalTP() - 7;
+//if (getResistance()>=200) _SCORE_PLAY_SAFE = 4.2;//13.8
+//if (getMagic(EnemyLeekG) >= 400) _SCORE_PLAY_SAFE = 7.4; //7.4
+//if (getResistance(EnemyLeekG) >= 200 && getMagic(EnemyLeekG) >= 400) _SCORE_PLAY_SAFE = 5;
+//if (getFightType() == FIGHT_TYPE_BATTLE_ROYALE) _SCORE_PLAY_SAFE += getEnemiesCount()*0.5-1;
+/*if (inArray(getChips(EnemyLeekG), CHIP_TRANQUILIZER)) {
+	_SCORE_PLAY_SAFE += 20;
+	_COEF_SUMMON_FOCUS += 10000000;
+	_MIN_MAP_DAMAGE = 0;
+}*/
+//BETA : 
+if (getFightType() == FIGHT_TYPE_FARMER || getFightType() == FIGHT_TYPE_TEAM) {
+	if (getStrength() >= 650) _COEF_TIMES_DMG *= 1.4;
+	if (getResistance() >= 400) {
+		_COEF_TIMES_ABSOLUTE_SHIELD *= 1.4;
+		_COEF_TIMES_RELATIVE_SHIELD *= 1.4;
+	}
+}
+
+
+//////////////////////////////////////////////////////////////////////////////////////////
+//
+//Les Tableaux Pour Items
+//////////////////////////////////////////////////////////////////////////////////////////
+//
+
+global _ITEM_MINRANGE = [];
+global _ITEM_MAXRANGE = [];
+global _ITEM_COOLDOWN = [];
+global _ITEM_INLINE = [];
+global _ITEM_AREA = [];
+global _ITEM_COST = [];
+global _ITEM_EFFECTS = [];
+global _ITEM_POWER = [];
+global _ITEM_IS_WEAPON = [];
+
+//////////////////////////////////////////////////////////////////////////////////////////
+//
+//Les Tableaux Pour Leeks
+//////////////////////////////////////////////////////////////////////////////////////////
+//
+
+global EnemyLeekG = getNearestEnemy();
+global _DEAD_ALLIES = getDeadAllies();
+global _DEAD_ENEMIES = getDeadEnemies();
+global _ALIVE_ALLIES = getAliveAllies();
+global _ALIVE_ENEMIES = getAliveEnemies();
+global _ALL_LEEKS = _ALIVE_ALLIES + _ALIVE_ENEMIES;
+global _IS_ALLY = [];
+global _PATHS_LENGHT = [];
+
+global _OBSTACLES = [];
+//global _CELL = [];
+global _MY_SELF = getEntity();
+/*global _EFFECTS = [];
+global _LIFE = [];
+global _ABSOLUTE_SHIELD = [];
+global _RELATIVE_SHIELD = [];
+global _AGILITY = [];
+global _STRENGTH = [];
+global _MAGIC = [];
+global _MP = [];
+global _TP = [];
+global _RESISTANCE = [];
+global _SCIENCE = [];
+global _TOTAL_LIFE = [];
+global _REAL_LIFES = [];
+global _WISDOM = [];
+global _DAMAGE_RETURN = [];
+*/
+global _COUNT_LIGHTNING_ALLY;
+global _COUNT_LIGHTNING_ENEMY;
+global _COUNT_WIZARD_ALLY;
+global _COUNT_WIZARD_ENEMY;
+global _COUNT_FIRE_ALLY;
+global _COUNT_FIRE_ENEMY;
+global _COUNT_METALLIC_ALLY;
+global _COUNT_METALLIC_ENEMY;
+global _COUNT_HEALER_ALLY;
+global _COUNT_HEALER_ENEMY;
+global _COUNT_ICED_ALLY;
+global _COUNT_ICED_ENEMY;
+global _COUNT_ROCKY_ALLY;
+global _COUNT_ROCKY_ENEMY;
+global _COUNT_PUNY_ALLY;
+global _COUNT_PUNY_ENEMY;
+_COUNT_WIZARD_ALLY = 0;
+_COUNT_WIZARD_ENEMY = 0;
+_COUNT_LIGHTNING_ALLY = 0;
+_COUNT_LIGHTNING_ENEMY = 0;
+_COUNT_FIRE_ALLY = 0;
+_COUNT_FIRE_ENEMY = 0;
+_COUNT_METALLIC_ALLY = 0;
+_COUNT_METALLIC_ENEMY = 0;
+_COUNT_HEALER_ALLY = 0;
+_COUNT_HEALER_ENEMY = 0;
+_COUNT_ICED_ALLY = 0;
+_COUNT_ICED_ENEMY = 0;
+_COUNT_ROCKY_ALLY = 0;
+_COUNT_ROCKY_ENEMY = 0;
+_COUNT_PUNY_ALLY = 0;
+_COUNT_PUNY_ENEMY = 0;
+
+//////////////////////////////////////////////////////////////////////////////////////////
+//
+//Les Tableau Debiles
+//////////////////////////////////////////////////////////////////////////////////////////
+//
+var me = isSummon() ? getSummoner() : getEntity();
+var attackingOne = false;
+var Light = getMagic() == 0 ? true : attackingOne;
+var Ice = getMagic() == 0 ? true : attackingOne;
+var oldfalse = true;
+global _IS_GENTLE_BULB = [
+	CHIP_WIZARD_BULB: attackingOne,
+	CHIP_LIGHTNING_BULB: Light,
+	CHIP_FIRE_BULB: attackingOne,
+	CHIP_METALLIC_BULB: true,
+	CHIP_HEALER_BULB: true,
+	CHIP_ICED_BULB: Ice,
+	CHIP_ROCKY_BULB: attackingOne,
+	CHIP_PUNY_BULB: true,
+	CHIP_SAVANT_BULB: true
+];
+
+global _NAME_IS_GENTLE_BULB = [
+	"wizard_bulb": attackingOne,
+	"lightning_bulb": Light,
+	"fire_bulb": attackingOne,
+	"metallic_bulb": true,
+	"healer_bulb": true,
+	"iced_bulb": Ice,
+	"rocky_bulb": attackingOne,
+	"puny_bulb": true,
+	"savant_bulb": true
+];
+global _BEST_ITEM_NOT_GENTLE_BULB = [ //PETITE AIDE POUR LE GETCELLTOSUMMON
+	CHIP_FIRE_BULB: CHIP_METEORITE,
+	CHIP_ICED_BULB: CHIP_ICEBERG,
+	CHIP_ROCKY_BULB: CHIP_ROCKFALL,
+	CHIP_WIZARD_BULB: CHIP_TOXIN
+];
+
+function getArrayComboBulbSorted(entity) {
+	if (entity == ENTITY_ICED_BULB) return [CHIP_ICEBERG, CHIP_STALACTITE, CHIP_WARM_UP, CHIP_ICE];
+	if (entity == ENTITY_HEALER_BULB) return [CHIP_VACCINE, CHIP_CURE, CHIP_DRIP, CHIP_BANDAGE];
+	if (entity == ENTITY_ROCKY_BULB) return [CHIP_ROCKFALL, CHIP_HELMET, CHIP_ROCK, CHIP_PEBBLE];
+	if (entity == ENTITY_PUNY_BULB) return [CHIP_PROTEIN, CHIP_BANDAGE, CHIP_HELMET, CHIP_PEBBLE];
+	if (entity == ENTITY_METALLIC_BULB) return [CHIP_ARMOR, CHIP_WINGED_BOOTS, CHIP_SHIELD, CHIP_WALL];
+	if (entity == ENTITY_FIRE_BULB) return [CHIP_METEORITE, CHIP_DEVIL_STRIKE, CHIP_FLAME, CHIP_SPARK];
+	if (entity == ENTITY_LIGHTNING_BULB) return [CHIP_STEROID, CHIP_LIGHTNING, CHIP_FLASH, CHIP_SHOCK];
+	if (entity == ENTITY_WIZARD_BULB) return [CHIP_TOXIN, CHIP_VENOM, CHIP_SLOW_DOWN, CHIP_TRANQUILIZER];
+	if (entity == ENTITY_SAVANT_BULB) return [CHIP_ALTERATION, CHIP_MUTATION, CHIP_ADRENALINE, CHIP_THORN];
+	if (entity == ENTITY_LEEK_) return SortedSupportItems(entity);
+	return [null];
+}
+
+global _CHIP_ISPOSITIV = [
+	CHIP_WIZARD_BULB: null,
+	CHIP_ACCELERATION: true,
+	CHIP_ADRENALINE: true,
+	CHIP_ANTIDOTE: true,
+	CHIP_ARMOR: true,
+	CHIP_ARMORING: true,
+	CHIP_BALL_AND_CHAIN: false,
+	CHIP_BANDAGE: true,
+	CHIP_BARK: true,
+	CHIP_BURNING: false,
+	CHIP_CARAPACE: true,
+	CHIP_COLLAR: true,
+	CHIP_CURE: true,
+	CHIP_DEVIL_STRIKE: false,
+	CHIP_DOPING: true,
+	CHIP_DRIP: true,
+	CHIP_FEROCITY: true,
+	CHIP_FERTILIZER: true,
+	CHIP_FIRE_BULB: null,
+	CHIP_FLAME: false,
+	CHIP_FLASH: false,
+	CHIP_FORTRESS: true,
+	CHIP_FRACTURE: false,
+	CHIP_HEALER_BULB: null,
+	CHIP_HELMET: true,
+	CHIP_ICE: false,
+	CHIP_ICEBERG: false,
+	CHIP_ICED_BULB: null,
+	CHIP_INVERSION: false,
+	CHIP_LEATHER_BOOTS: true,
+	CHIP_LIBERATION: null,
+	CHIP_LIGHTNING: false,
+	CHIP_LIGHTNING_BULB: null,
+	CHIP_LOAM: true,
+	CHIP_METALLIC_BULB: null,
+	CHIP_METEORITE: false,
+	CHIP_MIRROR: true,
+	CHIP_MOTIVATION: true,
+	CHIP_PEBBLE: false,
+	CHIP_PLAGUE: false,
+	CHIP_PROTEIN: true,
+	CHIP_PUNY_BULB: null,
+	CHIP_RAGE: true,
+	CHIP_RAMPART: true,
+	CHIP_REFLEXES: true,
+	CHIP_REGENERATION: true,
+	CHIP_REMISSION: true,
+	CHIP_RESURRECTION: null,
+	CHIP_ROCK: false,
+	CHIP_ROCKFALL: false,
+	CHIP_ROCKY_BULB: null,
+	CHIP_SEVEN_LEAGUE_BOOTS: true,
+	CHIP_SHIELD: true,
+	CHIP_SHOCK: false,
+	CHIP_SLOW_DOWN: false,
+	CHIP_SOLIDIFICATION: true,
+	CHIP_SOPORIFIC: false,
+	CHIP_SPARK: false,
+	CHIP_STALACTITE: false,
+	CHIP_STEROID: true,
+	CHIP_STRETCHING: true,
+	CHIP_TELEPORTATION: null,
+	CHIP_THORN: true,
+	CHIP_TOXIN: false,
+	CHIP_TRANQUILIZER: false,
+	CHIP_VACCINE: true,
+	CHIP_VENOM: false,
+	CHIP_WALL: true,
+	CHIP_WARM_UP: true,
+	CHIP_WHIP: true,
+	CHIP_WINGED_BOOTS: true,
+	WEAPON_AXE: false,
+	WEAPON_B_LASER: false,
+	WEAPON_BROADSWORD: false,
+	WEAPON_DESTROYER: false,
+	WEAPON_DOUBLE_GUN: false,
+	WEAPON_ELECTRISOR: false,
+	WEAPON_FLAME_THROWER: false,
+	WEAPON_GAZOR: false,
+	WEAPON_GRENADE_LAUNCHER: false,
+	WEAPON_KATANA: false,
+	WEAPON_LASER: false,
+	WEAPON_MACHINE_GUN: false,
+	WEAPON_MAGNUM: false,
+	WEAPON_M_LASER: false,
+	WEAPON_PISTOL: false,
+	WEAPON_SHOTGUN: false,
+	WEAPON_ILLICIT_GRENADE_LAUNCHER: false,
+	WEAPON_MYSTERIOUS_ELECTRISOR: false,
+	WEAPON_REVOKED_M_LASER: false,
+	WEAPON_UNBRIDLED_GAZOR: false,
+	WEAPON_J_LASER: false,
+	CHIP_ALTERATION: false,
+	CHIP_COVETOUSNESS: false,
+	CHIP_PLASMA: false,
+	CHIP_JUMP: null,
+	CHIP_VAMPIRIZATION: false,
+	CHIP_PRECIPITATION: false,
+	CHIP_PUNISHMENT: false,
+	WEAPON_RHINO: false,
+	WEAPON_RIFLE: false,
+	CHIP_KNOWLEDGE: true,
+	CHIP_COVID: false,
+	CHIP_ELEVATION: true,
+	CHIP_WIZARDRY: true,
+	CHIP_ARSENIC: false,
+	WEAPON_EXPLORER_RIFLE: true,
+	CHIP_THERAPY: true,
+	CHIP_DOME: true,
+	CHIP_BRAMBLE: true,
+	CHIP_CRUSHING: false,
+	CHIP_CRUSHING: false,
+	CHIP_SERUM: true,
+	CHIP_TRANSMUTATION: true,
+	CHIP_DESINTEGRATION: false,
+	CHIP_MUTATION: true
+];
+
+global _ITEM_CAN_REMOVE_DANGER = [
+	CHIP_ARMOR: true,
+	CHIP_BANDAGE: true,
+	CHIP_CURE: true,
+	CHIP_DRIP: true,
+	CHIP_FORTRESS: true,
+	CHIP_FRACTURE: true,
+	CHIP_HELMET: true,
+	CHIP_REMISSION: true,
+	CHIP_SHIELD: true,
+	CHIP_SOPORIFIC: true,
+	CHIP_TRANQUILIZER: true,
+	CHIP_VACCINE: true,
+	CHIP_WALL: true,
+	WEAPON_BROADSWORD: true,
+	WEAPON_DESTROYER: true,
+	WEAPON_KATANA: true,
+	CHIP_METALLIC_BULB: true,
+	CHIP_HEALER_BULB: true,
+	WEAPON_J_LASER: true
+];
+
+function SortedSupportItems(leek) {
+	var tmp = [];
+	for (var i in GetItems(leek)) {
+		if (!isPositiv(i)) continue;
+		var times = 0;
+		for (var eff in _ITEM_EFFECTS[i]) {
+			if (eff[0] == EFFECT_HEAL && times == 0) times = 2;
+			if (eff[0] == EFFECT_RELATIVE_SHIELD && times == 0) times = 20;
+			if (eff[0] == EFFECT_ABSOLUTE_SHIELD && times == 0) times = 4;
+		}
+		tmp[i] = _ITEM_POWER[i] * times;
+	}
+	var sort = arraySort(tmp, function(a, b) {
+		if (a < b) return 1;
+		else if (a > b) return -1;
+		else return 0;
+	});
+	var final = [];
+	var cnt = 0;
+	for (var i in sort) {
+		cnt++;
+		push(final, i);
+		if (cnt > 1) break;
+	}
+}
+
+function DeadAlly() {
+	var array = [];
+	for (var i in getDeadAllies()) {
+		if (!isSummon(i)) {
+			push(array, i);
+		}
+	}
+	return array;
+}
+
+function getNeighbouringCellz(cell) {
+	var tabcellz = [];
+	var cellxy;
+	var x = getCellX(cell);
+	var y = getCellY(cell);
+	cellxy = getCellFromXY(x + 1, y);
+	if (cellxy != null && !_OBSTACLES[cellxy] && isEmptyCell(cellxy)) {
+		push(tabcellz, cellxy);
+	}
+	cellxy = getCellFromXY(x - 1, y);
+	if (cellxy != null && !_OBSTACLES[cellxy] && isEmptyCell(cellxy)) {
+		push(tabcellz, cellxy);
+	}
+	cellxy = getCellFromXY(x, y + 1);
+	if (cellxy != null && !_OBSTACLES[cellxy] && isEmptyCell(cellxy)) {
+		push(tabcellz, cellxy);
+	}
+	cellxy = getCellFromXY(x, y - 1);
+	if (cellxy != null && !_OBSTACLES[cellxy] && isEmptyCell(cellxy)) {
+		push(tabcellz, cellxy);
+	}
+	return tabcellz;
+}
+
+function GetPossibleWalkableCells(cell, mp) {
+	var accesscells = [cell];
+	var set = [cell];
+	for (var i = 0; i < mp; i++) {
+		var Bords = [];
+		for (var cellz in set) {
+			for (var c in _AOE1[cellz]) {
+				if (accesscells[c] == null) {
+					accesscells[c] = c;
+					push(Bords, c);
+				}
+			}
+		}
+		set = Bords;
+	}
+	return accesscells;
+}
+
+function GetWalkableCells(cell, mp) {
+	var accesscells = [cell];
+	var set = [cell];
+	for (var i = 0; i < mp; i++) {
+		var Bords = [];
+		for (var cellz in set) {
+			for (var c in _AOE1[cellz]) {
+				if (accesscells[c] == null && isEmptyCell(c)) {
+					accesscells[c] = c;
+					push(Bords, c);
+				}
+			}
+		}
+		set = Bords;
+	}
+	return accesscells;
+}
+
+function GetWalkableCellsMP(cell, mp) {
+	var accesscells = [cell];
+	var set = [cell];
+	for (var i = 0; i < mp; i++) {
+		var Bords = [];
+		for (var cellz in set) {
+			for (var c in _AOE1[cellz]) {
+				if (accesscells[c] == null && isEmptyCell(c)) {
+					accesscells[c] = i;
+					push(Bords, c);
+				}
+			}
+		}
+		set = Bords;
+	}
+	return accesscells;
+}
+
+function PushWalkableCells(cell, mp) {
+	var accesscells = [cell];
+	var set = [cell];
+	for (var i = 0; i < mp; i++) {
+		var Bords = [];
+		for (var cellz in set) {
+			for (var c in _AOE1[cellz]) {
+				if (accesscells[c] == null) {
+					push(accesscells, c);
+					push(Bords, c);
+				}
+			}
+		}
+		set = Bords;
+	}
+	return accesscells;
+}
+
+function CellMp(cell, mp) {
+	var accesscells = [cell: 0];
+	var set = [cell];
+	for (var i = 0; i < mp; i++) {
+		var Bords = [];
+		for (var cellz in set) {
+			for (var c in _AOE1[cellz]) {
+				if (accesscells[c] == null && isEmptyCell(c)) {
+					accesscells[c] = i;
+					push(Bords, c);
+				}
+			}
+		}
+		set = Bords;
+	}
+	return accesscells;
+}
+
+function AccesCell(cell, mp) {
+	var accesscells = [cell: cell];
+	var set = [cell];
+	for (var i = 0; i < mp; i++) {
+		var Bords = [];
+		for (var cellz in set) {
+			for (var c in _AOE1[cellz]) {
+				if (accesscells[c] == null && isEmptyCell(c)) {
+					accesscells[c] = c;
+					push(Bords, c);
+				}
+			}
+		}
+		set = Bords;
+	}
+	return accesscells;
+}
+
+function AccesCellzMp(cell, mp) { //For loading dmg map (my bulbs will move but not the enemy ones)
+	var accesscells = [cell: 0];
+	var set = [cell];
+	for (var i = 0; i < mp; i++) {
+		var Bords = [];
+		for (var cellz in set) {
+			for (var c in _AOE1[cellz]) {
+				if (accesscells[c] == null && (!isEmptyCell(c) && isAlly(getEntityOnCell(c)) || isEmptyCell(c))) {
+					accesscells[c] = i;
+					push(Bords, c);
+				}
+			}
+		}
+		set = Bords;
+	}
+	return accesscells;
+}
+
+function JumpCellzMp(cell, mp) { //For loading dmg map (my bulbs will move but not the enemy ones)
+	var accesscells = [cell: 0];
+	var set = [cell];
+	for (var i = 0; i < mp; i++) {
+		var Bords = [];
+		for (var cellz in set) {
+			for (var c in _AOE1[cellz]) {
+				if (accesscells[c] == null && (!isEmptyCell(c) && isAlly(getEntityOnCell(c)) || isEmptyCell(c))) {
+					accesscells[c] = i;
+					push(Bords, c);
+				}
+			}
+		}
+		set = Bords;
+	}
+	for (var c: var pm in accesscells) {
+		for (var jump in _AOE3[c]) {
+			if (accesscells[jump] == null && jump != null && (!isEmptyCell(c) && isAlly(getEntityOnCell(c)) || isEmptyCell(c))) accesscells[jump] = pm;
+		}
+	}
+	return accesscells;
+}
+
+
+function GetItems(Leek) {
+	var TabItems = [];
+	for (var i in getChips(Leek)) {
+		if (getNumberOfBulb()[0] == 8 && _ITEM_EFFECTS[i] == EFFECT_SUMMON) continue;
+		if (getCooldown(i, Leek) == 0 || getCooldown(i, Leek) <= 1 && Leek == EnemyLeekG) push(TabItems, i);
+	}
+	pushAll(TabItems, getWeapons(Leek));
+	if (getLife() < 1000 || getAbsoluteShield() == 0) removeElement(TabItems, CHIP_DEVIL_STRIKE);
+	if (ShieldScore(getEntity()) < 200) removeElement(TabItems, CHIP_PUNISHMENT);
+	if (count(getSummons()) == 8) {
+		removeElement(TabItems, CHIP_METALLIC_BULB);
+		removeElement(TabItems, CHIP_HEALER_BULB);
+		removeElement(TabItems, CHIP_PUNY_BULB);
+		removeElement(TabItems, CHIP_WIZARD_BULB);
+		removeElement(TabItems, CHIP_FIRE_BULB);
+		removeElement(TabItems, CHIP_LIGHTNING_BULB);
+		removeElement(TabItems, CHIP_ROCKY_BULB);
+		removeElement(TabItems, CHIP_ICED_BULB);
+		removeElement(TabItems, CHIP_SAVANT_BULB);
+	}
+	removeElement(TabItems, CHIP_REGENERATION);
+	removeElement(TabItems, CHIP_ANTIDOTE);
+	removeElement(TabItems, CHIP_LIBERATION);
+	//removeElement(TabItems, CHIP_TELEPORTATION);
+	removeElement(TabItems, CHIP_COVETOUSNESS);
+	if (getLife(EnemyLeekG) + 100 >= getTotalLife(EnemyLeekG)) {
+		removeElement(TabItems, CHIP_ALTERATION);
+		removeElement(TabItems, WEAPON_MYSTERIOUS_ELECTRISOR);
+	}
+	return TabItems;
+}
+
+function getItemCoef(Item, target) {
+	var ie = _ITEM_EFFECTS[Item];
+	for (var eff in ie) {
+		var effect = eff[0];
+		if (eff[0] == EFFECT_DAMAGE && Item != WEAPON_B_LASER && Item != WEAPON_DESTROYER || eff[0] == EFFECT_POISON) return _COEF_DMG[target];
+		if (effect == EFFECT_ABSOLUTE_SHIELD) return _COEF_ABS_SHIELD[target];
+		if (effect == EFFECT_ABSOLUTE_VULNERABILITY) return _COEF_VULNERABILITY[target];
+		if (effect == EFFECT_AFTEREFFECT) return 0;
+		if (effect == EFFECT_ANTIDOTE) return 0;
+		if (effect == EFFECT_BOOST_MAX_LIFE) return _COEF_BOOST_MAX_LIFE[target];
+		if (effect == EFFECT_NOVA_VITALITY) return _COEF_BOOST_MAX_LIFE[target];
+		if (effect == EFFECT_BUFF_AGILITY) return _COEF_BOOST_AGILITY[target];
+		if (effect == EFFECT_BUFF_FORCE) return _COEF_BOOST_STR[target];
+		if (effect == EFFECT_BUFF_MP) return _COEF_BOOST_MP[target];
+		if (effect == EFFECT_RAW_BUFF_RESISTANCE) return _COEF_BOOST_RESI[target];
+		if (effect == EFFECT_BUFF_RESISTANCE) return _COEF_BOOST_RESI[target];
+		if (effect == EFFECT_BUFF_STRENGTH) return _COEF_BOOST_STR[target];
+		if (effect == EFFECT_BUFF_TP) return _COEF_BOOST_TP[target];
+		if (effect == EFFECT_RAW_BUFF_WISDOM) return _COEF_BUFF_WISDOM[target];
+		if (effect == EFFECT_BUFF_WISDOM) return _COEF_BUFF_WISDOM[target];
+		if (effect == EFFECT_RAW_BUFF_MAGIC) return _COEF_BUFF_MAGIC[target];
+		if (effect == EFFECT_DAMAGE_RETURN) return _COEF_DAMAGE_RETURN[target];
+		if (effect == EFFECT_DAMAGE_TO_ABSOLUTE_SHIELD) return 0;
+		if (effect == EFFECT_DAMAGE_TO_STRENGTH) return 0;
+		if (effect == EFFECT_DEBUFF) return 0;
+		if (effect == EFFECT_HEAL) return _COEF_HEAL[target];
+		if (effect == EFFECT_INVERT) return 0;
+		if (effect == EFFECT_KILL) return 0;
+		if (effect == EFFECT_LIFE_DAMAGE) return _COEF_DMG[target];
+		if (effect == EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) return 0;
+		if (effect == EFFECT_MODIFIER_ON_CASTER) return 0;
+		if (effect == EFFECT_MODIFIER_STACKABLE) return 0;
+		if (effect == EFFECT_NOVA_DAMAGE) return _COEF_NOVA[target];
+		if (effect == EFFECT_NOVA_DAMAGE_TO_MAGIC) return 0;
+		if (effect == EFFECT_POISON) return _COEF_DMG[target];
+		if (effect == EFFECT_POISON_TO_SCIENCE) return 0;
+		if (effect == EFFECT_RAW_ABSOLUTE_SHIELD) return _COEF_ABS_SHIELD[target];
+		if (effect == EFFECT_RAW_BUFF_AGILITY) return _COEF_BOOST_AGILITY[target];
+		if (effect == EFFECT_RAW_BUFF_MAGIC) return _COEF_BOOST_STR[target];
+		if (effect == EFFECT_RAW_BUFF_MP) return _COEF_BOOST_MP[target];
+		if (effect == EFFECT_RAW_BUFF_SCIENCE) return 0;
+		if (effect == EFFECT_RAW_BUFF_STRENGTH) return _COEF_BOOST_STR[target];
+		if (effect == EFFECT_RAW_BUFF_TP) return _COEF_BOOST_TP[target];
+		if (effect == EFFECT_RELATIVE_SHIELD) return _COEF_REL_SHIELD[target];
+		if (effect == EFFECT_RESURRECT) return 1;
+		if (effect == EFFECT_SHACKLE_MAGIC) return _COEF_SHACKLE_STRENGTH[target];
+		if (effect == EFFECT_SHACKLE_MP) return _COEF_SHACKLE_MP[target];
+		if (effect == EFFECT_SHACKLE_STRENGTH) return _COEF_SHACKLE_STRENGTH[target];
+		if (effect == EFFECT_SHACKLE_TP) return _COEF_SHACKLE_TP[target];
+		if (effect == EFFECT_STEAL_ABSOLUTE_SHIELD) return _COEF_ABS_SHIELD[target];
+		if (effect == EFFECT_SUMMON) return 1;
+		if (effect == EFFECT_TELEPORT) return 0;
+		if (effect == EFFECT_VULNERABILITY) return _COEF_VULNERABILITY[target];
+	}
+	return 0;
+}
+
+function RessurectionSummon() {
+	var BestEntity;
+	var BestCoef = 0;
+	var myto = getEntityTurnOrder();
+	for (var e in getDeadAllies()) {
+		var tocontinue = false;
+		for (var enemy in getAliveEnemies()) {
+			if (getEntityTurnOrder(e) - myto > getEntityTurnOrder(enemy) - myto && getEntityTurnOrder(e) - myto > 0) {
+				tocontinue = true;
+				break;
+			}
+		}
+		if (tocontinue) continue;
+		var item = FromNameToChip(e);
+		var coef = bulbcoef(item, EnemyLeekG)[1] * getItemCoef(item, _MY_SELF) /* - (1000 - getTotalLife(e)) / 1000*/ ;
+		debug("bulb coef : " + bulbcoef(item, EnemyLeekG)[1] + " item coef : " + getItemCoef(item, _MY_SELF));
+		if (coef > BestCoef) {
+			BestEntity = e;
+			BestCoef = coef;
+		}
+	}
+	return [BestCoef, BestEntity];
+}
+
+function IsSafeFromBrochette(cell) {
+	for (var ally in _ALIVE_ALLIES) {
+		if (ally == _MY_SELF) continue;
+		if (isOnSameLine(getCell(ally), cell) && lineOfSight(cell, getCell(ally), _ALL_LEEKS)) return false;
+	}
+	return true;
+}
+
+function useItem(item, cell, weapon) {
+	if (isWeapon(item) && weapon != item) setWeapon(item);
+	var lol = isChip(item) ? useChipOnCell(item, cell) : useWeaponOnCell(cell);
+	lol;
+}
+
+function IsStrEnemies() {
+	for (var e in _ALIVE_ENEMIES) {
+		if (getStrength(e) > 0 || inArray(getChips(e), CHIP_PUNISHMENT)) return true;
+	}
+	return false;
+}
+
+function MustLibe(me, target, item, distorpercentage, tp) {
+	if (_ITEM_EFFECTS[item][0][0] == EFFECT_POISON || item == WEAPON_DESTROYER) return false;
+	var change = (_ITEM_IS_WEAPON[item] && getWeapon() != item) ? 1 : 0;
+	var str = getStrength(me);
+	var relsh = getRelativeShield(target);
+	var abssh = getAbsoluteShield(target);
+	var magic = getMagic(me);
+	var basedmg = getRealDmg(item, str, relsh, abssh, magic, distorpercentage, me, 1);
+	var newdmg = getRealDmg(item, str, relsh * 0.4, abssh * 0.4, magic, distorpercentage, me, 1);
+	//var InverDmg = getRealDmg(item, str, relsh - 20, abssh, magic, distorpercentage, me);
+	//if (InverDmg > newdmg || basedmg > RealLeeklife(target)) return false;
+	//var tp = getTP();
+	basedmg *= floor((tp - change) / _ITEM_COST[item]);
+	newdmg *= floor((tp - _ITEM_COST[CHIP_LIBERATION] - change) / _ITEM_COST[item]);
+	//InverDmg *= floor((tp - _ITEM_COST[CHIP_INVERSION] - change) / _ITEM_COST[item]);
+	//if (InverDmg > newdmg && inArray(getChips(), CHIP_INVERSION)) return false;
+	return newdmg > basedmg;
+}
+
+function MustInver(me, target, item, distorpercentage, tp) {
+	if (_ITEM_EFFECTS[item][0][0] == EFFECT_POISON || item == WEAPON_DESTROYER) return false;
+	var change = (_ITEM_IS_WEAPON[item] && getWeapon() != item) ? 1 : 0;
+	var str = getStrength(me);
+	var relsh = getRelativeShield(target);
+	var abssh = getAbsoluteShield(target);
+	var magic = getMagic(me);
+	var basedmg = getRealDmg(item, str, relsh, abssh, magic, distorpercentage, me, 1);
+	var newdmg = getRealDmg(item, str, relsh - 20, abssh, magic, distorpercentage, me, 1);
+	//var tp = getTP();
+	basedmg *= floor((tp - change) / _ITEM_COST[item]);
+	newdmg *= floor((tp - _ITEM_COST[CHIP_INVERSION] - change) / _ITEM_COST[item]);
+	//if ((_TP[me] - _ITEM_COST[CHIP_INVERSION] - change) / _ITEM_COST[item] < 1) return false;
+	return newdmg > basedmg;
+}
+
+function RemoveRelGoneShields() {
+	var AllRemove = 0;
+	for (var eff in getEffects()) {
+		if (eff[0] == EFFECT_RELATIVE_SHIELD && eff[2] != _MY_SELF && eff[3] == 1) AllRemove += eff[1];
+	}
+	return AllRemove;
+}
+
+function RemoveAbsGoneShields() {
+	var AllRemove = 0;
+	for (var eff in getEffects()) {
+		if (eff[0] == EFFECT_ABSOLUTE_SHIELD && eff[2] != _MY_SELF && eff[3] == 1) AllRemove += eff[1];
+	}
+	return AllRemove;
+}
+
+function getWeaponToSet() {
+	var BestDist = 999;
+	var BestWeap;
+	//if (inArray(getWeapons(), WEAPON_ELECTRISOR)) return WEAPON_ELECTRISOR;
+	//if (inArray(getWeapons(), WEAPON_GAZOR)) return WEAPON_GAZOR;
+	//Je trie les weaps par dist
+	for (var weap in getWeapons()) {
+		if (weap == WEAPON_MYSTERIOUS_ELECTRISOR || getMagic() == 0 && weap == WEAPON_REVOKED_M_LASER) continue;
+		var dist = getCellDistance(getCell(), getCellToUseWeapon(weap, EnemyLeekG));
+		if (dist < BestDist) {
+			BestDist = dist;
+			BestWeap = weap;
+		}
+	}
+	/*
+	var bestdmg = 0;
+	var BestItem;
+	for (var item in array) {
+		var dmg = getRealDmg(item, _STRENGTH[_MY_SELF], 0, 0, _MAGIC[_MY_SELF], 0, _MY_SELF);
+		dmg += getWeaponMaxRange(item) * 10;
+		if (dmg > bestdmg) {
+			bestdmg = dmg;
+			BestItem = item;
+		}
+	}*/
+	return BestWeap;
+}
+
+function getNumberOfBulbInAnArea(rayon, cellCentrale) {
+	var NBulb = 0;
+	for (var leek in _ALIVE_ALLIES) {
+		if (getCellDistance(getCell(leek), cellCentrale) <= rayon && leek != _MY_SELF) {
+			NBulb += bulbname(leek, EnemyLeekG)[1];
+		}
+	}
+	return NBulb;
+}
+function countrealtargets(array, item) {
+	var pos = isPositiv(item);
+	var _final = 0;
+	for (var t in array) {
+		if (pos && isAlly(t)) _final++;
+		if (!pos && isEnemy(t)) _final++;
+	}
+	return _final;
+}
+
+function getAreaNumber(item) {
+	var area = isChip(item) ? getChipArea(item) : getWeaponArea(item);
+	if (area == AREA_CIRCLE_1) {
+		return 1;
+	}
+	if (area == AREA_CIRCLE_2) {
+		return 2;
+	}
+	if (area == AREA_CIRCLE_3) {
+		return 3;
+	}
+	if (area == AREA_LASER_LINE || area == AREA_POINT) {
+		return 0;
+	}
+}
+
+function cellareaplus1(c) {
+	if (isObstacle(c)) return;
+	var tabcellz = [];
+	var x = getCellX(c);
+	var y = getCellY(c);
+	push(tabcellz, c);
+	var cell;
+	cell = getCellFromXY(x + 1, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x - 1, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	return tabcellz;
+}
+
+function cellareaplus2(c) {
+	if (isObstacle(c)) return;
+	var tabcellz = [];
+	var x = getCellX(c);
+	var y = getCellY(c);
+	push(tabcellz, c);
+	var cell;
+	cell = getCellFromXY(x + 2, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y + 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y - 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 2, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	return tabcellz;
+}
+
+function cellareaplus3(c) {
+	if (isObstacle(c)) return;
+	var tabcellz = [];
+	var x = getCellX(c);
+	var y = getCellY(c);
+	push(tabcellz, c);
+	var cell;
+	cell = getCellFromXY(x + 3, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y + 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y - 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 3, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	return tabcellz;
+}
+
+function cellareax1(c) {
+	if (isObstacle(c)) return;
+	var tabcellz = [];
+	var x = getCellX(c);
+	var y = getCellY(c);
+	push(tabcellz, c);
+	var cell;
+	cell = getCellFromXY(x + 1, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x + 1, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 1, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 1, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	return tabcellz;
+}
+
+function cellareax2(c) {
+	if (isObstacle(c)) return;
+	var tabcellz = [];
+	var x = getCellX(c);
+	var y = getCellY(c);
+	push(tabcellz, c);
+	var cell;
+	cell = getCellFromXY(x + 2, y + 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x + 2, y - 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 2, y + 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 2, y - 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	return tabcellz;
+}
+
+function cellareax3(c) {
+	if (isObstacle(c)) return;
+	var tabcellz = [];
+	var x = getCellX(c);
+	var y = getCellY(c);
+	push(tabcellz, c);
+	var cell;
+	cell = getCellFromXY(x + 3, y + 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x + 3, y - 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 3, y + 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 3, y - 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	return tabcellz;
+}
+
+function EnemyLeekArray() {
+	var array = [];
+	for (var i in getAliveEnemies()) {
+		if (!isSummon(i)) {
+			push(array, i);
+		}
+	}
+	return array;
+}
+
+function EnemyLeek() {
+	var bestleek;
+	var BestDist = 99999;
+	for (var leek in EnemyLeekArray()) {
+		var g = _PATHS_LENGHT[getCell()][leek];
+		if (g < BestDist) {
+			BestDist = g;
+			bestleek = leek;
+		}
+	}
+	return bestleek;
+}
+
+function RealLeeklife(leek) {
+	var life = getLife(leek);
+	for (var eff in getEffects(leek)) {
+		if (eff[0] == EFFECT_POISON) {
+			life -= eff[1];
+		}
+		if (eff[0] == EFFECT_HEAL) {
+			life += eff[1];
+		}
+	}
+	return life;
+}
+
+function getItemName(Item) {
+	if (isChip(Item)) {
+		return getChipName(Item);
+	} else return getWeaponName(Item);
+}
+
+function spawn(BulbChip, ai) {
+	var CellToUse;
+	var getcellstouse = getCellsToUseChip(BulbChip, _MY_SELF);
+	var BestDist;
+	var BestCell;
+	if (_IS_GENTLE_BULB[BulbChip]) {
+		BestDist = -1;
+		for (var cell in getcellstouse) { //GENTLE BULB
+			var dist = getCellDistance(getCell(EnemyLeekG), cell);
+			if (dist > BestDist) {
+				BestDist = dist;
+				BestCell = cell;
+			}
+		}
+	} else {
+		BestDist = 99999;
+		for (var cell in getcellstouse) { //NOT GENTLE BULB
+			var Item = _BEST_ITEM_NOT_GENTLE_BULB[BulbChip];
+			var dist = getCellDistance(getCellToUseChip(Item, EnemyLeekG), cell);
+			if (dist < BestDist) {
+				BestDist = dist;
+				BestCell = cell;
+			}
+		}
+	}
+	if (BestCell == null) BestCell = getCellToUseChip(BulbChip, _MY_SELF);
+	summon(BulbChip, BestCell, ai);
+}
+
+function getUsableItemsFromCellToCell(cell, cellto, item, ignore) {
+	var dist = getCellDistance(cell, cellto);
+	var los = lineOfSight(cell, cellto, ignore);
+	if (!_ITEM_INLINE[item] && dist <= _ITEM_MAXRANGE[item] && dist >= _ITEM_MINRANGE[item] && los) {
+		return true;
+	}
+	if (dist >= _ITEM_MINRANGE[item] && dist <= _ITEM_MAXRANGE[item] && isOnSameLine(cell, cellto) && los) {
+		return true;
+	}
+	if ((item == CHIP_SPARK || item == CHIP_ARSENIC) && dist <= _ITEM_MAXRANGE[item] && dist >= _ITEM_MINRANGE[item]) {
+		return true;
+	}
+	return false;
+}
+
+function DivideAoe(area, dist, DMG) {
+	/*if (dist == 0) return DMG;
+	if (dist == 1) return DMG * 0.8;
+	if (dist == 2) return DMG * 0.60;
+	if (dist == 3) return DMG * 0.40;*/
+	if (dist >= 0 && dist <= 10) return DMG - (0.2 * dist * DMG);
+	return DMG * (dist / 100); //Pour enelever des scores dans la map danger 
+}
+
+function percentagetodist(value, area) {
+	if (value == 100) return 0;
+	if (value == 80) return 1;
+	if (value == 60) return 2;
+	if (value == 40) return 3;
+	return value;
+}
+
+function getalleffectscoefed(item, str, relshield, absshield, magic, distorpercentage, me, target, multiplier) {
+	var _final = 0;
+	var tar = target;
+	for (var eff in _ITEM_EFFECTS[item]) {
+		if (eff[0] == EFFECT_RAW_BUFF_STRENGTH && item == WEAPON_BROADSWORD) tar = me;
+		var coef = getcoeffromeffect(eff[0], tar);
+		var dmg = getPowerOfItem(item, str, relshield, absshield, magic, distorpercentage, me, eff, tar, multiplier);
+		_final += dmg * (coef / _COEF_DIVIDE_COEFS);
+	}
+	return _final;
+}
+
+function getcoeffromeffect(effect, target) {
+	if (effect == EFFECT_ABSOLUTE_SHIELD) return _COEF_ABS_SHIELD[target];
+	if (effect == EFFECT_ABSOLUTE_VULNERABILITY) return _COEF_VULNERABILITY[target];
+	if (effect == EFFECT_AFTEREFFECT) return 0;
+	if (effect == EFFECT_ANTIDOTE) return 0;
+	if (effect == EFFECT_BOOST_MAX_LIFE) return _COEF_BOOST_MAX_LIFE[target];
+	if (effect == EFFECT_NOVA_VITALITY) return _COEF_BOOST_MAX_LIFE[target];
+	if (effect == EFFECT_BUFF_AGILITY) return _COEF_BOOST_AGILITY[target];
+	if (effect == EFFECT_BUFF_FORCE) return _COEF_BOOST_STR[target];
+	if (effect == EFFECT_BUFF_MP) return _COEF_BOOST_MP[target];
+	if (effect == EFFECT_RAW_BUFF_RESISTANCE) return _COEF_BOOST_RESI[target];
+	if (effect == EFFECT_BUFF_RESISTANCE) return _COEF_BOOST_RESI[target];
+	if (effect == EFFECT_BUFF_STRENGTH) return _COEF_BOOST_STR[target];
+	if (effect == EFFECT_BUFF_TP) return _COEF_BOOST_TP[target];
+	if (effect == EFFECT_RAW_BUFF_WISDOM) return _COEF_BUFF_WISDOM[target];
+	if (effect == EFFECT_BUFF_WISDOM) return _COEF_BUFF_WISDOM[target];
+	if (effect == EFFECT_RAW_BUFF_MAGIC) return _COEF_BUFF_MAGIC[target];
+	if (effect == EFFECT_DAMAGE) return _COEF_DMG[target];
+	if (effect == EFFECT_DAMAGE_RETURN) return _COEF_DAMAGE_RETURN[target];
+	if (effect == EFFECT_DAMAGE_TO_ABSOLUTE_SHIELD) return 0;
+	if (effect == EFFECT_DAMAGE_TO_STRENGTH) return 0;
+	if (effect == EFFECT_DEBUFF) return 0;
+	if (effect == EFFECT_HEAL) return _COEF_HEAL[target];
+	if (effect == EFFECT_INVERT) return 0;
+	if (effect == EFFECT_KILL) return 0;
+	if (effect == EFFECT_LIFE_DAMAGE) return _COEF_DMG[target];
+	if (effect == EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) return 0;
+	if (effect == EFFECT_MODIFIER_ON_CASTER) return 0;
+	if (effect == EFFECT_MODIFIER_STACKABLE) return 0;
+	if (effect == EFFECT_NOVA_DAMAGE) return _COEF_NOVA[target];
+	if (effect == EFFECT_NOVA_DAMAGE_TO_MAGIC) return 0;
+	if (effect == EFFECT_POISON) return _COEF_DMG[target];
+	if (effect == EFFECT_POISON_TO_SCIENCE) return 0;
+	if (effect == EFFECT_RAW_ABSOLUTE_SHIELD) return _COEF_ABS_SHIELD[target];
+	if (effect == EFFECT_RAW_BUFF_AGILITY) return _COEF_BOOST_AGILITY[target];
+	if (effect == EFFECT_RAW_BUFF_MAGIC) return _COEF_BOOST_STR[target];
+	if (effect == EFFECT_RAW_BUFF_MP) return _COEF_BOOST_MP[target];
+	if (effect == EFFECT_RAW_BUFF_SCIENCE) return 0;
+	if (effect == EFFECT_RAW_BUFF_STRENGTH) return _COEF_BOOST_STR[target];
+	if (effect == EFFECT_RAW_BUFF_TP) return _COEF_BOOST_TP[target];
+	if (effect == EFFECT_RELATIVE_SHIELD) return _COEF_REL_SHIELD[target];
+	if (effect == EFFECT_RESURRECT) return 1;
+	if (effect == EFFECT_SHACKLE_MAGIC) return _COEF_SHACKLE_STRENGTH[target];
+	if (effect == EFFECT_SHACKLE_MP) return _COEF_SHACKLE_MP[target];
+	if (effect == EFFECT_SHACKLE_STRENGTH) return _COEF_SHACKLE_STRENGTH[target];
+	if (effect == EFFECT_SHACKLE_TP) return _COEF_SHACKLE_TP[target];
+	if (effect == EFFECT_STEAL_ABSOLUTE_SHIELD) return _COEF_ABS_SHIELD[getEntity()];
+	if (effect == EFFECT_SUMMON) return 1;
+	if (effect == EFFECT_TELEPORT) return 0;
+	if (effect == EFFECT_VULNERABILITY) return _COEF_VULNERABILITY[target];
+}
+
+function getPowerOfItem(item, str, relshield, absshield, magic, distorpercentage, me, effect, target, multiplier) {
+	if (distorpercentage > 3 && distorpercentage < 10) return 0;
+	var area = areaNbFromWeapon(item);
+	var dmg = DivideAoe(area, percentagetodist(distorpercentage, area), effect[1])*multiplier;
+	var sum = isSummon(target);
+	var onlybulb = (effect[4] == 17 || effect[4] == 22) ? true : false;
+	if (onlybulb && !sum) return 0;
+	if (effect[0] == EFFECT_NOVA_DAMAGE) dmg = min(getTotalLife(target) - getLife(target), dmg);
+	var times = item == CHIP_DEVIL_STRIKE ? 5 : 1;
+	var Duration = effect[3] == 0 ? 1 : effect[3];
+	if (effect[0] == EFFECT_DAMAGE) return (dmg * (1 + str / 100) * (1 - relshield / 100) - absshield);
+	if (effect[0] == EFFECT_LIFE_DAMAGE) return (0.4 * getLife() * (1 - relshield / 100) - absshield);
+	if (effect[0] == EFFECT_POISON || effect[0] == EFFECT_SHACKLE_MAGIC || effect[0] == EFFECT_SHACKLE_MP || effect[0] == EFFECT_SHACKLE_STRENGTH || effect[0] == EFFECT_SHACKLE_TP) return dmg * Duration * (1 + magic / 100);
+	if (effect[0] == EFFECT_HEAL || effect[0] == EFFECT_BOOST_MAX_LIFE || effect[0] == EFFECT_NOVA_DAMAGE) return dmg * (1 + getWisdom(me) / 100) * Duration;
+	if (effect[0] == EFFECT_ABSOLUTE_SHIELD || effect[0] == EFFECT_RELATIVE_SHIELD) return dmg * (1 + getResistance() / 100);
+	if (effect[0] == EFFECT_SUMMON) return 1;
+	if (effect[0] == EFFECT_BUFF_AGILITY || effect[0] == EFFECT_BUFF_RESISTANCE || effect[0] == EFFECT_BUFF_MP || effect[0] == EFFECT_BUFF_STRENGTH || effect[0] == EFFECT_BUFF_TP || effect[0] == EFFECT_BUFF_WISDOM || effect[0] == EFFECT_NOVA_DAMAGE || effect[0] == EFFECT_NOVA_VITALITY) return dmg * (1 + getScience(me) / 100);
+	if (effect[0] == EFFECT_RAW_ABSOLUTE_SHIELD || effect[0] == EFFECT_RAW_BUFF_AGILITY || effect[0] == EFFECT_RAW_BUFF_MAGIC || effect[0] == EFFECT_RAW_BUFF_MP || effect[0] == EFFECT_RAW_BUFF_SCIENCE || effect[0] == EFFECT_RAW_BUFF_STRENGTH || effect[0] == EFFECT_RAW_BUFF_TP || effect[0] == EFFECT_RAW_BUFF_WISDOM || effect[0] == EFFECT_RAW_BUFF_WISDOM || effect[0] == EFFECT_RAW_BUFF_RESISTANCE) return dmg;
+	if (effect[0] == EFFECT_DAMAGE_RETURN) return dmg * (1 + getAgility(me) / 100);
+	if (effect[0] == EFFECT_VULNERABILITY || effect[0] == EFFECT_ABSOLUTE_VULNERABILITY || effect[0] == EFFECT_STEAL_ABSOLUTE_SHIELD) return dmg;
+}
+
+function getRealDmg(item, str, relshield, absshield, magic, distorpercentage, me, multiplier) {
+	if (distorpercentage > 3 && distorpercentage < 10) return 0;
+	var area = areaNbFromWeapon(item);
+	//var dmg = DivideAoe(area, percentagetodist(distorpercentage, area), _ITEM_POWER[item]);
+	var _final = 0;
+	for (var eff in _ITEM_EFFECTS[item]) {
+		var dmg = DivideAoe(area, percentagetodist(distorpercentage, area), eff[1])*multiplier;
+		if (eff[0] == EFFECT_DAMAGE) {
+			var real = dmg * (1 + str / 100) * (1 - relshield / 100) - absshield;
+			if (real > _final) _final = real;
+		}
+		if (eff[0] == EFFECT_LIFE_DAMAGE) {
+			var real = 0.4 * getLife() * (1 - relshield / 100) - absshield;
+			if (real > _final) _final = real;
+		}
+		if (eff[0] == EFFECT_POISON || eff[0] == EFFECT_SHACKLE_MAGIC || eff[0] == EFFECT_SHACKLE_MP || eff[0] == EFFECT_SHACKLE_STRENGTH || eff[0] == EFFECT_SHACKLE_TP) {
+			var real = dmg * (1 /*+ eff[3]*/ ) * (1 + magic / 100);
+			if (real > _final) _final = real;
+		}
+		if (eff[0] == EFFECT_HEAL || eff[0] == EFFECT_BOOST_MAX_LIFE || eff[0] == EFFECT_NOVA_DAMAGE) {
+			var real = dmg * (1 + getWisdom() / 100);
+			if (real > _final) _final = real;
+		}
+		if (eff[0] == EFFECT_NOVA_DAMAGE) {
+			var real = dmg * (1 + getScience() / 100);
+			if (real > _final) _final = real;
+		}
+		if (eff[0] == EFFECT_ABSOLUTE_SHIELD || eff[0] == EFFECT_RELATIVE_SHIELD) {
+			var real = dmg * (1 + getResistance() / 100);
+			if (real > _final) _final = real;
+		}
+		if (eff[0] == EFFECT_SUMMON)
+			if (1 > _final) _final = 1;
+		if (eff[0] == EFFECT_BUFF_AGILITY || eff[0] == EFFECT_BUFF_RESISTANCE || eff[0] == EFFECT_BUFF_MP || eff[0] == EFFECT_BUFF_STRENGTH || eff[0] == EFFECT_BUFF_TP || eff[0] == EFFECT_BUFF_WISDOM || eff[0] == EFFECT_RAW_BUFF_MP || eff[0] == EFFECT_RAW_BUFF_TP) {
+			var real = dmg * (1 + getScience() / 100);
+			if (real > _final) _final = real;
+		}
+		if (eff[0] == EFFECT_DAMAGE_RETURN) {
+			var real = dmg * (1 + getAgility() / 100);
+			if (real > _final) _final = real;
+		}
+		if (item == CHIP_INVERSION) return dmg;
+	}
+	//INVERSION
+	if (item == CHIP_DEVIL_STRIKE) _final *= 5;
+	return _final;
+}
+
+function getMaxDmg(item, str, relshield, absshield, magic, distorpercentage) {
+	if (distorpercentage > 3 && distorpercentage < 10) return 0;
+	var area = areaNbFromWeapon(item);
+	//var dmg = DivideAoe(area, percentagetodist(distorpercentage, area), _ITEM_POWER[item]);
+	var _final = 0;
+	for (var eff in _ITEM_EFFECTS[item]) {
+		var dmg = DivideAoe(area, percentagetodist(distorpercentage, area), eff[2]);
+		if (eff[0] == EFFECT_DAMAGE) {
+			var real = dmg * (1 + str / 100) * (1 - relshield / 100) - absshield;
+			if (real > _final) _final = real;
+		}
+		if (eff[0] == EFFECT_POISON || eff[0] == EFFECT_SHACKLE_MAGIC || eff[0] == EFFECT_SHACKLE_MP || eff[0] == EFFECT_SHACKLE_STRENGTH || eff[0] == EFFECT_SHACKLE_TP) {
+			var AntidoteCD = getCooldown(CHIP_ANTIDOTE, _MY_SELF);
+			var real = dmg * (1 + min(eff[3], AntidoteCD)) * (1 + magic / 100);
+			if (real > _final) _final = real;
+		}
+	}
+	//INVERSION
+	if (item == CHIP_DEVIL_STRIKE) _final *= 5;
+	return _final;
+}
+
+function ItemDmg(item, str, relshield, absshield, dist, target) {
+	var _final = 0;
+	for (var eff in _ITEM_EFFECTS[item]) {
+		if (eff[0] == EFFECT_LIFE_DAMAGE) _final += 0.4 * getLife() * (1 - relshield / 100) - absshield;
+		if (eff[0] == EFFECT_DAMAGE) _final += eff[1] * (1 + str / 100) * (1 - relshield / 100) - absshield;
+	}
+	if (_final > getLife(target)) return getLife(target);
+	return _final;
+}
+
+function ShieldScore(leek) {
+	return getAbsoluteShield(leek) + getAbsoluteShield(leek) * 50;
+}
+
+function isPositiv(item) {
+	return _CHIP_ISPOSITIV[item];
+}
+
+function StartTestFunction() {
+	_OPS = getOperations();
+}
+
+function StopTestFunction(name) {
+	debug('Opés ' + name + " : " + ((getOperations() - _OPS) / 1000) + ' k ');
+}
+
+function getItemTargets(item, cell) {
+	return isChip(item) ? getChipTargets(item, cell) : getWeaponTargets(item, cell);
+}
+
+function getItemTargetsEnemyMinusAlly(item, cell) {
+	var JspCommentTappelerDsl = 0;
+	for (var target in getItemTargets(item, cell)) {
+		if (target == _MY_SELF) continue;
+		if (isAlly(target)) {
+			JspCommentTappelerDsl -= 1;
+		} else {
+			if (isEnemy(target)) {
+				JspCommentTappelerDsl += 1;
+			}
+		}
+	}
+	if (isPositiv(item)) {
+		JspCommentTappelerDsl = 0 - JspCommentTappelerDsl;
+	}
+	return JspCommentTappelerDsl;
+}
+
+function TurnChipWillStay(leek, item) {
+	for (var eff in getEffects(leek)) {
+		if (eff[5] == item) {
+			return eff[3];
+		}
+	}
+	return 0;
+}
+
+function DoesHaveChip(leek, item) {
+	for (var eff in getEffects(leek)) {
+		if (eff[5] == item) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function isOnlyBulb(item) {
+	if (item == CHIP_RAMPART) return false;
+	var IE = _ITEM_EFFECTS[item];
+	if (IE[0][4] == 21 || IE[0][4] == 22) {
+		return true;
+	} else return false;
+}
+
+function DmgForTurn(leek) {
+	return getLife(leek) - RealLeeklife(leek);
+}
+
+function getNumberOfBulb() {
+	var nbally = 0;
+	var nbenemy = 0;
+	for (var i in getAliveAllies()) {
+		if (isSummon(i)) {
+			nbally++;
+		}
+	}
+	for (var i in getAliveEnemies()) {
+		if (isSummon(i)) {
+			nbenemy++;
+		}
+	}
+	return [nbally, nbenemy];
+}
+
+function FromNameToChip(entity) {
+	var name = getName(entity);
+	if (name == "metallic_bulb") {
+		return CHIP_METALLIC_BULB;
+	} else if (name == "healer_bulb") {
+		return CHIP_HEALER_BULB;
+	} else if (name == "wizard_bulb") {
+		return CHIP_WIZARD_BULB;
+	} else if (name == "lightning_bulb") {
+		return CHIP_LIGHTNING_BULB;
+	} else if (name == "fire_bulb") {
+		return CHIP_FIRE_BULB;
+	} else if (name == "iced_bulb") {
+		return CHIP_ICED_BULB;
+	} else if (name == "rocky_bulb") {
+		return CHIP_ROCKY_BULB;
+	} else if (name == "puny_bulb") {
+		return CHIP_PUNY_BULB;
+	} else if (name == "savant_bulb") {
+		return CHIP_SAVANT_BULB;
+	}
+}
+
+function areaNbFromWeapon(WeaponOrChip) {
+	var area = 0;
+	var IArea = _ITEM_AREA[WeaponOrChip];
+	if (IArea == AREA_CIRCLE_1) {
+		area = 1;
+	}
+	if (IArea == AREA_CIRCLE_2) {
+		area = 2;
+	}
+	if (IArea == AREA_CIRCLE_3) {
+		area = 3;
+	}
+	return area;
+}
+
+function DistFromArea(WeaponOrChip) {
+	var area = 0;
+	var IArea = _ITEM_AREA[WeaponOrChip];
+	if (IArea == AREA_CIRCLE_1) {
+		area = 2;
+	}
+	if (IArea == AREA_CIRCLE_2) {
+		area = 3;
+	}
+	if (IArea == AREA_CIRCLE_3) {
+		area = 4;
+	}
+	if (isPositiv(WeaponOrChip) || WeaponOrChip == CHIP_LIGHTNING) {
+		area = 0;
+	}
+	return area;
+}
+
+function LifePercent(life, totallife) {
+	if (totallife > 0) return life / totallife * 100;
+	else return 0;
+}
+
+function GetTableauDesCells() {
+	var tab = [];
+	for (var i = 0; i <= 612; i++) {
+		push(tab, i);
+	}
+	return tab;
+}
+
+function getPossibleTpCellzfrom(cell, accescellz) {
+	var tab = [];
+	for (var i in _ALL_CELLZ) {
+		var dist = getCellDistance(cell, i);
+		if (dist <= _ITEM_MAXRANGE[CHIP_TELEPORTATION] && !isObstacle(i) && i != null && accescellz[i] == null) {
+			push(tab, i);
+		}
+	}
+	return tab;
+}
+
+function cellarea1(c) {
+	if (isObstacle(c)) return;
+	var tabcellz = [];
+	var x = getCellX(c);
+	var y = getCellY(c);
+	push(tabcellz, c);
+	var cell;
+	cell = getCellFromXY(x + 1, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x - 1, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	return tabcellz;
+}
+
+function cellarea2(c) {
+	if (isObstacle(c)) return;
+	var tabcellz = [];
+	pushAll(tabcellz, cellarea1(c));
+	var x = getCellX(c);
+	var y = getCellY(c);
+	var cell;
+	cell = getCellFromXY(x + 1, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x + 1, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 1, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 1, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x + 2, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y + 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y - 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 2, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	return tabcellz;
+}
+
+function cellarea3(c) {
+	if (isObstacle(c)) return;
+	var tabcellz = [];
+	pushAll(tabcellz, cellarea2(c));
+	var x = getCellX(c);
+	var y = getCellY(c);
+	var cell;
+	cell = getCellFromXY(x + 2, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x + 2, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 2, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 2, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x + 1, y + 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x + 1, y - 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 1, y + 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 1, y - 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x + 3, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y + 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y - 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 3, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	return tabcellz;
+}
+
+function squarearea1(c) {
+	if (isObstacle(c)) return;
+	var tabcellz = [];
+	var x = getCellX(c);
+	var y = getCellY(c);
+	push(tabcellz, c);
+	var cell;
+	cell = getCellFromXY(x + 1, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x - 1, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x + 1, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x + 1, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 1, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 1, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	return tabcellz;
+}
+
+function squarearea2(c) {
+	if (isObstacle(c)) return;
+	var tabcellz = [];
+	pushAll(tabcellz, squarearea1(c));
+	var x = getCellX(c);
+	var y = getCellY(c);
+	var cell;
+	cell = getCellFromXY(x + 2, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y + 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y - 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 2, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x + 2, y + 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 2, y + 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x + 2, y - 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 2, y - 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x + 2, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x + 2, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 2, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 2, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x + 1, y + 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x + 1, y - 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 1, y + 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 1, y - 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	return tabcellz;
+}
+
+function squarearea3(c) {
+	if (isObstacle(c)) return;
+	var tabcellz = [];
+	pushAll(tabcellz, squarearea2(c));
+	var x = getCellX(c);
+	var y = getCellY(c);
+	var cell;
+	cell = getCellFromXY(x + 3, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y + 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x, y - 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 3, y);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x + 3, y + 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 3, y + 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x + 3, y - 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 3, y - 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+
+
+	cell = getCellFromXY(x + 3, y + 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x + 2, y + 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 2, y + 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 3, y + 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x + 2, y - 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x + 3, y - 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 2, y - 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 3, y - 2);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+
+
+
+	cell = getCellFromXY(x + 3, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x + 1, y + 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 1, y + 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 3, y + 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	cell = getCellFromXY(x + 1, y - 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x + 3, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 1, y - 3);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+
+	cell = getCellFromXY(x - 3, y - 1);
+	if (cell != null && !isObstacle(cell)) {
+		push(tabcellz, cell);
+	}
+	return tabcellz;
+}
+
+
+if (getTurn() == 1) {
+	for (var c = 0; c < 613; c++) {
+		//mark(c);
+		_AOE0[c] = [c];
+		_AOE1[c] = cellarea1(c) /* + _AOE0[c]*/ ;
+		_AOE2[c] = cellarea2(c) /* + _AOE1[c]*/ ;
+		_AOE3[c] = cellarea3(c) /* + _AOE2[c]*/ ;
+		_AOEP1[c] = cellareaplus1(c) + _AOE0[c];
+		_AOEP2[c] = cellareaplus2(c) + _AOEP1[c];
+		_AOEP3[c] = cellareaplus3(c) + _AOEP2[c];
+		_AOEX1[c] = cellareax1(c) + _AOE0[c];
+		_AOEX2[c] = cellareax2(c) + _AOEX1[c];
+		_AOEX3[c] = cellareax3(c) + _AOEX2[c];
+		_AOES1[c] = squarearea1(c) /*+ _AOES0[c]*/ ;
+		_AOES2[c] = squarearea2(c) /*+ _AOES1[c]*/ ;
+		_AOES3[c] = squarearea3(c) /*+ _AOES2[c]*/ ;
+		_OBSTACLES[c] = isObstacle(c);
+	}
+	for (var item = 0; item <= 176; item++) {
+		//var name = isChip(item) ? getChipName(item) : getWeaponName(item);
+		//debug(CHIP_PUNISHMENT);
+		if (isWeapon(item)) {
+			_ITEM_MINRANGE[item] = getWeaponMinRange(item);
+			_ITEM_MAXRANGE[item] = getWeaponMaxRange(item);
+			_ITEM_COOLDOWN[item] = 0;
+			_ITEM_INLINE[item] = isInlineWeapon(item);
+			_ITEM_AREA[item] = getWeaponArea(item);
+			_ITEM_COST[item] = getWeaponCost(item);
+			_ITEM_EFFECTS[item] = getWeaponEffects(item);
+			_ITEM_POWER[item] = getWeaponEffects(item)[0][1];
+			_ITEM_IS_WEAPON[item] = true;
+		}
+		if (isChip(item)) {
+			_ITEM_MINRANGE[item] = getChipMinRange(item);
+			_ITEM_MAXRANGE[item] = getChipMaxRange(item);
+			_ITEM_COOLDOWN[item] = getChipCooldown(item);
+			_ITEM_INLINE[item] = isInlineChip(item);
+			_ITEM_AREA[item] = getChipArea(item);
+			_ITEM_COST[item] = getChipCost(item);
+			_ITEM_EFFECTS[item] = getChipEffects(item);
+			_ITEM_POWER[item] = getChipEffects(item)[0][1];
+			_ITEM_IS_WEAPON[item] = false;
+		}
+		if (_ITEM_AREA[item] == AREA_POINT || _ITEM_AREA[item] == AREA_LASER_LINE) _CELL_AREA[item] = _AOE0;
+		if (_ITEM_AREA[item] == AREA_CIRCLE_1) _CELL_AREA[item] = _AOE1;
+		if (_ITEM_AREA[item] == AREA_CIRCLE_2) _CELL_AREA[item] = _AOE2;
+		if (_ITEM_AREA[item] == AREA_CIRCLE_3) _CELL_AREA[item] = _AOE3;
+		if (_ITEM_AREA[item] == AREA_PLUS_1) _CELL_AREA[item] = _AOEP1;
+		if (_ITEM_AREA[item] == AREA_PLUS_2) _CELL_AREA[item] = _AOEP2;
+		if (_ITEM_AREA[item] == AREA_PLUS_3) _CELL_AREA[item] = _AOEP3;
+		if (_ITEM_AREA[item] == AREA_X_1) _CELL_AREA[item] = _AOEX1;
+		if (_ITEM_AREA[item] == AREA_X_2) _CELL_AREA[item] = _AOEX2;
+		if (_ITEM_AREA[item] == AREA_X_3) _CELL_AREA[item] = _AOEX3;
+		if (_ITEM_AREA[item] == AREA_SQUARE_1) _CELL_AREA[item] = _AOES1;
+		if (_ITEM_AREA[item] == AREA_SQUARE_2) _CELL_AREA[item] = _AOES2;
+	}
+	//Pour Update : Ne pas s'auto Shoot , et devil strike fais 5 coups , ne pas oublier
+	_ITEM_POWER[CHIP_DEVIL_STRIKE] = 125;
+	_ITEM_POWER[CHIP_PUNISHMENT] = getLife() * 0.4;
+	_ITEM_MINRANGE[WEAPON_GAZOR] = 4;
+	_ITEM_MINRANGE[WEAPON_UNBRIDLED_GAZOR] = 4;
+	_ITEM_MINRANGE[CHIP_PLAGUE] = 4;
+	_ITEM_MINRANGE[CHIP_BALL_AND_CHAIN] = 3;
+	_ITEM_MINRANGE[CHIP_SOPORIFIC] = 4;
+	_ITEM_MINRANGE[CHIP_TOXIN] = 3;
+	_ITEM_MINRANGE[CHIP_TRANQUILIZER] = 2;
+}
+
+function UpdateLeekEffects() {
+	_BULB_MAP_DANGER = [];
+	_IS_ALLY = [];
+	_MY_SELF = getEntity();
+	_DEAD_ALLIES = getDeadAllies();
+	_DEAD_ENEMIES = getDeadEnemies();
+	_ALIVE_ALLIES = getAliveAllies();
+	_ALIVE_ENEMIES = getAliveEnemies();
+	_ALL_LEEKS = _ALIVE_ALLIES + _ALIVE_ENEMIES;
+	_MY_ACCES_CELLZ = GetWalkableCells(getCell(), getMP());
+	_MY_POSSIBLE_ACCES_CELLZ = GetPossibleWalkableCells(getCell(), getMP());
+	var cnt = count(EnemyLeekArray());
+	var Paths = getPathLength;
+	if (cnt >= 2) Paths = getCellDistance;
+	for (var leek in _ALL_LEEKS) {
+		var Entity_type = bulbname(leek, leek)[0];
+		//_REAL_LIFES[leek] = RealLeeklife(leek);
+		//_CELL[leek] = getCell(leek);
+		if (!isSummon(leek)) {
+			for (var c in _MY_POSSIBLE_ACCES_CELLZ) {
+				_PATHS_LENGHT[c] = [];
+				var Pat = Paths(c, getCell(leek)) != null ? Paths : getCellDistance;
+				_PATHS_LENGHT[c][leek] = Pat(c, getCell(leek));
+			}
+		}
+		/*_EFFECTS[leek] = getEffects(leek);
+		_LIFE[leek] = getLife(leek);
+		_ABSOLUTE_SHIELD[leek] = getAbsoluteShield(leek);
+		_RELATIVE_SHIELD[leek] = getRelativeShield(leek);
+		_AGILITY[leek] = getAgility(leek);
+		_STRENGTH[leek] = getStrength(leek);
+		_MAGIC[leek] = getMagic(leek);
+		_MP[leek] = getMP(leek);
+		_TP[leek] = getTP(leek);
+		_RESISTANCE[leek] = getResistance(leek);
+		_SCIENCE[leek] = getScience(leek);
+		_TOTAL_LIFE[leek] = getTotalLife(leek);
+		_WISDOM[leek] = getWisdom(leek);
+		_DAMAGE_RETURN[leek] = getDamageReturn(leek);*/
+		if (isAlly(leek)) { //isAlly ?
+			_IS_ALLY[leek] = true;
+			if (isSummon(leek)) { //Les Bulbes
+				if (Entity_type == ENTITY_LIGHTNING_BULB) _COUNT_LIGHTNING_ALLY++;
+				if (Entity_type == ENTITY_FIRE_BULB) _COUNT_FIRE_ALLY++;
+				if (Entity_type == ENTITY_METALLIC_BULB) _COUNT_METALLIC_ALLY++;
+				if (Entity_type == ENTITY_HEALER_BULB) _COUNT_HEALER_ALLY++;
+				if (Entity_type == ENTITY_ICED_BULB) _COUNT_ICED_ALLY++;
+				if (Entity_type == ENTITY_ROCKY_BULB) _COUNT_ROCKY_ALLY++;
+				if (Entity_type == ENTITY_PUNY_BULB) _COUNT_PUNY_ALLY++;
+				if (Entity_type == ENTITY_WIZARD_BULB) _COUNT_WIZARD_ALLY++;
+			}
+		} else { //isEnemy ?
+			_IS_ALLY[leek] = false;
+			if (isSummon(leek)) { // Les Bulbes
+				if (Entity_type == ENTITY_LIGHTNING_BULB) _COUNT_LIGHTNING_ENEMY++;
+				if (Entity_type == ENTITY_FIRE_BULB) _COUNT_FIRE_ENEMY++;
+				if (Entity_type == ENTITY_METALLIC_BULB) _COUNT_METALLIC_ENEMY++;
+				if (Entity_type == ENTITY_HEALER_BULB) _COUNT_HEALER_ENEMY++;
+				if (Entity_type == ENTITY_ICED_BULB) _COUNT_ICED_ENEMY++;
+				if (Entity_type == ENTITY_ROCKY_BULB) _COUNT_ROCKY_ENEMY++;
+				if (Entity_type == ENTITY_PUNY_BULB) _COUNT_PUNY_ENEMY++;
+				if (Entity_type == ENTITY_WIZARD_BULB) _COUNT_WIZARD_ENEMY++;
+			}
+		}
+	}
+}
+
+function ResetCoefs() {
+	for (var target in _ALL_LEEKS) {
+		//INIT Pour eviter les null :
+		_COEF_VULNERABILITY[target] = 0;
+		_COEF_DMG[target] = 0;
+		_COEF_BUFF_MAGIC[target] = 0;
+		_COEF_BUFF_WISDOM[target] = 0;
+		_COEF_SHACKLE_STRENGTH[target] = 0;
+		_COEF_SHACKLE_TP[target] = 0;
+		_COEF_SHACKLE_MP[target] = 0;
+		_COEF_ABS_SHIELD[target] = 0;
+		_COEF_REL_SHIELD[target] = 0;
+		_COEF_DAMAGE_RETURN[target] = 0;
+		_COEF_BOOST_RESI[target] = 0;
+		_COEF_BOOST_AGILITY[target] = 1;
+		_COEF_BUFF_WISDOM[target] = 0;
+		_COEF_BOOST_MAX_LIFE[target] = 0;
+		_COEF_BOOST_TP[target] = 0;
+		_COEF_BOOST_MP[target] = 0;
+		_COEF_BOOST_STR[target] = 0;
+		_COEF_HEAL[target] = 0;
+		_COEF_NOVA[target] = 0;
+	}
+}
+global zero = 0;
+global one = 1;
+
+function LoadActionMap() {
+	StartTestFunction();
+	_CELLZ_TO_USE = [];
+	_USABLE_ITEMS = [];
+	_MAP_ACTION_SCORED = [];
+	var _usablecellz = [];
+	var _arrayAlly = []; //Tricky pour arriver a deux tableau avec key : [combo , target]
+	var _ARRAY_;
+	var _Array_Targets = [];
+	var _array_positiv = [];
+	var _Array_Special = [];
+	var items = GetItems(_MY_SELF);
+	var str = getStrength();
+	var mgc = getMagic();
+	//var CellItem = [];
+	var tp = getTP();
+	var distarray = [];
+	var nbarray = [];
+	//JE RECUPERE LES ITEMS DE MANIERE A SAVOIR SI ILS DOIVENT ETRE UTILISES SUR ENEMY OU ALLY OU pas du tout utilisable
+	/*for (var item in items) {
+		if (isPositiv(item)) {
+			removeElement(items, item);
+			push(_array_positiv, item);
+		}
+		if (isPositiv(item) == null && item != CHIP_LIBERATION) {
+			removeElement(items, item);
+			push(_Array_Special, item);
+		}
+	}*/
+	//FIN DU TRIAGE D'ITEMS
+	//[item] ---> [cells]
+	var BestTPItem = null;
+	var TP_ITEMS = [CHIP_JUMP, null, CHIP_LEATHER_BOOTS];
+	for (var i in TP_ITEMS) {
+		if (inArray(GetItems(getEntity()), i) && getCooldown(i) == 0) {
+			BestTPItem = i;
+			break;
+		}
+	}
+	var range = BestTPItem == CHIP_JUMP ? _ITEM_MAXRANGE[BestTPItem] : 2;
+	var addrange = BestTPItem == null ? 0 : range;
+	if (BestTPItem == null) addrange = 0;
+	var acces = BestTPItem == CHIP_JUMP ? JumpCellzMp(getCell(), getMP()) : GetPossibleWalkableCells(getCell(), getMP() + addrange);
+	var _array_acces = [];
+	for (var c: var mp in acces) {
+		_array_acces[c] = c;
+	}
+	//mark(acces, COLOR_BLUE);
+	//pause();
+	//debug(ArrayItemToString(GetItems(_MY_SELF)));
+	for (var i in GetItems(_MY_SELF)) {
+		_usablecellz = [];
+		var Targets = !isPositiv(i) ? _ALIVE_ENEMIES : _ALIVE_ALLIES;
+		var Interestings = [];
+		for (var t in Targets) {
+			if (getalleffectscoefed(i, str, getRelativeShield(t), getAbsoluteShield(t), mgc, 0, _MY_SELF, t, 1) > 0) push(Interestings, t);
+		}
+		//debug(ArrayLeeksToString(Interestings));
+		for (var cell in _array_acces) {
+			var tobreak = false;
+			distarray[cell] = 0;
+			nbarray[cell] = 0;
+			for (var e in Interestings) {
+				var celle = getCell(e);
+				var good = false;
+				for (var acell in _CELL_AREA[i][celle]) {
+					if (getUsableItemsFromCellToCell(cell, acell, i, [_MY_SELF])) {
+						push(_usablecellz, cell);
+						var dist = getCellDistance(celle, acell);
+						distarray[cell] += dist;
+						nbarray[cell]++;
+						tobreak = true;
+						break;
+					}
+				}
+				//if (tobreak) break;
+			}
+			if (getOperations() > _MAP_ACTION_OP_LIMIT) break;
+		}
+		//mark(_usablecellz);
+		//pause();
+		if (i == CHIP_COVETOUSNESS || i == CHIP_PRECIPITATION) _usablecellz = _MY_POSSIBLE_ACCES_CELLZ;
+		_CELLZ_TO_USE[i] = _usablecellz;
+		for (var c in _usablecellz) {
+			if (c === null) continue;
+			if (_USABLE_ITEMS[c] == null) _USABLE_ITEMS[c] = [];
+			push(_USABLE_ITEMS[c], i);
+		}
+	}
+	for (var c: var array in _USABLE_ITEMS) {
+		var pwr = 0;
+		for (var i in array) {
+			var cost = _ITEM_COST[i];
+			var iteration = _ITEM_COOLDOWN[i] > 0 ? 1 : floor(cost / tp);
+			pwr += iteration * cost * nbarray[c] / ((distarray[c] + 1) / 3);
+		}
+		_MAP_ACTION_SCORED[c] = [pwr, array];
+	}
+	//debug(_MAP_ACTION_SCORED);
+	StopTestFunction("Map action");
+}
+
+UpdateLeekEffects();
+setCoef();
+LoadActionMap();
+
+function getAllShootableCellz(cell, item) {
+	var _final = [];
+	var Leeks = isPositiv(item) ? _ALIVE_ALLIES : _ALIVE_ENEMIES;
+	var area = _ITEM_AREA[item];
+	for (var leek in Leeks) {
+		var cellL = getCell(leek);
+		for (var to in _CELL_AREA[item][cellL]) {
+			if (to == cellL && !_final[to] && getUsableItemsFromCellToCell(cell, to, item, [_MY_SELF])) _final[to] = to;
+			if (!_final[to] && getUsableItemsFromCellToCell(cell, to, item, [_MY_SELF])) _final[to] = to;
+		}
+	}
+	return _final;
+}
+
+function getCellzToUseItem(accescellz, item) {
+	var _final = [];
+	var mycell = getCell();
+	if (isPositiv(item) == null && item != CHIP_LIBERATION && item != CHIP_ANTIDOTE) return [mycell];
+	accescellz[mycell] = mycell;
+	for (var c in _CELLZ_TO_USE[item]) {
+		//if (item == CHIP_FRACTURE) mark(c,COLOR_BLUE);
+		if (accescellz[c] != null) push(_final, c);
+	}
+	return _final;
+}
+
+function CanBrochette(Start, End) {
+	if (isOnSameLine(Start, End) && lineOfSight(Start, End)) {
+		return true;
+	} else return false;
+}
+
+function getAllLazerTargets(item, from, to) { //A Refaire pour ne pas etre entre les enemys
+	var _final = [];
+	var basex = getCellX(from);
+	var basey = getCellY(from);
+	var goodone = false;
+	var arraycells = [];
+	var times = 0;
+	for (var x = 0; x <= _ITEM_MAXRANGE[item]; x++) {
+		var cell = getCellFromXY(x + basex, basey);
+		if (cell == null || _OBSTACLES[cell]) break;
+		if (x < _ITEM_MINRANGE[item]) continue;
+		if (cell == to) goodone = true;
+		push(arraycells, cell);
+	}
+	if (goodone == false) arraycells = [];
+	if (!goodone) {
+		for (var x = 0; x >= -_ITEM_MAXRANGE[item]; x--) {
+			var cell = getCellFromXY(x + basex, basey);
+			if (cell == null || _OBSTACLES[cell]) break;
+			if (x > -_ITEM_MINRANGE[item]) continue;
+			if (cell == to) goodone = true;
+			push(arraycells, cell);
+		}
+	}
+	if (goodone == false) arraycells = [];
+	if (!goodone) {
+		for (var y = 0; y <= _ITEM_MAXRANGE[item]; y++) {
+			var cell = getCellFromXY(basex, y + basey);
+			if (cell == null || _OBSTACLES[cell]) break;
+			if (y < _ITEM_MINRANGE[item]) continue;
+			if (cell == to) goodone = true;
+			push(arraycells, cell);
+		}
+	}
+	if (goodone == false) arraycells = [];
+	if (!goodone) {
+		for (var y = 0; y >= -_ITEM_MAXRANGE[item]; y--) {
+			var cell = getCellFromXY(basex, y + basey);
+			if (cell == null || _OBSTACLES[cell]) break;
+			if (y > -_ITEM_MINRANGE[item]) continue;
+			if (cell == to) goodone = true;
+			push(arraycells, cell);
+		}
+	}
+	if (goodone == false) arraycells = [];
+	for (var c in arraycells) {
+		var entity = getEntityOnCell(c);
+		if (entity == _MY_SELF) continue;
+		push(_final, entity);
+	}
+	return _final;
+}
+
+//getAllLazerTargets(WEAPON_FLAME_THROWER, getCell(), getCellFromXY(getCellX(getCell()), getCellY(getCell()) - 3));
+
+function getBestAoeCell(from, item, timesuseitem, tp) {
+	var BestAoeCell;
+	var BestInterest = 0;
+	var Interest;
+	var CoefKillAlly = (item == CHIP_BURNING) ? 99999 : coefKillAlly;
+	var pos = isPositiv(item);
+	var OnlyBulb = isOnlyBulb(item);
+	var LifeStolen = 0;
+	var MultipliedByTargets = false;
+	var Multiplier = 1;
+	if (_ITEM_EFFECTS[item][0][5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) MultipliedByTargets = true;
+	if (_ITEM_EFFECTS[item][0][0] == EFFECT_RESURRECT) return [from, RessurectionSummon()[0]];
+	if (_ITEM_AREA[item] == AREA_LASER_LINE) {
+		for (var to in getAllShootableCellz(from, item)) {
+			_ALL_TESTED_SHOOTABLE_CELLZ++;
+			var LifeSteal = 0;
+			Interest = 0;
+			var Targets = getAllLazerTargets(item, from, to);
+			if (MultipliedByTargets) Multiplier = countrealtargets(Targets, item);
+			for (var target in Targets) {
+				var Life = RealLeeklife(target);
+				var cooldown = getCooldown(CHIP_ANTIDOTE, target);
+				if (target == _MY_SELF || Life <= 0) continue;
+				var shouldlibe = MustLibe(_MY_SELF, target, item, 0, tp);
+				var shouldInver = MustInver(_MY_SELF, target, item, 0, tp);
+				var libe = false;
+				var inver = false;
+				if (getCooldown(CHIP_LIBERATION) == 0 && shouldlibe && getUsableItemsFromCellToCell(from, to, CHIP_LIBERATION, _MY_SELF)) libe = true;
+				if (getCooldown(CHIP_INVERSION) == 0 && shouldInver && getUsableItemsFromCellToCell(from, to, CHIP_INVERSION, _MY_SELF) && libe == false) inver = true;
+				var RealDmg = getRealDmg(item, getStrength(), getRelativeShield(target), getAbsoluteShield(target), getMagic(), 0, _MY_SELF, Multiplier);
+				if (libe) RealDmg = getRealDmg(item, getStrength(), getRelativeShield(target) * 0.4, getAbsoluteShield(target) * 0.4, getMagic(), 0, _MY_SELF, Multiplier);
+				if (inver) RealDmg = getRealDmg(item, getStrength(), getRelativeShield(target) - 20, getAbsoluteShield(target), getMagic(), 0, _MY_SELF, Multiplier);
+				RealDmg *= timesuseitem;
+				if (!pos) {
+					if (_IS_ALLY[target] == false) {
+						if (_ITEM_EFFECTS[item][0][0] == EFFECT_DAMAGE) {
+							LifeSteal += ItemDmg(item, getStrength(), getRelativeShield(target), getAbsoluteShield(target), 0, target) * (getWisdom() / 1000);
+							LifeSteal -= ItemDmg(item, getStrength(), getRelativeShield(target), getAbsoluteShield(target), 0, target) * (getDamageReturn(target) / 100);
+						}
+						if (RealDmg >= Life && Life > 0) {
+							RealDmg += killCoefs(target) * _SCORE_KILL;
+							Life = 0;
+						}
+						Interest += getalleffectscoefed(item, getStrength(), getRelativeShield(target), getAbsoluteShield(target), getMagic(), 0, _MY_SELF, target, Multiplier);
+					} else {
+						Interest -= RealDmg * CoefKillAlly;
+					}
+				} else {
+					if (_IS_ALLY[target]) {
+						Interest += getalleffectscoefed(item, getStrength(), getRelativeShield(target), getAbsoluteShield(target), getMagic(), 0, _MY_SELF, target, Multiplier);
+					} else {
+						Interest -= RealDmg * CoefKillAlly;
+					}
+				}
+			}
+			if (Interest > BestInterest) {
+				BestInterest = Interest;
+				BestAoeCell = to;
+				LifeStolen = LifeSteal;
+			}
+		}
+		return [BestAoeCell, BestInterest, LifeStolen];
+	} else
+	if (pos == null && item != CHIP_LIBERATION) {
+		var Coef = bulbcoef(item, EnemyLeekG)[1] * (getItemCoef(item, _MY_SELF) / _COEF_DIVIDE_COEFS);
+		Coef *= _IS_GENTLE_BULB[item] ? _COEF_SUMMON_GENTLE : _COEF_SUMMON_FOCUS;
+		return [from, Coef];
+	} else
+		for (var to in getAllShootableCellz(from, item)) {
+			_ALL_TESTED_SHOOTABLE_CELLZ++;
+			//debug(getChipName(item)+" 1");
+			var LifeSteal = 0;
+			Interest = 0;
+			var areaaa = _ITEM_AREA[item];
+			if (!pos && areaaa != AREA_X_1 && areaaa != AREA_X_2 && areaaa != AREA_X_3 || item == CHIP_LIBERATION) {
+				var Targets = getItemTargets(item, to);
+				if (MultipliedByTargets) Multiplier = countrealtargets(Targets, item);
+				for (var target in Targets) {
+					//debug(getChipName(item)+" 2");
+					var dist = getCellDistance(to, getCell(target));
+					var cooldown = getCooldown(CHIP_ANTIDOTE, target);
+					var Life = RealLeeklife(target);
+					if (target == _MY_SELF || Life <= 0) continue;
+					var shouldlibe = MustLibe(_MY_SELF, target, item, dist, tp);
+					var shouldInver = MustInver(_MY_SELF, target, item, dist, tp);
+					var libe = false;
+					var inver = false;
+					if (getCooldown(CHIP_LIBERATION) == 0 && shouldlibe && getUsableItemsFromCellToCell(from, to, CHIP_LIBERATION, _MY_SELF)) libe = true;
+					if (getCooldown(CHIP_INVERSION) == 0 && shouldInver && getUsableItemsFromCellToCell(from, to, CHIP_INVERSION, _MY_SELF) && libe == false) inver = true;
+					var RealDmg = getRealDmg(item, getStrength(), getRelativeShield(target), getAbsoluteShield(target), getMagic(), dist, _MY_SELF, Multiplier);
+					if (libe) RealDmg = getRealDmg(item, getStrength(), getRelativeShield(target) * 0.4, getAbsoluteShield(target) * 0.4, getMagic(), dist, _MY_SELF, Multiplier);
+					if (inver) RealDmg = getRealDmg(item, getStrength(), getRelativeShield(target) - 20, getAbsoluteShield(target), getMagic(), dist, _MY_SELF, Multiplier);
+					RealDmg *= timesuseitem;
+					/*if (item==CHIP_ALTERATION) {
+						debug("Dmg : "+RealDmg+' times use item : '+timesuseitem+" item coef : "+getItemCoef(item, target));
+					}*/
+					if (_IS_ALLY[target] == false) {
+						if (_ITEM_EFFECTS[item][0][0] == EFFECT_DAMAGE) {
+							LifeSteal += ItemDmg(item, getStrength(), getRelativeShield(target), getAbsoluteShield(target), dist, target) * (getWisdom() / 1000);
+							LifeSteal -= ItemDmg(item, getStrength(), getRelativeShield(target), getAbsoluteShield(target), 0, target) * (getDamageReturn(target) / 100);
+							if (item == CHIP_PUNISHMENT) LifeSteal = -0.84 * getLife();
+						}
+						if (RealDmg >= Life && Life > 0) {
+							RealDmg += killCoefs(target) * _SCORE_KILL;
+							Life = 0;
+						}
+						Interest += getalleffectscoefed(item, getStrength(), getRelativeShield(target), getAbsoluteShield(target), getMagic(), dist, _MY_SELF, target, Multiplier);
+					} else {
+						Interest -= RealDmg * CoefKillAlly;
+					}
+				}
+				var DevilStrikeDmg = getRealDmg(item, getStrength(), getRelativeShield(), getAbsoluteShield(), getMagic(), 0, _MY_SELF, 1);
+				if (item == CHIP_DEVIL_STRIKE) {
+					Interest -= DevilStrikeDmg * (_COEF_HEAL[_MY_SELF] / _COEF_DIVIDE_COEFS);
+					LifeStolen -= DevilStrikeDmg;
+				}
+			} else {
+				var area = _ITEM_AREA[item];
+				if (area != AREA_X_1 && area != AREA_X_2 && area != AREA_X_3) {
+					LifeSteal = 0;
+					var Targets = getItemTargets(item, to);
+					if (MultipliedByTargets) Multiplier = countrealtargets(Targets, item);
+					for (var target in Targets) {
+						var cell = getCell(target);
+						var tocontinue = false;
+						//if (!isSummon(target) && OnlyBulb) continue;
+						var dist = getCellDistance(to, cell);
+						var real = getRealDmg(item, getStrength(), getRelativeShield(target), getAbsoluteShield(target), getMagic(), dist, _MY_SELF, Multiplier);
+						for (var eff in getEffects(target)) {
+							if (eff[5] == item && /*eff[1] > real && */ eff[3] > 1) tocontinue = true;
+						}
+						if (tocontinue) continue;
+						if (target == _MY_SELF && _ITEM_EFFECTS[item][0][0] == EFFECT_HEAL) LifeSteal = real;
+						if (_IS_ALLY[target]) Interest += getalleffectscoefed(item, getStrength(), getRelativeShield(target), getAbsoluteShield(target), getMagic(), dist, _MY_SELF, target, Multiplier);
+						if (_IS_ALLY[target] == false) Interest -= real * CoefKillAlly;
+					}
+				}
+				/*else {
+				//debugW(getItemTargets(item, to));
+				if (_ITEM_EFFECTS[0][0]!=EFFECT_DAMAGE) {
+					LifeSteal = 0;
+				var real = getRealDmg(item, _STRENGTH[_MY_SELF], _RELATIVE_SHIELD[_MY_SELF], _ABSOLUTE_SHIELD[_MY_SELF], _MAGIC[_MY_SELF], 0, _MY_SELF);
+				real *= count(getItemTargets(item, to));
+				if (_ITEM_EFFECTS[item][0][0] == EFFECT_HEAL) LifeSteal = real;
+				Interest = real * (getItemCoef(item, _MY_SELF) / _COEF_DIVIDE_COEFS);
+				} else {
+				var total = 0;
+					for (var t in getItemTargets(item, to)) {
+						LifeSteal = 0;
+						var real = getRealDmg(item, _STRENGTH[_MY_SELF], _RELATIVE_SHIELD[_MY_SELF], _ABSOLUTE_SHIELD[_MY_SELF], _MAGIC[_MY_SELF], 0, _MY_SELF);
+						real *= count(getItemTargets(item, to));
+						total+= real;
+					}
+					Interest = total * (getItemCoef(item, _MY_SELF) / _COEF_DIVIDE_COEFS);
+				}
+			}*/
+			} //Fin Target
+			if (Interest > BestInterest) {
+				BestInterest = Interest;
+				BestAoeCell = to;
+				LifeStolen = LifeSteal;
+			}
+
+		} //Fin To
+	return [BestAoeCell, BestInterest, LifeStolen];
+}
+
+function PipotronOs() {
+	var msg = [
+		"La violence a tout résolu",
+		"Tu es inferieur , couche toi",
+		"You'll explode in few seconds",
+		"Oh , funny one",
+		"░",
+		"▒",
+		"▓",
+		"☺",
+		"☻",
+		"~_~",
+		":p",
+		":D",
+		":o",
+		"-_-",
+		"._.",
+		"*_*",
+		"^^",
+		"^_^",
+		"×",
+		"♥",
+		"♦",
+		"♣",
+		"♠",
+		"☼",
+		"▀",
+		"I told you !",
+		"Ha Ha Ha !",
+		"Owned .",
+		"We call this , natural selection",
+	];
+	say(msg[randInt(0, count(msg) + 1)]);
+}
+
+function PiptronBulb() {
+	var ArrayParoles = [
+		"Pour faire une chanson facile, facile,",
+		"Faut d’abord des paroles débiles, débiles,",
+		"Une petite mélodie qui te prend bien la tête,",
+		"Et une chorégraphie pour bien faire la fête,",
+		"Dans celle là, on se rassemble, à 5, ou 6, ou 7",
+		"Et on se colle tous ensemble, en chantant à tue tête.",
+		"Ha! Qu’est-ce qu’on est serré, au fond de cette boite,",
+		"Chantent les sardines, chantent les sardines,",
+		"Ha! Qu’est-ce qu’on est serré, au fond de cette boite,",
+		"Chantent les sardines, chantent les sardines,",
+		"Ha! Qu’est-ce qu’on est serré, au fond de cette boite,",
+		"Chantent les sardines, chantent les sardines,",
+		"Ha! Qu’est-ce qu’on est serré, au fond de cette boite,",
+		"Chantent les sardines, chantent les sardines,",
+		"Bien sûr, que c’est vraiment facile, facile,",
+		"C’est même complètement débile, débile,",
+		"C’est pas fait pour penser, c’est fait pour faire la fête,",
+		"C’est fait pour se toucher, se frotter les arêtes ,",
+		"Alors on se rassemble, à 5, ou 6, ou 7,",
+		"Et puis on saute ensemble en chantant à tue tête,",
+		"Ha! Qu’est-ce qu’on est serré, au fond de cette boite,",
+		"Chantent les sardines, chantent les sardines,",
+		"Ha! Qu’est-ce qu’on est serré, au fond de cette boite,",
+		"Chantent les sardines entre l’huile et les aromates.,",
+		"Ha! Qu’est-ce qu’on est serré, au fond de cette boite,",
+		"Chantent les sardines, chantent les sardines,",
+		"Ha! Qu’est-ce qu’on est serré, au fond de cette boite,",
+		"Chantent les sardines entre l’huile et les aromates.",
+		"Et puis, pour respirer un p’tit peu, on s’écarte en se tenant la main,",
+		"Et puis, … pour être encore plus heureux,",
+		"On fait, là, là, en chantant mon refrain !",
+		"Là, là, et les mains en l’air, là, là !",
+		"Là, là, là, là, là, là, là, là, là, là, là, là,là, là, là...",
+		"Et maintenant, on se resserre tous !",
+		"On se resserre, et maintenant qu’on l’a connaît, ",
+		"on va chanter la chanson des sardines! Attention! Allez!",
+		"Ha! Qu’est-ce qu’on est serré, au fond de cette boite,",
+		"Chantent les sardines, chantent les sardines,",
+		"Ha! Qu’est-ce qu’on est serré, au fond de cette boite,",
+		"Chantent les sardines entre l’huile et les aromates.,",
+		"Ha! Qu’est-ce qu’on est serré, au fond de cette boite,",
+		"Chantent les sardines, chantent les sardines,",
+		"Ha! Qu’est-ce qu’on est serré, au fond de cette boite,",
+		"Chantent les sardines entre l’huile et les aromates.",
+		"Ha! Qu’est-ce qu’on est serré, au fond de cette boite,",
+		"Chantent les sardines, chantent les sardines,",
+		"Ha! Qu’est-ce qu’on est serré, au fond de cette boite,",
+		"Chantent les sardines entre l’huile et les aromates.,",
+		"Là, là, là, là, là, là, là, là, là, là, là, là,là, là, là...",
+		"Là, là, là, là, là, là, là, là, là, là, là, là,là, là, là..."
+	];
+	if (getTP() > 0) {
+		say(ArrayParoles[PourChanterEnRythme]);
+		PourChanterEnRythme++;
+	}
+	if (PourChanterEnRythme >= count(ArrayParoles)) {
+		PourChanterEnRythme = 0;
+	}
+}
+
+function Pipotron() {
+	var sujet = [
+		'Je',
+		'Tu',
+		'Il',
+		'Nous',
+		'Vous',
+		'Ils',
+		'Pilow',
+		"Quelqu'un",
+		'Mon poney unijambiste',
+		"Taga",
+		"La limasse que je combat",
+		"Une porte",
+		"Staline"
+	];
+
+	var verbe = [
+		// 1er groupe
+		[
+			'march',
+			'test',
+			'chauss',
+			'tortur',
+			'flatul',
+			'gout',
+			'bouff',
+			'troll',
+			'douill',
+			'port',
+			'pleur',
+			'pens',
+			'frapp',
+			'pass',
+			'montr',
+			'tu',
+			'cass',
+			'tromp',
+			'pouss',
+			'racont',
+			'form',
+			'assiég',
+			'achet',
+			'transfér'
+		],
+		// 2nd groupe
+		[
+			'pol',
+			'englout',
+			'convert',
+			'rebât',
+			'pun',
+			'pétr',
+			'vom',
+			'bann',
+			'enlaid',
+			'guerr',
+			'fin',
+			'définir',
+			'enfouir',
+			'élargir'
+		]
+	];
+
+	var terminaison = [
+		// 1er groupe
+		[
+			// passé
+			['ais', 'ais', 'ait', 'ions', 'iez', 'aient'],
+			// présent
+			['e', 'es', 'e', 'ons', 'ez', 'ent'],
+			// futur
+			['erai', 'eras', 'era', 'erons', 'erez', 'eront'],
+		],
+		// 2nd groupe
+		[
+			// passé
+			['issais', 'issais', 'issait', 'issions', 'issiez', 'issaient'],
+			// présent
+			['is', 'is', 'it', 'issons', 'issez', 'issent'],
+			// futur
+			['irais', 'iras', 'ira', 'irons', 'irez', 'iront'],
+		]
+	];
+
+	var COD = [
+		'Pilow',
+		'un crocodile',
+		'une pasteque',
+		'une chaise',
+		'une porte',
+		'un trou noir',
+		'une antenne',
+		'un piporton',
+		'un dictionnaire',
+		'un singe',
+		'un pommier',
+		'un poiral',
+		'une brique',
+		'un nuage',
+		'un toit',
+		'des panneaux',
+		'une noix',
+		'un cochon',
+		'une imprimante',
+		'un chalet',
+		'un mur',
+		'une feuille',
+		'personne(Ulysse)',
+		'une palourde',
+		'une démocratie',
+		'une personnalité',
+		'un medaillon',
+		'une plume',
+		'un altimètre',
+		'un accoudoir',
+		'une carotte',
+		'une casserole',
+		'un deltaplane',
+		'un dinosaure',
+		'une friteuse',
+		'une merguez',
+		'les pompiers',
+		'un russe',
+		'un français',
+		'un allemand',
+		'un mexicain',
+		'un belge gagnant de la coupe du monde',
+		'une boucle while'
+	];
+
+	var CCL = [
+		'sur leekwars',
+		'dans la rue',
+		'dans le potager',
+		'sur un bâteau',
+		'dans un château',
+		'sous la table',
+		'sur le toit',
+		"dans l'avion",
+		"devant l'ordinateur",
+		'en cours de oenologie',
+		'dans une prison',
+		'en maternelle',
+		'la tête en bas',
+		'sur une montagne',
+		'sur la mer',
+		'sur la plage',
+		'acroché à un fil',
+		'en pls',
+		'en sautant',
+		'en se pliant',
+		'en position foetale',
+		'sous le bureau',
+		'dans un champs'
+	];
+
+	var rand_sujet = randInt(0, count(sujet));
+	var rand_sujet_conj = (rand_sujet >= 5) ? 2 : rand_sujet;
+	var rand_groupe = randInt(0, 1.1);
+	var rand_temps = randInt(0, 2.1);
+	var verbe_groupe = verbe[rand_groupe];
+	var rand_verbe = randInt(0, count(verbe_groupe));
+	var rand_COD = randInt(0, count(COD));
+	var rand_CCL = randInt(0, count(CCL));
+	var Lamaa = rand() < 0.02 ? lama() : (sujet[rand_sujet] + ' ' + verbe_groupe[rand_verbe] + terminaison[rand_groupe][rand_temps][rand_sujet_conj] + ' ' + COD[rand_COD] + ' ' + CCL[rand_CCL]);
+	say(Lamaa);
+}
+
+function GetAllTeleportableCellz() {
+	var _final = [];
+	for (var acces in _MY_ACCES_CELLZ) {
+		for (var tp in getPossibleTpCellzfrom(acces, _MY_ACCES_CELLZ)) {
+			if (_final[tp] == null) _final[tp] = acces;
+		}
+	}
+	return _final;
+}
+
+function getCombos(entity, tp) {
+	var array = [];
+	//STRENGTH
+	if (tp >= 21) push(array, [CHIP_LIGHTNING, CHIP_ROCKFALL, CHIP_LIGHTNING, CHIP_LIGHTNING, CHIP_LIGHTNING]);
+	if (tp >= 21 && getWeapon(entity) == WEAPON_KATANA) push(array, [WEAPON_KATANA, WEAPON_KATANA, WEAPON_KATANA]);
+	if (tp >= 22) push(array, [WEAPON_RIFLE, WEAPON_RIFLE, WEAPON_RIFLE]);
+	if (tp >= 21 && getWeapon(entity) == WEAPON_RIFLE) push(array, [WEAPON_RIFLE, WEAPON_RIFLE, WEAPON_RIFLE]);
+	if (tp >= 21) push(array, [WEAPON_RIFLE, WEAPON_RIFLE, CHIP_STALACTITE]);
+	if (tp >= 20 || (tp >= 19 && getWeapon(entity) == WEAPON_RIFLE)) push(array, [WEAPON_RIFLE, WEAPON_RIFLE, CHIP_ROCKFALL]);
+	if (tp >= 21 || (tp >= 20 && getWeapon(entity) == WEAPON_RHINO)) push(array, [WEAPON_RHINO, WEAPON_RHINO, WEAPON_RHINO, WEAPON_RHINO]);
+	if (tp >= 21) push(array, [WEAPON_M_LASER, WEAPON_M_LASER, CHIP_LIGHTNING]);
+	if (tp >= 21 || tp >= 20 && getWeapon(entity) == WEAPON_GRENADE_LAUNCHER) push(array, [WEAPON_GRENADE_LAUNCHER, WEAPON_GRENADE_LAUNCHER, CHIP_METEORITE]);
+	if (tp >= 20) push(array, [WEAPON_ELECTRISOR, WEAPON_ELECTRISOR, CHIP_ROCKFALL]);
+	if (tp >= 17) push(array, [WEAPON_M_LASER, WEAPON_M_LASER]);
+	if (tp >= 15 || tp >= 14 && getWeapon(entity) == WEAPON_ELECTRISOR) push(array, [WEAPON_ELECTRISOR, WEAPON_ELECTRISOR]);
+	if (tp >= 15 || tp >= 14 && getWeapon(entity) == WEAPON_M_LASER) push(array, [WEAPON_M_LASER, CHIP_STALACTITE]);
+	if (tp >= 16 || (tp >= 15 && getWeapon(entity) == WEAPON_RHINO)) push(array, [WEAPON_RHINO, WEAPON_RHINO, WEAPON_RHINO]);
+	if (tp >= 15) push(array, [WEAPON_RIFLE, WEAPON_RIFLE]);
+	if (tp >= 14 && getWeapon(entity) == WEAPON_RIFLE) push(array, [WEAPON_RIFLE, WEAPON_RIFLE]);
+	if (tp >= 14) push(array, [CHIP_LIGHTNING, CHIP_LIGHTNING, CHIP_STALACTITE]);
+	if (tp >= 14) push(array, [WEAPON_ELECTRISOR, CHIP_STALACTITE]);
+	if (tp >= 14) push(array, [WEAPON_KATANA, CHIP_DEVIL_STRIKE]);
+	if (tp >= 13) push(array, [WEAPON_ELECTRISOR, CHIP_ROCKFALL]);
+	if (tp >= 13) push(array, [WEAPON_M_LASER, CHIP_LIGHTNING]);
+	if (tp >= 12) push(array, [WEAPON_GRENADE_LAUNCHER, WEAPON_GRENADE_LAUNCHER]);
+	if (tp >= 11 || (tp >= 10 && getWeapon(entity) == WEAPON_RHINO)) push(array, [WEAPON_RHINO, WEAPON_RHINO]);
+	if (tp >= 9) push(array, [WEAPON_M_LASER]);
+	if (tp >= 8) push(array, [WEAPON_ELECTRISOR]);
+	if (tp >= 7) push(array, [WEAPON_GRENADE_LAUNCHER]);
+	if (tp >= 8) push(array, [WEAPON_RIFLE, WEAPON_RIFLE]);
+	if (tp >= 7 && getWeapon(entity) == WEAPON_RIFLE) push(array, [WEAPON_RIFLE]);
+	//MAGIC
+	if (tp >= 21) push(array, [WEAPON_GAZOR, WEAPON_GAZOR, CHIP_PLAGUE]);
+	if (tp >= 21) push(array, [WEAPON_GAZOR, WEAPON_FLAME_THROWER, WEAPON_FLAME_THROWER]);
+	if (tp >= 19) push(array, [WEAPON_FLAME_THROWER, WEAPON_FLAME_THROWER, CHIP_PLAGUE]);
+	if (tp >= 14) push(array, [WEAPON_GAZOR, CHIP_PLAGUE]);
+	if (tp >= 14 && getWeapon(entity) == WEAPON_GAZOR) push(array, [WEAPON_GAZOR, WEAPON_GAZOR]);
+	if (tp >= 13) push(array, [WEAPON_FLAME_THROWER, WEAPON_FLAME_THROWER]);
+	if (tp >= 13) push(array, [WEAPON_FLAME_THROWER, CHIP_PLAGUE]);
+	if (tp >= 11) push(array, [CHIP_PLAGUE, CHIP_TOXIN]);
+	if (getFightType() != FIGHT_TYPE_SOLO) push(array, []);
+	for (var comboz in array) {
+		for (var item in comboz) {
+			if (!inArray(GetItems(entity), item)) {
+				removeElement(array, comboz);
+				break;
+			}
+		}
+	}
+	return array;
+}
+
+function GetComboToOs(entity, comboz) {
+	var Life = RealLeeklife(entity);
+	var Comboo = comboz[0];
+	var dmg = 0;
+	for (var item in Comboo) {
+		var divide = item == WEAPON_FLAME_THROWER ? 2 : _ITEM_EFFECTS[item][0][3];
+		dmg += getRealDmg(item, getStrength(), getRelativeShield(entity), getAbsoluteShield(entity), getMagic(), 0, _MY_SELF, 1) / (1 + divide);
+	}
+	if (dmg < Life) return;
+	reverse(comboz);
+	var final = [];
+	for (var combo in comboz) {
+		var combodmg = 0;
+		for (var item in combo) {
+			var divide = item == WEAPON_FLAME_THROWER ? 2 : _ITEM_EFFECTS[item][0][3];
+			combodmg += getRealDmg(item, getStrength(), getRelativeShield(entity), getAbsoluteShield(entity), getMagic(), 0, _MY_SELF, 1) / (1 + divide);
+		}
+		if (combodmg >= Life) push(final, combo);
+	}
+	return final;
+}
+
+function OneShotNoTp(entity, comboztoOs) {
+	if (comboztoOs[0] == null) return;
+	for (var combo in comboztoOs) {
+		for (var cellz in _MY_ACCES_CELLZ) {
+			var Ok = true;
+			for (var item in combo) {
+				if (!getUsableItemsFromCellToCell(cellz, getCell(entity), item, [])) {
+					Ok = false;
+					break;
+				}
+			}
+			if (Ok) return [cellz, combo];
+		}
+	}
+}
+
+function OneShotTp(entity, comboztoOs) {
+	if (comboztoOs[0] == null) return;
+	var tpcellz = GetAllTeleportableCellz();
+	for (var combo in comboztoOs) {
+		for (var tpcell: var acces in tpcellz) {
+			var Ok = true;
+			for (var item in combo) {
+				if (!getUsableItemsFromCellToCell(tpcell, getCell(entity), item, [])) {
+					Ok = false;
+					break;
+				}
+			}
+			if (Ok) return [tpcell, combo, acces];
+		}
+	}
+}
+
+function OneShot(entity) {
+	StartTestFunction();
+	if (getFightType() == FIGHT_TYPE_SOLO) {
+		_ITEM_MINRANGE[WEAPON_GAZOR] = 2;
+		_ITEM_MINRANGE[CHIP_PLAGUE] = 1;
+		_ITEM_MINRANGE[CHIP_TOXIN] = 1;
+	}
+	var NoTp = OneShotNoTp(entity, GetComboToOs(entity, getCombos(_MY_SELF, getTP())));
+	if (NoTp[0] != null) {
+		moveTowardCell(NoTp[0]);
+		for (var i in NoTp[1]) {
+			useItem(i, getCell(entity), getWeapon());
+		}
+		PipotronOs();
+	} else {
+		var Tp = OneShotTp(entity, GetComboToOs(entity, getCombos(_MY_SELF, getTP() - _ITEM_COST[CHIP_TELEPORTATION])));
+		if (Tp[0] != null && inArray(getChips(), CHIP_TELEPORTATION) && getCooldown(CHIP_TELEPORTATION) == 0) {
+			moveTowardCell(Tp[2]);
+			useChipOnCell(CHIP_TELEPORTATION, Tp[0]);
+			for (var i in Tp[1]) {
+				useItem(i, getCell(entity), getWeapon());
+			}
+			PipotronOs();
+		}
+	}
+	_ITEM_MINRANGE[WEAPON_GAZOR] = 4;
+	_ITEM_MINRANGE[CHIP_PLAGUE] = 4;
+	_ITEM_MINRANGE[CHIP_TOXIN] = 3;
+	StopTestFunction("OS");
+}
+
+function cellRadius(cell, radius) {
+	var _final = [];
+	var basex = getCellX(cell);
+	var basey = getCellY(cell);
+	for (var x = -radius; x <= radius; x++) {
+		for (var y = -radius; y <= radius; y++) {
+			var celll = getCellFromXY(basex + x, basey + y);
+			if (abs(x) + abs(y) <= radius && celll != null) push(_final, celll);
+		}
+	}
+	return _final;
+}
+
+function AllAllyWalkCellz() {
+	var _pre_final = [];
+	var _final = [];
+	for (var c: var mp in CellMp(getCell(), getMP())) {
+		push(_pre_final, c);
+	}
+	for (var a in getAliveAllies()) {
+		if (getSummoner(a) != getEntity() || !isSummon(a)) continue;
+		for (var c: var mp in CellMp(getCell(a), getMP(a))) {
+			push(_pre_final, c);
+		}
+	}
+	for (var c in _pre_final) {
+		if (!inArray(_final, c)) push(_final, c);
+	}
+	//debug(_final);
+	return _final;
+}
+
+function updateGravityCellz(cellz) {
+	StartTestFunction();
+	var arrayScore = [];
+	var Centre = getCellFromXY(0, 0);
+	var AccesMp = [];
+	var mymp = getMP();
+	var me = getEntity();
+	var myitems = GetItems(me);
+	var usefulesitems = [];
+	var cellzMp = [];
+	for (var i in myitems) {
+		if (!isPositiv(i)) push(usefulesitems, i);
+	}
+	for (var e in _ALIVE_ENEMIES) {
+		AccesMp[e] = CellMp(getCell(e), getMP(e));
+	}
+	/*for (var e in _ALIVE_ENEMIES) {
+		AccesMp[e] = [];
+		var basecell = getCell(e);
+		var basemp = getMP(e);
+		for (var c: var mp in CellMp(basecell, basemp)) {
+			AccesMp[e][c] = [];
+			for (var mpe = 0; mpe <= basemp - mp; mpe++) {
+				AccesMp[e][c][mpe] = CellMp(c, mpe);
+			}
+		}
+	}
+	for (var c: var mp in AccesMp[getNearestEnemy()][getCell(getNearestEnemy()) + 1][getMP(getNearestEnemy()) - 3]) {
+		mark(c, COLOR_GREEN);
+	}*/
+	for (var c in cellz) {
+		if (_OBSTACLES[c]) continue;
+		arrayScore[c] = 40;
+		for (var aoe in cellRadius(c, 4)) {
+			if (_OBSTACLES[aoe] && aoe != null) arrayScore[c]++;
+		}
+		var nbacces3 = 0;
+		for (var ctest: var mptest in CellMp(c, 3)) {
+			nbacces3++;
+		}
+		arrayScore[c] -= nbacces3*10;
+		if (nbacces3 < 9) arrayScore[c] -= 150;
+		//var myfuturacces = CellMp(c, mymp);
+		for (var e in _ALL_LEEKS) {
+			var mpe = getMP(e);
+			//if (isSummon(e)) continue;
+			arrayScore[c] -= _PATHS_LENGHT[c][e] * (Dmgbulbcoef(FromNameToChip(e), me)[1] / _COEF_FOCUS_LEEK * 18);
+			if (isEnemy(e)) {
+				//var array = _BEST_CELLS_ATTACK_ENEMY[e][c]; //[e][getcell] -- > [mp , cellfrom]
+				//var mp = array[0];
+				//if (mp == null) continue;
+				//arrayScore[c]+=mp/mpe*6;
+				for (var ec: var emp in AccesMp[e]) {
+					if (getCellDistance(ec, Centre) < getCellDistance(c, Centre)) arrayScore[c] -= 0.6;
+				}
+			}
+			/*if (isEnemy(e)) {
+				var array = _BEST_CELLS_ATTACK_ENEMY[e][c]; //[e][getcell] -- > [mp , cellfrom]
+				var mp = array[0];
+				var from = array[1];
+				for (var ctest: var mptest in AccesMp[e][from][mpe - mp]) {
+					for (var futurmycell: var futurmymp in myfuturacces) {
+						for (var i in usefulesitems) {
+							debug("boucle ok ");
+							if (getUsableItemsFromCellToCell(futurmycell, ctest, i, [me])) arrayScore[c] += 30;
+						}
+					}
+				}
+			}*/
+		}
+		arrayScore[c] -= getCellDistance(c, Centre);
+	}
+
+
+	for (var c: var score in arrayScore) {
+		markText(c, score);
+		_GRAVITY_CELLZ[c] = score;
+	}
+	StopTestFunction("gravity cells");
+}
+
+function setDamageMap() {
+	StartTestFunction();
+	//mark(_MY_POSSIBLE_ACCES_CELLZ, COLOR_GREEN);
+	var Items = [];
+	var _danger = [];
+	var JustToDebug = 0;
+	var NumberEnemys;
+	var LibeCooldowns = [];
+	var OSPOSSIBLE = GetComboToOs(EnemyLeekG, getCombos(_MY_SELF, _TP_KILL_NEXT_TURN));
+	_BEST_CELLS_ATTACK_ENEMY = [];
+	var _TP = [];
+	//Register all enemys items in an array and walkable cellz and max range items and the cooldown pour the liberation chip
+	var Opsss = getOperations();
+	/*var addpm = 0;
+	addpm = getMP()<=12 ? _ITEM_MAXRANGE[CHIP_JUMP] : 0;
+	addpm = getMP()<=9 ? _ITEM_MAXRANGE[CHIP_TELEPORTATION] : 0;
+	var myacces = GetPossibleWalkableCells(getCell(), getMP());*/
+	for (var e in _ALIVE_ENEMIES) {
+		_ACCESCELLS[e] = null;
+		Items[e] = getBestSortedItems(e, _MY_SELF);
+		if (isEmpty(Items[e])) continue;
+		debug("Best items : " + getName(e) + " " + ArrayItemToString(Items[e]));
+		_TP[e] = getTP(e);
+		//var addpm = 0;
+		_BEST_CELLS_ATTACK_ENEMY[e] = [];
+		if (inArray(getChips(e), CHIP_JUMP) && getCooldown(CHIP_JUMP, e) < 1) _ACCESCELLS[e] = JumpCellzMp(getCell(e), getMP(e));
+		var addpm = (inArray(getChips(e), CHIP_LEATHER_BOOTS) && getCooldown(CHIP_LEATHER_BOOTS, e) < 1) ? 2 : 0;
+		if (_ACCESCELLS[e] == null) _ACCESCELLS[e] = AccesCellzMp(getCell(e), getMP(e) + addpm);
+		//pause();
+		LibeCooldowns[e] = getCooldown(CHIP_LIBERATION, e);
+	}
+	//debug("Dmg map loading opés : " + ((getOperations() - Opsss) / 1000) + " k");
+	//End registering
+	var goneRel = RemoveRelGoneShields();
+	var goneAbs = RemoveAbsGoneShields();
+	for (var c in _MY_POSSIBLE_ACCES_CELLZ) {
+		_danger[c] = [];
+	}
+	for (var index = 0; index < 10; index++) {
+		NumberEnemys = 0;
+		JustToDebug = index;
+		var iterations = 0;
+		for (var e in _ALIVE_ENEMIES) {
+			var tpe = getTP(e);
+			if (Items[e][index] == null) {
+				NumberEnemys++;
+				continue;
+			}
+			if (inArray(getChips(e), CHIP_ADRENALINE) && getCooldown(CHIP_ADRENALINE, e) < 1) tpe += 4;
+			var cost = _ITEM_COST[Items[e][index]];
+			iterations = floor(tpe / cost);
+			if (_ITEM_COOLDOWN[Items[e][index]] > 0) iterations = 1;
+			var cellz = [];
+			cellz = _MY_POSSIBLE_ACCES_CELLZ;
+			var dmgmap = getDamageMap(Items[e][index], cellz, _ACCESCELLS[e], []);
+			for (var cell: var percentage in dmgmap[0]) {
+				//if (Items[e][index]==CHIP_FRACTURE) {
+				//	_DEBUFFABLE_CELLS[cell] = true;
+				//	continue;
+				//}
+				var score = 0; //_REAL_LIFES[_MY_SELF]-_LIFE[_MY_SELF];
+				var bulbm = _BULB_MOVES[cell];
+				var my_abs = getAbsoluteShield();
+				var my_rel = getRelativeShield();
+				//Je retire les effects qui vont partir a la fin de mon tour
+				my_rel -= RemoveRelGoneShields();
+				my_abs -= RemoveAbsGoneShields();
+				//Fin remove effects
+				//J'add les bulbs effects
+				for (var bulb: var item in bulbm) {
+					//WISDOM
+					if (_ITEM_EFFECTS[item][0][0] == EFFECT_HEAL) score -= (_ITEM_POWER[item] * (1 + getWisdom(bulb) / 100));
+					//REL
+					if (_ITEM_EFFECTS[item][0][0] == EFFECT_RELATIVE_SHIELD) my_rel += _ITEM_POWER[item] * (1 + getResistance(bulb) / 100);
+					//ABS
+					if (_ITEM_EFFECTS[item][0][0] == EFFECT_ABSOLUTE_SHIELD) my_abs += _ITEM_POWER[item] * (1 + getResistance(bulb) / 100);
+				}
+				//debug("score bulb : "+score);
+				//Fin Bulbs
+				//Libe : 
+				//debug("score : "+score+" my abs : "+my_abs+" my rel : "+my_rel);
+				var Libe = false;
+				if (LibeCooldowns[e] == 0 && dmgmap[1][cell] && MustLibe(e, _MY_SELF, Items[e][index], percentage, _TP[e])) Libe = true;
+				//Fin libe
+				//Score
+				percentage *= 1 + (getAgility(e) / 1000 * 1.4);
+				score += Libe ? getMaxDmg(Items[e][index], getStrength(e), my_rel * 0.4, my_abs * 0.4, getMagic(e), percentage) : getMaxDmg(Items[e][index], getStrength(e), my_rel, my_abs, getMagic(e), percentage);
+				var _tp = Libe ? tpe - _ITEM_COST[CHIP_LIBERATION] : tpe;
+				iterations = floor(_tp / cost);
+				//debug("iterations : " + iterations);
+				/*var badones = 1;
+				var midscore = 0;
+				for (var i in Items[e]) {
+					midscore += 
+					if (i == Items[e][index]) continue;
+					else badones++;
+				}*/
+				if (_ITEM_COOLDOWN[Items[e][index]] > 0) iterations = 1;
+				//debug("Item : "+getItemName(Items[e][index])+" iter : "+iterations+ " dmg :  "+score);
+				score *= iterations;
+				//if (_danger[cell][e] == null || score > _danger[cell][e]) {
+				var life = getLife();
+				if (score < life * _MIN_MAP_DAMAGE && score < life * CareFullDead) score = 0;
+				if (score > _danger[cell][e] || _danger[cell][e] == null) {
+					_danger[cell][e] = score;
+					_BEST_CELLS_ATTACK_ENEMY[e][cell] = dmgmap[2][cell];
+				}
+				//_MOST_DANGEROUS[cell] = e;
+				//_MOST_DANGEROUS_ITEM[cell] = [Items[e][index], percentage, Libe];
+				//}
+				//End Score
+				if (getOperations() > _MAP_DANGER_CRIT_OP_LIMIT) break;
+			}
+			if (getOperations() > _MAP_DANGER_OP_LIMIT) break;
+			//if (didlibe==false) didlibe = true;
+		}
+		if ((getOperations() > _MAP_DANGER_OP_LIMIT) || NumberEnemys == count(_ALIVE_ENEMIES)) break;
+	} // end index
+	//debug(_danger);
+	var _final = [];
+	for (var cell: var arrayscore in _danger) {
+		var cdmg = 0;
+		for (var leek: var dmg in arrayscore) {
+			cdmg += dmg;
+		}
+		//markText(cell, cdmg);
+		_final[cell] = cdmg;
+	}
+	debugW("Loaded damage map at index : " + (JustToDebug));
+	for (var c in _MY_POSSIBLE_ACCES_CELLZ) {
+		if (_final[c] == null || _final[c] < 0) _final[c] = 0;
+	}
+	_MAP_DANGER = _final;
+	StopTestFunction("Damage map");
+}
+
+function PreloadBulbActions(cell, arrayAllWcellz) {
+	var _array = [];
+	for (var bulb in _ALIVE_ALLIES) {
+		if (isSummon(bulb) && !_NAME_IS_GENTLE_BULB[getName(bulb)]) continue;
+		if (bulb == _MY_SELF) continue;
+		var items = getArrayComboBulbSorted(bulbname(bulb, _MY_SELF)[0]);
+		//debug(ArrayItemToString(items)); // fail items for leeksArrayItemToString(items)
+		var tp = getTP(bulb);
+		for (var item in items) {
+			//if (DoesHaveChip(getSummoner(bulb), item)) continue;
+			if (tp - _ITEM_COST[item] >= 0) tp -= _ITEM_COST[item];
+			else continue;
+			for (var wc in arrayAllWcellz[bulb]) {
+				if (getUsableItemsFromCellToCell(wc, cell, item, [])) {
+					_array[bulb] = item;
+					break;
+				}
+			}
+		}
+	}
+	return _array;
+}
+
+function LoadBulbActions() {
+	StartTestFunction();
+	var _acces = [];
+	_BULB_MOVES = [];
+	for (var bulb in _ALIVE_ALLIES) {
+		//if (!isSummon(bulb)) continue;
+		_acces[bulb] = AccesCell(getCell(bulb), getMP(bulb));
+	}
+	for (var cell in _MY_POSSIBLE_ACCES_CELLZ) {
+		var ok = false;
+		for (var bu in _ALIVE_ALLIES) {
+			if (getCellDistance(getCell(bu), cell) < 5) ok = true;
+		}
+		if (!ok) continue;
+		_BULB_MOVES[cell] = PreloadBulbActions(cell, _acces);
+	}
+	StopTestFunction("All bulb load for all cellz");
+}
+
+function CellToRessurect() {
+	var arraySafe = [];
+	var mindmg = 99999;
+	for (var c: var dmg in _MAP_DANGER)
+		if (dmg < mindmg) mindmg = dmg;
+	for (var c: var dmg in _MAP_DANGER)
+		if (dmg == mindmg) push(arraySafe, c);
+	return BestCellBulb(arraySafe);
+}
+
+function isLocked(c, addedcell) {
+	var x = getCellX(c);
+	var y = getCellY(c);
+	var cell;
+	var nblocked = 0;
+	cell = getCellFromXY(x + 1, y);
+	if (cell == null || isObstacle(cell) || !isEmptyCell(cell) || cell == addedcell) {
+		nblocked++;
+	}
+	cell = getCellFromXY(x - 1, y);
+	if (cell == null || isObstacle(cell) || !isEmptyCell(cell) || cell == addedcell) {
+		nblocked++;
+	}
+
+	cell = getCellFromXY(x, y + 1);
+	if (cell == null || isObstacle(cell) || !isEmptyCell(cell) || cell == addedcell) {
+		nblocked++;
+	}
+
+	cell = getCellFromXY(x, y - 1);
+	if (cell == null || isObstacle(cell) || !isEmptyCell(cell) || cell == addedcell) {
+		nblocked++;
+	}
+	if (nblocked == 4) return true;
+	return false;
+}
+
+function getBestSortedItems(leek, tanker) {
+	var array = [];
+	var summ = isSummon(tanker);
+	for (var item in GetItems(leek)) {
+		if (isPositiv(item) != false || !summ && item == CHIP_BURNING) continue;
+		var dmg = getMaxDmg(item, getStrength(leek), getRelativeShield(tanker), getAbsoluteShield(tanker), getMagic(leek), 0);
+		dmg = _ITEM_COOLDOWN[item] == 0 ? dmg * (getTP(leek) / _ITEM_COST[item]) : dmg;
+		if (dmg <= getLife(tanker) * _MIN_MAP_DAMAGE) continue; //OU 0
+		array[item] = dmg;
+	}
+	var _array_sorted = arraySort(array, function(a, b) {
+		if (a < b) return 1;
+		else if (a > b) return -1;
+		else return 0;
+	});
+	var _final = [];
+	for (var item: var score in _array_sorted) {
+		push(_final, item);
+	}
+	return _final;
+}
+
+function ArrayItemToString(arrayItems) {
+	return arrayMap(arrayItems, function(x) {
+		return getItemName(x);
+	});
+}
+
+function ArrayLeeksToString(arrayleeks) {
+	return arrayMap(arrayleeks, function(x) {
+		return getName(x);
+	});
+}
+
+function getDamageMap(item, myaccescellz, enemyaccescellz, ArrayDid) { //Return [cell : score , cell : score , ...] Score = dmg percent of weapon
+	var array = [];
+	var ArrayPossibleLibe = [];
+	var arraymp = [];
+	var summ = isSummon();
+	var arrayleeks = [];
+	//Put tout les leeks qui ne bougeront pas 
+	for (var e in getAliveEnemies()) {
+		if (!isSummon(e)) push(arrayleeks, e);
+	}
+	for (var a in getAliveAllies()) {
+		push(arrayleeks, a);
+	}
+
+	//Check des cases sur lesquelles l'enemy peut tirer (qui font bien sur parti de mes accescellz)
+	for (var c in myaccescellz) {
+		if (ArrayDid[c] != null) continue;
+		for (var ce: var mp in enemyaccescellz) {
+			if (array[c] != null) break;
+			if (getUsableItemsFromCellToCell(ce, c, item, arrayleeks)) {
+				array[c] = (100 - mp / 10);
+				arraymp[c] = [mp, ce];
+				if (!summ && getUsableItemsFromCellToCell(ce, c, CHIP_LIBERATION, arrayleeks) || !summ && _ITEM_MAXRANGE[item] - _ITEM_MAXRANGE[CHIP_LIBERATION] > getMP(EnemyLeekG)) ArrayPossibleLibe[c] = true;
+			}
+		}
+	}
+	//Plus complexe : gestion des aoe 
+	if (_ITEM_AREA[item] == AREA_CIRCLE_1 || _ITEM_AREA[item] == AREA_CIRCLE_2 || _ITEM_AREA[item] == AREA_CIRCLE_3) {
+		//Et on fais un cellarea de ces cellz en mettant des scores
+		for (var c: var score in array) {
+			if (ArrayDid[c] != null || score == 0) continue;
+			for (var circlec in _CELL_AREA[item][c]) {
+				var dist = getCellDistance(c, circlec);
+				var ratio = DivideAoe(getAreaNumber(item), dist, score);
+				if (array[circlec] == null && inArray(myaccescellz, circlec) || array[circlec] < ratio && inArray(myaccescellz, circlec)) {
+					array[circlec] = ratio * array[c] / 100;
+					arraymp[circlec] = arraymp[c];
+				}
+			}
+		}
+	}
+	return [array, ArrayPossibleLibe, arraymp];
+}
+
+function GetNumberOfAllyBulbWhoPlayAfter(entity) {
+	var _final = 0;
+	var myTO = getEntityTurnOrder(entity);
+	var EnemyTO = getEntityTurnOrder(EnemyLeekG);
+	for (var L in _ALIVE_ALLIES) {
+		if (!isSummon(L)) continue;
+		var name = getName(L);
+		if (myTO < EnemyTO) { //Je joue avant l'enemy
+			var TO = getEntityTurnOrder(L);
+			if (TO < EnemyTO && TO > myTO) _final += _COEF_OPS_BULB[name];
+		} else { //Je joue apres lui
+			//if (getEntityTurnOrder(L) > myTO) _final+=_COEF_OPS_BULB[name];
+		}
+	}
+	return _final;
+}
+
+function HidenCellzBulb(celldepart, mp) {
+	StartTestFunction();
+	var Others = GetNumberOfAllyBulbWhoPlayAfter(_MY_SELF);
+	var totalCoef = 0;
+	//debug("Others : "+GetNumberOfAllyBulbWhoPlayAfter(_MY_SELF));
+	var PossibleOps = Others > 0 ? (((OPERATIONS_LIMIT - getOperations()) / (Others + _COEF_OPS_BULB[getName()]) * (_COEF_OPS_BULB[getName()])) - _OPS_BULB[getName(_MY_SELF)]) : (OPERATIONS_LIMIT - getOperations());
+	debug(PossibleOps / 1000 + "k possible opés");
+	var Opes = getOperations();
+	var MyAccesCellz = GetWalkableCells(celldepart, mp);
+	for (var c in MyAccesCellz) {
+		if ( /*(_MAP_DANGER[c]!=null && _MAP_DANGER[c] > 0) || */ _BULB_MAP_DANGER[c] != null) removeElement(MyAccesCellz, c);
+	}
+	var nbchecked;
+	var Bestcount = 0;
+	for (var e in getAliveEnemies()) {
+		var _items = getBestSortedItems(e, _MY_SELF);
+		if (count(_items) > Bestcount) Bestcount = count(_items);
+		if (_items[0] == null) continue;
+		var HisAccesCellz = AccesCellzMp(getCell(e), getMP(e));
+		var did = [];
+		for (var i = 0; i <= count(_items); i++) {
+			if (getOperations() - Opes >= PossibleOps) break;
+			if (i > nbchecked) nbchecked = i;
+			if (i >= 3) break;
+			for (var cell: var percentage in getDamageMap(_items[i], MyAccesCellz, HisAccesCellz, did)[0]) {
+				var dmg = /*getMaxDmg(_items[i], getStrength(e), getRelativeShield(), getAbsoluteShield(), getMagic(e), percentage)*/ percentage;
+				if (_BULB_MAP_DANGER[cell] < dmg || _BULB_MAP_DANGER[cell] == null) {
+					_BULB_MAP_DANGER[cell] = dmg;
+					//removeElement(MyAccesCellz, cell);
+				}
+			}
+		}
+	}
+	debug("Percentage Checked : " + (nbchecked / Bestcount * 100));
+	MyAccesCellz = GetWalkableCells(celldepart, mp);
+	for (var c in MyAccesCellz) {
+		if (_BULB_MAP_DANGER[c] == null && (_MAP_DANGER[c] == null || _MAP_DANGER[c] == 0)) _BULB_MAP_DANGER[c] = 0;
+		//if (_BULB_MAP_DANGER[c] == null && (_MAP_DANGER[c]!=null && _MAP_DANGER[c]>0)) _BULB_MAP_DANGER[c] = _MAP_DANGER[c];
+		markText(c, _BULB_MAP_DANGER[c]);
+	}
+	var PathLeek = getPath(getCell(getSummoner()), getCell(EnemyLeekG));
+	var BestScore = 9999999;
+	var BestCellz = [];
+	for (var cell in MyAccesCellz) {
+		if (inArray(PathLeek, cell)) continue;
+		var score = _BULB_MAP_DANGER[cell];
+		var ally = getSummoner();
+		//if (ally == null) ally = EnemyLeekG; //Pour que les test de distances passe quand meme
+		if (score < BestScore && !isLocked(getCell(getSummoner()), cell) && (score == 0 || !isOnSameLine(cell, getCell(ally)) || !lineOfSight(cell, getCell(ally)))) {
+			BestScore = score;
+			BestCellz = [];
+			push(BestCellz, cell);
+		} else {
+			if (score == BestScore && !isLocked(getCell(getSummoner()), cell) && (score == 0 || !isOnSameLine(cell, getCell(ally)) || !lineOfSight(cell, getCell(ally)))) {
+				push(BestCellz, cell);
+			}
+		}
+	}
+	mark(BestCellz, COLOR_GREEN);
+	debug("Nb Items Checked : " + (nbchecked + 1));
+	StopTestFunction("Damage map bulb");
+	return BestCellz;
+}
+
+function BestCellBulb(tableaucellz) {
+	var arrayGravity = _GRAVITY_CELLZ;
+	if (isSummon()) {
+		var me = getEntity();
+		var AccesMp = [];
+		var Centre = getCellFromXY(0, 0);
+		for (var e in _ALIVE_ENEMIES) {
+			AccesMp[e] = CellMp(getCell(e), getMP(e));
+		}
+		for (var c in tableaucellz) {
+			if (arrayGravity[c]==null) arrayGravity[c]=0;
+			for (var e in _ALL_LEEKS) {
+				var mpe = getMP(e);
+				if (isEnemy(e)) {
+					var array = _BEST_CELLS_ATTACK_ENEMY[e][c]; //[e][getcell] -- > [mp , cellfrom]
+					arrayGravity[c] += _PATHS_LENGHT[c][e] * (Dmgbulbcoef(FromNameToChip(e), me)[1] / _COEF_FOCUS_LEEK * 18);
+					var mp = array[0];
+					if (mp == null) continue;
+					//arrayGravity[c]-=mp/mpe*6;
+					for (var ec: var emp in AccesMp[e]) {
+						if (getCellDistance(ec, Centre) < getCellDistance(c, Centre)) arrayGravity[c] += 0.6;
+					}
+				} else {
+					var dist = _PATHS_LENGHT[c][e] == null ? getCellDistance(c, getCell(e)) : _PATHS_LENGHT[c][e];
+					var opticoef = (Dmgbulbcoef(FromNameToChip(e), EnemyLeekG)[1] / _COEF_FOCUS_LEEK * 70);
+					var coef = opticoef != null ? opticoef : 1;
+					arrayGravity[c] -= dist * coef;
+				}
+			}
+		}
+	}
+	var BestCell;
+	var BestScore = -5000;
+	for (var c in tableaucellz) {
+		var score = arrayGravity[c];
+		if (score > BestScore) {
+			BestCell = c;
+			BestScore = score;
+		}
+	}
+	return BestCell;
+}
+
+function getBestCellToHide(arraydanger, enemy, AccesCellz) {
+	var BestScore = 9999999999;
+	var BestCell;
+	var ArrayCellzEgal = [];
+	var ArrayCellzDanger = [];
+	var avoid = [];
+	var Futur_covided = [];
+	for (var cell in AccesCellz) ArrayCellzDanger[cell] = arraydanger[cell];
+	//debug(ArrayCellzDanger);
+	for (var cell: var score in ArrayCellzDanger) {
+		//mark(cell, COLOR_BLUE);
+		if (score < getLife() && isLocked(getCell(EnemyLeekG), cell)) return [cell, score, true];
+		for (var c in _AOE1[cell]) {
+			if (isLocked(cell, c)) avoid[cell] = true;
+		}
+		if (score < BestScore && score != null) BestScore = score;
+	}
+	for (var cell: var score in ArrayCellzDanger) {
+		if (score == BestScore && (!avoid[cell] || isEmpty(ArrayCellzEgal))) push(ArrayCellzEgal, cell);
+	}
+	for (var c in ArrayCellzEgal) {
+		Futur_covided[c] = [];
+		for (var aoe in _AOE2[c]) {
+			if (isEntity(aoe)) push(Futur_covided[c], getEntityOnCell(aoe));
+		}
+	}
+	//debug("Best hide score : "+BestScore);
+	BestCell = BestCellBulb(ArrayCellzEgal);
+	return [BestCell, BestScore, false, avoid[BestCell], Futur_covided[BestCell]];
+}
+
+function getSortedItemsByCost(Items) {
+	return arraySort(Items, function(a, b) {
+		var CostA = _ITEM_COOLDOWN[a] > 0 ? _ITEM_COST[a] : floor(getTP() / _ITEM_COST[a]);
+		var CostB = _ITEM_COOLDOWN[b] > 0 ? _ITEM_COST[b] : floor(getTP() / _ITEM_COST[b]);
+		if (CostA > CostB) return 1;
+		else if (CostA < CostB) return -1;
+		else return 0;
+	});
+}
+
+function AreTheSame(array1, array2) {
+	for (var i = 0; i < count(array1); i++) {
+		if (array1[i] != array2[i]) return false;
+	}
+	return true;
+}
+
+function OnlyItemAcces(cell, walk) {
+	var array = [];
+	var tmp = [];
+	var _final = [];
+	var BestScore = 0;
+	if (getTurn() == 1) return walk;
+	for (var i in GetItems(getEntity())) {
+		BestScore = 0;
+		array = [];
+		var walkable = [];
+		for (var c: var pm in walk) {
+			for (var item in _USABLE_ITEMS[c]) {
+				if (item == i) walkable[c] = pm;
+			}
+		}
+		/*debug("Weapon : "+ getItemName(i) + " mp : "+mp);
+		for (var c:var pm in walkable) {
+			mark(c);
+		}
+		pause();*/
+		//mark(walkable,COLOR_BLUE);
+		/*for (var c: var pm in walkable) {
+			var score = _MAP_ACTION_SCORED[c][0];
+			if (score > BestScore) BestScore = score;
+		}
+		for (var c: var pm in walkable) {
+			var score = _MAP_ACTION_SCORED[c][0];
+			if (score*2.5 > BestScore) array[c] = pm;
+		}*/
+		array = walkable;
+		array[cell] = 0;
+		for (var c: var pm in array) {
+			//mark(c, COLOR_BLUE);
+			var ok = false;
+			var ok2 = false;
+			/*for (var celll in _AOE1[c]) {
+				if (array[celll] == array[c] - 1) ok = true;
+			}
+			if (!ok) {
+				for (var celll in _AOE2[c]) {
+					if (array[celll] == array[c] - 2) ok = true;
+				}
+			}*/
+			for (var celll in _AOE3[c]) {
+				var notnull = _USABLE_ITEMS[c] != null && _USABLE_ITEMS[celll] != null ? true : false;
+				if (array[celll] == array[c] - 1 || array[celll] == array[c] - 2 || array[celll] == array[c] - 3) ok = true;
+				if (notnull /*&& count(_USABLE_ITEMS[celll]) >=count(_USABLE_ITEMS[c]) && AreTheSame(_USABLE_ITEMS[c], _USABLE_ITEMS[celll]) */ && tmp[celll] != null) ok2 = true;
+			}
+			if (ok == true && ok2 == true) continue;
+			else tmp[c] = pm;
+		}
+		if (!isPositiv(i)) {
+			for (var c: var pm in tmp) {
+				if (_final[c] == null) _final[c] = pm;
+			}
+		} else {
+			for (var c: var pm in tmp) {
+				if (_final[c] == null) _final[c] = pm;
+				break;
+			}
+		}
+	}
+	//debug(_final);
+	for (var c: var pm in _final) {
+		mark(c, COLOR_RED);
+	}
+
+	return _final;
+}
+
+
+function getBestOnlyItem(cellfrom, mp, tp, cellold, items) {
+	StartTestFunction();
+	var AccesCellz = GetWalkableCells(cellfrom, mp);
+	var Life = getLife();
+	if (cellfrom != cellold) _BEST_DMG_CELL = [];
+	_BEST_DMG_CELL[cellfrom] = getBestCellToHide(_MAP_DANGER, EnemyLeekG, AccesCellz);
+	var BestScore = 0;
+	//debug(_MAP_DANGER);
+	BestScore -= (_BEST_DMG_CELL[cellfrom][1] * _SCORE_PLAY_SAFE);
+	//debug('actual taking damage : ' + (-BestScore / _SCORE_PLAY_SAFE));
+	//mark(_BEST_DMG_CELL[cellfrom][0], COLOR_GREEN);
+	if (_BEST_DMG_CELL[cellfrom][1] >= Life) BestScore -= _SCORE_DEATH;
+	else {
+		if (_BEST_DMG_CELL[cellfrom][1] > Life * CareFullDead) BestScore -= _SCORE_RISK_DEATH;
+	}
+	debug("No action score : " + BestScore);
+	var ItemAcces;
+	var _TP_ITEMS = [null, CHIP_JUMP];
+	var BestItem;
+	var BestFrom;
+	var BestTo;
+	var ItemScore = 0;
+	var cell = 0;
+	var score = 1;
+	var myweap = getWeapon();
+	var mytp = tp;
+	var NbItemsCheck = 0;
+	var TimeToStop = false;
+	var BestDmgMap;
+	var tmpscore;
+	var tparray = [];
+	var tmppath;
+	for (var tpi in _TP_ITEMS) {
+		//debug(ArrayItemToString(items));
+		if (!inArray(GetItems(_MY_SELF), tpi) && tpi != null) continue;
+		var eff = tpi == CHIP_LEATHER_BOOTS ? 2 : _ITEM_MAXRANGE[CHIP_JUMP];
+		var tpcost = tpi == null ? 0 : _ITEM_COST[tpi];
+		var distadd = tpi == null ? 0 : eff;
+		var scoreadd = tpi == CHIP_JUMP ? 100 * _COEF_TIMES_BOOST_AGILITY[_MY_SELF] : 0;
+		//debug(distadd);
+		var WalkMP = GetWalkableCellsMP(cellfrom, mp + distadd);
+		if (tpi == CHIP_JUMP) WalkMP = JumpCellzMp(cellfrom, mp);
+		ItemAcces = OnlyItemAcces(cellfrom, WalkMP);
+		//mark(getCellzToUseItem(ItemAcces, CHIP_FRACTURE));
+		if (getOperations() > _BEST_ITEM_OP_LIMIT) {
+			debug("break play : " + NbItemsCheck + " items check / " + count(GetItems(_MY_SELF)));
+			TimeToStop = true;
+			break;
+		}
+		/*for (var c:var pm in ItemAcces) {
+			mark(c);
+		}*/
+		//debug(ItemAcces[getCell()]);
+		tmpscore = BestScore;
+		for (var item in items) {
+			if (item == CHIP_LIBERATION || item == CHIP_INVERSION) continue;
+			NbItemsCheck++;
+			if (_ITEM_IS_WEAPON[item] && myweap != item) mytp -= 1;
+			var TimesUseItem = DivideTP ? 1 : _ITEM_COOLDOWN[item] > 0 ? 1 : floor(mytp / (_ITEM_COST[item] + tpcost));
+			var cost = (_ITEM_IS_WEAPON[item] && myweap != item) ? (_ITEM_COST[item] * TimesUseItem + tpcost + 1) : (_ITEM_COST[item] * TimesUseItem + tpcost);
+			if (cost > tp || cost == 0 || cost == 1) continue;
+			if (tp < 5) cost = 1; // Pour eviter de prendre en compt les tp sur le last item
+			for (var from in getCellzToUseItem(ItemAcces, item)) {
+				ItemScore = 0;
+				if (getOperations() > _BEST_ITEM_OP_LIMIT) {
+					debug("break play : " + NbItemsCheck + " items check / " + count(GetItems(_MY_SELF)));
+					TimeToStop = true;
+					break;
+				}
+				var PathL = ItemAcces[from];
+				var Path = getPath(from, cellfrom);
+				//var Ops = getOperations();
+				var dmgBestCell = _BEST_DMG_CELL[from];
+				if (dmgBestCell[0] == null) {
+					//load de la bestdmgcell et mise en cache
+					dmgBestCell = getBestCellToHide(_MAP_DANGER, EnemyLeekG, GetWalkableCells(from, getMP() - PathL + distadd));
+					_BEST_DMG_CELL[from] = dmgBestCell;
+				}
+				//debug("Opés load dmg cells : "+((getOperations()-Ops)/1000)+" k");
+				var CAoE = getBestAoeCell(from, item, TimesUseItem, tp);
+				if (_DEBUG) debug("item : " + getItemName(item) + " Aoe : " + CAoE + " cost : " + (cost) + " score play safe : " + _SCORE_PLAY_SAFE + " damage taking : " + dmgBestCell[1]);
+				if (CAoE[score] == 0 || CAoE[cell] == null || getUsableItemsFromCellToCell(getCell(), CAoE[cell], item, []) && from != getCell()) continue;
+				if (CAoE[score] / cost <= BestScore) continue;
+				var dmg_maped = dmgBestCell[1];
+				var Abandon = false;
+				for (var c in Path) {
+					if (c != from && getUsableItemsFromCellToCell(c, CAoE[cell], item, [])) Abandon = true;
+				}
+				tmppath = Path;
+				//mark(Path[4]);
+				if (Abandon) continue;
+				var LifeSteal = CAoE[2];
+				Life = RealLeeklife(_MY_SELF) + LifeSteal;
+				var targets = getItemTargets(item, CAoE[0]);
+				if (LifeSteal > 0 && LifeSteal != null && LifeSteal[0] == null) dmg_maped = dmg_maped - LifeSteal;
+				if (from != getCell() && targets[0] == _MY_SELF && count(targets) == 1) continue;
+				if (DivideTP) CAoE[score] /= cost;
+				ItemScore += CAoE[score] + scoreadd;
+				if (dmgBestCell[2]) ItemScore += _SCORE_LOCK;
+				if (dmgBestCell[3]) ItemScore -= _SCORE_LOCK;
+				if (getCooldown(CHIP_JUMP) < 2 && getCooldown(CHIP_TELEPORTATION) < 10) {
+					ItemScore -= (dmg_maped * _SCORE_PLAY_SAFE);
+					if (dmg_maped >= Life * _SCORE_DEATH_PERCENT /* && !_ITEM_CAN_REMOVE_DANGER[item]*/ ) ItemScore -= _SCORE_DEATH;
+					else {
+						if (dmg_maped > Life * CareFullDead) ItemScore -= _SCORE_RISK_DEATH;
+					}
+				}
+				var covided = dmgBestCell[4];
+				for (var entity in covided) {
+					var mydmg = 0;
+					var Putable = true;
+					//dmg * (coef / _COEF_DIVIDE_COEFS);
+					for (var effect in getEffects()) {
+						if (effect[5] == CHIP_COVID) mydmg = effect[1];
+					}
+					//if (mydmg == 0) break;
+					for (var effect in getEffects(entity)) {
+						if (effect[5] == CHIP_COVID) Putable = false;
+					}
+					if (Putable == true) {
+						var coef = isAlly(entity) ? _COEF_HEAL[entity] : _COEF_DMG[entity];
+						ItemScore += mydmg * (coef / _COEF_DIVIDE_COEFS);
+						debug("I can put covid to : " + getName(entity) + " for : " + mydmg + " damage per turn");
+					}
+				}
+				//ItemScore -= (Path) / 10000;
+				//if (_DEBUFFABLE_CELLS[dmgBestCell[0]]) ItemScore*= _TIMES_DEBUFF_SCARES;
+				if (ItemScore > BestScore) {
+					BestDmgMap = dmg_maped;
+					BestScore = ItemScore;
+					BestItem = item;
+					BestFrom = from;
+					BestTo = CAoE[cell];
+				}
+			} //Fin from
+			if (TimeToStop) break;
+		} //Fin Item
+		if (tmpscore == BestScore || tpi == null) continue;
+		//debugC("Waouw tp", COLOR_BLUE);
+		if (tpi == CHIP_JUMP || tpi == CHIP_TELEPORTATION) {
+			reverse(tmppath);
+			var mpmax;
+			var cellmax;
+			tmppath[getCell()] = 0;
+			for (var pm: var c in tmppath) {
+				if (getCellDistance(c, BestFrom) <= 3) {
+					cellmax = c;
+					break;
+				}
+			}
+			//mark(celltotp, COLOR_BLUE);
+			tparray = [tpi, BestFrom, false];
+			BestFrom = cellmax;
+		} else if (tpi == CHIP_LEATHER_BOOTS) {
+			tparray = [tpi, getCell(), true];
+		}
+	} // FIn TP
+	//debug(_BEST_DMG_CELL);
+	//debug('Dmg that i am taking if not removing damage : ' + _BEST_DMG_CELL[BestFrom][1]);
+	//debug("Score of dmg : " + BestScore);
+	/*var Divided = _BEST_DMG_CELL[BestFrom][1] > 0 ? BestDmgMap / _BEST_DMG_CELL[BestFrom][1] : 0;
+	Divided /= 1;
+	for (var c: var a in _BEST_DMG_CELL) {
+		if (Divided == 0 || Divided == 1 || !_ITEM_CAN_REMOVE_DANGER[BestItem]) break;
+		var dmgc = _BEST_DMG_CELL[c];
+		var nb = dmgc[1];
+		var celll = dmgc[0];
+		var booleen = dmgc[2];
+		nb *= Divided;
+		_MAP_DANGER[c] = nb;
+		_BEST_DMG_CELL[c] = [celll, nb, booleen];
+	}*/
+	StopTestFunction("New Only Item");
+	return [BestItem, BestFrom, BestTo, tparray];
+}
+
+function getBestOnlyChipToUseForBulb(entity, inv) {
+	var BestScore = 0;
+	var BestItem;
+	var BestFrom;
+	var BestTo;
+	var acces = GetWalkableCellsMP(getCell(entity), getMP(entity));
+	acces[getCell()] = 0;
+	var ForgetBulbs = false;
+	if (getOperations() > 18000000) ForgetBulbs = true;
+	var summ = getSummoner();
+	for (var i in inv) {
+		if (getTP() < _ITEM_COST[i] || getCooldown(i) > 0) continue;
+		var TimesUseItem = _ITEM_COOLDOWN[i] > 0 ? 1 : floor(getTP() / _ITEM_COST[i]);
+		for (var cell: var mp in acces) {
+			if (getCellDistance(cell, getCell(getNearestEnemy())) > _ITEM_MAXRANGE[i] && !isPositiv(i)) continue;
+			if (getCellDistance(cell, getCell(getNearestAlly())) > _ITEM_MAXRANGE[i] && isPositiv(i)) continue;
+			if (ForgetBulbs) {
+				if (getCellDistance(cell, getCell(summ)) > _ITEM_MAXRANGE[i] && isPositiv(i)) continue;
+			}
+			var Score = 0;
+			var targets = [];
+			var BestShootCell = getBestAoeCell(cell, i, TimesUseItem, getTP());
+			if (BestShootCell[0] == null) continue;
+			Score = BestShootCell[1];
+			targets = getChipTargets(i, BestShootCell[0]);
+			if (getCell() != cell && getUsableItemsFromCellToCell(getCell(), BestShootCell[0], i, [_MY_SELF])) continue;
+			if (count(targets) == 1 && targets[0] == entity && cell != getCell()) continue;
+			if (getName(entity) == "metallic_bulb" && isSummon(targets[0])) continue;
+			if (inArray(targets, EnemyLeekG) && inArray(getWeapons(EnemyLeekG), WEAPON_REVOKED_M_LASER) && getName(entity) != "wizard_bulb") continue;
+			/*if (_NAME_IS_GENTLE_BULB[getName(_MY_SELF)]) {
+				var LessDmg = 99999;
+				for (var cd: var mpd in CellMp(cell, getMP(entity) - mp)) {
+					var Bmd = _BULB_MAP_DANGER[cd];
+					if (Bmd < LessDmg) LessDmg = Bmd;
+				}
+				Score -= LessDmg * _SCORE_PLAY_SAFE_BULB;
+			}*/
+			/*if (!_NAME_IS_GENTLE_BULB[getName(entity)]) arrayIter(targets, function(x) {
+				if (isSummon(x)) Score *= _TIMES_BULB_FOCUS_BULBS;
+			});*/
+			if (Score > BestScore) {
+				BestScore = Score;
+				BestFrom = cell;
+				BestItem = i;
+				BestTo = BestShootCell[0];
+			}
+		}
+	}
+
+	return [BestItem, BestFrom, BestTo];
+}
+
+function WCellzBulb() {
+	var _final = [];
+	for (var c: var mp in CellMp(getCell(), getMP())) {
+		push(_final, c);
+	}
+	return _final;
+}
+
+function AiForBulbs() {
+	var Name;
+	var ops = getOperations();
+	StartTestFunction();
+	for (var i = 0; i < 10; i++) {
+		UpdateLeekEffects();
+		setCoef();
+		if (getOperations() - ops > _OPS_BULB[getName()]) break;
+		if (isLocked(getCell(getSummoner()), getCell())) moveAwayFrom(getSummoner(), 1);
+		Name = bulbname(_MY_SELF, EnemyLeekG)[0];
+		var item = getBestOnlyChipToUseForBulb(_MY_SELF, getArrayComboBulbSorted(Name));
+		if (item[0] == null) break;
+		var BestShootCell = item[2];
+		var getCellToUse = item[1];
+		moveTowardCell(getCellToUse);
+		var times = _ITEM_COOLDOWN[item[0]] > 0 ? 1 : floor(getTP() / _ITEM_COST[item[0]]);
+		for (var h = 0; h < times; h++) {
+			useChipOnCell(item[0], BestShootCell);
+		}
+	}
+	PiptronBulb();
+
+	var BestCell = !_NAME_IS_GENTLE_BULB[getName(_MY_SELF)] ? BestCellBulb(WCellzBulb()) : BestCellBulb(HidenCellzBulb(getCell(), getMP()));
+	moveTowardCell(BestCell);
+	StopTestFunction("bulb");
+}
+
+function Play(enemys, weapon, cell, mp, enemyweapon, tpa, healAlly) {
+	StartTestFunction();
+	var tp = getTP();
+	var tabSummon = [];
+	var inv = GetItems(_MY_SELF);
+	var oldcell;
+	var ShouldAntidote = false;
+	if (DmgForTurn(_MY_SELF) > getLife() / 5 && getCooldown(CHIP_ANTIDOTE) == 0 && inArray(getChips(), CHIP_ANTIDOTE)) {
+		ShouldAntidote = true;
+	}
+	if (ShouldAntidote && tp >= _ITEM_COST[CHIP_ANTIDOTE]) {
+		tp -= _ITEM_COST[CHIP_ANTIDOTE];
+		_ITEM_MINRANGE[WEAPON_GAZOR] = 2;
+		_ITEM_MINRANGE[CHIP_PLAGUE] = 1;
+		_ITEM_MINRANGE[CHIP_TOXIN] = 1;
+	}
+	if (!ShouldAntidote && abs(HelpLibeScoreEnemy(getEntity())) > 9000 && HelpLibeScoreEnemy(getEntity()) < 0 && getCooldown(CHIP_LIBERATION) == 0 && inArray(getChips(), CHIP_LIBERATION)) {
+		tp -= _ITEM_COST[CHIP_LIBERATION];
+		useChip(CHIP_LIBERATION, getEntity());
+	}
+	//debug('My libe score : '+ (HelpLibeScoreEnemy(getLeek())));
+	while (true) {
+		UpdateLeekEffects();
+		setCoef();
+		if (isDead(EnemyLeekG)) EnemyLeekG = EnemyLeek();
+		if (getOperations() > _PLAY_OP_LIMIT) {
+			debug("Break : " + (getOperations() / 1000000) + " OP PLAY");
+			break;
+		}
+		////////////////////////////////////////////////////////////////////////////////
+		//Regen part
+		////////////////////////////////////////////////////////////////////////////////
+		if (getLife() < 1000 && getCooldown(CHIP_REGENERATION) == 0 && inArray(getChips(), CHIP_REGENERATION)) {
+			useChip(CHIP_REGENERATION, _MY_SELF);
+			tp -= _ITEM_COST[CHIP_REGENERATION];
+			UpdateLeekEffects();
+			setCoef();
+		}
+		////////////////////////////////////////////////////////////////////////////////
+		//Best item part
+		////////////////////////////////////////////////////////////////////////////////
+		var items = GetItems(getEntity());
+		for (var bulb in tabSummon) {
+			removeElement(items, bulb);
+		}
+		var bi = getBestOnlyItem(getCell(), getMP(), tp, oldcell, getSortedItemsByCost(items));
+		var BestShootingCell = bi[2];
+		var CellToShoot = bi[1];
+		var tparray = bi[3];
+		for (var i in tabSummon) {
+			if (_IS_GENTLE_BULB[i] == false && CellToShoot != null && getCellDistance(getCell(), getCell(EnemyLeekG)) < getCellDistance(CellToShoot, getCell(EnemyLeekG)) || _IS_GENTLE_BULB[i] == false && CellToShoot == null) {
+				spawn(i, AiForBulbs);
+			}
+		}
+		if (bi[0] == null || tp <= 0 || _ITEM_COST[bi[0]] > tp) {
+			debug("break moving to hiden cells tp : " + tp);
+			break;
+		}
+		if (_ITEM_IS_WEAPON[bi[0]] && getWeapon() != bi[0]) tp -= 1;
+		debug("Using : " + getItemName(bi[0]));
+		if (isPositiv(bi[0]) != null) {
+			if (tparray[0] != null && tparray[2] == true) useChipOnCell(tparray[0], tparray[1]);
+			moveTowardCell(CellToShoot);
+			if (tparray[0] != null && tparray[2] == false) useChipOnCell(tparray[0], tparray[1]);
+			//////////////////////////////////////////////////////////////////////////////
+			//Libe/Inver Part
+			//////////////////////////////////////////////////////////////////////////////
+			for (var l in getAliveEnemies()) {
+				if (isSummon(l)) continue;
+				var Libed = false;
+				if (getCooldown(CHIP_LIBERATION) == 0 && MustLibe(getEntity(), l, bi[0], getCellDistance(BestShootingCell, getCell(l)), tp) && getUsableItemsFromCellToCell(CellToShoot, getCell(l), CHIP_LIBERATION, []) && inArray(getItemTargets(bi[0], BestShootingCell), l) && inArray(getChips(), CHIP_LIBERATION)) {
+					useChip(CHIP_LIBERATION, l);
+					tp -= _ITEM_COST[CHIP_LIBERATION];
+					Libed = true;
+					//debug('Libéré !');
+				}
+				if (getCooldown(CHIP_INVERSION) == 0 && MustInver(getEntity(), l, bi[0], getCellDistance(BestShootingCell, getCell(l)), tp) && getUsableItemsFromCellToCell(CellToShoot, getCell(l), CHIP_INVERSION, []) && inArray(getItemTargets(bi[0], BestShootingCell), l) && inArray(getChips(), CHIP_INVERSION) && !Libed) {
+					useChipOnCell(CHIP_INVERSION, getCell(l));
+					tp -= _ITEM_COST[CHIP_INVERSION];
+					BestShootingCell = CellToShoot;
+					//debug('Inversé !');
+				}
+			}
+			//////////////////////////////////////////////////////////////////////////////
+			//Covetoussness part
+			//////////////////////////////////////////////////////////////////////////////
+			if (inArray(getChips(), CHIP_COVETOUSNESS) && getCooldown(CHIP_COVETOUSNESS) == 0) {
+				var min = 1;
+				var BestCell;
+				for (var to in getAllShootableCellz(getCell(), CHIP_COVETOUSNESS)) {
+					var tar = getChipTargets(CHIP_COVETOUSNESS, to);
+					var nb = 0;
+					for (var e in tar) {
+						if (isEnemy(e)) nb++;
+					}
+					if (nb > min) {
+						min = nb;
+						BestCell = to;
+					}
+				}
+				if (BestCell != null) {
+					var pt = getTP();
+					useChipOnCell(CHIP_COVETOUSNESS, BestCell);
+					tp += getTP() - pt;
+				}
+			}
+			//////////////////////////////////////////////////////////////////////////////
+			//Devil strike part
+			//////////////////////////////////////////////////////////////////////////////
+			if (bi[0] == CHIP_DEVIL_STRIKE) {
+				useChip(bi[0], _MY_SELF);
+			}
+			//////////////////////////////////////////////////////////////////////////////
+			//using items
+			//////////////////////////////////////////////////////////////////////////////
+			if (getStrength() >= 400 || getOperations() >= _BEST_ITEM_OP_LIMIT) {
+				var TP_ = tp;
+				while (TP_ >= _ITEM_COST[bi[0]]) {
+					useItem(bi[0], BestShootingCell, getWeapon());
+					TP_ -= _ITEM_COST[bi[0]];
+					if (_ITEM_COOLDOWN[bi[0]] > 0 || count(getItemTargets(bi[0], BestShootingCell)) == 0) break;
+					var Worth = false;
+					for (var t in getItemTargets(bi[0], BestShootingCell)) {
+						if (RealLeeklife(t) > 0) Worth = true;
+					}
+					if (!Worth) break;
+				}
+				tp = TP_ + _ITEM_COST[bi[0]];
+			} else useItem(bi[0], BestShootingCell, getWeapon());
+			//////////////////////////////////////////////////////////////////////////////
+			//End items (no bulbs)
+			//////////////////////////////////////////////////////////////////////////////
+		} //end is positiv != null
+		//////////////////////////////////////////////////////////////////////////////
+		//bulb storage
+		//////////////////////////////////////////////////////////////////////////////
+		if (isPositiv(bi[0]) == null && bi[0] != CHIP_TELEPORTATION && bi[0] != CHIP_ANTIDOTE && bi[0] != CHIP_INVERSION && bi[0] != CHIP_LIBERATION && bi[0] != CHIP_RESURRECTION) {
+			removeElement(inv, bi[0]);
+			push(tabSummon, bi[0]);
+		}
+		//////////////////////////////////////////////////////////////////////////////
+		//resu part
+		//////////////////////////////////////////////////////////////////////////////
+		if (bi[0] == CHIP_RESURRECTION && getFightType() == FIGHT_TYPE_SOLO) {
+			var e = RessurectionSummon()[1];
+			var me = _MY_SELF;
+			_MY_SELF = e;
+			resurrect(e, CellToRessurect());
+			_MY_SELF = me;
+		}
+		if (bi[0] == CHIP_RESURRECTION && getFightType() != FIGHT_TYPE_SOLO) {
+			resurrect(DeadAlly()[0], CellToRessurect());
+		}
+		//////////////////////////////////////////////////////////////////////////////
+		//End play each item
+		//////////////////////////////////////////////////////////////////////////////
+		tp -= _ITEM_COST[bi[0]];
+		if (bi[0] == CHIP_MOTIVATION) tp += 3;
+		if (bi[0] == CHIP_ADRENALINE) tp += 5;
+		if (isPositiv(bi[0]) != null || bi[0] == CHIP_RESURRECTION) inv = GetItems(_MY_SELF);
+		oldcell = getCell();
+		if (getLife(EnemyLeekG) + 100 < getTotalLife(EnemyLeekG)) {
+			push(inv, CHIP_ALTERATION);
+			push(inv, WEAPON_MYSTERIOUS_ELECTRISOR);
+		}
+	} //Fin While
+	if (ShouldAntidote) {
+		useChip(CHIP_ANTIDOTE, _MY_SELF);
+		_ITEM_MINRANGE[WEAPON_GAZOR] = 4;
+		_ITEM_MINRANGE[CHIP_PLAGUE] = 4;
+		_ITEM_MINRANGE[CHIP_TOXIN] = 2;
+	}
+	//////////////////////////////////////////////////////////////////////////////
+	//Hidding part
+	//////////////////////////////////////////////////////////////////////////////
+	var BestHideCellz = getBestCellToHide(_MAP_DANGER, EnemyLeekG, GetWalkableCells(getCell(), getMP()));
+	moveTowardCell(BestHideCellz[0]);
+	//////////////////////////////////////////////////////////////////////////////
+	//Spawnning part
+	//////////////////////////////////////////////////////////////////////////////
+	for (var i in tabSummon) {
+		spawn(i, AiForBulbs);
+	}
+	//////////////////////////////////////////////////////////////////////////////
+	//end play
+	//////////////////////////////////////////////////////////////////////////////
+	StopTestFunction("Play");
+	return tabSummon;
+}
+/////////////////////////////////////////////////////////////////////////////////////////////TP Focus
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+for (var l in _ALL_LEEKS) {
+	if (getCooldown(CHIP_ANTIDOTE, l) >= 3 && inArray(getChips(l), CHIP_ANTIDOTE) && getLife() > 2000 && inArray(getChips(), CHIP_TELEPORTATION) && getCooldown(CHIP_TELEPORTATION) == 0 && getStrength(EnemyLeekG) <= 500) {
+		var celltousechip = getCellToUseChip(CHIP_FRACTURE, l);
+		var pathchip = getPathLength(getCell(), celltousechip);
+		var celltelechip = getCellsToUseChipOnCell(CHIP_TELEPORTATION, celltousechip);
+		var pathtp = getPathLength(getCell(), celltelechip);
+		if (pathchip >= 10 && pathtp <= 2) {
+			moveTowardCell(celltelechip);
+			useChipOnCell(CHIP_TELEPORTATION, celltousechip);
+		}
+	}
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////Inver/TP locked
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+for (var l in _ALL_LEEKS) {
+	if (isLocked(getCell(), getCell(l))) {
+		if (inArray(getChips(), CHIP_INVERSION) && (!inArray(getChips(l), CHIP_INVERSION) || getCooldown(CHIP_INVERSION, l) >= 3)) {
+			useChipOnCell(CHIP_INVERSION, getCell(l));
+		}
+		if (inArray(getChips(), CHIP_TELEPORTATION) && (!inArray(getChips(), CHIP_INVERSION) || getCooldown(CHIP_INVERSION) == 0)) {
+			for (var c in _AOE2[getCell(l)]) {
+				if (!isLeek(c) && !isObstacle(c) && c != null) {
+					useChipOnCell(CHIP_TELEPORTATION, c);
+					break;
+				}
+			}
+		}
+	}
+}
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////All updates
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+//MAP_DANGER(010)
+_MAP_DANGER = [];
+_MOST_DANGEROUS = [];
+_MOST_DANGEROUS_ITEM = [];
+//UTILS(002)
+_ALL_CELLZ = GetTableauDesCells();
+//PRELOAD(003)
+//UpdateLeekEffects();
+if (getTurn() == 1 || EnemyLeekG != null && isDead(EnemyLeekG) || EnemyLeekG == null) EnemyLeekG = EnemyLeek();
+_WEAP_TO_SET = getWeaponToSet();
+//mark(_CELL_AREA[CHIP_COVETOUSNESS][_CELL[_MY_SELF]]);
+//pause();
+//mark(_CELL_AREA[WEAPON_GAZOR][_CELL[EnemyLeekG]] , COLOR_RED);
+//DECISION(005)
+MustFocusEnemy(EnemyLeekG);
+//MAP_ACTION(006)
+//LoadActionMap();
+//MAP_DANGER(010)
+LoadBulbActions();
+setDamageMap();
+//mark(AllAllyWalkCellz());
+updateGravityCellz(AllAllyWalkCellz());
+if (_DEBUG) {
+	for (var c: var danger in _MAP_DANGER) {
+		var Red = danger / getLife() * 255;
+		var Green = 255 - Red;
+		if (Green < 0) Green = 0;
+		mark(c, getColor(Red, Green, 0));
+	}
+}
+//debug(_MAP_DANGER);
+//ONESHOOT_TEAM(009)
+OneShot(EnemyLeekG);
+
+///////////////////////////////////////////////////////////////////////////////////////////////FailSafe
+/////////////////////////////////////////////////////////////////////////////////////////////
+function FailSafe() {
+	var SummonArray = [CHIP_METALLIC_BULB, CHIP_HEALER_BULB, CHIP_LIGHTNING_BULB, CHIP_PUNY_BULB];
+	if (getStrength(EnemyLeekG) < 200 && inArray(GetItems(_MY_SELF), CHIP_METALLIC_BULB)) {
+		removeElement(SummonArray, CHIP_METALLIC_BULB);
+		push(SummonArray, CHIP_METALLIC_BULB);
+	}
+	var HealArray = [CHIP_ARMORING, CHIP_REMISSION, CHIP_VACCINE, CHIP_CURE, CHIP_BANDAGE];
+	if (getLife() == getTotalLife()) {
+		removeElement(HealArray, CHIP_REMISSION);
+		removeElement(HealArray, CHIP_CURE);
+		removeElement(HealArray, CHIP_BANDAGE);
+	}
+	var OtherArray = [CHIP_RAGE, CHIP_MOTIVATION, CHIP_FORTRESS, CHIP_ARMOR, CHIP_SHIELD, CHIP_WALL, CHIP_HELMET];
+	for (var i in OtherArray) {
+		var Ok = true;
+		for (var eff in getEffects()) {
+			if (eff[5] == i) Ok = false;
+		}
+		if (inArray(GetItems(_MY_SELF), i) && Ok) useChip(i, _MY_SELF);
+	}
+
+	for (var i in SummonArray) {
+		if (inArray(GetItems(_MY_SELF), i)) summon(i, getCellToUseChip(i, _MY_SELF), AiForBulbs);
+	}
+
+	if (getStrength(EnemyLeekG) < 200) {
+		for (var i in HealArray) {
+			if (inArray(GetItems(_MY_SELF), i)) useChip(i, _MY_SELF);
+		}
+	}
+	for (var i in HealArray) {
+		if (inArray(GetItems(_MY_SELF), i)) useChip(i, _MY_SELF);
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////
+//GESTION LIBE HORS BESTTARGET (LIBE CRITIQUE)
+///////////////////////////////////////////////////////////////////////////////////////////
+//
+if (inArray(getChips(), CHIP_LIBERATION)) {
+	var tp = getTP();
+	for (var i in getAliveEnemies()) {
+		debug('libe score : ' + HelpLibeScoreEnemy(i));
+		var cl = getCellToUseChip(CHIP_LIBERATION, i);
+		var celltp = getCellToUseChipOnCell(CHIP_TELEPORTATION, cl);
+		var PathTp = getPathLength(getCell(), celltp);
+		var Path = getPathLength(getCell(), cl);
+		if (HelpLibeScoreEnemy(i) > 3000 && PathTp <= getMP() && Path >= getMP() && getCooldown(CHIP_LIBERATION) == 0 && tp >= 12 && inArray(getChips(), CHIP_TELEPORTATION) && getCooldown(CHIP_TELEPORTATION) == 0) {
+			moveTowardCell(celltp);
+			useChipOnCell(CHIP_TELEPORTATION, cl);
+			useChip(CHIP_LIBERATION, i);
+			UpdateLeekEffects();
+		}
+		if (HelpLibeScoreEnemy(i) > 3000 && Path <= getMP() && getCooldown(CHIP_LIBERATION) == 0 && tp >= 5) {
+			moveTowardCell(cl);
+			useChip(CHIP_LIBERATION, i);
+			UpdateLeekEffects();
+		}
+	}
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////Play
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+debug("Opés load : " + getOperations() / 1000 + " k ");
+Play(null, getWeapon(), getCell(), (getMP() / 2), getWeapon(EnemyLeekG), getTP(), _MY_SELF);
+
+/////////////////////////////////////////////////////////////////////////////////////////////Ti peu de machine learning
+/////////////////////////////////////////////////////////////////////////////////////////////
+if (getRegister("Nb Fights") == null) setRegister("Nb Fights", 0);
+if (getRegister("WIN") == null) setRegister("WIN", 0);
+if (getRegister("Best Coef") == null) setRegister("Best Coef", 0.01);
+if (getRegister("Tested Coef") == null) setRegister("Tested Coef", randFloat(0, 100));
+if (getRegister("Best Nb Wins") == null) setRegister("Best Nb Wins", 0);
+if (getFightContext() == FIGHT_CONTEXT_CHALLENGE) {
+	if (RealLeeklife(EnemyLeekG) <= 0 || getAliveEnemiesCount() == 0) setRegister("WIN", number(getRegister("WIN")) + 1);
+}
+
+function ResetTestCoef(coef) {
+	setRegister("Tested Coef", randFloat(0, 100000));
+	setRegister("WIN", 0);
+	setRegister("Nb Fights", 0);
+}
+
+function setMyCoef(coef, nbfights) {
+	if (getFightContext() == FIGHT_CONTEXT_CHALLENGE) {
+		if (number(getRegister("Nb Fights")) >= nbfights) {
+			if (number(getRegister("Best Nb Wins")) < number(getRegister("WIN"))) {
+				setRegister("Best Coef", number(getRegister("Tested Coef")));
+				setRegister("Best Nb Wins", number(getRegister("WIN")));
+			}
+			ResetTestCoef(coef);
+		}
+		setRegister("Nb Fights", number(getRegister("Nb Fights")) + 1);
+		coef = number(getRegister("Tested Coef"));
+		debug("The value of the coef : " + coef);
+	}
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////FailSafe / Speak
+/////////////////////////////////////////////////////////////////////////////////////////////
+FailSafe();
+if (getWeapon() != _WEAP_TO_SET) setWeapon(_WEAP_TO_SET);
+Pipotron();
+debug("Every tested shootable cellz : " + _ALL_TESTED_SHOOTABLE_CELLZ);
+debug("Opés : " + getOperations() / 1000 + "k");

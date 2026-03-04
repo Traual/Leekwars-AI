@@ -1,0 +1,16 @@
+/**
+ * The Action Class : To Then Manipulate the object better
+**/
+
+include("../includes")
+
+class Action {
+	ITEM
+	FROM
+	TO
+	constructor(itemUsed, fromCell, toCell) {
+		this.ITEM = itemUsed
+		this.FROM = fromCell
+		this.TO = toCell
+	}
+}

@@ -1,0 +1,121 @@
+include("Fonctions");
+var enemy = getNearestEnemy();
+var mycell = getCell();
+var enemycell = getCell(enemy);
+var dist = getDistance(mycell, getCell(leek2));
+var tour = getTurn();
+var disto = getPathLength(mycell, getCell(leek2));
+var leek2cell = getCell(leek2);
+
+poisoncounter();
+
+if (PeutAllerSeCacherLi()==true && TPE()==false  && getStrength(leek2)>=700 && canBeOS(100, // item's damage
+        getTP(leek2)/8, // number of time the item is used
+        getStrength(leek2), // enemy's strength
+        getLife(), // ally health
+        getAbsoluteShield(), // ally absolute shield
+        getRelativeShield()) && getScience(leek2)>=200) {
+		moveTowardCell(getCellToUseChip(CHIP_LIBERATION, leek2));
+		
+	useChip(CHIP_LIBERATION, leek2);
+}
+
+if (PeutAllerSeCacherLi()==true && TPE()==false  && getRelativeShield()>=15) {
+		moveTowardCell(getCellToUseChip(CHIP_LIBERATION, leek2));
+		
+	useChip(CHIP_LIBERATION, leek2);
+}
+
+if (PeutAllerSeCacherLi()==true && TPE()==false  && getAbsoluteShield()>=50)
+		{
+		moveTowardCell(getCellToUseChip(CHIP_LIBERATION, leek2));
+		
+	useChip(CHIP_LIBERATION, leek2);
+}
+
+
+if (PeutAllerSeCacherM()==true && TPE()==false && getWeapon()==WEAPON_M_LASER  && canBeOS(100, // item's damage
+        getTP(leek2)/8, // number of time the item is used
+        getStrength(leek2), // enemy's strength
+        getLife(), // ally health
+        getAbsoluteShield(), // ally absolute shield
+        getRelativeShield())) {
+	
+	if (isAlive(leek2)) {
+		useWeapon(leek2);
+	}
+	if (isAlive(leek2)) {
+		useWeapon(leek2);
+	}
+	if (isAlive(leek2)) {
+		useWeapon(leek2);
+	}
+
+	if (isAlive(leek2)) {
+		useChip(CHIP_LIGHTNING, leek2);
+	}
+}
+
+if (PeutAllerSeCacherM()==true && TPE()==true && getWeapon()==WEAPON_M_LASER && canBeOS(100, // item's damage
+        getTP(leek2)/8-8, // number of time the item is used
+        getStrength(leek2), // enemy's strength
+        getLife(), // ally health
+        getAbsoluteShield(), // ally absolute shield
+        getRelativeShield())==false) {
+		
+	if (isAlive(leek2)) {
+		useWeapon(leek2);
+	}
+	if (isAlive(leek2)) {
+		useWeapon(leek2);
+	}
+	if (isAlive(leek2)) {
+		useWeapon(leek2);
+	}
+	if (getPathLength(getCell(), getCellToUseChip(CHIP_LIGHTNING, leek2))<=1) {
+		moveTowardCell(getCellToUseChip(CHIP_LIGHTNING, leek2));
+	}
+	if (isAlive(leek2)) {
+		useChip(CHIP_LIGHTNING, leek2);
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,48 @@
+include("include");
+
+function getArrayComboBulbSorted(@entity) {
+	if (entity == ENTITY_ICED_BULB) return [CHIP_ICEBERG, CHIP_STALACTITE, CHIP_REFLEXES, CHIP_ICE];
+	if (entity == ENTITY_HEALER_BULB) return [CHIP_VACCINE, CHIP_CURE, CHIP_DRIP, CHIP_BANDAGE];
+	if (entity == ENTITY_ROCKY_BULB) return [CHIP_ROCKFALL, CHIP_HELMET, CHIP_ROCK, CHIP_PEBBLE];
+	if (entity == ENTITY_PUNY_BULB) return [CHIP_PROTEIN, CHIP_BANDAGE, CHIP_HELMET, CHIP_PEBBLE];
+	if (entity == ENTITY_METALLIC_BULB) return [CHIP_ARMOR, CHIP_SHIELD, CHIP_WALL, CHIP_SEVEN_LEAGUE_BOOTS];
+	if (entity == ENTITY_FIRE_BULB) return [CHIP_METEORITE, CHIP_DEVIL_STRIKE, CHIP_FLAME, CHIP_SPARK];
+	if (entity == ENTITY_LIGHTNING_BULB) return [CHIP_DOPING, CHIP_LIGHTNING, CHIP_FLASH, CHIP_SHOCK];
+	return [null];
+}
+global Help ;
+function getBestOnlyChipToUseForBulb(@entity, @inventory) {
+if (_STRENGTH[_MY_SELF]>=1200) {
+	Help = ScoreWorthItem;
+	ScoreWorthItem = -15;
+}
+	for (var item in inventory) {
+		var Target = BestTarget(item);
+		var BestShootCell = BestCellToShoot(_MY_SELF, Target, getMP(), item);
+		var getCellToUse = getCelltoUseItem(item, BestShootCell);
+		var Path = getPathLength(_CELL[_MY_SELF], getCellToUse);
+		if (getCooldown(item)==0 && IsWorth(item, Path, _MP[_MY_SELF], BestShootCell, _CELL[_MY_SELF], Target, _MY_SELF) > ScoreWorthItem && BestShootCell != null && Target != null && getTP() >= _ITEM_COST[item] && Path <= _MP[_MY_SELF]) {
+			return item;
+		}
+	}
+	return null;
+}
+
+function AiForBulbs() {
+	for (var i = 0; i < 10; i++) {
+		UpdateLeekEffects();
+		var Name = bulbname(_MY_SELF, EnemyLeekG)[0];
+		var item = getBestOnlyChipToUseForBulb(Name, getArrayComboBulbSorted(Name));
+		if (item == null) break;
+		var Target = BestTarget(item);
+		var BestShootCell = BestCellToShoot(_MY_SELF, Target, _MP[_MY_SELF], item);
+		var getCellToUse = getCelltoUseItem(item, BestShootCell);
+		var Path = getPathLength(_CELL[_MY_SELF], getCellToUse);
+		moveTowardCell(getCellToUse);
+		useChipOnCell(item, BestShootCell);
+	}
+	PiptronBulb();
+	moveTowardCell(HidenCellBulb(_CELL[_MY_SELF], _MP[_MY_SELF], EnemyLeekG, getSummoner()));
+}
+
+ScoreWorthItem = Help;

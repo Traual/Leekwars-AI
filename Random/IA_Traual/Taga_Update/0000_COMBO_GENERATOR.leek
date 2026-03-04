@@ -1,0 +1,354 @@
+include('auto');
+// INSTRUCTION: lancer un combat de test avec le leek et cette IA pour récupérer la liste des combos disponibles en dur dans le registre, en clé le nb de TP, en value les set de combos selon l'arme.
+// si pas d'arme en main, prendre la clé "EMPTY" sous forme de string.
+// NB je fais des blocks de 4999 char par registre pour contourner la limite de 5000char (ça bug à 5000 par bloc), utiliser la fonction getFullRegister(key) pour avoir le registre complêt après réassemblage.
+// NB² les items ignorés par le système de génération de combos sont ceux de la variable global _TO_REMOVE_STUFF dans les premières lignes du fichier 01_GLOBAL
+
+moveAwayFrom(getNearestEnemy());
+
+global ____debug = false;
+
+global _SHOULD_SORT_COMBOS_TO_ALTERNATE_OFF_DEF_MOVE = getScience() > 500 ? false : false;
+global combossssss, knownCombos, combo_mincost, stuffstr ="";
+var inHands = getWeapons(); unshift(inHands, "EMPTY");
+global _STUFF = getWeapons()+getChips(), _CURRENT_COMBO_ARRAY = [], _ITEM_TO_ID = [];
+if(getTurn()==1){
+	clearAllRegisters();
+	for(var item in _TO_REMOVE_STUFF) removeElement(_STUFF, item);
+	sort(_STUFF, SORT_DESC);
+	for(var id : var item in _STUFF){
+		_ITEM_TO_ID[item] = id;
+		stuffstr+=getItemName(item)+" ";
+	}
+}
+global _COMBOS_TP = 0, _MAX_TP = getTP(), _ITEM_INDEX = 0, _MAX_INDEX = count(inHands);
+
+startOp();
+while(_COMBOS_TP<=_MAX_TP +12){ //set max boost here
+	while(_ITEM_INDEX <= _MAX_INDEX){
+		fillComboArray(_CURRENT_COMBO_ARRAY, inHands[_ITEM_INDEX]);
+		_ITEM_INDEX++;
+		if(getOperations()>= OPERATIONS_LIMIT*0.8) {
+			debugW("break @"+(getOperations()/1000)+"k opés");
+			return;
+		}
+	}
+	var strrr = getJsonEncodedCombos(_CURRENT_COMBO_ARRAY);
+	setFullRegister(_COMBOS_TP, strrr);
+	setRegister("-_INFOS", "MAXTP: "+_COMBOS_TP+" || STUFF: "+stuffstr);
+	_CURRENT_COMBO_ARRAY = [];
+	_COMBOS_TP++;
+	_ITEM_INDEX=0;
+};
+stopOpk("Génération des combos");
+
+function fillComboArray(@result, @w){
+	var combosSet;
+	if(w=="EMPTY") combosSet = tools2Combo(_STUFF, _COMBOS_TP, null);
+	else combosSet = tools2Combo(_STUFF, _COMBOS_TP, w);
+
+// add debug
+	if(____debug) for(var combo in combosSet){
+		for(var item in combo){
+			if(item==CHIP_BALL_AND_CHAIN){
+				var str="";
+				for(var i in combo) str+= " "+getItemName(i);
+				debug(str);
+				break;
+			}
+		}
+	}
+// add debug
+	
+	if(_SHOULD_SORT_COMBOS_TO_ALTERNATE_OFF_DEF_MOVE){
+		combosSet = getSortedCombosSet(combosSet);
+	}
+	
+// add debug	
+	if(____debug) for(var combo in combosSet){
+		for(var item in combo){
+			if(item==CHIP_BALL_AND_CHAIN){
+				var str="";
+				for(var i in combo) str+= " "+getItemName(i);
+				debugW(str);
+				break;
+			}
+		}
+	}
+// add debug
+	
+	result[w] = @combosSet;
+}
+
+function getJsonEncodedCombos(@result){
+	var final = [];//sort
+	for(var startItem:var combosSet in result){
+		var combozzz = [];
+		for(var combo in combosSet){
+			if(combo==null){
+				debugW("????? "+_COMBOS_TP+":"+getItemName(startItem)+"("+startItem+")");
+			}
+			var cmb/*hahaha..*/= arraySort(combo, function(a, b){
+				var itemPrioA = _ITEM_PRIORITY[a];
+				var itemPrioB = _ITEM_PRIORITY[b];
+				if(a==startItem) itemPrioA--;
+				if(b==startItem) itemPrioB--;
+				if(itemPrioA > itemPrioB) return 1;
+				else if(itemPrioA < itemPrioB) return -1;
+				return 0;
+			});
+			push(combozzz, cmb);
+		}
+		final[startItem] = convertCombosToBinaries(combozzz);
+	}
+	var strrr= jsonEncode(final);
+	return @strrr;
+}
+
+/////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
+////////////
+////////////	COMBOS GENERATOR
+////////////
+/////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
+
+function tools2Combo(@tools,@tp,@activeWeapon){
+	combossssss = [];
+	knownCombos = [];
+	combo_mincost=50;
+	for(var t in tools){
+		if(_ITEM_COST[t]<combo_mincost) combo_mincost = _ITEM_COST[t];
+	}
+	addMoreItem([], tools, tp, activeWeapon);
+	
+	return combossssss;
+}
+function addMoreItem(@combo, @tools, @tpleft, @activeWeapon){
+	// je n'ai plus assez de TP pour faire la moindre action
+	// ou je n'ai plus d'item à ajouter
+	if(isEmpty(tools) || combo_mincost>tpleft){
+		if(count(combo)>0){ // si la combo n'est pas vide, alors c'est une combo.
+			sort(combo); // je la rend unique peu importe l'ordre
+			var id = getBinFromCombo(combo);
+			// j'aurais directement fait combos[id]=combo mais faut passer les tests :P
+			if(knownCombos[id]==null){
+				knownCombos[id]=true;
+				push(combossssss, combo);
+			}
+		}
+	}else{
+		var toolsSet = tools, switch, cost;
+		// copie tools>toolsSet pour ne pas casser la boucle en retirant des trucs.
+		for(var item in tools){
+			switch = _ITEM_ISWEAP[item] && item!=activeWeapon ? 1 : 0;
+			cost = _ITEM_COST[item]+switch;
+			if(tpleft>=cost){ // je peux l'utiliser ?
+				// copie pour ne pas impacter les autres branches.
+				var currentCombo = combo, 
+				currentWeapon = activeWeapon, 
+				currentTp = tpleft - cost,//retrait de TP
+				currentTools = toolsSet;// copie nécessaire pour ne remove la puce avec CD que dans les sous-branches. à voir pour limiter les copies
+				if(switch){
+					removeElement(currentTools, currentWeapon); // on ne reswitch pas vers une arme déjà utiliser, gachi de TP, ça fait des combos incomplêtes..
+					currentWeapon = item; // switch d'arme
+				}
+				else if(_ITEM_HAVECD[item]) removeElement(currentTools, item); // puce en CD
+				push(currentCombo, item); // ajout de l'item dans la combo
+				addMoreItem(currentCombo, currentTools, currentTp, currentWeapon);
+			}else{ // on ne pourra plus utiliser cet item.
+				removeElement(toolsSet, item);
+				if(count(toolsSet)==0) addMoreItem(combo, toolsSet, tpleft, activeWeapon);
+			}
+		}
+	}
+}
+
+/////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
+////////////
+////////////	COMBOS SORTING
+////////////
+/////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
+global _CACHE = [], _CACHE_OFF = [], _CACHE_DEF = [];
+
+
+function getSimilarityCombo(@combo){
+	var uniqId = getBinFromCombo(combo);
+	if(_CACHE[uniqId] == null){
+		var size = count(combo);
+		var score = 0;
+		if(size==2) score = getSimilarityScore(combo[0], combo[1]);
+		else if(size==3){
+			score += getSimilarityScore(combo[0], combo[1]);
+			score += getSimilarityScore(combo[0], combo[2]);
+			score += getSimilarityScore(combo[1], combo[2]);
+			score/=3;
+		}else if(size==4){
+			score += getSimilarityScore(combo[0], combo[1]);
+			score += getSimilarityScore(combo[0], combo[2]);
+			score += getSimilarityScore(combo[0], combo[3]);
+			score += getSimilarityScore(combo[1], combo[2]);
+			score += getSimilarityScore(combo[1], combo[3]);
+			score += getSimilarityScore(combo[2], combo[3]);
+			score/=6;
+		}else if(size==5){
+			score += getSimilarityScore(combo[0], combo[1]);
+			score += getSimilarityScore(combo[0], combo[2]);
+			score += getSimilarityScore(combo[0], combo[3]);
+			score += getSimilarityScore(combo[0], combo[4]);
+			score += getSimilarityScore(combo[1], combo[2]);
+			score += getSimilarityScore(combo[1], combo[3]);
+			score += getSimilarityScore(combo[1], combo[4]);
+			score += getSimilarityScore(combo[2], combo[3]);
+			score += getSimilarityScore(combo[2], combo[4]);
+			score += getSimilarityScore(combo[3], combo[4]);
+			score/=10;
+		}else if(size==6){
+			//ça m'emmerde... score = 0;
+			// d'ailleurs jme dis que je suis con, j'aurais pu faire une double boucle..
+		}
+		else if(size > 6){
+			debugE("size combo in sorting !!!");
+		}
+		_CACHE[uniqId] = score;
+	}
+	return _CACHE[uniqId];
+}
+
+function getSimilarityScore(@item1, @item2){
+	var score = 0;
+	if(item1!=item2){
+		if(_ITEM_NEEDLOS[item1] != _ITEM_NEEDLOS[item2]) score+=30;
+		if(_ITEM_INLINE[item1] != _ITEM_INLINE[item2]) score+=20;
+		var minRangeDiff = abs(_ITEM_MINRANGE[item1] - _ITEM_MINRANGE[item2]);
+		score+=minRangeDiff*5;
+		var maxRangeDiff = abs(_ITEM_MAXRANGE[item1] - _ITEM_MAXRANGE[item2]);
+		score+=maxRangeDiff*5;
+		if(_ITEM_MINRANGE[item1] > _ITEM_MAXRANGE[item2] 
+		|| _ITEM_MINRANGE[item2] > _ITEM_MAXRANGE[item1]) score += 30;
+		var item1Aoe = _ITEM_AREA[item1];
+		var item2Aoe = _ITEM_AREA[item2];
+		if((item1Aoe==AREA_LASER_LINE || item2Aoe==AREA_LASER_LINE) && item1Aoe != item2Aoe){
+			score+= 20;
+			if((item1Aoe==AREA_LASER_LINE && _ITEM_INLINE[item2])
+			|| (item2Aoe==AREA_LASER_LINE && _ITEM_INLINE[item1])) score -=10;
+		}else{
+			if(item1Aoe==AREA_POINT) item1Aoe++;
+			if(item2Aoe==AREA_POINT) item2Aoe++;
+			var diffArea = abs(item1Aoe - item2Aoe);
+			score += diffArea*diffArea*5;
+		}
+	}else if(item1==WEAPON_M_LASER && item1==item2)	score=-60;
+	else if(item1==WEAPON_KATANA && item1==item2)	score=-50;
+	
+	return score;
+}
+
+function getOffCombo(@combo){
+	var uniqId = getBinFromCombo(combo);
+	if(_CACHE_OFF[uniqId]==null){
+		var offScore = 0;
+		for(var item in combo){
+			offScore += getOffDmg(item);
+		}
+		_CACHE_OFF[uniqId] = offScore;
+	}
+	return _CACHE_OFF[uniqId];
+}
+
+function getOffDmg(@item){
+	if(needSpecialScore(item)) return getSpecialScore(item);
+	var dmg = 0;
+	for(var e in _ITEM_EFFECTS[item]){
+		if(e[0]==EFFECT_DAMAGE || e[0]==EFFECT_POISON){
+			dmg+= (e[1]+e[2])/2;
+		}
+	}
+	if(item==CHIP_FRACTURE)dmg =45;
+	return dmg;
+}
+
+function getDefCombo(@combo){
+	var uniqId = getBinFromCombo(combo);
+	if(_CACHE_DEF[uniqId]==null){
+		var defScore = 0;
+		for(var item in combo){
+			defScore += getDefDmg(item);
+		}
+		_CACHE_DEF[uniqId] = defScore;
+	}
+	return _CACHE_DEF[uniqId]; 
+}
+
+function getDefDmg(@item){
+	if(needSpecialScore(item)) return getSpecialScore(item);
+	var dmg = 0;
+	for(var e in _ITEM_EFFECTS[item]){
+		if(e[0]!=EFFECT_DAMAGE && e[0]!=EFFECT_POISON){
+			dmg+= (e[1]+e[2])/2;
+			if(e[0]==EFFECT_ABSOLUTE_SHIELD){
+				dmg+= (e[1]+e[2]);
+			}else if(e[0]==EFFECT_RELATIVE_SHIELD){
+				dmg+= (e[1]+e[2])*3;
+			}
+		}
+	}
+	if(item==CHIP_ARMORING)dmg*=4;
+	else if(dmg==0){
+		dmg = getOffDmg(item)/4;
+	}
+	return dmg;
+}
+
+function needSpecialScore(@item){
+	if(item==CHIP_ANTIDOTE || _CHIP_ISPOSITIV[item]==null) return true;
+	return false;
+}
+
+function getSpecialScore(@item){
+	return _ITEM_COST[item]*16;
+}
+
+global _listedsortedID = [], scoredCombosOff = [], scoredCombosDef = [];
+function getSortedCombosSet(@combos){
+	_listedsortedID = []; scoredCombosOff = []; scoredCombosDef = [];
+	for(var combo in combos){
+		var id = getBinFromCombo(combo);
+		scoredCombosOff[id] = getOffCombo(combo) - getSimilarityCombo(combo);
+		scoredCombosDef[id] = getDefCombo(combo) - getSimilarityCombo(combo);
+	}
+	var arraySortedOff = arraySort(combos, function(combo1, combo2){
+		var score1 = scoredCombosOff[getBinFromCombo(combo1)];
+		var score2 = scoredCombosOff[getBinFromCombo(combo2)];
+		return score1 <= score2 ? (score1 == score2 ? 0 : 1) : -1;
+	});
+	var arraySortedDef = arraySort(combos, function(combo1, combo2){
+		var score1 = scoredCombosDef[getBinFromCombo(combo1)];
+		var score2 = scoredCombosDef[getBinFromCombo(combo2)];
+		return score1 <= score2 ? (score1 == score2 ? 0 : 1) : -1;
+	});
+	
+	var finalSorted = [];
+	for(var j = 0; j < count(combos); j++){
+		var cmbo1 = arraySortedOff[j];
+		var cmbo2 = arraySortedDef[j];
+		var uniqId = getBinFromCombo(cmbo1);
+		if(_listedsortedID[uniqId]==null){
+			push(finalSorted, cmbo1);
+			_listedsortedID[uniqId]=true;
+		}
+		
+		uniqId = getBinFromCombo(cmbo2);
+		if(_listedsortedID[uniqId]==null){
+			push(finalSorted, cmbo2);
+			_listedsortedID[uniqId]=true;
+		}
+	}
+	return @finalSorted;
+}

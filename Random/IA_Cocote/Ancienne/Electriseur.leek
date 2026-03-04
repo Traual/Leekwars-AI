@@ -1,0 +1,244 @@
+include("f");
+global leek2 = nearestrealenemy();
+if (getLife(leek2) == 0) {
+	leek2 = nearestrealenemy();
+
+}
+var enemy = getNearestEnemy();
+var mycell = getCell();
+var enemycell = getCell(enemy);
+var dist = getDistance(mycell, getCell(leek2));
+var tour = getTurn();
+var disto = getPathLength(mycell, getCell(leek2));
+if (tour == 1) {
+	moveToward(enemy, 1);
+	summon(CHIP_METALLIC_BULB, getCellToUseChip(CHIP_METALLIC_BULB, getLeek()), bulbeBouclier);
+
+}
+if (tour == 2 && dist >= 12) {
+	summon(CHIP_HEALER_BULB, getCellToUseChip(CHIP_HEALER_BULB, getLeek()), bulbeSoigneur);
+}
+if (getLife(leek2)>=700) {
+if (getLife() < getTotalLife() - 900 and getCooldown(CHIP_REGENERATION) == 0) {
+	useChip(CHIP_REGENERATION, getLeek());
+	useChip(CHIP_VACCINE, getLeek());
+	if (getCooldown(CHIP_REGENERATION) > 0) {
+		moveTowardCell(tableaucellscacher());
+
+	}
+
+}
+}
+
+if (getLife() < getTotalLife()) {
+	poisoncounter();
+}
+
+
+if (getPathLength(getCell(), getCellToUseWeapon(WEAPON_M_LASER, leek2))<=getMP() && getStrength()>=350 && getTP()>=16) {
+if (getWeapon()!=WEAPON_M_LASER) {
+setWeapon(WEAPON_M_LASER);
+}
+
+moveTowardCell(getCellToUseWeapon(WEAPON_M_LASER, leek2));
+
+if (isAlive(leek2)) {
+useWeapon(leek2);	
+}
+if (isAlive(leek2)) {
+useWeapon(leek2);	
+}
+if (isAlive(leek2)) {
+useWeapon(leek2);	
+}
+if (isAlive(leek2)) {
+useWeapon(leek2);	
+}
+if (getTP()==7) {
+moveTowardCells(getCellToUseChip(CHIP_ICEBERG, leek2));	
+}
+if (isAlive(leek2)) {
+useChip(CHIP_ICEBERG, leek2);
+}
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	pas de bouclier	///////////////////////////////////////////////////////////////////////////////////////////////
+if (getAbsoluteShield(leek2) <= 25 && getRelativeShield(leek2) <= 25) {
+
+
+	if (getLife(leek2) > 0) if (disto <= 8 && canUseChipFromOn(CHIP_LIGHTNING, getCell(leek2)) != null && getTP() > 4) {
+		moveTowardCell(canUseChipFromOn(CHIP_LIGHTNING, getCell(leek2)));
+		if (getLife(leek2) > 0) {
+			useChip(CHIP_LIGHTNING, leek2);
+		}
+		if (getLife(leek2) > 0) {
+			useChip(CHIP_LIGHTNING, leek2);
+		}
+		if (getLife(leek2) > 0) {
+			useChip(CHIP_LIGHTNING, leek2);
+		}
+		if (getLife(leek2) > 0) {
+			useChip(CHIP_LIGHTNING, leek2);
+		}
+
+	}
+	if (getLife(leek2) > 0) if (disto > 8 && canUseWeaponFromOn(WEAPON_ELECTRISOR, getCell(leek2)) != null && getTP() > 7) {
+		if (getWeapon() != WEAPON_ELECTRISOR) {
+			setWeapon(WEAPON_ELECTRISOR);
+
+		}
+		
+		moveTowardCell(canUseWeaponFromOn(WEAPON_ELECTRISOR, getCell(leek2)));	
+		
+		if (getLife(leek2) > 0) {
+			useWeapon(leek2);
+		}
+		if (getLife(leek2) > 0) {
+			useWeapon(leek2);
+		}
+
+
+	}
+
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	bouclier ///////////////////////////////////////////////////////////////////////////////////////////////
+if (bouclier() == true) {
+
+
+	if (getLife(leek2) > 0) if (getCooldown(CHIP_LIBERATION) == 0 && canUseChipFromOn(CHIP_ICEBERG, getCell(leek2)) != null && getTP() > 12) {
+		moveTowardCell(canUseChipFromOn(CHIP_ICEBERG, getCell(leek2)));
+		useChip(CHIP_LIBERATION, leek2);
+		if (getCooldown(CHIP_LIBERATION) > 0) {
+
+
+			if (getLife(leek2) > 0) {
+				useChip(CHIP_ICEBERG, leek2);
+
+			}
+			if (getLife(leek2) > 0) {
+				useChip(CHIP_LIGHTNING, leek2);
+
+			}
+		}
+
+
+	}
+	if (disto <= 7 && getTP() > 7 && getRelativeShield(leek2) + getAbsoluteShield(leek2) < 160) {
+		moveToward(leek2);
+		if (getWeapon() != WEAPON_KATANA) {
+			setWeapon(WEAPON_KATANA);
+
+		}
+		if (getLife(leek2) > 0) {
+			useWeapon(leek2);
+		}
+		if (getLife(leek2) > 0) {
+			useWeapon(leek2);
+		}
+
+
+
+
+	}
+
+}
+if (getLife(leek2) > 0) if (bouclier() == true && disto > 7 && canUseWeaponFromOn(WEAPON_ELECTRISOR, getCell(leek2)) != null && getTP() > 7 && getRelativeShield(leek2) + getAbsoluteShield(leek2) < 150) {
+	moveTowardCell(canUseWeaponFromOn(WEAPON_ELECTRISOR, getCell(leek2)));
+	if (getWeapon() != WEAPON_ELECTRISOR) {
+		setWeapon(WEAPON_ELECTRISOR);
+	}
+	if (getLife(leek2) > 0) {
+		useWeapon(leek2);
+
+	}
+	if (getLife(leek2) > 0) {
+		useWeapon(leek2);
+
+	}
+
+
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	l'enemie est cacher
+//////////////////////////////////////////////////////////////////////////////////////////////
+if (getLife(leek2) > 0) {
+	if (getCooldown(CHIP_METEORITE) == 0 && canUseChipFromOn(CHIP_METEORITE, canseevoisins(leek2)) != null && getTP() > 7 && getRelativeShield(leek2) + getAbsoluteShield(leek2) < 150) {
+		moveTowardCell(canUseChipFromOn(CHIP_METEORITE, canseevoisins(leek2)));
+		if (getLife(leek2) > 0) {
+			useChipOnCell(CHIP_METEORITE, useCHiporWeaponarea(CHIP_METEORITE, 2, leek2));
+		}
+
+		if (getWeapon() != WEAPON_GRENADE_LAUNCHER) {
+			setWeapon(WEAPON_GRENADE_LAUNCHER);
+
+		}
+		if (getLife(leek2) > 0 && getRelativeShield(leek2) + getAbsoluteShield(leek2) < 100) {
+			useWeaponOnCell(useCHiporWeaponarea(WEAPON_GRENADE_LAUNCHER, 2, nearestrealenemy()));
+		}
+	}
+
+
+
+	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////:/	bulbes	///////////////////////////////////////////////////////////////////////////////////////////////////////
+	if (bulbeproche() != null) { if (canUseChipFromOn(CHIP_BURNING, getCell(bulbeproche())) != null && getTP() > 7) {
+		moveTowardCell(canUseChipFromOn(CHIP_BURNING, getCell(bulbeproche())));
+		useChip(CHIP_BURNING, bulbeproche());
+		if (canUseChipFromOn(CHIP_LIGHTNING, getCell(bulbeproche())) != null) {
+			moveTowardCell(canUseChipFromOn(CHIP_LIGHTNING, getCell(bulbeproche())));
+			if (getWeapon() != WEAPON_LASER) {
+				setWeapon(WEAPON_LASER);
+
+			}
+			if (getLife(bulbeproche()) > 0) {
+				useWeapon(bulbeproche());
+			}
+			if (getLife(bulbeproche()) > 0) {
+				useChip(CHIP_LIGHTNING, bulbeproche());
+			}
+
+
+
+		}
+
+	}
+}	
+	if (getTP() >= 12) {
+		moveToward(enemy, 2);
+		summon(CHIP_HEALER_BULB, getCellToUseChip(CHIP_HEALER_BULB, getLeek()), bulbeSoigneur);
+		summon(CHIP_METALLIC_BULB, getCellToUseChip(CHIP_METALLIC_BULB, getLeek()), bulbeBouclier);
+
+		summon(CHIP_ICED_BULB, getCellToUseChip(CHIP_ICED_BULB, getLeek()), bulbAI);
+
+	}
+
+	if (canUseWeaponFromOn(WEAPON_GRENADE_LAUNCHER, canseevoisins(leek2)) != null && getTP() > 6 && getRelativeShield(leek2) + getAbsoluteShield(leek2) < 150) {
+		moveTowardCell(canUseWeaponFromOn(WEAPON_GRENADE_LAUNCHER, canseevoisins(leek2)));
+		if (getWeapon() != WEAPON_GRENADE_LAUNCHER) {
+			setWeapon(WEAPON_GRENADE_LAUNCHER);
+		}
+		if (getLife(leek2) > 0) {
+			useWeaponOnCell(useCHiporWeaponarea(WEAPON_GRENADE_LAUNCHER, 2, leek2));
+		}
+		if (getLife(leek2) > 0) {
+			useWeaponOnCell(useCHiporWeaponarea(WEAPON_GRENADE_LAUNCHER, 2, leek2));
+		}
+	}
+}
+if (getLife() < getTotalLife()) {
+	useChip(CHIP_REMISSION, getLeek());
+}
+
+if (getLife() < getTotalLife()) {
+	useChip(CHIP_REMISSION, getLeek());
+}
+
+
+if (getTP() < 7) {
+	moveTowardCell(tableaucellscacher());
+}
+if (getMP() > getTotalMP() - 2) {
+	moveToward(leek2, 3);
+
+}
+if (dist == 1 && getWeapon() != WEAPON_KATANA) {
+	setWeapon(WEAPON_KATANA);
+}

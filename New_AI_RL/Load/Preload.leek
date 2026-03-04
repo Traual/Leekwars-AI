@@ -1,0 +1,46 @@
+/**
+ * Preload Class (turn 1)
+**/
+
+include("../includes")
+
+class Preload {
+    static InitEverything() {
+        InitItemInfo()
+		InitCellClass()
+		InitStateClass()
+    }
+
+    static InitItemInfo() {
+		for (var i = 0; i < 500; i++) {
+			ITEMINFO[i] = [: ]
+			var Iinfo = new ItemClass(i)
+			ITEMINFO[i] = Iinfo
+		}
+	}
+
+	static InitCellClass() {
+		for (var c = 0; c < 613; c++) {
+			TMPOBSTACLES[c] = isObstacle(c)
+			CELL_Y[c] = getCellY(c)
+			CELL_X[c] = getCellX(c)
+		}
+		for (var c = 0; c < 613; c++) {
+			MAP_CELL_TO_LINE[c] = CellToLine(c) //In Binary Walkcells Functions
+			MAP_CELL_TO_POS[c] = CellToPos(c) //In Binary Walkcells Functions
+		}
+		for (var c = 0; c < 613; c++) {
+			var cInfo = new CellClass(c)
+			ALLCELLINFO[c] = cInfo
+		}
+	}
+
+	static InitStateClass() {
+		Me = getEntity()
+		BASE_INVENTORY = getWeapons(Me) + getChips(Me)
+		MY_INVENTORY_ON_ME = ActionsClass.getInventoryOnMe(BASE_INVENTORY, new EntityStateClass(Me))
+		MY_INVENTORY_ON_VOID = ActionsClass.getInventoryOnVoid(BASE_INVENTORY)
+		MY_INVENTORY_SUMMON = ActionsClass.getInventorySummon(BASE_INVENTORY)
+		MY_INVENTORY_ON_EVERYONE = ActionsClass.getInventoryOnEveryOne(BASE_INVENTORY)
+	}
+}

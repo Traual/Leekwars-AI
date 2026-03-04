@@ -1,0 +1,77 @@
+include('include');
+
+function GetItems(Leek) {
+	var TabItems = [];
+	for (var i in getChips(Leek)) {
+
+		if (getCooldown(i, Leek) == 0) {
+			push(TabItems, i);
+		}
+	}
+	pushAll(TabItems, getWeapons(Leek));
+	for (var item in TabItems) {
+		/*if (getItemMinRange(item) > 0 && BestTarget(item) == _MY_SELF && isPositiv(item) != null) {
+			removeElement(TabItems, item);
+		}*/
+	}
+	if (_LIFE[BestTarget(CHIP_DOPING)]<=45*(1+(getScience()/100))) removeElement(TabItems, CHIP_DOPING);
+	if (BestTarget(CHIP_REMISSION) == _MY_SELF || getLife(BestTarget(CHIP_REMISSION)) <= 65) {
+		removeElement(TabItems, WEAPON_B_LASER);
+	}
+	if (getLife(Leek) == getTotalLife(Leek)) {
+		removeElement(TabItems, CHIP_REMISSION);
+	}
+	if (getLife(Leek) < 1000) {
+		removeElement(TabItems, CHIP_DEVIL_STRIKE);
+	}
+	if (Leek == _MY_SELF && isSummon(BestTarget(CHIP_METEORITE))) {
+		//removeElement(TabItems, CHIP_FRACTURE);
+		//removeElement(TabItems, CHIP_INVERSION);
+		removeElement(TabItems, CHIP_DEVIL_STRIKE);
+	}
+	if (Leek == _MY_SELF && !isSummon(BestTarget(CHIP_METEORITE))) {
+		removeElement(TabItems, CHIP_BURNING);
+	}
+	if (getAbsoluteShield(Leek) == 0) {
+		removeElement(TabItems, CHIP_DEVIL_STRIKE);
+	}
+	removeElement(TabItems, CHIP_REGENERATION);
+	removeElement(TabItems, CHIP_ANTIDOTE);
+	return TabItems;
+}
+
+function MustFocusEnemy(@enemy) {
+	var totalLife = _TOTAL_LIFE[enemy];
+	var enemymgc = _MAGIC[enemy];
+	var EnemyRealLife = RealLeeklife(enemy);
+	var MyRealLife = RealLeeklife(_MY_SELF);
+	var NbBulb = getNumberOfBulb();
+	var EnemyChips = getChips(enemy);
+	var MyMgc = _MAGIC[_MY_SELF];
+	var MyStr = _STRENGTH[_MY_SELF];
+	var MyPwr = MyMgc > MyStr ? MyMgc : MyStr;
+	var Life = _LIFE[enemy];
+	var EnemyPwr = _MAGIC[enemy] > _STRENGTH[enemy] ? _MAGIC[enemy] : _STRENGTH[enemy];
+	var Score = 0;
+	if (getTurn()<=NbTurnsFullRushEnemy) Score += 45;
+	if (MyMgc >= 400) {
+		Score += (getCooldown(CHIP_LIBERATION, enemy) * 0.3);
+		Score += (getCooldown(CHIP_ANTIDOTE, enemy) * 0.8);
+		}
+	if (ShieldScore(_MY_SELF)==0) Score -= 12;
+	if (ShieldScore(_MY_SELF)<=200) Score -= 7;
+	if (ShieldScore(_MY_SELF)>=350) Score += 5;
+	if (!inArray(EnemyChips, CHIP_ANTIDOTE) && MyMgc >= 400) Score += 3;
+	if (!inArray(EnemyChips, CHIP_LIBERATION) && MyMgc >= 400) Score += 2;
+	if (EnemyPwr <= 400) Score += 4;
+	if (EnemyRealLife > MyRealLife) Score -= 8;
+	if (MyRealLife * 0.8 > EnemyRealLife) Score += 9;
+	if (NbBulb[0] > NbBulb[1]) Score += 6;
+	if (NbBulb[1] > NbBulb[0]) Score -= 6;
+	if (totalLife<1000) Score +=8;
+	if (NbBulb[0]==0) Score -= 6;
+	if (NbBulb[1]) Score += 8;
+	Score += (MyPwr / 100);
+	Score -= (EnemyPwr / 100);
+	return Score;
+}

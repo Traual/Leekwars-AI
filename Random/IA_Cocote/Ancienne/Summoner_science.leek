@@ -1,0 +1,80 @@
+include("Cache Cache");
+
+if (getPathLength(getCell(), getCell(nearestrealenemy()))<=10) {
+moveAwayFrom(nearestrealenemy());	
+}
+
+moveToward(getNearestAlly());
+
+summon(CHIP_ICED_BULB, getCellToUseChip(CHIP_ICED_BULB, getLeek()), bulbAI);	
+
+summon(CHIP_ROCKY_BULB, getCellToUseChip(CHIP_ROCKY_BULB, getLeek()), bulbeRocheux);	
+
+
+if (isSummon(getNearestAlly()) && getStrength(getNearestAlly())>=100) {
+useChip(CHIP_FEROCITY, getNearestAlly());	
+}
+
+if (getStrength(getNearestAlly())>=100) {
+useChip(CHIP_DOPING, getNearestAlly());
+useChip(CHIP_STEROID, getNearestAlly());
+useChip(CHIP_PROTEIN, getNearestAlly());
+}
+
+if (getResistance(getNearestAlly())>=1) {
+useChip(CHIP_BARK, getNearestAlly());	
+}
+
+if (getWisdom(getNearestAlly())>=1) {
+useChip(CHIP_COLLAR, getNearestAlly());
+}
+
+if (isSummon(getNearestAlly())) {
+useChip(CHIP_ACCELERATION, getNearestAlly());	
+}
+
+if (isSummon(getNearestAlly())) {
+useChip(CHIP_WHIP, getNearestAlly());	
+}
+
+moveTowardCell(tableaucellscacher());
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

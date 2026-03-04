@@ -1,0 +1,49 @@
+/** Exporté le 19/07/2025 19:55:35 **/
+
+/** Effects/Resurrect **/
+
+/**
+ * Class to add to ActualStats on the consequences of an action (Only RESURRECT Type) : Item To X (For ResurrectCell)
+ **/
+
+include("../includes")
+
+class ResurrectionClass {
+	ID
+	SCORE
+	constructor(id, score) {
+		this.ID = id
+		this.SCORE = score
+	}
+	
+	static Update(To, State)  {
+		var Resurrect_ID = ScoringWichId(State).ID
+		if (Resurrect_ID == null) return;
+		State[Resurrect_ID].TOTAL_LIFE /= 2
+		State[Resurrect_ID].LIFE = State[Resurrect_ID].TOTAL_LIFE / 2
+		State[Resurrect_ID].CELL = To
+	}
+
+	static getAliveStatsFromDeadStats(ClonedDeadStats) {
+		ClonedDeadStats.TOTAL_LIFE /= 2
+		ClonedDeadStats.LIFE = ClonedDeadStats.TOTAL_LIFE / 2
+	}
+
+	static ScoringWichId(State) {
+		var _final_id
+		var top_score = 0
+		for (var id:var entity_state in State) {
+			if (entity_state.LIFE > 0) continue
+			var Score = NeuralClass.getResurrectionScore(entity_state, State)
+			if (Score > top_score) {
+				_final_id = id
+				top_score = Score
+			}
+		}
+		return new ResurrectionClass(_final_id, top_score)
+	}
+	
+	static HashEveryScores(EntityId, EntityMaxLife) { //This the hash for caching Resurrects Scores
+   		return EntityId * MAX_LIFE + EntityMaxLife
+	}
+}

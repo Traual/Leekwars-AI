@@ -1,0 +1,160 @@
+/**
+ * Here we are doing the BFS to find the best play
+ **/
+
+include("../includes")
+
+class ActionSuite {
+
+	/* Gives me the best action to do in the State game state
+    *
+	* @param State Map of Stats Class (id : stats)
+    *
+    * @return Node
+    */
+
+	static getBestActionTreeInState(State) {
+		var Tree_Array = []
+		var BaseHash = StateClass.getBaseHash(State)
+
+		//Loading The BFS Tree
+		getFullBFSTree(Tree_Array, State, BaseHash)
+
+		//Then We Add The No Play Node (Not Above because we don't want to find plays on it)
+		AddNoPlayNode(Tree_Array, State)
+
+		debug("Number of leafs : "+count(Tree_Array))
+		//debug(Tree_Array)
+
+		//Then We Look at Every Node in the Tree and find the Best One : 
+		var BestScoredNode = getBestScoredNode(Tree_Array)
+
+		//Then we need to find its first ancestor :
+		return BestScoredNode
+	}
+
+	/* Adds the No Play Node Into the Tree Array (to be able to do nothing and go hide myself)
+    *
+	* @param Tree_Array Array of nodes <Node, Node ...>
+	* @param State Map of Stats Class (id : stats)
+    *
+    * @return Nothing
+    */
+
+	static AddNoPlayNode(Tree_Array, State) {
+		var NoPlayAction = new ActionClass(null, null, null)
+		var NoPlayNode = new NodeClass(NoPlayAction, State)
+		push(Tree_Array, NoPlayNode)
+	}
+
+	/* Returns the best scored node in Tree_Array, takes into account node score, node danger, node gravity
+    *
+	* @param State Map of Stats Class (id : stats)
+	* @param Tree_Array Array of nodes <Node, Node ...>
+    *
+    * @return Node
+    */
+
+	static getBestScoredNode(Tree_Array) {
+		//Then Find the best Scored Node in tree :
+		var BestScore = -MAX_VALUE
+		var BestNode
+		for (var Nod in Tree_Array) {
+			BenchmarkClass.StartOp()
+			var NodeBaseHash = StateClass.getBaseHash(Nod.END_STATS)
+			var ThisNodeScore = NeuralClass.getStateScore(Nod.END_STATS, Nod.END_STATS[Me].SIDE, NodeBaseHash)
+			/*if (Nod.ACTION.Item) {
+				debug("Ranking this action's node : "
+				+ITEMINFO[Nod.ACTION.Item].NAME+" From : "
+				+Nod.ACTION.From+" To : "+
+				Nod.ACTION.To+" Its score is : "+
+				ThisNodeScore)
+			} else {
+				debug("Ranking no play node : Its score is : "+
+				ThisNodeScore)
+			}*/
+			if (ThisNodeScore > BestScore) {
+				BestNode = Nod
+				BestScore = ThisNodeScore
+			}
+			BenchmarkClass.StopOp("Scoring a BFS's Node")
+		}
+		while (BestNode.PARENT != null) BestNode = BestNode.PARENT
+		return BestNode
+	}
+
+	/* Adds the full "BFS Tree" to Tree Array. It adds every plays possible then for every play it adds to tree Array Every Best Move From Score of action
+    *
+	* @param State Map of Stats Class (id : stats)
+	* @param Tree_Array Array of nodes <Node, Node ...>
+	* @param BaseHash Hash of Id and Cells of everyone
+    *
+    * @return Nothing
+    */
+
+	static getFullBFSTree(Tree_Array, State, BaseHash) {
+		//We start by loading every playable actions
+		var MyStats = State[Me]
+		var BaseActions = getBaseActions(State, BaseHash)
+		//Then we push every playable actions into Tree Array
+		for (var Act in BaseActions) {
+			var ThisNode = NodeClass.ActionToNode(Act, State, BaseHash)
+			push(Tree_Array, ThisNode)
+		}
+		//Trying full tree : 
+		for (var Node in Tree_Array) {
+			var NodeBaseHash = StateClass.getBaseHash(Node.END_STATS)
+			var TotalPossibleActions = getBaseActions(Node.END_STATS, NodeBaseHash)
+			for (var Act in TotalPossibleActions) {
+				var ChildNode = NodeClass.ActionToNode(Act, Node.END_STATS, NodeBaseHash)
+				ChildNode.PARENT = Node
+				push(Tree_Array, ChildNode)
+			}
+		}
+	}
+
+	/* Returns the full list of possible actions for this turn
+    *
+	* @param State Map of Stats Class (id : stats)
+	* @param BaseHash Hash of Id and Cells of everyone
+    *
+    * @return Array <Action Class>
+    */
+
+	static getBaseActions(State, BaseHash) {
+		var _final = []
+		var MyStats = State[Me]
+		var MyWalkCells = new WalkCellsClass(State, Me, true, true, true, true, BaseHash)
+		var Acts = ActionsClass.getEveryActionsInAState(State, MyWalkCells, MyStats.CELL, BaseHash)
+		var JumpCost = ITEMINFO[CHIP_JUMP].COST
+		var TpCost = ITEMINFO[CHIP_TELEPORTATION].COST
+		var MyWeapon = MyStats.WEAPON
+		var MyCooldowns = MyStats.COOLDOWNS
+		var MyTp = MyStats.TP
+		var MyUses = MyStats.USES
+		var MyOnlyWalkCells = MyWalkCells.WALK
+		for (var Action in Acts) {
+			var Item = Action.Item
+			var From = Action.From
+			var Info = ITEMINFO[Item]
+			var Cost = Info.IS_WEAPON && MyWeapon != Item ?
+				Info.COST + 1 :
+				Info.COST
+			if (!(From in MyWalkCells.WALK)) {//I need to add the item to move to the cost
+				if (From in MyWalkCells.JUMP) {
+					Cost += JumpCost
+				} else if (From in MyWalkCells.TELEPORTATION) {
+					Cost += TpCost
+				} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
+					Cost += TpCost + JumpCost
+				} else {
+					continue //Cell No reachable
+				}
+			}
+			if (Cost <= MyTp && MyCooldowns[Item] == 0 && MyUses[Item] < Info.MAX_USES) {
+				push(_final, Action)
+			}
+		}
+		return _final
+	}
+}

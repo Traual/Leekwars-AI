@@ -1,0 +1,120 @@
+/**
+ * This is a map lockable / locked cells
+ **/
+
+include("../includes")
+
+class LockCell {
+    ENTITY_CELL
+    CELL_TO_LOCK
+    ENTITY_ID
+    constructor(eCell, cToLock, eID) {
+        this.ENTITY_CELL = eCell
+        this.CELL_TO_LOCK = cToLock
+        this.ENTITY_ID = eID
+    }
+
+	/* Load the CELL_LOCKED map with a bool : wether its alreay locked by 4 obstacles or not
+    *
+    * @param EveryStats : Map Id:Stats
+    *
+	* @return Map : Cell : Bool
+    */
+	static loadMapObstaclesLockedCells() {
+        for (var c = 0; c < 613; c++) {
+			var bool = mapSize(ALLCELLINFO[c].CIRCLE_ONE) == 1
+			if (bool) LOCKED_CELLS_OBSTACLES[c] = true
+		}
+	}
+
+	/* Gives me the list of all already locked cells (but not by 4 obstacles), cells that are already surrounded by entities / obstacles
+    *
+    * @param EveryStats : Map Id:Stats
+	* @param OccupiedCellsMap : Map Cell:True
+	* @param BaseHash : Hash of Id; Cell
+    *
+    * @return Map : Cell : Bool
+    */
+	static loadMapEntityLockedCells(EveryStats, OccupiedCells, BaseHash) {
+		if (BaseHash in MAP_LOCK_CELL_CACHE) return MAP_LOCK_CELL_CACHE[BaseHash]
+		var _final = [: ]
+		//A Locked cell by at least one entity is a neighbour cell of an entity cell, that's why we seek only on entity neighbours cells instead of the whole map
+		for (var entityc: var bool in OccupiedCells) {
+			for (var testingCell:var bool2 in ALLCELLINFO[entityc].CIRCLE_ONE) {
+				if (isAlreadyLocked(testingCell, OccupiedCells)) _final[testingCell] = true
+			}
+		}
+		MAP_LOCK_CELL_CACHE[BaseHash] = _final
+		return _final
+	}
+
+	/* Returns true if the cell is Locked (by entities / obstacles)
+    *
+    * @param Cell : The Cell we want to test
+	* @param OccupiedCells : A Map Cell: true of already occupied cells
+    *
+    * @return Bool 
+    */
+	static isAlreadyLocked(Cell, OccupiedCells) {
+		for (var testedCell:var bool in ALLCELLINFO[Cell].CIRCLE_ONE) {
+			if (!OccupiedCells[testedCell] && testedCell != Cell) return false
+		}
+		return true
+	}
+
+	/* Returns an array of cells that needs to be filled to lock the Cell
+    *
+    * @param Cell : The Cell we want to test
+	* @param OccupiedCells : A Map Cell: true of already occupied cells
+    *
+    * @return Array --> Cells
+    */
+	static getCellsToLock(Cell, OccupiedCells) {
+		var _final = []
+		for (var testedCell:var bool in ALLCELLINFO[Cell].CIRCLE_ONE) {
+			if (!OccupiedCells[testedCell] && testedCell != Cell) push(_final, testedCell)
+		}
+		return _final
+	}
+
+	/* Gives me the list of all lockable cells, entity cells that can be locked if i place somewhere
+    *
+    * @param EveryStats : Map Id:Stats
+	* @param BaseHash : Hash of Id; Cell
+    *
+    * @return Array --> LockCell class
+    */
+	static loadArrayLockableCells(EveryStats, BaseHash) {
+		if (BaseHash in MAP_LOCKABLE_CELL_CACHE) return MAP_LOCKABLE_CELL_CACHE[BaseHash]
+		var _final = []
+		var OccupiedCells = loadOccupiedCellsMap(EveryStats, BaseHash)
+        for (var e: var stat in EveryStats) {
+			if (e == Me) continue
+			var EntityCell = stat.CELL
+			var CellsToLock = getCellsToLock(EntityCell, OccupiedCells)
+			if (count(CellsToLock) == 1) {
+				var tmp = new LockCell(EntityCell, CellsToLock[0], e)
+				push(_final, tmp)
+			}
+        }
+		MAP_LOCKABLE_CELL_CACHE[BaseHash] = _final
+		return _final
+	}
+
+	/* Gives me the map of all occupied cells (cells occupied by entities)
+    *
+    * @param EveryStats : Map Id:Stats
+	* @param BaseHash : Hash of Id; Cell
+    *
+    * @return Map : 
+    */
+	static loadOccupiedCellsMap(EveryStats, BaseHash) {
+		if (BaseHash in MAP_OCCUPIED_CELL_CACHE) return MAP_OCCUPIED_CELL_CACHE[BaseHash]
+		var OccupiedCells = [: ]
+		for (var e: var stat in EveryStats) {
+			if (e != Me) OccupiedCells[stat.CELL] = true
+		}
+		MAP_OCCUPIED_CELL_CACHE[BaseHash] = OccupiedCells
+		return OccupiedCells
+	}
+}

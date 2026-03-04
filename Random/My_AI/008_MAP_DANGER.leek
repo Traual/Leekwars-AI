@@ -1,0 +1,151 @@
+include('include');
+
+function HidenCellBulb(@celldepart, @mp, @enemy, @summoner) {
+
+		var walkCell = GetWalkableCells(celldepart, mp);
+		var arrayHide = [];
+		var arrayH = [];
+		var BestDist = 9999;
+		var BestCell;
+		for (var i in walkCell) {
+
+			if (!lineOfSight(i, _CELL[enemy])) {
+				push(arrayHide, i);
+			}
+		}
+		for (var i in arrayHide) {
+			if (getCellDistance(i, _CELL[summoner]) > 3 && getCellDistance(i, _CELL[getNearestAlly()]) > 3 && IsBrochetteSafe(i)) {
+				push(arrayH, i);
+			}
+		}
+		for (var i in arrayH) {
+			if (getCellDistance(i, _CELL[summoner]) < BestDist) {
+				BestDist = getCellDistance(i, _CELL[summoner]);
+				BestCell = i;
+			}
+		}
+		return BestCell;
+}
+
+function getNumberOfBulbInAnArea(@rayon, @cellCentrale) {
+	var NBulb = 0;
+	for (var leek in _ALIVE_ALLIES) {
+		if (getCellDistance(_CELL[leek], cellCentrale) <= rayon) {
+			NBulb++;
+		}
+	}
+	return NBulb;
+}
+
+function BestCellBulb(@tableaucellz) {
+	var BestNb = 0;
+	var BestCell;
+	var BestDist = 0;
+	for (var cell in tableaucellz) {
+		var NumBulbArea = getNumberOfBulbInAnArea(6, cell);
+		if (NumBulbArea > BestNb) {
+			BestNb = NumBulbArea;
+			BestCell = cell;
+		}
+	}
+	if (BestCell == null) {
+		for (var cell in tableaucellz) {
+			var dist = getCellDistance(cell, _CELL[EnemyLeekG]);
+			if (BestDist < dist) {
+				BestDist = dist;
+				BestCell = cell;
+			}
+		}
+	}
+	return BestCell;
+}
+
+function CanShootFromTo(@leek, @cellfrom, @cellto) {
+	//StartTestFunction();
+	var dist = getCellDistance(cellfrom, cellto);
+	var tab = [];
+	var ItemToHide = 0;
+	var countDecr = count(ItemsToHideSolo) + 1;
+	for (var item in ItemsToHideSolo) {
+		countDecr--;
+		if (!_ITEM_INLINE[item] && dist >= _ITEM_MINRANGE[item] && dist <= _ITEM_MAXRANGE[item] && lineOfSight(cellfrom, cellto , leek)) {
+			ItemToHide += countDecr;
+		}
+		if (dist >= _ITEM_MINRANGE[item] && dist <= _ITEM_MAXRANGE[item] && _ITEM_INLINE[item] && isOnSameLine(cellfrom, cellto) && lineOfSight(cellto, cellfrom , leek)) {
+			ItemToHide += countDecr;
+		}
+	}
+	//StopTestFunction("CanShoot From too pour l'instant");
+	return ItemToHide;
+}
+
+function getMaxNbItems(@enemy, @mecell) {
+	var BestScore = 0;
+	for (var cell in GetWalkableCells(_CELL[enemy], _MP[enemy])) {
+		var NbItems = CanShootFromTo(enemy, cell, mecell);
+		if (BestScore < NbItems) {
+			BestScore = NbItems;
+		}
+	}
+	return BestScore;
+}
+
+function ArrayCellzDangerNoAOE(@cell, @mp, @enemy) {
+	var BestCell;
+	var Array = [];
+	var ArraySafe = [];
+	var BREAKTIME = false;
+	for (var mecell in GetWalkableCells(cell, mp)) { //BOUCLE MA CELL
+		if (getFightType() == FIGHT_TYPE_SOLO || IsBrochetteSafe(mecell)) push(Array, [mecell, getMaxNbItems(enemy, mecell)]);
+		if (getOperations() > _MAP_DANGER_OP_LIMIT) break;
+	}
+	return Array;
+}
+
+function getBestCellToHide(@cellfrom, @mp, @enemy) {
+	StartTestFunction();
+	var arrayForDmg = [];
+	var BestDmg = 99999;
+	var BestScore = 99999999;
+	var BestCell;
+	var ArrayCellzEgal = [];
+	var BestDist = 999999999;
+	var ecell = _CELL[enemy];
+	var ArrayCellzDanger = ArrayCellzDangerNoAOE(cellfrom, mp, enemy);
+	var MustFocus = MustFocusEnemy(enemy);
+	for (var cell in ArrayCellzDanger) {
+		mark(cell, getColorFromDmg(cell[1]));
+		if (cell[1] < BestScore) {
+			BestCell = cell[0];
+			BestScore = cell[1];
+		}
+	}
+	for (var cellz in ArrayCellzDanger) {
+		if (cellz[1] == BestScore) {
+			push(ArrayCellzEgal, cellz[0]);
+		}
+	}
+
+	for (var cellz in ArrayCellzEgal) {
+		var dist = getCellDistance(cellz, ecell);
+		if (MustFocus > 0) {
+			if (dist < BestDist) {
+				BestCell = cellz;
+				BestDist = dist;
+			}
+		} else {
+			BestCell = BestCellBulb(ArrayCellzEgal);
+		}
+	}
+	//debug("Max dmg of my cell : " + getMaxDmg(BestCell, enemy));
+	StopTestFunction("Map danger");
+	return BestCell;
+}
+
+function getReallySureCell() {
+	for (var cell in GetTableauDesCells()) {
+		if (getCellDistance(_CELL[EnemyLeekG], cell) > 20 && !lineOfSight(cell, _CELL[EnemyLeekG])) {
+			return cell;
+		}
+	}
+}

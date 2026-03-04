@@ -1,0 +1,703 @@
+include("Cache cache");
+
+var x = getCellX(getCell(nearestrealenemy()));
+		var y = getCellY(getCell(nearestrealenemy()));
+		var c = getCellFromXY(x, y);
+
+global leek2 = nearestrealenemy();
+var dist = getCellDistance(getCell(), getCell(leek2));
+var disto = getPathLength(getCell(), getCell(leek2));
+var distc = getPathLength(getCell(), c);
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////Weapon/Deplacements/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        c = getCellFromXY(x, y);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()),c)<=3) {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x - 1, y);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3) {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+
+		c = getCellFromXY(x - 2, y);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x - 3, y);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x + 1, y);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x + 2, y);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x + 3, y);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x, y+1);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x, y+2);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x, y+3);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x, y-1);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x, y-2);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x, y-3);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}	
+		
+		c = getCellFromXY(x+1, y-2);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x-1, y-2);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x-1, y-1);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x-2, y-1);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x+1, y-1);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x+2, y-1);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x-1, y+1);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x-2, y+1);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x+1, y+1);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x+2, y+1);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x+1, y+2);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+		
+		c = getCellFromXY(x-1, y+2);
+		if (c != null && !isObstacle(c) && getCellDistance(getCell(getNearestAlly()), c)>=4 && getCellDistance(getCell(nearestrealenemy()), c)<=3)  {if (canUseWeaponOnCell(WEAPON_GAZOR, c)==false && getPathLength(getCell(), getCellToUseWeaponOnCell(WEAPON_GAZOR, c))<getMP()) {
+moveTowardCell(getCellsToUseWeapon(WEAPON_GAZOR, c));		
+		}
+if (canUseWeaponOnCell(WEAPON_GAZOR, c) && distc<=3) {
+moveAwayFromCell(c);	
+}
+useWeaponOnCell(c);
+useWeaponOnCell(c);
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////CHIPPLAGUE///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////CHIPTOXIN////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+if (dist>1) {
+useCHiporWeaponarea(CHIP_TOXIN, 1, leek2);
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////CHIPVENOM////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+useChip(CHIP_VENOM, leek2);
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////CHIPSTOP/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+while (getTP()>=3 && canUseChip(CHIP_SLOW_DOWN, leek2)) {
+useChip(CHIP_SLOW_DOWN, leek2);
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////CHIPPLUSTP///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+while (getTP()>=3 && canUseChip(CHIP_TRANQUILIZER, leek2)) {
+useChip(CHIP_TRANQUILIZER, leek2);	
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////BULBES/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+summon(CHIP_HEALER_BULB, getCellToUseChip(CHIP_HEALER_BULB, getLeek()), bulbeSoigneur());
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////ChipVaccin///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+useChip(CHIP_VACCINE, getLeek());
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////FIN//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+moveTowardCell(tableaucellscacher());
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,180 @@
+include("Cache cache");
+var poto_proche = getNearestAlly();
+var enemy_proche = getNearestEnemy();
+global leek2 = nearestrealenemy();
+var EnemyGun = getWeapon(leek2);
+
+////////////////////////////////////////////////////////////////////////////////////
+// Cache Cache
+////////////////////////////////////////////////////////////////////////////////////
+
+if (getTP()>3 ) {
+moveTowardCell(getCellToUseChip(CHIP_ICEBERG, leek2));
+}
+else
+moveTowardCell(tableaucellscacher());
+
+////////////////////////////////////////////////////////////////////////////////////
+// Chip Regeneration
+////////////////////////////////////////////////////////////////////////////////////
+
+if (getLife()<300) {
+useChip(CHIP_REGENERATION, getLeek());	
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+// Chip IceBerg & Rockfall
+////////////////////////////////////////////////////////////////////////////////////
+
+useChip(CHIP_ICEBERG, leek2); 
+useChip(CHIP_ROCKFALL, leek2);
+
+
+if (canUseChip(CHIP_ICEBERG, leek2)) {
+useCHiporWeaponarea(CHIP_ICEBERG, 2, leek2);	
+}
+useCHiporWeaponarea(CHIP_ROCKFALL, 2, leek2);
+
+////////////////////////////////////////////////////////////////////////////////////
+// Bulbes
+////////////////////////////////////////////////////////////////////////////////////
+
+summon(CHIP_PUNY_BULB, getCell(), bulbechetif());
+summon(CHIP_ROCKY_BULB, getCell(), bulbeRocheux());
+
+////////////////////////////////////////////////////////////////////////////////////
+// Chip Lighning
+////////////////////////////////////////////////////////////////////////////////////
+
+useChip(CHIP_LIGHTNING, leek2);
+useChip(CHIP_LIGHTNING, leek2);
+useChip(CHIP_LIGHTNING, leek2);
+
+useCHiporWeaponarea(CHIP_LIGHTNING, 2, leek2);
+useCHiporWeaponarea(CHIP_LIGHTNING, 2, leek2);
+useCHiporWeaponarea(CHIP_LIGHTNING, 2, leek2);
+
+////////////////////////////////////////////////////////////////////////////////////
+// Liberation
+////////////////////////////////////////////////////////////////////////////////////
+
+if (getAbsoluteShield(leek2)>1) {
+useChip(CHIP_LIBERATION, leek2);}
+
+////////////////////////////////////////////////////////////////////////////////////
+// Setweapon
+////////////////////////////////////////////////////////////////////////////////////
+
+if (getWeapon() != WEAPON_AXE && canUseWeapon(WEAPON_AXE, leek2)) {
+setWeapon(WEAPON_AXE);
+useWeapon(leek2);
+useWeapon(leek2);
+}
+
+if (getWeapon() != WEAPON_LASER && canUseWeapon(WEAPON_LASER, leek2)) {
+setWeapon(WEAPON_LASER);
+useWeapon(leek2);
+useWeapon(leek2);
+}
+
+if (getWeapon() != WEAPON_GRENADE_LAUNCHER && canUseWeapon(WEAPON_GRENADE_LAUNCHER, leek2)) {
+setWeapon(WEAPON_GRENADE_LAUNCHER);
+useWeapon(leek2);
+useWeapon(leek2);
+useCHiporWeaponarea(WEAPON_GRENADE_LAUNCHER, 2, leek2);
+useCHiporWeaponarea(WEAPON_GRENADE_LAUNCHER, 2, leek2);
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+// Gentil Chips
+////////////////////////////////////////////////////////////////////////////////////
+
+if (getLife()<getTotalLife()) {
+useChip(CHIP_VACCINE, getLeek());	
+}
+
+
+useChip(CHIP_ARMOR, getLeek());
+useChip(CHIP_SHIELD, getLeek());
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

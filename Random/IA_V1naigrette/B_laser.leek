@@ -1,0 +1,122 @@
+include("Cache Cache");
+global heal = AlliesAHeal();
+global leek2 = nearestrealenemy();
+var dist = getCellDistance(getCell(), getCell(leek2));
+var disto = getPathLength(getCell(), getCell(leek2));
+var distheal = getCellDistance(getCell(), getCell(heal));
+var distoheal = getPathLength(getCell(), getCell(heal));
+
+if (getPathLength(getCell(), getCellToUseChip(CHIP_VACCINE, AlliesAHealV()))<=getMP() && getCooldown(CHIP_VACCINE)==0 && AlliesAHealV()==true) {
+moveTowardCell(getCellToUseChip(CHIP_VACCINE, AlliesAHealV()));
+useChip(CHIP_VACCINE, AlliesAHealV());
+useChip(CHIP_CURE, AlliesAHealV());	
+}
+
+if (getPathLength(getCell(), getCellToUseWeapon(AlliesAHeal()))<=getMP() && AlliesAHeal()==true) {
+if (getWeapon()!=WEAPON_B_LASER) {
+setWeapon(WEAPON_B_LASER);	
+}
+moveTowardCell(getCellToUseWeapon(WEAPON_B_LASER, AlliesAHeal()));
+useChip(CHIP_REMISSION, AlliesAHeal());
+useWeapon(AlliesAHeal());
+	useWeapon(AlliesAHeal());
+	useWeapon(AlliesAHeal());
+	useWeapon(AlliesAHeal());
+}
+
+if (getWeapon()!=WEAPON_B_LASER) {
+	setWeapon(WEAPON_B_LASER);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

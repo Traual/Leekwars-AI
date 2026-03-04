@@ -1,0 +1,27 @@
+/**
+ * Class to add to ActualStats on the consequences of an action (Only RESURRECT Type) : Item To X (For ResurrectCell)
+ **/
+
+include("../includes")
+
+class Resurrection {
+	//Change the stats of a dead leek as if he just got resurrected (function asks : Id, To)
+	static Update(To, EveryAliveStats, EveryDeadStats)  {
+		if (RESURRECT_ID == null) return;
+		EveryAliveStats[RESURRECT_ID] = EveryDeadStats[RESURRECT_ID]
+		//mapRemove(EveryDeadStats, Id)
+		EveryAliveStats[RESURRECT_ID].TOTAL_LIFE /= 2
+		EveryAliveStats[RESURRECT_ID].LIFE = EveryAliveStats[RESURRECT_ID].TOTAL_LIFE / 2
+		EveryAliveStats[RESURRECT_ID].CELL = To
+	}
+
+	static getAliveStatsFromDeadStats(ClonedDeadStats) {
+		ClonedDeadStats.TOTAL_LIFE /= 2
+		ClonedDeadStats.LIFE = ClonedDeadStats.TOTAL_LIFE / 2
+	}
+	
+	static HashEveryScores(EntityId, EntityMaxLife) { //This the hash for caching Resurrects Scores
+   		return EntityId * MAX_LIFE + EntityMaxLife
+	}
+	
+}

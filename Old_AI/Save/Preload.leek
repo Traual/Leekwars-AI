@@ -1,0 +1,20 @@
+/**
+ * Here is the first turn preload
+**/
+
+include("../includes")
+
+function Preload() {
+	var Bnch = new Benchmark
+	if (getTurn() == 1) {
+		Bnch.StartOp()
+		CellInfo.Init()
+		Bnch.StopOp("Turn 1 Cell Init")
+		Bnch.StartOp()
+		Items.Init()
+		Bnch.StopOp("Turn 1 Items Init")
+		Bnch.StartOp()
+		LockCell.loadMapObstaclesLockedCells()
+		Bnch.StopOp("Turn 1 Load Map Locked Cells")
+	}
+}

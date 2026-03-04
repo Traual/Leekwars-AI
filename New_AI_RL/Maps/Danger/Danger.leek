@@ -1,0 +1,547 @@
+/**
+ * Here i will calculate the danger of a cell or the best walkable cell to go to for danger/gravity cells
+ **/
+
+include("../../includes")
+
+class DangerClass {
+	EndState
+	EndTp
+	EndUses
+	EndValueDamage
+	constructor(TmpStats, TmpTp, TmpUses, TmpValueDamage) {
+		this.EndState = TmpStats
+		this.EndTp = TmpTp
+		this.EndUses = TmpUses
+		this.EndValueDamage = TmpValueDamage
+	}
+
+	/* Gives me the danger of an entity from its own ennemies in its state (shields, cell etc) (if entity is me i take into account that i will move to the safest cell in my actual position)
+    *
+    * @param entity_state State Class of ID
+	* @param state Map <Id : Class state of Id>
+    * @param entity_id ID of entity
+    * @param base_hash : Hash <id : cell> of every alive entities
+    *
+    * @return danger that entity will take
+    */
+
+    static getEntityDanger(entity_state, state, entity_id, base_hash) {
+        if (entity_id == Me) {
+            //Loading Stats Hash For Basic Danger Cache and this function's cache
+            var thisStatsHashForDanger = getStatsHashForDanger(entity_state, state, base_hash)
+            //Then loading walkcells hash from current situation
+            var thisWalkcellsHash = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(entity_state)
+            //loading the hash for my danger
+            var Hash = addValueToBinHash(OFFSET_BASIS ^ thisStatsHashForDanger, thisWalkcellsHash)
+            if (Hash in ENTITY_DANGER_CACHE_FOR_ME) return ENTITY_DANGER_CACHE_FOR_ME[Hash]
+            //Finding the lowest danger cell possible in my walkcells
+            var thisToSkipMap = EntitiesToSkip(entity_state, state, base_hash)
+            //Loading entity's enemies walk cells
+            var thisEnemiesWalkableCellsMap = LoadEnemiesWalkableCellsMap(state, entity_id, thisToSkipMap, base_hash)
+            //Loading My WalkCells at this instant : 
+            var MyFullWalkCells = new WalkCellsClass(state, entity_id, true, true, true, true, base_hash).MAX
+            //Finding lowest danger cell in my WalkCells : 
+            var minDanger = MAX_VALUE
+            for (var cell:var mp in MyFullWalkCells) {
+                var thisCellDanger = get(cell, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger)
+                if (thisCellDanger < minDanger) {
+                    if (thisCellDanger == 0) {//Found a safe cell
+                        ENTITY_DANGER_CACHE_FOR_ME[Hash] = 0
+                        return 0
+                    }
+                    minDanger = thisCellDanger
+                }
+            }
+            //Returning min danger found in my walkcells
+            ENTITY_DANGER_CACHE_FOR_ME[Hash] = minDanger
+            return minDanger
+        } else {
+            //Loading Stats Hash For Basic Danger Cache and this function's cache
+            var thisStatsHashForDanger = DangerClass.getStatsHashForDanger(entity_state, state, base_hash)
+            //loading the hash for entity's danger
+            var Hash = addValueToBinHash(OFFSET_BASIS ^ thisStatsHashForDanger, entity_state.CELL)
+            if (Hash in ENTITY_DANGER_CACHE_FOR_OTHERS) return ENTITY_DANGER_CACHE_FOR_OTHERS[Hash]
+            //Returning the actual entity's danger with Me in toSkipMap
+            var thisToSkipMap = clone(DangerClass.EntitiesToSkip(entity_state, state, base_hash))
+            //Adding MySelf in To Skip Map (to avoid lowering danger when i play)
+            thisToSkipMap[Me] = true
+            //Loading entity's enemies walk cells
+            var thisEnemiesWalkableCellsMap = LoadEnemiesWalkableCellsMap(state, entity_id, thisToSkipMap, base_hash)
+            //Then Loading the Danger of its position in this state
+            var tmp = DangerClass.get(entity_state.CELL, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger)
+            ENTITY_DANGER_CACHE_FOR_OTHERS[Hash] = tmp
+            return tmp
+        }
+    }
+
+    /* Gives me a map of every entity's ennemies walkable cells (used for danger loading)
+    *
+    * @param state Map <Id : Class state of Id>
+    * @param entity_id ID of entity
+    * @param toSkipMap map <id : true> of entities not to load walkcells for
+    * @param base_hash : Hash <id : cell> of every alive entities
+    *
+    * @return danger that entity will take
+    */
+
+    static LoadEnemiesWalkableCellsMap(state, entity_id, toSkipMap, base_hash) {
+        var ThisHash = addValueToBinHash((OFFSET_BASIS ^ base_hash), entity_id)
+		if (ThisHash in EVERY_ENEMIES_WALKABLES) return EVERY_ENEMIES_WALKABLES[ThisHash]
+		var EnemiesWalkCells = [: ]
+		for (var e: var stat in state) {
+			if (e in toSkipMap) continue
+			EnemiesWalkCells[e] = new WalkCellsClass(state, e, true, true, false, false, base_hash).MAX //Avoid loading TP and TP/JUMP
+		}
+		EVERY_ENEMIES_WALKABLES[ThisHash] = EnemiesWalkCells
+		return EnemiesWalkCells
+	}
+
+	/* Loads an integer which is the danger i will face if i stay on cell "cell" (it takes in Enemy Strength, Tp, Mp, My Relative Shield, My Absolute Shield, It loads the best combo with vulnerabilities to it)
+    *
+	* @param Cell the cell i want to load damages for
+	* @param State Map <Id : Class Stats>
+	* @param TargetStats Class Stats of Target
+	* @param EnemyWalkCells Map <Id : WalkCellsMap>
+	* @param ToSkipMap Map <Id : ToSkipBool>
+    *
+    * @return Int : Damages i may take
+    */
+
+	static get(Cell, State, TargetStats, EnemyWalkCells, ToSkipMap, StatsHashForDanger) {
+		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), Cell) //TODO : ADD ENTITY ID IN IT
+		if (ThisHash in CELL_DANGER_GET_CACHE) return CELL_DANGER_GET_CACHE[ThisHash]
+		var _final = 0
+		var TargetStatsCloned = clone(TargetStats, 3)
+		for (var Caster in StateClass.getEntitiesInTurnOrderAfterEntity(State, TargetStats.ID)) {
+			if (Caster in ToSkipMap) continue
+			var CasterStats = State[Caster]
+			var MapCellItemAoe = getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster])
+			var MapThisCellItemAoe = Cell in MapCellItemAoe ? MapCellItemAoe[Cell] : [: ]
+			_final += getComboFromItemAoe(MapThisCellItemAoe, CasterStats, TargetStatsCloned)
+		}
+		CELL_DANGER_GET_CACHE[ThisHash] = _final
+		return _final
+	}
+
+	/* Loads Combo From an ItemAoe Map, MyStats and CasterStats
+    *
+	* @param ItemAoeMap Map <Item : MinAoeDist>
+	* @param CasterStats Class Stats of Caster
+	* @param TargetStats Class Stats of Target /!\ it will be changed so clone it /!\
+    *
+    * @return Int : Damages output of combo
+    */
+
+	static getComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats) {
+		if (mapIsEmpty(ItemAoeMap)) return 0 //Can't use item on me so can't do damages
+		var HashedItemAoeMap = getHashFromItemAoeMap(ItemAoeMap)
+		var HashWithShield = getStatsHashForDangerOneCaster(TargetStats, CasterStats, HashedItemAoeMap)
+		if (HashWithShield in COMBO_FROM_ITEM_AOE_CACHE) {
+			TargetStats = COMBO_FROM_ITEM_AOE_CACHE[HashWithShield][1]
+			return COMBO_FROM_ITEM_AOE_CACHE[HashWithShield][0]
+		}
+		var BaseTp = CasterStats.TP
+		var BaseUses = CasterStats.USES
+		var _final = getBFSComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, BaseTp, clone(BaseUses))
+		var ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
+		while ((ComboWithVulne instanceof DangerClass) && (ComboWithVulne.EndValueDamage > _final)) {
+			_final = ComboWithVulne.EndValueDamage
+			TargetStats = ComboWithVulne.EndState
+			BaseUses = ComboWithVulne.EndUses
+			BaseTp = ComboWithVulne.EndTp
+			ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
+		}
+		COMBO_FROM_ITEM_AOE_CACHE[HashWithShield] = [_final, TargetStats]
+		return _final
+	}
+
+	/* get Me An Hash For ItemAoe
+    *
+	* @param ItemAoe Map <Item : MinArea>
+    *
+    * @return Hashed Map ItemAoe
+    */
+
+	static getHashFromItemAoeMap(ItemAoeMap) {
+		var Hash_Final = 0
+		for (var item:var dist in ItemAoeMap) {
+			Hash_Final = (
+				(Hash_Final * MAX_ITEM * MAX_AOE_DIST) +
+				(item * MAX_AOE_DIST) +
+				dist
+			)
+		}
+		return Hash_Final
+	}
+
+	/* Loads Combo From an ItemAoe Map, MyStats and CasterStats
+    *
+	* @param ItemAoeMap Map <Item : MinAoeDist>
+	* @param CasterStats Class Stats of Caster
+	* @param TargetStats Class Stats of Target
+    *
+    * @return Int : Damages output of combo
+    */
+
+	static getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses) {
+		var MaxDamages = 0
+		var _final
+		for (var item:var aoe in ItemAoeMap) {
+			var Infos = ITEMINFO[item]
+			if (BaseUses[item] < Infos.MAX_USES && BaseTp >= Infos.COST && IsVulnerabilityItem(Infos)) {//CHECK COST AND USES
+				var CDangerClass = getCellDangerClassFromItem(TargetStats, Infos, BaseTp, BaseUses, ItemAoeMap, CasterStats, item)
+				var Damages = CDangerClass.EndValueDamage
+				if (MaxDamages < Damages) {
+					MaxDamages = Damages
+					_final = CDangerClass
+				}
+			}
+		}
+		return _final
+	}
+
+	/* get Me An Hash For Danger for every casters (taking into account my shield and antidote cooldown, and caster's strength, magic, tp and mp (cuz used in hashing final cell))
+    *
+	* @param TargetStats Class Stats of Target
+	* @param State Map <Id: Class Stats>
+	* @param Initial Hash to add here (generally basehash)
+    *
+    * @return Hashed Stats
+    */
+
+	static getStatsHashForDanger(TargetStats, State, TmpHash) {
+
+		// ——— INITIALISATION ———
+		var hash_value = (OFFSET_BASIS ^ TmpHash)
+
+		// ——— Shields + Target's antidote Cooldown ———
+
+		var Mycombined = (TargetStats.ABSOLUTE_SHIELD << 30) | (TargetStats.RELATIVE_SHIELD << 15) | TargetStats.COOLDOWNS[CHIP_ANTIDOTE]
+		hash_value = addValueToBinHash(hash_value, Mycombined)
+
+		// ——— Ennemies stats ———
+		var target_side = TargetStats.SIDE
+		for (var e: var stat in State) {
+			
+			if (stat.SIDE == target_side) continue
+
+			var Hiscombined = (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.MP << 24) | (stat.TP << 12) | stat.POWER
+			hash_value = addValueToBinHash(hash_value, Hiscombined)
+
+		}
+
+		return hash_value
+	}
+
+	/* get Me An Hash For Danger from only one caster (taking into account my shield and antidote cooldown, and caster's strength, magic and tp (not mp cuz used only in combo generation))
+    *
+	* @param TargetStats Class Stats of Target
+	* @param CasterStats Class Stats of Caster
+	* @param Initial Hash to add here (generally basehash)
+    *
+    * @return Hashed Stats
+    */
+
+	static getStatsHashForDangerOneCaster(TargetStats, CasterStats, TmpHash) {
+
+		// ——— INITIALISATION ———
+		var hash_value = (OFFSET_BASIS ^ TmpHash)
+
+		// ——— Shields + Target's antidote Cooldown ———
+
+		var Mycombined = (TargetStats.ABSOLUTE_SHIELD << 30) | (TargetStats.RELATIVE_SHIELD << 15) | TargetStats.COOLDOWNS[CHIP_ANTIDOTE]
+		hash_value = addValueToBinHash(hash_value, Mycombined)
+
+		// ——— Caster stats ———
+
+		var Hiscombined = (CasterStats.STRENGTH << 45) | (CasterStats.MAGIC << 30) | (CasterStats.TP << 15) | CasterStats.POWER
+		hash_value = addValueToBinHash(hash_value, Hiscombined)
+
+		return hash_value
+	}
+
+	/* get The Damages at the end of combo after using the item for vulné
+    *
+	* @param TargetStats Class Stats of Target
+	* @param Infos : ITEMINFO of Item
+    *
+    * @return MyModifiedStats
+    */
+
+	static getCellDangerClassFromItem(TargetStats, Infos, BaseTp, BaseUses, ItemAoeMap, CasterStats, Item) {
+		var ThisTp = BaseTp - Infos.COST
+		var ThisUses = clone(BaseUses)
+		var ThisItemMyStats = getRoughVulneConsequences(clone(TargetStats, 2), Infos)
+		ThisUses[Item]++
+		var DamagesWithThisItemVulne = getBFSComboFromItemAoe(ItemAoeMap, CasterStats, ThisItemMyStats, ThisTp, clone(ThisUses))
+		return new DangerClass(ThisItemMyStats, ThisTp, ThisUses, DamagesWithThisItemVulne)
+	}
+
+	/* Change My Shields According to the item used
+    *
+	* @param TargetStats Class Stats of Target
+	* @param Infos : ITEMINFO of Item
+    *
+    * @return MyModifiedStats
+    */
+
+	static getRoughVulneConsequences(TargetStats, Infos) {
+		for (var eff in Infos.EFFECTS) {
+			var EffType = eff[0]
+			if (EffType in MapChange) MapChange[EffType](TargetStats, eff)
+		}
+		return TargetStats
+	}
+
+	static MapChange = [
+		EFFECT_DEBUFF:function(TargetStats, eff) {
+			TargetStats.ABSOLUTE_SHIELD *= 1 - (eff[1] / 100)
+			TargetStats.RELATIVE_SHIELD *= 1 - (eff[1] / 100)
+		},
+		EFFECT_VULNERABILITY:function(TargetStats, eff) {
+			TargetStats.RELATIVE_SHIELD -= eff[1]
+		},
+		EFFECT_ABSOLUTE_VULNERABILITY:function(TargetStats, eff) {
+			TargetStats.ABSOLUTE_SHIELD -= eff[1]
+		}
+	]
+
+	/* Loads Combo From an ItemAoe Map, MyStats and CasterStats
+    *
+	* @param ItemAoeMap Map <Item : MinAoeDist>
+	* @param CasterStats Class Stats of Caster
+	* @param TargetStats Class Stats of Target
+    *
+    * @return Int : Damages output of combo
+    */
+
+	static getBFSComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, CasterTP, ClonedEntityUses) {
+		var EntityDangerArray = EntityDangerClass.get(CasterStats, TargetStats)
+		var BFSHash = getBFSHash(ItemAoeMap, EntityDangerArray, CasterTP)
+		if (BFSHash in BFS_CELL_DANGER_CACHE) return BFS_CELL_DANGER_CACHE[BFSHash]
+		var _final = 0
+		for (var EntityDanger in EntityDangerArray) {
+			var ItemEntityDanger = EntityDanger.Item
+			if (ItemAoeMap[ItemEntityDanger] == EntityDanger.Aoe) {
+				var CostEntityDanger = EntityDanger.Cost
+				var MaxUsesOfItem = ITEMINFO[ItemEntityDanger].MAX_USES
+				while (CasterTP >= CostEntityDanger && ClonedEntityUses[ItemEntityDanger] < MaxUsesOfItem) {
+					_final += EntityDanger.Damages
+					CasterTP -= CostEntityDanger
+					ClonedEntityUses[ItemEntityDanger]++
+				}
+			}
+		}
+		BFS_CELL_DANGER_CACHE[BFSHash] = _final
+		return _final
+	}
+
+	/* Makes an Hash For BFS, it takes every items usables and its damages to me, and casterTp
+    *
+	* @param ItemAoeMap Map <Item : MinAoeDist>
+	* @param EntityDangerArray Array of Class EntityDangerMap
+    *
+    * @return Int : Hash for BFS
+    */
+
+	static getBFSHash(ItemAoeMap, EntityDangerArray, CasterTP) {
+		// ——— INITIALISATION ———
+		var hash_value = (OFFSET_BASIS ^ CasterTP)
+
+		//We then add every items and its damages usables in ItemAoeMap
+
+		for (var EntityDanger in EntityDangerArray) {
+			var ItemEntityDanger = EntityDanger.Item
+			if (ItemAoeMap[ItemEntityDanger] == EntityDanger.Aoe) {
+
+				var combined = (ItemEntityDanger << 30) | EntityDanger.Damages
+				hash_value = addValueToBinHash(hash_value, combined)
+				
+			}
+		}
+
+		return hash_value
+	}
+
+	/* Returns a Map <Cell : Map> <Item : SmallestAoe>
+    *
+	* @param EntityStats Class Stats of Caster
+	* @param EntityWalkCells --> Map : <Cell : Score (Or MP)> Of Caster
+    *
+    * @return Map <Cell : Map> <Item : SmallestAoe>
+    */
+
+	static getMapCellItemAoe(EntityStats, EntityWalkCells) {
+		var EntityStartCell = EntityStats.CELL
+		var TmpHash = (mapSize(EntityWalkCells) * MAX_CELL) + (EntityStartCell)//Same Start Cell and Same number of walkcells --> very likely to not have any entities that have moved arround 
+		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
+		var _final = [: ]
+		for (var Item in EntityDangerClass.getItemsList(EntityStats)) {
+			for (var Cell:var MinAoeDist in getMapAoeForItem(Item, ITEMINFO[Item], EntityWalkCells, EntityStartCell)) {
+				if (Cell in _final) {
+					_final[Cell][Item] = MinAoeDist
+				} else {
+					_final[Cell] = [: ]
+					_final[Cell][Item] = MinAoeDist
+				}
+			}
+		}
+		MAP_CELL_ITEM_AOE_CACHE[TmpHash] = _final
+		return _final
+	}
+
+
+	/* Transforms getMapHittableCellsTotal (Map <Cell Id: true>) Into a map : Cell : MinAoeDist
+    *
+	* @param EntityStats Class Stats of Caster
+	* @param EntityWalkCellsMap --> Map : <Cell : Score (Or MP)> Of Caster
+    *
+    * @return Map <Cell : MinAoeDist>
+    */
+
+	static getMapAoeForItem(Item, ItemInfos, WalkCellsMap, StartCell) {
+		var _final = [: ]
+		var MapCellsBool = getMapHittableCellsTotal(ItemInfos, WalkCellsMap, StartCell)
+		//First i add every cells that can be hit without aoe (it works without this first for tho i save few thousands ops of not saving a value then replacing it by 0)
+		for (var cell:var bool in MapCellsBool) {
+			_final[cell] = 0
+		}
+		if (ItemInfos.AREA_MAX > 0) { //If item isn't area type point
+			//Then i load aoe for unhittable cells
+			for (var cell:var bool in MapCellsBool) {
+				for (var Aoe:var AoeDist in ActionsClass.AoeDistItem(Item, cell)) {
+					var ActualCellDist = _final[Aoe]
+					if (ActualCellDist == null || ActualCellDist > AoeDist) {
+						_final[Aoe] = AoeDist
+					}
+				}
+			}
+		}
+		return _final
+	}
+
+	/* Returns Every hitable cells by an entity with an item
+    *
+	* @param ItemInfos Class Items of item
+	* @param WalkCellsMap --> Map : <Cell : Score (Or MP)> of Caster
+    *
+    * @return Map <Cell Id: true>
+    */
+
+	static getMapHittableCellsTotal(ItemInfos, WalkCellsMap, StartCell) {
+
+		//Starting by saving variables to save operations
+		var _final = [: ]
+		var LaunchType = ItemInfos.LAUNCHTYPE
+		var MinRange = ItemInfos.MINRANGE
+		var MaxRange = ItemInfos.MAXRANGE
+		if (ItemInfos.NEEDLOS) { //Normal items cases (need los)
+			for (var EntityCell:var mp in WalkCellsMap) {
+				_final += ActionsClass.LaunchWithLos[LaunchType](EntityCell, MinRange, MaxRange)
+			}
+		} else { //Other items cases (don't need los) like spark
+			for (var EntityCell:var mp in WalkCellsMap) {
+				_final += ActionsClass.LaunchWithoutLos[LaunchType](EntityCell, MinRange, MaxRange)
+			}
+		}
+
+		return _final
+	}
+
+	/* Returns Map of entities to skip (entity : true)
+    *
+	* @param State --> Map : <Id : Stats>
+    *
+    * @return Map <Id: true>
+    */
+
+	static EntitiesToSkip(EntityState, State, BaseHash) {
+		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), EntityState.ID)
+		if (ThisHash in TO_SKIP_MAP_CACHE) return TO_SKIP_MAP_CACHE[ThisHash]
+		var _final = [: ]
+		var entity_side = EntityState.SIDE
+		for (var caster: var caststats in State) {
+			if ((entity_side == caststats.SIDE) || caststats.LIFE <= 0 || !HaveAnHittableItem(caststats.COOLDOWNS, caster)) {
+				_final[caster] = true
+			}
+		}
+		TO_SKIP_MAP_CACHE[ThisHash] = _final
+		return _final
+	}
+
+	/* Tells us if entity has an item that must be counted in danger map
+    *
+	* @param CooldownMap --> Map : <ItemId : Cooldown>
+	* @param CasterID --> For caching result (can't change during a turn)
+    *
+    * @return Bool
+    */
+
+	static HaveAnHittableItem(CooldownMap, CasterID) {
+		if (CasterID in HAVE_AN_HITTABLE_ITEM_CACHE) return HAVE_AN_HITTABLE_ITEM_CACHE[CasterID]
+		for (var i: var cd in CooldownMap) {
+			if (cd > 1) continue
+			for (var eff in ITEMINFO[i].EFFECTS) {
+				if (MapHittables[eff[0]]) {
+					HAVE_AN_HITTABLE_ITEM_CACHE[CasterID] = true
+					return true
+				}
+			}
+		}
+		HAVE_AN_HITTABLE_ITEM_CACHE[CasterID] = false
+		return false
+	}
+
+	//Just a map for the function above
+
+	static MapHittables = [
+		EFFECT_DAMAGE: true,
+		EFFECT_LIFE_DAMAGE: true,
+		EFFECT_POISON: true,
+		EFFECT_DEBUFF: true,
+		EFFECT_ABSOLUTE_VULNERABILITY: true,
+		EFFECT_VULNERABILITY:true
+	]
+
+	/* Tells us if an item (Item) can apply Vulnerability (To then try to apply it before damages items to check damages changes)
+    *
+	* @param ItemInfosVar ItemInfo Class of Item
+    *
+    * @return Bool
+    */
+
+	static IsVulnerabilityItem(ItemInfosVar) {
+		for (var eff in ItemInfosVar.EFFECTS) {
+			if (MapLoadForVulne[eff[0]]) return true
+		}
+		return false
+	}
+
+	//Just a map for the function above
+
+	static MapLoadForVulne = [
+		EFFECT_DEBUFF: true,
+		EFFECT_ABSOLUTE_VULNERABILITY: true,
+		EFFECT_VULNERABILITY:true
+	]
+
+	/* Returns a Hash ItemAoe Map, MyStats and CasterStats
+    *
+	* @param ItemAoeMap Map <Item : MinAoeDist>
+	* @param CasterStats Class Stats of Caster
+	* @param TargetStats Class Stats of Target
+    *
+    * @return Int Hash
+    */
+
+	static HashMapItemUseAoe(MapItemAoe, CurrentHash) {
+		for (var i:var dist in MapItemAoe) {
+			CurrentHash = 
+			(CurrentHash * MAX_ITEM * MAX_AOE_DIST) +
+			(i * MAX_AOE_DIST) +
+			dist 
+		}
+		return CurrentHash
+	}
+}

@@ -1,0 +1,42 @@
+/**
+ * This method will help me give stats buff to entities and to know if i should shield, which bulb to summon etc
+ **/
+
+include("../includes")
+
+class TeamIndexes {
+    STRENGTH_INDEX
+    WISDOM_INDEX
+    AGILITY_INDEX
+    RESISTANCE_INDEX
+    SCIENCE_INDEX
+    MAGIC_INDEX
+	constructor(EveryStats, AllyTeamBool) { //If AllyTeamBool is true, then it's my team's score, otherwise if its false, it's enemy team score
+        this.STRENGTH_INDEX = 0
+        this.WISDOM_INDEX = 0
+        this.AGILITY_INDEX = 0
+        this.RESISTANCE_INDEX = 0
+        this.SCIENCE_INDEX = 0
+        this.MAGIC_INDEX = 0
+        var dividing = 0
+        //Let's give them values : 
+        for (var entity:var stat in EveryStats) {
+            if (stat.ALLY == AllyTeamBool) {
+                dividing++
+                var EntityIndex = EntityIndexes.getEntityIndexes(stat)
+                this.STRENGTH_INDEX += EntityIndex.STRENGTH_INDEX
+                this.WISDOM_INDEX += EntityIndex.WISDOM_INDEX
+                this.AGILITY_INDEX += EntityIndex.AGILITY_INDEX
+                this.RESISTANCE_INDEX += EntityIndex.RESISTANCE_INDEX
+                this.SCIENCE_INDEX += EntityIndex.SCIENCE_INDEX
+                this.MAGIC_INDEX += EntityIndex.MAGIC_INDEX
+            }
+        }
+        this.STRENGTH_INDEX /= dividing
+        this.WISDOM_INDEX /= dividing
+        this.AGILITY_INDEX /= dividing
+        this.RESISTANCE_INDEX /= dividing
+        this.SCIENCE_INDEX /= dividing
+        this.MAGIC_INDEX /= dividing
+    }
+}

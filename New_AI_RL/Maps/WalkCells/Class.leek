@@ -1,0 +1,311 @@
+/**
+ * Class Walkcells
+**/
+
+include("../../includes")
+
+class WalkCellsClass {
+	WALK //Map : Cell:Mp
+	JUMP
+	TELEPORTATION
+	TELEPORTATION_AND_JUMP
+	MAX
+	constructor(EveryStats, Entity, DoWalk, DoJump, DoTeleportation, DoTeleportationAndJump, BaseHash) {
+		var EntityStats = EveryStats[Entity]
+		var EntityCell = EntityStats.CELL
+		var EntityCooldowns = EntityStats.COOLDOWNS
+		var JumpCooldown = EntityCooldowns[CHIP_JUMP]
+		var JumpCost = ITEMINFO[CHIP_JUMP].COST
+		var TeleportationCooldown = EntityCooldowns[CHIP_TELEPORTATION]
+		var TeleportationCost = ITEMINFO[CHIP_TELEPORTATION].COST
+		var Mp = EntityStats.MP
+		var Tp = EntityStats.TP
+		var LeekCells = LoadIgnoreCells(EveryStats, Entity, BaseHash)
+		var HashWalk = HashWalkCells(EntityCell, Mp, BaseHash) //Conditions already checked in constructor so no need to check them in cache
+
+		if (DoWalk) {
+			LoadWalkCells(EntityCell, LeekCells, Mp, HashWalk)
+		} else {
+			this.WALK = [: ]
+		}
+
+		var CanJump = (JumpCooldown == 0 || Entity != Me && JumpCooldown <= 1) && Tp >= JumpCost
+		if (DoJump && CanJump) {
+			LoadJumpCells(EntityCell, LeekCells, Mp, HashWalk)
+		} else {
+			this.JUMP = [: ]
+		}
+		
+		var CanTeleport = (TeleportationCooldown == 0 || Entity != Me && TeleportationCooldown <= 1) && Tp >= TeleportationCost
+		if (DoTeleportation && CanTeleport) {
+			LoadTeleportationCells(EntityCell, LeekCells, Mp, HashWalk)
+		} else {
+			this.TELEPORTATION = [: ]
+		}
+		
+		if (DoTeleportationAndJump && CanJump && CanTeleport && Tp >= JumpCost + TeleportationCost) {
+			LoadTeleportationAndJumpCells(EntityCell, LeekCells, Mp, HashWalk)
+		} else {
+			this.TELEPORTATION_AND_JUMP = [: ]
+		}
+	}
+
+	LoadWalkCells(EntityCell, LeekCells, Mp, HashWalk) {
+		if (HashWalk in WALKABLE_CACHE) {
+			var Cache = WALKABLE_CACHE[HashWalk]
+			this.WALK = Cache
+			this.MAX = Cache
+		} else {
+			this.WALK = WalkableCells(EntityCell, LeekCells, Mp)
+			this.MAX = this.WALK
+			WALKABLE_CACHE[HashWalk] = this.WALK
+		}
+	}
+
+	LoadJumpCells(EntityCell, LeekCells, Mp, HashWalk) {
+		if (HashWalk in JUMP_CACHE) {
+			var Cache = JUMP_CACHE[HashWalk]
+			this.JUMP = Cache
+			this.MAX = Cache
+		} else {
+			this.JUMP = WalkableCellsWithJump(EntityCell, LeekCells, Mp)
+			this.MAX = this.JUMP
+			JUMP_CACHE[HashWalk] = this.JUMP
+		}
+	}
+
+	LoadTeleportationCells(EntityCell, LeekCells, Mp, HashWalk) {
+		if (HashWalk in TELEPORTATION_CACHE) {
+			var Cache = TELEPORTATION_CACHE[HashWalk]
+			this.TELEPORTATION = Cache
+			this.MAX = Cache
+		} else {
+			this.TELEPORTATION = WalkableCellsWithTeleportation(EntityCell, LeekCells, Mp)
+			this.MAX = this.TELEPORTATION
+			TELEPORTATION_CACHE[HashWalk] = this.TELEPORTATION
+		}
+	}
+
+	LoadTeleportationAndJumpCells(EntityCell, LeekCells, Mp, HashWalk) {
+		if (HashWalk in TELEPORTATION_AND_JUMP_CACHE) {
+			var Cache = TELEPORTATION_AND_JUMP_CACHE[HashWalk]
+			this.TELEPORTATION_AND_JUMP = Cache
+			this.MAX = Cache
+		} else {
+			this.TELEPORTATION_AND_JUMP = WalkableCellsWithTeleportationAndJump(EntityCell, LeekCells, Mp)
+			this.MAX = this.TELEPORTATION_AND_JUMP
+			TELEPORTATION_AND_JUMP_CACHE[HashWalk] = this.TELEPORTATION_AND_JUMP
+		}
+	}
+
+	HashWalkCells(Cell, Mp, BaseHash) {
+		return addValueToBinHash((OFFSET_BASIS ^ BaseHash), (Cell << 32) | Mp) // We start by Hashing Cell and Mp Value
+	}
+
+	//Very specific function of hashing teleportation items and cell/mp of entity but /!\ doesn't take basehash into account /!\
+	static HashWalkCellsWithItemsWithoutBaseHash(entity_state) {
+		var Entity = entity_state.ID
+		var Tp = entity_state.TP
+		var EntityCooldowns = entity_state.COOLDOWNS
+		var JumpCooldown = EntityCooldowns[CHIP_JUMP]
+		var JumpCost = ITEMINFO[CHIP_JUMP].COST
+		var TeleportationCooldown = EntityCooldowns[CHIP_TELEPORTATION]
+		var TeleportationCost = ITEMINFO[CHIP_TELEPORTATION].COST
+		var CanJump = (JumpCooldown == 0 || Entity != Me && JumpCooldown <= 1) && Tp >= JumpCost
+		var CanTeleport = (TeleportationCooldown == 0 || Entity != Me && TeleportationCooldown <= 1) && Tp >= TeleportationCost
+		var BaseValue = CanJump ? 
+						CanTeleport ? 4 : 2 : 
+						CanTeleport ? 3 : 1
+		return addValueToBinHash((OFFSET_BASIS ^ BaseValue), (entity_state.CELL << 32) | entity_state.MP)
+	}
+
+	static LoadSortedWalkCells(WalkCells) {
+		var TmpArray = []
+		var TmpMapScoring = [: ]
+		var Walk = WalkCells.WALK
+		var Jump = WalkCells.JUMP
+		var Tele = WalkCells.TELEPORTATION
+		var TeleAndJump = WalkCells.TELEPORTATION_AND_JUMP
+		for (var c:var mp in WalkCells.MAX) {
+			push(TmpArray, c)
+			TmpMapScoring[c] = (c in Walk) ? Walk[c] : 
+            			 		(c in Jump) ? Jump[c] + 100 : 
+            			 		(c in Tele) ? Tele[c] + 1000 : 
+            			 		TeleAndJump[c] + 10000
+		}
+		return arraySort(TmpArray, function(a, b) {
+			return TmpMapScoring[a] - TmpMapScoring[b]
+		})
+	}
+	
+	//Soon Obselete : 
+	static LoadCoeffedCellsFromWalkCellsClass(WalkCells) {//Used for Action Map Loading (Should i walk or jump and save mp ...) No need to cache cuz its already cached only by BaseHash in Action Map
+		var _final = [: ]
+		var Walk = WalkCells.WALK
+		var Jump = WalkCells.JUMP
+		var Tele = WalkCells.TELEPORTATION
+		var TeleAndJump = WalkCells.TELEPORTATION_AND_JUMP
+		for (var c:var mp in WalkCells.MAX) {
+			if (c in Walk) {
+				_final[c] = Walk[c]
+			} else if (c in Jump) {
+				_final[c] = Jump[c] + 100
+			} else if (c in Tele) {
+				_final[c] = Tele[c] + 1000
+			} else if (c in TeleAndJump) {
+				_final[c] = TeleAndJump[c] + 10000
+			}
+		}
+		return _final
+	}
+
+	static MoveTo(cell, State, BaseHash) {
+		var WalkClass = new WalkCellsClass(State, Me, true, true, true, true, BaseHash)
+		var ActionsToGet = getActionsToGet(State[Me].CELL, cell, WalkClass.TELEPORTATION_AND_JUMP, WalkClass.TELEPORTATION, WalkClass.JUMP, WalkClass.WALK)
+		for (var Action in ActionsToGet) {
+			moveTowardCell(Action.From)
+			useChipOnCell(Action.Item, Action.To)
+		}
+		moveTowardCell(cell)
+	}
+
+	static getActionsToGet(from, to, AccesMpTeleportationAndJump, AccesMpTeleportation, AccesMpJump, AccesMpWalk) {
+
+		// shortcut references
+		var maps = [
+			"walk": AccesMpWalk,
+			"jump": AccesMpJump,
+			"tp":   AccesMpTeleportation,
+			"tpJump": AccesMpTeleportationAndJump
+		]
+
+		// downgrade capabilities per layer
+		var downgrade = [
+			"tpJump": ['jump', 'tp'],
+			"tp":     ['tp'],
+			"jump":   ['jump']
+		]
+
+		var cur = to
+		var actions = []
+
+		// determine current layer
+		var layer = null
+		if (cur in maps["walk"]) layer = 'walk'
+		else if (cur in maps["jump"]) layer = 'jump'
+		else if (cur in maps["tp"]) layer = 'tp'
+		else if (cur in maps["tpJump"]) layer = 'tpJump'
+
+		while (true) {
+
+			if (!layer) {
+				debug(cur+" isn't reachable")
+				break
+			}
+
+			// once we're in walk-only layer, stop: walking handled separately
+			if (layer == 'walk') {
+				break
+			}
+
+			var progressed = false
+			var curCost = maps[layer][cur]
+
+			// 1) try each downgrade ability in order
+			for (var ability in downgrade[layer]) {
+				// compute neighbours for this ability
+				var neighs
+				if (ability == 'jump') {
+					neighs = ALLCELLINFO[cur].CIRCLE_THREE_DIST
+				} else { // ability == 'tp'
+					var tpInfo = ITEMINFO[CHIP_TELEPORTATION]
+					neighs = CellClass.getDisc(cur, tpInfo.MINRANGE, tpInfo.MAXRANGE)
+				}
+
+				// compute next layer after using this ability
+				var nextLayer = (layer == 'tpJump')
+					? (ability == 'jump' ? 'tp' : 'jump')
+					: 'walk'
+				var nextCosts = maps[nextLayer]
+
+				// look for a valid landing cell
+				for (var neigh:var dist in neighs) {
+					if (neigh in nextCosts && nextCosts[neigh] <= curCost) {
+						// prepend action
+						var chip = (ability == 'jump' ? CHIP_JUMP : CHIP_TELEPORTATION)
+						unshift(actions, new ActionClass(chip, neigh, cur))
+						cur = neigh
+						progressed = true
+						layer = nextLayer
+						break
+					}
+				}
+				if (progressed) break
+			}
+			if (progressed) continue
+
+			// 2) fallback: walk one step in same layer (no Action recorded here)
+			for (var neigh:var dist in ALLCELLINFO[cur].CIRCLE_ONE_DIST) {
+				if (neigh in maps[layer] && maps[layer][neigh] < curCost) {
+					cur = neigh
+					progressed = true
+					break
+				}
+			}
+			if (progressed) continue;
+
+			// 3) no way forward
+			debug("Cannot find path from "+from+" to "+to)
+			break
+		}
+
+		// now cur ∈ AccesMpWalk: caller should walk from 'from' to 'cur' automatically
+		return actions
+	}
+
+	static WalkableCells(from, leekcells, mp) {
+		InitObstacles(OBSTACLES_ARRAY)
+		InitLeekCells(leekcells)
+		InitBuildAcc(from)
+		InitAccesMp()
+		var acces = getAccesible(mp)
+		return getAccess()
+	}
+
+	static WalkableCellsWithJump(from, leekcells, mp) {
+		InitObstacles(OBSTACLES_ARRAY)
+		InitLeekCells(leekcells)
+		InitBuildAccJ(from)
+		InitAccesMpJ()
+		var acces = getAccesibleJ(mp)
+		return getAccessJ()
+	}
+
+	static WalkableCellsWithTeleportation(from, leekcells, mp) {
+		InitObstacles(OBSTACLES_ARRAY)
+		InitLeekCells(leekcells)
+		InitBuildAccT(from)
+		InitAccesMpT()
+		var acces = getAccesibleT(mp)
+		return getAccessT()
+	}
+	
+	static WalkableCellsWithTeleportationAndJump(from, leekcells, mp) {
+		InitObstacles(OBSTACLES_ARRAY)
+		InitLeekCells(leekcells)
+		InitBuildAccTJ(from)
+		InitAccesMpTJ()
+		var acces = getAccesibleTJ(mp)
+		return getAccessTJ()
+	}
+
+	static LoadIgnoreCells(EveryStats, EntityToBeIgnored, BaseHash) {
+		if (BaseHash in IGNORE_CELLLS_CACHE) return IGNORE_CELLLS_CACHE[BaseHash]
+		var _final = []
+		for (var e: var stat in EveryStats) {
+			if (stat.LIFE > 0 && e != EntityToBeIgnored) push(_final, stat.CELL)
+		}
+		IGNORE_CELLLS_CACHE[BaseHash] = _final
+		return _final
+	}
+}

@@ -1,0 +1,194 @@
+include("include");
+
+function CanBrochette(@Start , @End) {
+	if (isOnSameLine(Start, End) && lineOfSight(Start, End)) {
+		return true;
+	}
+	else return false;
+}
+
+
+function IsBrochetteSafe(@cell) {
+	for (var leek in getAliveAllies()) {
+		if (leek != _MY_SELF && CanBrochette(_CELL[leek], cell)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function getAllShootableCellzToShoot(@leek) {
+var array = [];
+	for (var target in getAliveEnemies()) {
+		if (CanBrochette(_CELL[leek], _CELL[target])) {
+			push(array, _CELL[target]);
+		}
+	}
+	return array;
+}
+
+function useCHiporWeaponarea(chiporWeapon, area, leek) {
+	var tabcellz = [];
+	var x = getCellX(_CELL[leek]);
+	var y = getCellY(_CELL[leek]);
+	push(tabcellz, _CELL[leek]);
+ 	var cell;
+	if (_ITEM_AREA[chiporWeapon]==AREA_LASER_LINE) {
+		pushAll(tabcellz, getAllShootableCellzToShoot(leek));
+	}
+	if (area >= 1) {
+		cell = getCellFromXY(x+1, y);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+		cell = getCellFromXY(x-1, y);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+		
+		cell = getCellFromXY(x, y + 1);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x, y - 1);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+	}
+	if (area >= 2) {
+		cell = getCellFromXY(x + 1, y + 1);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+		cell = getCellFromXY(x + 1, y - 1);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x - 1, y + 1);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x - 1, y - 1);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x + 2, y);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x, y + 2);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x, y - 2);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x - 2, y);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+	}
+	if (area >= 3) {
+		cell = getCellFromXY(x + 2, y + 1);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x + 2, y - 1);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x - 2, y + 1);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x - 2, y - 1);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x + 1, y + 2);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+		cell = getCellFromXY(x + 1, y - 2);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x - 1, y + 2);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x - 1, y - 2);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x + 3, y);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x, y + 3);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x, y - 3);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+
+		cell = getCellFromXY(x - 3, y);
+		if (cell != null && !isObstacle(cell)) {
+			push(tabcellz, cell);
+		}
+	}
+	return tabcellz;
+}
+
+function BestCellToShoot(@LeekFrom, @Leekto, @Mp, @WeaponOrChip) {
+	var area = areaNbFromWeapon(WeaponOrChip);
+	if (Leekto == _MY_SELF && area==0) return _CELL[_MY_SELF];
+	var BestCellz;
+	var BestDist = 9999;
+	var BestCount = 0;
+	var BestCell ;
+	var tab = [];
+	var ArrayGoodCellz = [];
+	pushAll(tab, useCHiporWeaponarea(WeaponOrChip, area, Leekto));
+	
+	for (var cell in tab) {
+		var count = getItemTargetsEnemyMinusAlly(WeaponOrChip , cell);
+		if (BestCount<count && WeaponOrChip!=CHIP_DEVIL_STRIKE ||WeaponOrChip == CHIP_DEVIL_STRIKE && isEmptyCell(cell)) {
+			BestCount = count;
+		}
+	}
+	for (var cell in tab) {
+		if (getItemTargetsEnemyMinusAlly(WeaponOrChip , cell)==BestCount) {
+			push(ArrayGoodCellz, cell);
+		}
+	}
+
+	for (var cellz in ArrayGoodCellz) {
+		var cellzitem = getCelltoUseItem(WeaponOrChip, cellz);
+		var path = getPathLength(_CELL[LeekFrom], cellzitem);
+		if (cellzitem!=null && path + 5 < BestDist) {
+			BestCellz = cellz;
+			BestDist = path;
+		}
+	}
+	return BestCellz;
+}

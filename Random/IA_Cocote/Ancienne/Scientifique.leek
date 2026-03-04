@@ -1,0 +1,678 @@
+include("Cache cache");
+global leek2=nearestrealenemy();
+global me = getLeek();
+
+function getAllyNamed(name){
+  	var allies = getAliveAllies();
+  	var marzy;
+	
+  	for(var ally in allies){
+      	if(getName(ally) == "marzyhelmond"){
+          	marzy ="marzyhelmond";
+        }
+    }
+}
+function getIdOfMarzy() {
+  return getLeekID("marzyhelmond") ; 
+}
+var marzy=getIdOfMarzy();
+
+function getAllyNamed1(name){
+  	var allies = getAliveAllies();
+  	var Traual;
+	
+  	for(var ally in allies){
+      	if(getName(ally) == "Traual"){
+          	Traual ="Traual";
+        }
+    }
+}
+function getIdOfTraual() {
+  return getLeekID("Traual") ; 
+}
+var Traual=getIdOfTraual();
+
+if (getPathLength(getCell(), getCell(leek2))<=9) {
+moveAwayFrom(leek2);	
+}
+
+  /////////////////////////THORN////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////:
+if (getCooldown(CHIP_THORN)==null && canUseChip(CHIP_THORN, marzy)) {
+useChip(CHIP_THORN, marzy);	
+}else
+
+if (getCooldown(CHIP_THORN)==null && !canUseChip(CHIP_THORN, marzy) and canUseChip(CHIP_THORN, Traual)) {
+useChip(CHIP_THORN, Traual);	
+}else if ((getCooldown(CHIP_THORN)==null && !canUseChip(CHIP_THORN, marzy) and !canUseChip(CHIP_THORN, Traual) && getPathLength(getCell(), getCellToUseChip(CHIP_THORN, marzy))<=getMP())) {
+	moveTowardCell(getCellsToUseChip(CHIP_THORN, marzy));
+	useChip(CHIP_THORN, marzy);
+	
+}
+if (getCooldown(CHIP_THORN)==null && getStrength(getNearestAlly())>=200 ) {
+useChip(CHIP_THORN, getNearestAlly());}
+//DOPAGE////////////////////////////////////////////:::::::::::::::::::::::::::::::://///////////////////////////////////////////////////////////////////////////////////////////////////////////:::
+if (getCooldown(CHIP_DOPING)==null && canUseChip(CHIP_DOPING, marzy)) {
+useChip(CHIP_DOPING, marzy);	
+}else
+
+if (getCooldown(CHIP_DOPING)==null && !canUseChip(CHIP_DOPING, marzy) and canUseChip(CHIP_DOPING, Traual)) {
+useChip(CHIP_DOPING, Traual);	
+}else if ((getCooldown(CHIP_DOPING)==null && !canUseChip(CHIP_DOPING, marzy) and !canUseChip(CHIP_DOPING, Traual) && getPathLength(getCell(), getCellToUseChip(CHIP_DOPING, marzy))<=getMP())) {
+	moveTowardCell(getCellsToUseChip(CHIP_DOPING, marzy));
+	useChip(CHIP_DOPING, marzy);
+	
+}
+if (getCooldown(CHIP_DOPING)==null && getStrength(getNearestAlly())>=200) {
+useChip(CHIP_DOPING, getNearestAlly());	
+}
+/////////////////////////://///::::::::::::::::: ////////////////////////////////steroide////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+if (getCooldown(CHIP_STEROID)==null && canUseChip(CHIP_STEROID, marzy)) {
+useChip(CHIP_STEROID, marzy);	
+}else
+
+if (getCooldown(CHIP_STEROID)==null && !canUseChip(CHIP_STEROID, marzy) and canUseChip(CHIP_STEROID, Traual)) {
+useChip(CHIP_STEROID, Traual);	
+}else if ((getCooldown(CHIP_STEROID)==null && !canUseChip(CHIP_STEROID, marzy) and !canUseChip(CHIP_STEROID, Traual) && getPathLength(getCell(), getCellToUseChip(CHIP_STEROID, marzy))<=getMP())) {
+	moveTowardCell(getCellsToUseChip(CHIP_STEROID, marzy));
+	useChip(CHIP_STEROID, marzy);
+	
+}
+if (getCooldown(CHIP_STEROID)==null && getStrength(getNearestAlly())>=200 ) {
+useChip(CHIP_STEROID, getNearestAlly());	
+}////////////////////////////////PROTEINES§§§§§§§§§§§§§!!!!!!!!!////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////:::
+if (getCooldown(CHIP_PROTEIN)==null && canUseChip(CHIP_PROTEIN, marzy)) {
+useChip(CHIP_PROTEIN, marzy);	
+}else
+
+if (getCooldown(CHIP_PROTEIN)==null && !canUseChip(CHIP_PROTEIN, marzy) and canUseChip(CHIP_PROTEIN, Traual)) {
+useChip(CHIP_PROTEIN, Traual);	
+}else if (getCooldown(CHIP_PROTEIN)==null && !canUseChip(CHIP_PROTEIN, marzy) and !canUseChip(CHIP_PROTEIN, Traual) && getPathLength(getCell(), getCellToUseChip(CHIP_PROTEIN, marzy))<=getMP()) {
+	moveTowardCell(getCellsToUseChip(CHIP_PROTEIN, marzy));
+	useChip(CHIP_PROTEIN, marzy);}
+	
+
+if (getCooldown(CHIP_PROTEIN)==null && getStrength(getNearestAlly())>=200 ) {
+useChip(CHIP_PROTEIN, getNearestAlly());}
+//
+
+///////////////////////////////adrenaline///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+if (getCooldown(CHIP_ADRENALINE)==null && canUseChip(CHIP_ADRENALINE, marzy)) {
+useChip(CHIP_ADRENALINE, marzy);	
+}else
+
+if (getCooldown(CHIP_ADRENALINE)==null && !canUseChip(CHIP_ADRENALINE, marzy) and canUseChip(CHIP_ADRENALINE, Traual)) {
+useChip(CHIP_ADRENALINE, Traual);	
+}else if (getCooldown(CHIP_ADRENALINE)==null && !canUseChip(CHIP_ADRENALINE, marzy) and !canUseChip(CHIP_ADRENALINE, Traual) && getPathLength(getCell(), getCellToUseChip(CHIP_ADRENALINE, marzy))<=getMP()) {
+	moveTowardCell(getCellsToUseChip(CHIP_ADRENALINE, marzy));
+	useChip(CHIP_ADRENALINE, marzy);}
+	
+
+if (getCooldown(CHIP_ADRENALINE)==null && getStrength(getNearestAlly())>=200 ) {
+useChip(CHIP_ADRENALINE, getNearestAlly());}
+///////////////////////motivation////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+if (getCooldown(CHIP_MOTIVATION)==null && canUseChip(CHIP_MOTIVATION, marzy)) {
+useChip(CHIP_MOTIVATION, marzy);	
+}else
+
+if (getCooldown(CHIP_MOTIVATION)==null && !canUseChip(CHIP_MOTIVATION, marzy) and canUseChip(CHIP_MOTIVATION, Traual)) {
+useChip(CHIP_MOTIVATION, Traual);	
+}else if (getCooldown(CHIP_MOTIVATION)==null && !canUseChip(CHIP_MOTIVATION, marzy) and !canUseChip(CHIP_MOTIVATION, Traual) && getPathLength(getCell(), getCellToUseChip(CHIP_MOTIVATION, marzy))<=getMP()) {
+	moveTowardCell(getCellsToUseChip(CHIP_MOTIVATION, marzy));
+	useChip(CHIP_MOTIVATION, marzy);}
+	
+
+if (getCooldown(CHIP_MOTIVATION)==null && getStrength(getNearestAlly())>=200 ) {
+useChip(CHIP_MOTIVATION, getNearestAlly());}
+//////////////////////////////reflexes et etirements //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+if (getCooldown(CHIP_REFLEXES)==null) {
+	useChip(CHIP_REFLEXES, me);
+}
+if (getCooldown(CHIP_STRETCHING==null)) {
+	useChip(CHIP_STRETCHING, me);
+}
+
+if (getCooldown(CHIP_LEATHER_BOOTS)==null) {
+	useChip(CHIP_LEATHER_BOOTS, me);
+}
+/////////////////://///////////bottes ailes///////////////////
+if (getCooldown(CHIP_WINGED_BOOTS)==null && canUseChip(CHIP_WINGED_BOOTS, marzy)) {
+useChip(CHIP_WINGED_BOOTS, marzy);	
+}else
+
+if (getCooldown(CHIP_WINGED_BOOTS)==null && !canUseChip(CHIP_WINGED_BOOTS, marzy) and canUseChip(CHIP_WINGED_BOOTS, Traual)) {
+useChip(CHIP_WINGED_BOOTS, Traual);	
+}else if (getCooldown(CHIP_WINGED_BOOTS)==null && !canUseChip(CHIP_WINGED_BOOTS, marzy) and !canUseChip(CHIP_WINGED_BOOTS, Traual) && getPathLength(getCell(), getCellToUseChip(CHIP_WINGED_BOOTS, marzy))<=getMP()) {
+	moveTowardCell(getCellsToUseChip(CHIP_WINGED_BOOTS, marzy));
+	useChip(CHIP_WINGED_BOOTS, marzy);}
+	
+
+if (getCooldown(CHIP_WINGED_BOOTS)==null && getStrength(getNearestAlly())>=200 ) {
+useChip(CHIP_WINGED_BOOTS, getNearestAlly());}
+
+if (getMP()!=0) {
+	moveTowardCell(tableaucellscacher());
+}
+var explosion = getChipMinScope(CHIP_FLASH);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

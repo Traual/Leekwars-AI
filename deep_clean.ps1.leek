@@ -1,0 +1,27 @@
+$root = "c:\Users\aurel\Leekwars-AI"
+Get-ChildItem -Path $root -Recurse -File | Where-Object { $_.FullName -notmatch '\\\.git\\' -and $_.FullName -notmatch '\\\.vscode\\' } | ForEach-Object {
+    $item = $_
+    # On vérifie si le nom contient des espaces, des caractères spéciaux ou se termine par un point
+    if ($item.Name -match '\s' -or $item.Name -match '[^a-zA-Z0-9._]' -or $item.Name -match '\.$') {
+        $cleanName = ($item.Name -replace '[^a-zA-Z0-9.]', '_').Trim('_').Trim('.')
+        if ($cleanName -notmatch '\.leek$') {
+            $cleanName += ".leek"
+        }
+        
+        # Nettoyage des underscores doubles
+        while ($cleanName -match '__') { $cleanName = $cleanName -replace '__', '_' }
+        $cleanName = $cleanName -replace '_+\.leek$', '.leek'
+        
+        $dest = Join-Path $item.DirectoryName $cleanName
+        
+        if ($item.FullName -ne $dest) {
+            Write-Host "Action: $($item.FullName) -> $cleanName"
+            try {
+                Move-Item -LiteralPath "\\?\$($item.FullName)" -Destination $dest -Force -ErrorAction Stop
+            }
+            catch {
+                Write-Host "Erreur: $($_.Exception.Message)" -ForegroundColor Red
+            }
+        }
+    }
+}

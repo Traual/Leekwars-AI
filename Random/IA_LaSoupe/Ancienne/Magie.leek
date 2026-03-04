@@ -1,0 +1,170 @@
+include("Cache cache");
+// Variables
+
+var enemy = getNearestEnemy();
+var mycell = getCell();
+var enemycell = getCell(enemy);
+var tour = getTurn();
+global leek2 = nearestrealenemy();
+var dist = getCellDistance(getCell(), getCell(leek2));
+var disto = getPathLength(getCell(), getCell(leek2));
+
+poisoncounter();
+
+//Special
+
+if (getLife()<=650 && getLife(leek2)>=800) {
+    useChip(CHIP_REGENERATION, getLeek());
+}
+
+if (getPathLength(getCell(), getCellToUseChip(CHIP_REGENERATION, PotoAHealCritique()))<=getMP() && getTP()>=8 && getCooldown(CHIP_REGENERATION)==0) {
+	moveTowardCell(getCellToUseChip(CHIP_REGENERATION, PotoAHealCritique()));
+	useChip(CHIP_REGENERATION, PotoAHealCritique());
+}
+
+if (getLife()<=800 && getLife(leek2)>=700 && getCooldown(CHIP_TELEPORTATION)==0) {
+	useChipOnCell(CHIP_TELEPORTATION, tableaucellscacher());
+	useChip(CHIP_REMISSION, getLeek());
+	useChip(CHIP_VACCINE, getLeek());
+	useChip(CHIP_ARMORING, getLeek());
+}
+
+
+if (getPathLength(getCell(), getCellToUseChip(CHIP_REMISSION, PotoAHealR()))<=getMP() && getTP()>=5) {
+	moveTowardCell(getCellToUseChip(CHIP_REMISSION, PotoAHealR()));
+	useChip(CHIP_REMISSION, PotoAHealR());
+}
+
+if (getPathLength(getCell(), getCellToUseChip(CHIP_VACCINE, PotoAHealV()))<=getMP() && getTP()>=6 && getCooldown(CHIP_VACCINE)==0) {
+	moveTowardCell(getCellToUseChip(CHIP_VACCINE, PotoAHealV()));
+	useChip(CHIP_VACCINE, PotoAHealV());
+}
+
+if (getLevel()>=297) {
+if (getPathLength(getCell(), getCellToUseChip(CHIP_PLAGUE, leek2))<=getMP() && getTP()>=6) {
+moveTowardCell(getCellToUseChip(CHIP_PLAGUE, leek2));
+if (dist<4) {
+moveAwayFrom(leek2, 1);	
+}
+if (dist<4) {
+moveAwayFrom(leek2, 1);	
+}
+if (dist<4) {
+moveAwayFrom(leek2, 1);	
+}
+if (dist<4) {
+moveAwayFrom(leek2, 1);	
+}
+if (dist>=4 && canUseChip(CHIP_PLAGUE, leek2)) {
+	useChip(CHIP_PLAGUE, leek2);
+}
+}
+}
+
+if (getPathLength(getCell(), getCellToUseChip(CHIP_TOXIN, leek2))<=getMP() && getTP()>=5) {
+moveTowardCell(getCellToUseChip(CHIP_TOXIN, leek2))	;
+if (getPathLength(getCell(), getCell(leek2))>1) {
+		useChip(CHIP_TOXIN, leek2);
+	}
+}
+
+if (getPathLength(getCell(), getCellToUseWeapon(WEAPON_GAZOR, leek2))<=getMP() && getPathLength(getCellToUseWeapon(WEAPON_GAZOR, leek2), getCell(leek2))>=4 && getTP()>=7) {
+moveTowardCell(getCellToUseWeapon(WEAPON_GAZOR, leek2));
+}
+//Equiper ARME
+
+if (getWeapon()!=WEAPON_GAZOR) {setWeapon(WEAPON_GAZOR);}
+
+//Tirer
+
+if (canUseWeapon(leek3)==false && getCellDistance(getCell(), getCell(getNearestEnemy()))>=4)
+{useWeapon(getNearestEnemy());
+useWeapon(enemy);
+useWeapon(enemy);
+useWeapon(enemy);
+useWeapon(enemy);}
+
+
+if (getCellDistance(getCell(), getCell(leek2))>=4)
+{
+useWeapon(leek3);
+useWeapon(leek3);
+useWeapon(leek3);
+useWeapon(leek3);
+}
+
+if (getCellDistance(getCell(), getCell(leek2))>=6) {
+	useWeaponOnCell(useCHiporWeaponarea(WEAPON_GAZOR, 3, leek2));
+	useWeaponOnCell(useCHiporWeaponarea(WEAPON_GAZOR, 3, leek2));
+	useWeaponOnCell(useCHiporWeaponarea(WEAPON_GAZOR, 3, leek2));
+}
+if (canUseWeapon(WEAPON_FLAME_THROWER, leek2) && getTP()>=7 && dist <=3) {
+	if (getWeapon()!=WEAPON_FLAME_THROWER) {
+		setWeapon(WEAPON_FLAME_THROWER);
+	}
+	while (isAlive(leek2) && getTP()>getWeaponCost(WEAPON_FLAME_THROWER) && canUseWeapon(WEAPON_FLAME_THROWER, leek2)) {
+		useWeapon(leek2);
+	}
+	setWeapon(WEAPON_GAZOR);
+}
+
+if (canUseWeapon(WEAPON_KATANA, leek2)) {
+	if (getWeapon()!=WEAPON_KATANA) {
+		setWeapon(WEAPON_KATANA);
+	}
+	while (isAlive(leek2) && getTP()>getWeaponCost(WEAPON_KATANA) && canUseWeapon(WEAPON_KATANA, leek2)) {
+		useWeapon(leek2);
+	}
+}
+
+if (getPathLength(getCell(), getCellToUseWeapon(WEAPON_DESTROYER, leek2))<getMP() && getTP()>=7 && getStrength(leek2)>1 && isAlive(leek2)) {
+	if (getWeapon()!=WEAPON_DESTROYER) {
+		setWeapon(WEAPON_DESTROYER);
+	}
+	while (isAlive(leek2) && getTP()>getWeaponCost(WEAPON_FLAME_THROWER) && canUseWeapon(WEAPON_DESTROYER, leek2)) {
+		useWeapon(leek2);
+	}
+	setWeapon(WEAPON_GAZOR);
+}
+
+if (getPathLength(getCell(), getCellToUseChip(CHIP_FRACTURE, leek2))<=getMP() && getTP()>=3) {
+	moveTowardCell(getCellToUseChip(CHIP_FRACTURE, leek2));
+	}
+	useChip(CHIP_FRACTURE, leek2);
+
+if (canUseChip(CHIP_VENOM, leek2)) {useChip(CHIP_VENOM, leek2);}
+
+useChip(CHIP_VACCINE, getLeek());
+if (getLife()<getTotalLife()) {
+	useChip(CHIP_REMISSION, getLeek());
+}
+useChip(CHIP_ARMORING, getLeek());
+
+useChip(CHIP_SLOW_DOWN, leek2);
+useChip(CHIP_SLOW_DOWN, leek2);
+useChip(CHIP_SLOW_DOWN, leek2);
+useChip(CHIP_SLOW_DOWN, leek2);
+useChip(CHIP_SLOW_DOWN, leek2);
+// Bulbe
+
+summon(CHIP_METALLIC_BULB, getCellToUseChip(CHIP_METALLIC_BULB, getLeek()), bulbeMetalique);
+summon(CHIP_HEALER_BULB, getCellToUseChip(CHIP_HEALER_BULB, getLeek()), bulbeSoigneur);
+summon(CHIP_ICED_BULB, getCellToUseChip(CHIP_ICED_BULB, getLeek()), bulbAI);
+summon(CHIP_ROCKY_BULB, getCellToUseChip(CHIP_PUNY_BULB, getLeek()), bulbeRocheux);
+summon(CHIP_PUNY_BULB, getCellToUseChip(CHIP_PUNY_BULB, getLeek()), bulbechetif);
+
+
+if (canUseWeapon(WEAPON_KATANA, getNearestEnemy())) {
+	if (getWeapon()!=WEAPON_KATANA) {
+		setWeapon(WEAPON_KATANA);
+	}
+	while (isAlive(getNearestEnemy()) && getTP()>getWeaponCost(WEAPON_KATANA) && canUseWeapon(WEAPON_KATANA, getNearestEnemy())) {
+		useWeapon(getNearestEnemy());
+	}
+}
+
+
+//S'approcher 2
+
+if (getTP()<=6) {
+moveTowardCell(tableaucellscacher());}

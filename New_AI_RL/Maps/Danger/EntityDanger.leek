@@ -1,0 +1,126 @@
+/** Exporté le 19/07/2025 19:55:32 **/
+
+/** Effects/EntityDangerMap **/
+
+/**
+ * Here we calculate the best item for CellDanger Class
+**/
+
+include("../../includes")
+
+class EntityDangerClass { //TODO : Remove Libe From It To Avoid Losing Opés 
+	Item
+	Aoe
+	Damages
+	Cost
+	DamagesPerTp
+	constructor(ItemId, AoeDist, DamageOnTarget, CostOfItem, DamagesPerTpOfItem) {
+		this.Item = ItemId
+		this.Aoe = AoeDist
+		this.Damages = DamageOnTarget
+		this.Cost = CostOfItem
+		this.DamagesPerTp = DamagesPerTpOfItem
+	}
+
+	static get(CasterStats, TargetStats) {
+		var Hash = MapHash(CasterStats, TargetStats)
+		if (Hash in DANGER_ENTITY_CACHE) return DANGER_ENTITY_CACHE[Hash]
+		var Tmp = []
+		for (var i in getItemsList(CasterStats)) {
+			var Multiplier = 1 //TODO : Update This for Plasma ?
+			var Infos = ITEMINFO[i]
+			var CostOfItem = Infos.COST
+			var MaxAoeDist = MapDistPossibles[Infos.AREA]
+			var AddingDist = MapAdditionDist[Infos.AREA]
+			for (var aoe = 0; aoe <= MaxAoeDist; aoe += AddingDist) {
+				var Damage = ConsequencesClass.getItemDanger(i, CasterStats, TargetStats, aoe, Multiplier)
+				if (Damage <= 0) continue
+				var DamagesPerTpOfItem = Damage / CostOfItem
+				var DangerMap = new EntityDangerClass(i, aoe, Damage, CostOfItem, DamagesPerTpOfItem)
+				push(Tmp, DangerMap)
+			}
+		}
+		var _final = SortTmp(Tmp)
+		DANGER_ENTITY_CACHE[Hash] = _final
+		return _final
+	}
+
+	static getItemsList(EntityStats) {
+		var Hash = EntityStats.ID
+		if (Hash in DANGER_ENTITY_INVENTORY) return DANGER_ENTITY_INVENTORY[Hash]
+		var _final = []
+		for (var i:var cd in EntityStats.COOLDOWNS) {
+			if (cd > 1) continue
+			if (IsToCheck(ITEMINFO[i])) {
+				push(_final, i)
+			}
+		}
+		DANGER_ENTITY_INVENTORY[Hash] = _final
+		return _final
+	}
+	
+	static IsToCheck(Infos) {
+		for (var eff in Infos.EFFECTS) {
+			if (DangerClass.MapHittables[eff[0]]) return true
+		}
+		return false
+	}
+	
+	static SortTmp(ActualTmp) {
+		return arraySort(ActualTmp, function(a, b) {
+			return b.DamagesPerTp - a.DamagesPerTp
+		})
+	}
+	
+	static MapHash(EntityStats, MyStats) {
+		// If Every Enemies : Mp/Tp/Str/Magic doesn't move, its the same hash 
+		// (if my absolute, Relative and HashGravity is the same)
+
+		// ——— INITIALISATION ———
+		var hash_value = (OFFSET_BASIS ^ EntityStats.ID)
+
+		// ——— Shields + Target's antidote Cooldown ———
+
+		var combinedMe = (MyStats.ABSOLUTE_SHIELD << 30) | (MyStats.RELATIVE_SHIELD << 15) | MyStats.COOLDOWNS[CHIP_ANTIDOTE]
+		hash_value = addValueToBinHash(hash_value, combinedMe)
+
+		var combinedEnemy = (EntityStats.TP << 45) | (EntityStats.STRENGTH << 30) | (EntityStats.MAGIC << 15) | EntityStats.POWER
+		hash_value = addValueToBinHash(hash_value, combinedEnemy)
+
+		return hash_value
+	}
+	
+	static MapDistPossibles = [
+		AREA_CIRCLE_1: 1,
+		AREA_CIRCLE_2: 2,
+		AREA_CIRCLE_3: 3,
+		AREA_FIRST_INLINE: 0,
+		AREA_LASER_LINE: 0,
+		AREA_PLUS_1: 1,
+		AREA_PLUS_2: 2,
+		AREA_PLUS_3: 3,
+		AREA_POINT: 0,
+		AREA_SQUARE_1: 2,
+		AREA_SQUARE_2: 4,
+		AREA_X_1: 2,
+		AREA_X_2: 4,
+		AREA_X_3: 6
+	]
+
+	static MapAdditionDist = [
+		AREA_CIRCLE_1: 1,
+		AREA_CIRCLE_2: 1,
+		AREA_CIRCLE_3: 1,
+		AREA_FIRST_INLINE: 1,
+		AREA_LASER_LINE: 1,
+		AREA_PLUS_1: 1,
+		AREA_PLUS_2: 1,
+		AREA_PLUS_3: 1,
+		AREA_POINT: 1,
+		AREA_SQUARE_1: 1,
+		AREA_SQUARE_2: 1,
+		AREA_X_1: 2,
+		AREA_X_2: 2,
+		AREA_X_3: 2
+	]
+}

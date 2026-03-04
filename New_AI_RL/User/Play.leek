@@ -1,0 +1,85 @@
+/**
+ * Here we are creating a random action
+ **/
+
+include("../includes")
+
+class Play { 
+	//TODO CHANGE VAR NAMES HERE
+	//TODO : Check if there are still enemies (if not then i have won i can dance or dunno what to do) after loading everystats
+	//TODO : Re Do play clean its ugly AF
+
+	/* Playing function, seeks the best action to do until there are none, then go hide itself to minimize danger
+    *
+    * @return Nothing
+    */
+
+	constructor() {
+		ReloadCacheNewTurn()
+		while (true) {//While i have something to play :
+			//I Start By Refreshing and loading the best action in the actual scenario
+			var State = StateClass.Virtualize() //I reload the stats
+			var Node = ActionSuite.getBestActionTreeInState(State) //I get the best action to play
+			if (Node.ACTION.Item == null) break //if there are no better actions then no play node, i can break
+			//I declare some variables to optimize
+			var Action = Node.ACTION
+			var From = Action.From
+			var Item = Action.Item
+			var To = Action.To
+			var TmpBaseHash = StateClass.getBaseHash(State)
+			debug("Using : "+ITEMINFO[Item].NAME+" from : "+From+" to : "+To)
+			//Then i execute the action : 
+			WalkCellsClass.MoveTo(From, State, TmpBaseHash) //I Start by moving to the action's from cell
+			//Then i use item
+			executeAction(Item, To, State)
+		}
+		//Then i reload stats and find the final cell to go with theses stats :
+        
+		var State = StateClass.Virtualize()
+		var this_Base_Hash = StateClass.getBaseHash(State)
+		var this_Final_Cell = FinalCell.get(State, this_Base_Hash)
+		WalkCellsClass.MoveTo(this_Final_Cell, State, this_Base_Hash)
+		/*var BaseHash = StateClass.getBaseHash(State)
+		var WalkFinal = new WalkCellsClass(State, Me, true, true, true, true, BaseHash)
+		var EndCell = null//TODO
+		//And i go to my final cell to end my turn
+		//WalkCells.MoveTo(EndCell, EveryStats, BaseHash)*/
+	}
+
+	/* Little function to execute the action no matter what it is
+    *
+	* @param Item : To use on cell To
+	* @param To : Cell to use item to 
+    *
+    * @return Nothing
+    */
+
+	executeAction(Item, To, State) {
+		var ItemEffects = ITEMINFO[Item].EFFECTS
+		if (ItemEffects[0][0] != EFFECT_SUMMON && ItemEffects[0][0] != EFFECT_RESURRECT) {
+			useItem(Item, To) //If its a random item
+		} else {
+			if (count(ItemEffects) > 1) debugW("Summon or Resu and Multiple Effects ?! Outdated play in execute Action")
+			if (ItemEffects[0][0] != EFFECT_RESURRECT) {
+				summon(Item, To, Bulb.AI) //If its a summon
+			} else {
+				resurrect(ResurrectionClass.ScoringWichId(State).ID, To) //if its a resurrection
+			}
+		}
+	}
+
+	/* Little function that uses item (it can set Weapon if my weapon isn't in hand) and uses the item (either usechip or useweapon)
+    *
+	* @param Item : To use on cell To
+	* @param To : Cell to use item to 
+    *
+    * @return Nothing
+    */
+
+	useItem(Item, To) {
+		if (ITEMINFO[Item].IS_WEAPON) {
+			if (getWeapon() != Item) setWeapon(Item)
+			useWeaponOnCell(To)
+		} else useChipOnCell(Item, To)
+	}
+}

@@ -1,0 +1,119 @@
+/**
+ * Here we are doing neural layers
+**/
+
+include("../includes")
+
+global MeanBulbs = [
+	CHIP_ROCKY_BULB,
+	CHIP_ICED_BULB,
+    CHIP_FIRE_BULB,
+    CHIP_WIZARD_BULB,
+	CHIP_TACTICIAN_BULB,
+    CHIP_LIGHTNING_BULB
+]
+
+class NeuralClass {
+
+    /* Gives a score for the state (ideally between -100 and 100 to fit well final cell)
+    *
+	* @param State Map <Id : Class Stats of Id>
+    * @param MySide getSide of my entity
+    * @param BaseHash : Hash <id : cell> of every alive entities
+    *
+    * @return score : Actual State Advantage Score
+    */
+
+    static getStateScore(State, MySide, BaseHash) {
+        var _score = 0
+        for (var entityID:var entityState in State) {
+            if (entityState.SIDE == MySide) { // Entity is ally so i add its score
+                _score += getEntityScoreFromStats(entityID, entityState, State, BaseHash)
+            } else {// Entity is enemy so i remove its score
+                _score -= getEntityScoreFromStats(entityID, entityState, State, BaseHash)
+            }
+        }
+        
+        return _score
+    }
+
+    /* Gives a score for an entity alone which i then add or remove from advantage score
+    *
+    * @param entity_ID ID of the entity which i want to score
+    * @param entity_state State Class of ID
+	* @param State Map <Id : Class State of Id>
+    * @param base_hash : Hash <id : cell> of every alive entities
+    *
+    * @return score : Actual entity's score
+    */
+
+    static getEntityScoreFromStats(entity_ID, entity_state, state, base_hash) {
+        var _final = 0
+        //Loading variables
+        var EntityDanger = DangerClass.getEntityDanger(entity_state, state, entity_ID, base_hash)
+        var AverageAlliesDist = StateClass.getAverageDistFromAllies(entity_state.SIDE, state, entity_state.CELL, entity_state.ID, base_hash)
+        
+        var CooldownScore = getCooldownScore(entity_state)
+        var summon_score = 0
+        for (var summ in entity_state.SUMMONS) {
+            summon_score += getEntityScoreFromStats(summ, state[summ], state, base_hash)
+        }
+            
+        //Decision engine based on everything TODO
+        _final += (entity_state.LIFE - EntityDanger * 0.5) / 1000
+        return _final
+    }
+
+    /* Gives the resurrection score of an entity (just used to pick which entity to resurrect)
+    *
+    * @param entity_state State Class of ID
+	* @param state Map <Id : Class State of Id>
+    *
+    * @return score : Dead entity's resurrection Score
+    */
+
+    static getResurrectionScore(entity_state, state) {
+        return entity_state.TOTAL_LIFE //TODO : Better
+    }
+
+    /* Gives me the min map danger (point at which i'm going to take danger into account, it depends on the advantage, my futur distance to my allies etc)
+    *
+	* @param state Map <Id : Class State of Id>
+    * @param cellToCheck (the cell at which imma count the danger)
+    *
+    * @return MinMapDanger (if danger < MinMapDanger * Life -> Danger == 0) it helps me play more pushy in good situation and less pushy in harsh situations
+    */
+
+    static getMinMapDanger(state, cellToCheck) { //TODO : Not use advantage score cuz it'll not work, i can add in it if i go near allies with high danger and reduce it if any allies takes danger (i don't want to be alone getting shot at)
+        return 0.2
+    }
+
+    /* Gives me the cooldown score of an entity (High -> can play a lot of cooldown chips, Low -> Either don't have thoses or can't play them)
+    *
+    * @param entity_state State Class of ID
+    *
+    * @return cooldown score
+    */
+
+    static getCooldownScore(entity_state) {
+        var entity_id = entity_state.ID
+        if (entity_id in COOLDOWN_SCORE_CACHE) return COOLDOWN_SCORE_CACHE[entity_id]
+        var _score = 0
+        for (var item:var cooldown in entity_state.COOLDOWNS) {
+            if (item in cooldown_score_map && cooldown == 0) _score += cooldown_score_map[item]
+        }
+        if (entity_id != Me) COOLDOWN_SCORE_CACHE[entity_id] = _score //Cache if its not me, cuz on me cooldowns will move, on other people : no
+        return _score
+    }
+
+    //Map to make getCooldownScore less ops consumming (the score of each of theses chips)
+
+    static cooldown_score_map = [
+        CHIP_REGENERATION : 500,
+        CHIP_ADRENALINE : 51,
+        CHIP_BRAMBLE : 75,
+        CHIP_COVID : 100,
+        CHIP_TELEPORTATION : 200,
+        CHIP_JUMP : 50
+    ]
+}

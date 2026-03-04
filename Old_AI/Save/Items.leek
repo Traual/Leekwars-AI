@@ -1,0 +1,134 @@
+/**
+ * Saving every item stats for an ID
+ **/
+
+include("../includes")
+
+class Items {
+	ID
+	NAME
+	MINRANGE
+	MAXRANGE
+	LAUNCHTYPE
+	INLINE
+	COST
+	AREA
+	COOLDOWN
+	MAX_USES
+	EFFECTS
+	PASSIVE_EFFECTS
+	NEEDLOS
+	AREA_MAX
+	IS_WEAPON
+	STACKABLE
+	SHOULD_CASTER_GET_HIT
+	constructor(id) {
+		if (isChip(id) || isWeapon(id)) {
+			this.ID = id
+			this.NAME = isChip(id) ? getChipName(id) : getWeaponName(id)
+			this.MINRANGE = isChip(id) ? getChipMinRange(id) : getWeaponMinRange(id)
+			this.MAXRANGE = isChip(id) ? getChipMaxRange(id) : getWeaponMaxRange(id)
+			this.LAUNCHTYPE = isChip(id) ? getChipLaunchType(id) : getWeaponLaunchType(id)
+			this.COST = isChip(id) ? getChipCost(id) : getWeaponCost(id)
+			this.AREA = isChip(id) ? getChipArea(id) : getWeaponArea(id)
+			this.COOLDOWN = isChip(id) ? getChipCooldown(id) : 0
+			if (id == CHIP_REGENERATION || id == CHIP_ELEVATION) this.COOLDOWN = 64
+			this.MAX_USES = MaxUses(id) < 0 ? 1 : MaxUses(id)
+			this.EFFECTS = isChip(id) ? getChipEffects(id) : getWeaponEffects(id)
+			this.PASSIVE_EFFECTS = isChip(id) ? [] : getWeaponPassiveEffects(id)
+			this.NEEDLOS = isChip(id) ? chipNeedLos(id) : weaponNeedLos(id)
+			this.AREA_MAX = AreaMax(id, this.AREA)
+			this.IS_WEAPON = isWeapon(id)
+			this.STACKABLE = this.EFFECTS[0][5] & EFFECT_MODIFIER_STACKABLE //Ugly but works at 09/2024
+			if (ShouldAreaMinRangeMeanItems(id, this.EFFECTS) && this.MINRANGE < this.AREA_MAX + 1 && AREA_MAX + 1 <= this.MAXRANGE) {
+				//debug(this.NAME + "'s minrange have been edited from " + this.MINRANGE + " to " + (this.AREA_MAX + 1))
+				this.MINRANGE = this.AREA_MAX + 1
+			}
+		}
+	}
+	
+	static ShouldAreaMinRangeMeanItems(id, ItemEffects) {
+		if (id == CHIP_LIGHTNING) return false //Bad Fix
+		for (var eff in ItemEffects) {
+			if (Target.TargetType[eff[0]] == Target.ENEMY) {
+				return true
+			}
+		}
+		return false
+	}
+
+	static MaxUses(id) {
+		return isChip(id) ? getChipMaxUses(id) : getWeaponMaxUses(id)
+	}
+	
+	static Cooldown(id, entity) {
+		return isChip(id) ? getCooldown(id, entity) : 0
+	}
+
+	static isSpecialWeap(item) {
+		for (var eff in ITEMINFO[item].PASSIVE_EFFECTS) {
+			return true
+		}
+	}
+
+	static getCheapestItemValue(Inventory) {
+		var CheapestValue = 100
+		for (var i in Inventory) {
+			if (getCooldown(i) > 0) continue
+			var Cost = isChip(i) ? getChipCost(i) : getWeaponCost(i)
+			if (Cost < CheapestValue) {
+				CheapestValue = Cost
+			}
+		}
+		return CheapestValue
+	}
+
+	AreaMax(item, Area) { //return either max possible aoe dist coverage (3 for circle 3)
+		var MapReturn = [
+			AREA_CIRCLE_1: 1,
+			AREA_CIRCLE_2: 2,
+			AREA_CIRCLE_3: 3,
+			AREA_FIRST_INLINE: 0,
+			AREA_LASER_LINE: 0,
+			AREA_PLUS_1: 1,
+			AREA_PLUS_2: 2,
+			AREA_PLUS_3: 3,
+			AREA_POINT: 0,
+			AREA_SQUARE_1: 2,
+			AREA_SQUARE_2: 4,
+			AREA_X_1: 2,
+			AREA_X_2: 4,
+			AREA_X_3: 6
+		]
+		return MapReturn[Area]
+	}
+
+	static ShouldCasterGetAoeHit(Infos, MinRange) {
+		//First let's see if i can go to the area of effect :
+		if (MinRange <= Infos.AREA_MAX && Infos.AREA_MAX > 0) {
+			//Now there is 2 situations where i would want to put myself into the aoe :
+			for (var eff in Infos.EFFECTS) {
+
+				if (!(eff[4] & EFFECT_TARGET_CASTER) || !(eff[4] & EFFECT_TARGET_ALLIES)) continue
+
+				//Item have a positive effect for me so i can put it on myself
+				var TmpTargetType = Target.TargetType[eff[0]]
+				if (TmpTargetType == Target.ALLY || TmpTargetType == Target.ALL) {
+					return true
+				}
+				//Item have a multiplier so i can add myself as a multiplier
+				if (eff[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) return true
+			}
+		}
+		return false
+	}
+
+	static Init() {
+		for (var i = 0; i < 500; i++) {
+			ITEMINFO[i] = [: ]
+			var Iinfo = new Items(i)
+			ITEMINFO[i] = Iinfo
+			ITEMINFO[i].SHOULD_CASTER_GET_HIT = ShouldCasterGetAoeHit(Iinfo, Iinfo.MINRANGE)
+		}
+	}
+}

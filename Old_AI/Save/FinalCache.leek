@@ -1,0 +1,16 @@
+/**
+ * This will load final cell (cell to end turn) its a combination between GravityCells and CellDanger
+ **/
+
+include("../includes")
+
+class FinalCache {
+	CELL
+	DANGER
+	GRAVITY_SCORE
+	constructor(Cell, Danger, GravityScore) {
+		this.CELL = Cell
+		this.DANGER = Danger
+		this.GRAVITY_SCORE = GravityScore
+	}
+}

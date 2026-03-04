@@ -1,0 +1,69 @@
+var enemy = getNearestEnemy();
+var poto = getNearestAlly();
+var disto = getPath(getCell(), getCell(enemy));
+
+moveTowardCell(getCellToUseWeapon(WEAPON_LASER, enemy));
+
+if (getWeapon()!=WEAPON_LASER) {
+setWeapon(WEAPON_LASER);	
+}
+useChip(CHIP_STALACTITE, enemy);
+useWeapon(enemy);
+useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);useWeapon(enemy);
+useChip(CHIP_FLAME, enemy);
+useChip(CHIP_FLAME, enemy);
+useChip(CHIP_FLAME, enemy);
+
+summon(CHIP_PUNY_BULB, getCellToUseChip(CHIP_PUNY_BULB, getLeek()), bulbai);
+
+useChip(CHIP_SPARK, enemy);
+useChip(CHIP_SPARK, enemy);
+useChip(CHIP_SPARK, enemy);
+
+if (getLife(poto) != getTotalLife(poto) && canUseChip(CHIP_CURE, poto)) {
+useChip(CHIP_CURE, poto);
+useChip(CHIP_SHIELD, poto);
+}
+
+moveAwayFrom(enemy);
+
+
+function bulbai() {
+var summoner = getSummoner();
+moveToward(summoner);
+useChip(CHIP_PROTEIN, summoner);
+useChip(CHIP_HELMET, summoner);
+useChip(CHIP_BANDAGE, summoner);
+useChip(CHIP_PROTEIN, getNearestAlly());
+useChip(CHIP_HELMET, getNearestAlly());
+useChip(CHIP_BANDAGE, getNearestAlly());
+useChip(CHIP_PEBBLE, getNearestEnemy());
+	
+	
+	
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

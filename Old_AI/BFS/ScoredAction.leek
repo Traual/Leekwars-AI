@@ -1,0 +1,14 @@
+/**
+ * Here we are Scoring Actions for quickly taking the best one in BFS
+ **/
+
+include("../includes")
+
+class ScoredAction {
+	ACTION
+	SCORE
+	constructor(Act, Score) {//Makes a Class For Action And Score in Tree
+		this.ACTION = Act
+		this.SCORE = Score
+	}
+}

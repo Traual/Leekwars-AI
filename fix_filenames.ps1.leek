@@ -1,0 +1,42 @@
+# Chemin racine
+$root = "c:\Users\aurel\Leekwars-AI"
+
+Write-Host "Recherche de fichiers avec des noms problématiques..." -ForegroundColor Cyan
+
+# On parcourt tout SAUF .vscode
+Get-ChildItem -Path $root -Recurse -File | Where-Object { $_.FullName -notmatch '\\\.vscode\\' } | ForEach-Object {
+    $item = $_
+    $oldName = $item.Name
+    $directory = $item.DirectoryName
+    
+    # Remplacement des caractères non-alphanumériques (y compris espaces insécables) par _
+    # On enlève aussi les espaces en début/fin
+    $newNameBase = $oldName -replace '[^a-zA-Z0-9.]', '_'
+    
+    # S'assurer que ça se termine par .leek (si ce n'est pas déjà le cas)
+    if ($newNameBase -notmatch '\.leek$') {
+        $newNameBase = "$newNameBase.leek"
+    }
+    
+    # Nettoyer les underscores multiples
+    while ($newNameBase -match '__') {
+        $newNameBase = $newNameBase -replace '__', '_'
+    }
+    # Enlever les underscores avant l'extension
+    $newNameBase = $newNameBase -replace '_+\.leek$', '.leek'
+    # Enlever les underscores au début
+    $newNameBase = $newNameBase.Trim('_')
+
+    $newFullName = Join-Path $directory $newNameBase
+
+    if ($item.FullName -ne $newFullName) {
+        Write-Host "Renommage: '$oldName' -> '$newNameBase'" -ForegroundColor Yellow
+        try {
+            Rename-Item -LiteralPath $item.FullName -NewName $newNameBase -Force -ErrorAction Stop
+        } catch {
+            Write-Host "Erreur sur $($item.FullName) : $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
+}
+
+Write-Host "Nettoyage terminé." -ForegroundColor Green

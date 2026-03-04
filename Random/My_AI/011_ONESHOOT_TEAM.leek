@@ -1,0 +1,58 @@
+include("include");
+//TODO : Refaire ce oneshoot tout moche qui a deja +1ans en un truc clean et generique
+
+function StrOrMagic(@item) {
+	if (_ITEM_EFFECTS[item][0]==EFFECT_POISON) return getMagic();
+	if (_ITEM_EFFECTS[item][0]==EFFECT_DAMAGE) return getStrength();
+	return 0;
+}
+
+function getBestItemComboPossible(@tp, @inventory , @target) {
+		var BestCost = 9999;
+		var BestDmg = 1;
+		var BestItem;
+		var dmgTotal = 0;
+		for (var item in inventory) {
+		
+		var dmg = getItemMinDmg(item);
+		var cost = _ITEM_COST[item];
+		var path = getPathLength(_CELL[_MY_SELF], getCellToUseItemBasic(item , _CELL[target]));
+			if (item!=WEAPON_B_LASER && path!=null && path <= _MP[_MY_SELF] && _ITEM_COOLDOWN[item]==0 && cost<=tp && dmg/cost>BestDmg/BestCost) {
+				BestCost = cost;
+				BestDmg = dmg;
+				BestItem = item;
+			}
+		}
+		var CoutChange = (isWeapon(BestItem) && getWeapon()!=BestItem) ? 1 : 0; 
+	if (_ITEM_EFFECTS[BestItem][0][0]==EFFECT_DAMAGE && _LIFE[target] <= floor((tp - CoutChange) / BestCost) * BestDmg * (1 + _STRENGTH[_MY_SELF] / 100) * (1 - _RELATIVE_SHIELD[target] / 100) - _ABSOLUTE_SHIELD[target] || _ITEM_EFFECTS[BestItem][0][0]==EFFECT_POISON && _LIFE[target]<= floor((tp - CoutChange) / BestCost) * BestDmg * (1 + _MAGIC[_MY_SELF] / 100)) {
+		return BestItem;
+	}
+}
+
+function TryOneShoot(@entity) {
+	var BestItemNoTp = getBestItemComboPossible(_TP[_MY_SELF], GetItems(_MY_SELF) , entity);
+	var cellToUseItem = getCellToUseItemBasic(BestItemNoTp , _CELL[entity]);
+	if (BestItemNoTp!=null && getPathLength(_CELL[_MY_SELF], cellToUseItem)<=_MP[_MY_SELF]) {
+		moveTowardCell(cellToUseItem);
+		while (getTP()>=_ITEM_COST[BestItemNoTp] && getOperations()<10000000 && isAlive(entity)) useItem(BestItemNoTp, _CELL[entity], getWeapon());
+	} else {
+		var BestItemTp = getBestItemComboPossible(_TP[_MY_SELF]-7, GetItems(_MY_SELF) , entity);
+		var cellToUseItemOnCell = getCellToUseItemBasic(BestItemTp , _CELL[entity]);
+		var CellToTele = getCellToUseItemBasic(CHIP_TELEPORTATION , cellToUseItemOnCell);
+	if (BestItemTp!=null && getPathLength(_CELL[_MY_SELF], CellToTele)<=_MP[_MY_SELF]) {
+		moveTowardCell(CellToTele);
+		useChipOnCell(CHIP_TELEPORTATION, cellToUseItemOnCell);
+		while (getTP()>=_ITEM_COST[BestItemTp] && getOperations()<10000000 && isAlive(entity)) useItem(BestItemTp, _CELL[entity], getWeapon());
+	}
+	}
+}
+
+
+
+
+
+function OneShootTeam() {
+	for (var target in EnemyLeekArray()) {
+		TryOneShoot(target);
+	}
+}

@@ -1,0 +1,13 @@
+/**
+ * This is the BulbAI
+**/
+
+include("../includes")
+
+class Bulb {
+	static AI() {
+		//I play
+		Preload.InitStateClass()
+		new Play()
+	}
+}

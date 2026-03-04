@@ -1,0 +1,1 @@
+useChip(CHIP_SPARK, getNearestEnemy());

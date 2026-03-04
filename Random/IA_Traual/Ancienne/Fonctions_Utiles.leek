@@ -1,0 +1,656 @@
+global leek2 = nearestrealenemy();
+
+function canbeos() {
+
+	if (((getLife()<=100*getStrength(leek2)+100)*getTP(leek2)/8)*(getRelativeShield()/100)-getAbsoluteShield()) {
+		return true  ;
+	}
+else
+
+return false   ;
+}
+
+
+function canBeOS(baseDamage, // item's damage
+        iteration,           // number of time the item is used
+        strength,            // enemy's strength
+        life,                // ally health
+        absoluteShield,      // ally absolute shield
+        relativeShield) {    // ally relative shield
+    var damageAmplifier = 1 + strength / 100;
+    var damageDealt = (baseDamage * damageAmplifier) * (1 - relativeShield / 100) - absoluteShield;
+    return life <= damageDealt * iteration;
+}
+
+function PeutAllerSeCacherLi() {
+    var cellToUseChip = getCellToUseChip(CHIP_LIBERATION, leek2);
+    
+	return getPathLength(getCell(), cellToUseChip )+getPathLength(cellToUseChip , tableaucellscacher())<= getMP();
+
+}
+
+function TPE() {
+	var TPL = false  ;
+	if (inArray(getChips(leek2), CHIP_TELEPORTATION)) {
+		TPL = true   ;
+	}
+	return @TPL	 ;
+}
+function PotoAHealCritique() {
+     var HealC ;
+	 for (var i in getAliveAllies()) {
+	 	if (getLife(i)<=700 && getRelativeShield(i)<=5 && getAbsoluteShield(i)<=20 && !isSummon(i)) {
+	 		HealC = i ;
+	 	}
+	 }
+	 return @HealC ;
+}
+
+function PotoAHealV() {
+	var Healv ;
+	for (var i in getAliveAllies()) {
+	if (getLife(i)<=800 && !isSummon(i) && !inArray(getEffects(i), EFFECT_HEAL)) {
+		Healv = i ;
+	}	
+	}
+	return @Healv;
+}
+
+
+function PotoAHeal() {
+	var Heal ;
+	for (var i in getAliveAllies()) {
+	if (getLife(i)<=800 && !isSummon(i) && !inArray(getEffects(i), EFFECT_HEAL)) {
+		Heal = i ;
+	}	
+	}
+	return @Heal;
+}
+
+function PotoAHealR() {
+	var Healr ;
+	for (var i in getAliveAllies()) {
+	if (getLife(i)<=800 && !isSummon(i)) {
+		Healr = i ;
+	}	
+	}
+	return @Healr;
+}
+
+
+
+global _ITEM_MINRANGE = [];
+global _ITEM_MAXRANGE = [];
+global _ITEM_INLINE = [];
+global _MAX_ITEM_ID = 110; //idmax à 110 @janvier2017
+if (getTurn() == 1) {
+	for (var i = 0; i <= _MAX_ITEM_ID; i++) {
+		if (isWeapon(i)) {
+			_ITEM_MINRANGE[i] = getWeaponMinRange(i);
+			_ITEM_MAXRANGE[i] = getWeaponMaxRange(i);
+			_ITEM_INLINE[i] = isInlineWeapon(i);
+		}
+		if (isChip(i)) {
+			_ITEM_MINRANGE[i] = getChipMinRange(i);
+			_ITEM_MAXRANGE[i] = getChipMaxRange(i);
+			_ITEM_INLINE[i] = isInlineChip(i);
+		}
+	}
+}
+
+function oneshot(leek) {
+	var canbeos1 = true;
+	if (getLife(leek) > 600) {
+		return false;
+
+	}
+}
+
+function bouclier() {
+
+	var bouclier1 = false;
+	if (getAbsoluteShield(getNearestEnemy()) > 0) {
+		bouclier1 = true;
+
+	}
+	if (getRelativeShield(getNearestEnemy()) > 0) {
+		bouclier1 = true;
+
+	}
+	return @bouclier1;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////			enemy en difficultée //////////////////////////////////////////////////////////////////////////////////////////////////
+/**function lowenemy() {
+	var reallow;
+	for (var leek7 in getAliveEnemies()) {
+		if (!isSummon(leek7) && getLife(leek7)<=400 && getRelativeShield(leek7)<=10 && getAbsoluteShield(leek7)<=10) {
+			reallow =leek7;
+
+		}
+
+	}
+	return @reallow;
+}
+global EnemyLow = lowenemy();**/
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////			real ennemy //////////////////////////////////////////////////////////////////////////////////////////////////
+function realenemy() {
+	var realen;
+	for (var leek in getAliveEnemies()) {
+		if (!isSummon(leek)) {
+			realen =leek;
+
+		}
+
+	}
+	return @realen;
+}
+global leek3 = realenemy();
+function nearestrealenemy() {
+
+  
+  	if (!isSummon(getNearestEnemy())) {  
+      return getNearestEnemy();
+	}
+  
+  var dist = 9999;
+  var realenemy1;
+  
+	for (var leek in getAliveEnemies()) {
+		if (!isSummon(leek) && getCellDistance(getCell(), getCell(leek) < dist)) {
+          dist = getCellDistance(getCell(), getCell(leek));
+		realenemy1 = leek; 	 		
+
+			}
+	  }
+
+	
+  return @realenemy1;
+}
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////			cells accesibles + caché ///////////////////////////////////////////////////////////////////////////////////////////////////
+function neighbouringCells(cell) { // les voisins
+	var accesscells1 = [];
+	if (cell != null) {
+
+		var x = getCellX(cell);
+		var y = getCellY(cell);
+
+		var c = getCellFromXY(x, y);
+		c = getCellFromXY(x - 1, y);
+		if (c != null && isEmptyCell(c)) accesscells1 [c] = true;
+
+		c = getCellFromXY(x + 1, y);
+		if (c != null && isEmptyCell(c)) accesscells1 [c] = true;
+
+		c = getCellFromXY(x, y - 1);
+		if (c != null && isEmptyCell(c)) accesscells1 [c] = true;
+
+		c = getCellFromXY(x, y + 1);
+		if (c != null && isEmptyCell(c)) accesscells1 [c] = true;
+
+
+		return @accesscells1;
+
+	}
+
+}
+
+
+
+function accessiblescells1(leek) { // cells accessibles
+	var accesscells = [getCell(leek)]; // Ceci represente tes cellules accessibles.
+	var set = [getCell(leek)]; // Ceci represente les cellules a `i` de distance de la cellule de depart.
+	for (var i = 0; i < getMP(leek); i++) {
+
+		var tmp = [];
+		for (var cell in set) {
+			var neighbors = neighbouringCells(cell);
+
+			for (var c in neighbors) {
+				if (!inArray(accesscells, c)) {  
+					push(accesscells, c);
+					push(tmp, c);
+
+				}
+			}
+		}
+		set = tmp;
+	}
+	return @accesscells;
+}
+
+
+function tableaucellscacher() {
+	var cellscacher = accessiblescells1(getLeek());
+	for (var Icell in accessiblescells1(getLeek())) {
+		for (var enemycell in accessiblescells1(realenemy())) {
+
+			if (lineOfSight(enemycell, Icell)) {
+				removeElement(cellscacher, Icell);
+
+			}
+
+		}
+
+	}
+	
+	reverse(cellscacher);
+	return @cellscacher[0];
+}
+
+
+
+
+//areaW
+function useCHiporWeaponarea(chiporWeapon, area, leek) {
+if (getLife(leek) > 0) {
+	
+
+var x = getCellX(getCell(leek));
+var y = getCellY(getCell(leek));
+	if (canUseWeaponOnCell(chiporWeapon, getCell(leek))) {
+		return @getCell(leek);
+
+	}
+	if (canUseChipOnCell(chiporWeapon, getCell(leek))) {
+		return @getCell(leek);
+
+	}
+	if ( getCellFromXY(x + 1, y) != null)if (canUseChipOnCell(chiporWeapon, getCellFromXY(x + 1, y))) {
+		return @getCellFromXY(x + 1, y);
+	}
+	if (getCellFromXY(x + 1, y) != null)if (canUseWeaponOnCell(chiporWeapon, getCellFromXY(x + 1, y))) {
+		return @getCellFromXY(x + 1, y);
+	}
+	if (getCellFromXY(x - 1, y) != null)if (canUseChipOnCell(chiporWeapon, getCellFromXY(x - 1, y))) {
+		return @getCellFromXY(x - 1, y);
+	}
+	if (getCellFromXY(x - 1, y) != null) if (canUseWeaponOnCell(chiporWeapon, getCellFromXY(x - 1, y))) {
+		return @getCellFromXY(x - 1, y);
+	}
+	if (getCellFromXY(x , y + 1) != null)if (canUseChipOnCell(chiporWeapon, getCellFromXY(x, y + 1))) {
+		return @getCellFromXY(x, y + 1);
+	}
+	if (getCellFromXY(x , y + 1) != null)if (canUseWeaponOnCell(chiporWeapon, getCellFromXY(x, y + 1))) {
+		return @getCellFromXY(x, y + 1);
+	}
+	if (getCellFromXY(x , y - 1) != null)if (canUseChipOnCell(chiporWeapon, getCellFromXY(x, y - 1))) {
+		return @getCellFromXY(x, y - 1);
+	}
+	if (getCellFromXY(x , y - 1) != null)if (canUseWeaponOnCell(chiporWeapon, getCellFromXY(x, y - 1))) {
+		return @getCellFromXY(x, y - 1);
+	}
+	if (getCellFromXY(x + 1 , y + 1) != null)if (canUseChipOnCell(chiporWeapon, getCellFromXY(x + 1, y + 1))) {
+		return @getCellFromXY(x + 1, y + 1);
+	}
+	if (getCellFromXY(x + 1 , y + 1) != null)if (canUseWeaponOnCell(chiporWeapon, getCellFromXY(x + 1, y + 1))) {
+		return @getCellFromXY(x + 1, y + 1);
+	}
+	if (getCellFromXY(x + 1 , y - 1) != null) if (canUseChipOnCell(chiporWeapon, getCellFromXY(x + 1, y - 1))) {
+		return @getCellFromXY(x + 1, y - 1);
+	}
+	if (getCellFromXY(x + 1 , y - 1) != null)if (canUseWeaponOnCell(chiporWeapon, getCellFromXY(x + 1, y - 1))) {
+		return @getCellFromXY(x + 1, y - 1);
+	}
+	if (getCellFromXY(x - 1 , y + 1) != null)if (canUseChipOnCell(chiporWeapon, getCellFromXY(x - 1, y + 1))) {
+		return @getCellFromXY(x - 1, y + 1);
+	}	
+	if (getCellFromXY(x - 1 , y + 1) != null)if (canUseWeaponOnCell(chiporWeapon, getCellFromXY(x - 1, y + 1))) {
+		return @getCellFromXY(x - 1, y + 1);
+	}
+	if (getCellFromXY(x - 1 , y - 1) != null)if (canUseChipOnCell(chiporWeapon, getCellFromXY(x - 1, y - 1))) {
+		return @getCellFromXY(x - 1, y - 1);
+	}
+	if (getCellFromXY(x - 1 , y - 1) != null)if (canUseWeaponOnCell(chiporWeapon, getCellFromXY(x - 1, y - 1))) {
+		return @getCellFromXY(x - 1, y - 1);
+	}
+	if (getCellFromXY(x + 2 , y) != null)if (canUseChipOnCell(chiporWeapon, getCellFromXY(x + 2, y))) {
+		return @getCellFromXY(x + 2, y );
+	}
+	if (getCellFromXY(x + 2 , y) != null)if (canUseWeaponOnCell(chiporWeapon, getCellFromXY(x + 2, y))) {
+		return @getCellFromXY(x + 2, y );
+	}
+	if (getCellFromXY(x  , y + 2) != null)if (canUseChipOnCell(chiporWeapon, getCellFromXY(x , y + 2))) {
+		return @getCellFromXY(x , y + 2 );
+	}
+	if (getCellFromXY(x  , y + 2) != null)if (canUseWeaponOnCell(chiporWeapon, getCellFromXY(x , y + 2))) {
+		return @getCellFromXY(x , y + 2 );
+	}
+	if (getCellFromXY(x  , y - 2) != null)if (canUseChipOnCell(chiporWeapon, getCellFromXY(x , y - 2))) {
+		return @getCellFromXY(x , y - 2 );
+	}
+	if (getCellFromXY(x  , y - 2) != null)if (canUseWeaponOnCell(chiporWeapon, getCellFromXY(x , y - 2))) {
+		return @getCellFromXY(x , y - 2 );
+	}
+	if (getCellFromXY(x - 2, y) != null)if (canUseChipOnCell(chiporWeapon, getCellFromXY(x - 2 , y ))) {
+		return @getCellFromXY(x - 2, y );
+	}
+	if (getCellFromXY(x - 2, y) != null)if (canUseWeaponOnCell(chiporWeapon, getCellFromXY(x - 2 , y ))) {
+		return @getCellFromXY(x - 2, y );
+	}
+	}
+	
+
+	/**for (var cell1 in getZone(getCell(getNearestEnemy()), 2, null, COLOR_RED)) {
+		if (cell1 != null) {
+			if (canUseWeaponOnCell(chiporWeapon, cell1)) {
+				return @cell1;
+
+			}
+			if (canUseChipOnCell(chiporWeapon, cell1)) {
+				return @cell1;
+
+			}
+		}
+
+
+	}
+	**/return null;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////		poison counter /////////////////////////////////////////////////////////////////////////////////////////////////
+function poisoncounter() {
+	var nbpoison = 0;
+	for (var i in getEffects()) {
+		if (i[0] == EFFECT_POISON) {
+			nbpoison++;
+		}
+	}
+	if (nbpoison >= 4 && getCooldown(CHIP_ANTIDOTE) > 0) {
+		useChip(CHIP_LIBERATION, getLeek());
+	}
+	if (nbpoison >= 3) {
+		useChip(CHIP_ANTIDOTE, getLeek());
+		moveTowardCell(getCellToUseChip(CHIP_ROCKFALL, realenemy()));
+		if (canUseChip(CHIP_STALACTITE, realenemy())) {
+			useChip(CHIP_STALACTITE, realenemy());
+			useChipOnCell(CHIP_ROCKFALL, useCHiporWeaponarea(CHIP_ROCKFALL, 2, realenemy()));
+		}
+	}
+
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////// bulbes rekt //////////////////////////////////////////////////////////////////////////////////////////////
+function bulbeproche() {
+	if (isSummon(getNearestEnemy())) {
+		return getNearestEnemy();
+
+	}
+
+	var bulbproche;
+	var dist = 999999;
+	for (var ennem in getAliveEnemies()) {
+		if (isSummon(ennem) && getDistance(getCell(), getCell(ennem)) < dist) {
+			dist = getDistance(getCell(), getCell(ennem));
+			bulbeproche = ennem;
+		}
+
+	}
+	return bulbproche;
+
+}
+
+function canUseWeaponFromOn(Weapon, cell) { //retourne une celle sur laquelle je pourais tirer sur l'enemy avec l'arme de mon choix
+	if (cell != null) {
+
+
+		for (var cellI in accessiblescells1(getLeek())) {
+
+			// Et c'est toujours une bonne idée d'éviter les effets de bord.
+			if (!_ITEM_INLINE[Weapon]) {
+				if (lineOfSight(cellI, cell) && getCellDistance(cellI, cell) <= _ITEM_MAXRANGE[Weapon] && getCellDistance(cellI, cell) >= _ITEM_MINRANGE[Weapon]) return cellI;
+				// n'importe quel arme qui peux tirer en diago
+			} else if (lineOfSight(cellI, cell) && getCellDistance(cellI, cell) <= _ITEM_MAXRANGE[Weapon] && getCellDistance(cellI, cell) >= _ITEM_MINRANGE[Weapon] && isOnSameLine(cellI, cell)) {
+				return cellI;
+			}
+			// les deux autres
+		}
+	}
+	return null;
+}
+
+function canUseChipFromOn(chip, cell) { //retourne une celle sur laquelle je pourais tirer sur l'enemy avec la chip de mon choix
+	if (cell != null) {
+
+
+
+		for (var cellI in accessiblescells1(getLeek())) {
+
+			// Et c'est toujours une bonne idée d'éviter les effets de bord.
+			if (!isInlineChip(chip)) {
+				if (lineOfSight(cellI, cell) && getCellDistance(cellI, cell) <= getChipMaxRange(chip) && getCellDistance(cellI, cell) >= getChipMinRange(chip)) {
+					return cellI;
+				}
+				// n'importe quel arme qui peux tirer en diago
+			} else if (lineOfSight(cellI, cell) && getCellDistance(cellI, cell) <= getChipMaxRange(chip) && getCellDistance(cellI, cell) >= getChipMinRange(chip) && isOnSameLine(cellI, cell)) {
+				return cellI;
+				// les deux autres
+			}
+		}
+	}
+	return null;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////			bulbe glacé IA //////////////////////////////////////////////////////////////////////////////////////////////////
+function bulbAI() {
+	var summoner = getSummoner();
+	var dist = getDistance(getLeek(), getSummoner());
+	var x = getCellX(getCell(getNearestEnemy()));
+	var y = getCellY(getCell(getNearestEnemy()));
+	var enemy = getNearestEnemy();
+	var mycell = getCell();
+	var enemycell = getCell(enemy);
+	var tour = getTurn();
+
+
+
+	moveTowardCell(getCellToUseChipOnCell(CHIP_ICEBERG, enemycell));
+	useChipOnCell(CHIP_ICEBERG, useCHiporWeaponarea(CHIP_ICEBERG, 2, realenemy()));
+	if (getDistance(mycell, enemycell) < 3) {
+		moveAwayFrom(enemy, 2);}
+
+	useChip(CHIP_STALACTITE, getNearestEnemy());
+	useChip(CHIP_REFLEXES, getSummoner());
+	useChip(CHIP_ICE, getNearestEnemy());
+	useChip(CHIP_ICE, getNearestEnemy());
+	useChip(CHIP_REFLEXES, getNearestAlly());
+	say("Salut c'est fab");
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////		Bulbe Soigneur IA //////////////////////////////////////////////////////////////////////////////////////////////////
+function bulbeSoigneur() {
+	var summoner = getSummoner();
+	var dist = getDistance(getLeek(), getSummoner());
+
+	var enemy = getNearestEnemy();
+
+
+	var tour = getTurn();
+	
+	
+	
+	if (canUseChip(CHIP_VACCINE, summoner)==false) {
+	moveTowardCell(getCellsToUseChip(CHIP_VACCINE, summoner));	
+	}
+	
+	useChip(CHIP_VACCINE, summoner);
+	if (getLife(summoner) < getTotalLife(summoner) and isEnemy(summoner) == false) {
+		useChipOnCell(CHIP_DRIP, useCHiporWeaponarea(CHIP_DRIP, 2, summoner));
+		useChip(CHIP_CURE, summoner);
+		useChip(CHIP_BANDAGE, summoner);
+	}
+	if (getLife(getNearestAlly()) < getTotalLife(getNearestAlly()) and isEnemy(getNearestAlly()) == false) {
+		useChipOnCell(CHIP_DRIP, useCHiporWeaponarea(CHIP_DRIP, 2, getNearestAlly()));
+		useChip(CHIP_CURE, getNearestAlly());
+		useChip(CHIP_BANDAGE, getNearestAlly());
+	}
+	if (getLife(getLeek()) < getTotalLife(getLeek() and isEnemy(getLeek()) == false)) {
+		useChipOnCell(CHIP_DRIP, useCHiporWeaponarea(CHIP_DRIP, 2, getLeek()));
+		useChip(CHIP_CURE, getLeek());
+		useChip(CHIP_BANDAGE, getLeek());
+	}
+say("Salut c'est fab");
+if (getTP()<=4) {
+moveAwayFrom(summoner);	
+}
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////			Bulbe Rocheux IA //////////////////////////////////////////////////////////////////////////////////////////////////
+function bulbeRocheux() {
+	var summoner = getSummoner();
+	var dist = getDistance(getLeek(), getSummoner());
+	var x = getCellX(getCell(getNearestEnemy()));
+	var y = getCellY(getCell(getNearestEnemy()));
+	var enemy = getNearestEnemy();
+	var mycell = getCell();
+	var enemycell = getCell(enemy);
+	var tour = getTurn();
+	moveTowardCell(getCellToUseChipOnCell(CHIP_ROCKFALL, enemycell));
+	useChipOnCell(CHIP_ROCKFALL, useCHiporWeaponarea(CHIP_ROCKFALL, 2, enemy));
+
+	useChip(CHIP_HELMET, summoner);
+	useChip(CHIP_ROCK, enemy);
+	useChip(CHIP_PEBBLE, enemy);
+	useChip(CHIP_HELMET, getNearestAlly());
+	say("Salut c'est fab");
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	Bulbe chetif IA  //////////////////////////////////////////////////////////////////////////////////////////////////////////
+function bulbechetif() {
+	var summoner = getSummoner();
+	var dist = getDistance(getLeek(), getSummoner());
+	if (dist > 1) {
+		moveToward(getNearestEnemy());
+	}
+	if (dist == 1) {
+		moveAwayFrom(summoner, 2);
+
+	}
+	useChip(CHIP_HELMET, summoner);
+	if (getLife(summoner)<getTotalLife(summoner)) {
+		useChip(CHIP_BANDAGE, summoner);
+	}
+	
+	useChip(CHIP_PROTEIN, summoner);
+	
+	
+	useChip(CHIP_HELMET, getNearestAlly());
+	if (getLife(getNearestAlly())<getTotalLife(getNearestAlly())) {
+	useChip(CHIP_BANDAGE, getNearestAlly());
+	}
+	useChip(CHIP_PROTEIN, getNearestAlly());
+	useChip(CHIP_PEBBLE, getNearestEnemy());
+}
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	Bulbe metalique IA  //////////////////////////////////////////////////////////////////////////////////////////////////////////
+global leek9=nearestrealenemy();
+
+function bulbeMetalique() {
+	var summoner = getSummoner();
+	
+moveTowardCell(getCellToUseChip(CHIP_SEVEN_LEAGUE_BOOTS, summoner));
+
+
+useChip(CHIP_ARMOR, summoner);
+
+
+
+useChip(CHIP_SHIELD, summoner);	
+
+
+
+useChip(CHIP_SEVEN_LEAGUE_BOOTS, summoner);	
+
+
+
+useChip(CHIP_WALL, summoner);	
+
+
+useChip(CHIP_ARMOR, getNearestAlly());
+useChip(CHIP_WALL, getNearestAlly());
+useChip(CHIP_ARMOR, getNearestAlly());
+useChip(CHIP_SEVEN_LEAGUE_BOOTS, getNearestAlly());
+moveAwayFrom(summoner);
+
+}
+
+
+function BulbeF() {
+var leek8 = nearestrealenemy();
+    if (getPathLength(getCell(), getCell(leek8))<=getMP() && getCellDistance(getCell(leek8), getCell(getNearestAlly()))>=3) {
+    moveToward(leek8);
+	useChip(CHIP_DEVIL_STRIKE, getLeek());
+    }
+
+	if (getPathLength(getCell(), getCellToUseChip(CHIP_METEORITE, leek8)<=getMP())) {
+	moveTowardCell(getCellToUseChip(CHIP_METEORITE, leek8));
+	useChip(CHIP_METEORITE, leek8);
+	}
+	
+	if (getPathLength(getCell(), getCellToUseChip(CHIP_FLAME, leek8)<=getMP())) {
+	moveTowardCell(getCellToUseChip(CHIP_FLAME, leek8));
+	useChip(CHIP_FLAME, leek8);
+	useChip(CHIP_FLAME, leek8);
+	useChip(CHIP_FLAME, leek8);
+	useChip(CHIP_FLAME, leek8);
+	useChip(CHIP_FLAME, leek8);
+	}
+	if (getTP()==getTotalTP()) {
+	moveTowardCell(getCellToUseChip(CHIP_SPARK, leek8));
+	}
+	if (getTP()<getTotalTP()) {
+		moveTowardCell(tableaucellscacher());
+	}
+}
+
+function BulbeL() {
+var leek8 = nearestrealenemy();
+
+if (canUseChip(CHIP_DOPING, getSummoner())==false && getCooldown(CHIP_DOPING)==0) {
+moveTowardCell(getCellToUseChip(CHIP_DOPING, getSummoner()));
+}
+if (!inArray(getEffects(getSummoner()), EFFECT_BUFF_FORCE) && getLife(getSummoner())>=130) {
+	useChip(CHIP_DOPING, getSummoner());
+}
+
+	if (getPathLength(getCell(), getCellToUseChip(CHIP_LIGHTNING, leek8))<=getMP() && getTP()>=4) {
+	moveTowardCell(getCellToUseChip(CHIP_LIGHTNING, leek8));
+	useChip(CHIP_LIGHTNING, leek8);
+		useChip(CHIP_LIGHTNING, leek8);
+			useChip(CHIP_LIGHTNING, leek8);
+				useChip(CHIP_LIGHTNING, leek8);
+					useChip(CHIP_LIGHTNING, leek8);
+	}
+	if (getTP()==getTotalTP() && getStrength(getNearestAlly())>=200 && getLife(getNearestAlly())>=130 && !inArray(getEffects(getNearestAlly()), EFFECT_BUFF_FORCE)) {
+		moveTowardCell(getCellToUseChip(CHIP_DOPING, getNearestAlly()));
+		useChip(CHIP_DOPING, getNearestAlly());
+	}
+	
+	if (getPathLength(getCell(), getCellToUseChip(CHIP_LIGHTNING, getNearestEnemy()))<=getMP()) {
+	moveTowardCell(getCellToUseChip(CHIP_LIGHTNING, getNearestEnemy()));
+	useChip(CHIP_LIGHTNING, getNearestEnemy());
+		useChip(CHIP_LIGHTNING, getNearestEnemy());
+			useChip(CHIP_LIGHTNING, getNearestEnemy());
+				useChip(CHIP_LIGHTNING, getNearestEnemy());
+					useChip(CHIP_LIGHTNING, getNearestEnemy());
+					}
+	
+	if (getPathLength(getCell(), getCellToUseChip(CHIP_FLASH, leek8))<=getMP()) {
+	moveTowardCell(getCellToUseChip(CHIP_FLASH, leek8));
+	useChip(CHIP_FLASH, leek8);
+	}	
+	
+if (getPathLength(getCell(), getCellToUseChip(CHIP_SHOCK, leek8))<=getMP()) {
+	moveTowardCell(getCellToUseChip(CHIP_SHOCK, leek8));
+	useChip(CHIP_SHOCK, leek8);
+		useChip(CHIP_SHOCK, leek8);
+			useChip(CHIP_SHOCK, leek8);
+				useChip(CHIP_SHOCK, leek8);
+					useChip(CHIP_SHOCK, leek8);	
+	}
+	
+}

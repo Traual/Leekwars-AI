@@ -1,0 +1,186 @@
+/**
+ * For a global ATM, might be just scoring thing
+**/
+
+include("../includes")
+
+//SCORING OF GRAVITY MAP
+
+global LOCKED_OBSTACLES_GRAVITY_SCORE = -1000
+global LOCKED_OBSTACLES_AND_ENTITY_GRAVITY_SCORE = -800
+global ENTITY_GRAVITY_SCORE_MAP = [: ]
+global LOCKING_ENTITY_SCORE_MAP = [: ]
+global COVID_SCORE_MAP = [: ]
+global HOW_MUCH_CENTER_ATTRACT = 0.03
+
+
+/*
+global HOW_MUCH_ENEMIES_ATTRACT = 5
+global HOW_MUCH_ENEMIES_REPULSE = 10 //In case i'm too close, to let allies use aoe items
+global HOW_MUCH_ALLIES_ATTRACT = 2.5//I'd rather come up with all my allies before going near enemies (not the same scoring between theses two ^ and <)
+global TIMES_DIVIDE_ALLY_DIST_SCORE = 3
+global TIMES_DIVIDE_ALLY_DIST = 10
+global HOW_MUCH_SUMMONER_ATTRACT = 2
+global SCORE_LOCK = 1000
+global SCORE_COVID = 3
+global TIMES_DIVIDE_ALLY_BULBS_POWER = 50*/
+
+//SCORING FOR FINAL CELL
+
+//global TIMES_DANGER 
+
+//SUMMON SCORING ?
+/*
+global PUNY_BULB_DIST_SUMMON = 4
+global ROCKY_BULB_DIST_SUMMON = 6
+global ICED_BULB_DIST_SUMMON = 5
+global HEALER_BULB_DIST_SUMMON = 5
+global FIRE_BULB_DIST_SUMMON = 6
+global WIZARD_BULB_DIST_SUMMON = 7
+global METALLIC_BULB_DIST_SUMMON = 3
+global SAVANT_BULB_DIST_SUMMON = 4
+global TACTICIAN_BULB_DIST_SUMMON = 8
+global LIGHTNING_BULB_DIST_SUMMON = 4*/
+
+//Scores to rank :
+
+global RESURRECT_SCORE = 0 //TODO : Should Indexed it on the best resurrect entity (0 if no entities, and like 350 if its a leek, 100 for some bulbs etc)
+global RESURRECT_ID = null
+global DEATH_SCORE
+global DEATH_SCORE_POISON
+global DEATH_SCORE_POISON_OVER_TIME
+global KILL_SCORE = [: ]
+global KILL_SCORE_POISON = [: ]
+global KILL_SCORE_POISON_LONG = [: ]
+global MAX_RELATIVE_SHIELD_SCORED = 100 //I will score relative shield for a target until 100
+
+//SUMMON SCORES
+
+global SummonPuny
+global SummonRocky
+global SummonIced
+global SummonHealer
+global SummonFire
+global SummonWizard
+global SummonMetallic
+global SummonSavant
+global SummonTactician
+global SummonLightning
+
+//Cooldown Scores :
+
+global COOLDOWN_SCORES_MAP = [: ]
+
+//Effects Importance :
+global AbsoluteShieldAlliesImportance = 0.02
+global RelativeShieldAlliesImportance = 0.02
+global DamageReturnAlliesImportance = 0.015
+global PowerAlliesImportance = 0.03
+global PoisonAlliesImportance = 0.05
+global PoisonOverTimeAlliesImportance = 0.3
+global LifeAlliesImportance = 1
+global TotalLifeAlliesImportance = 0.4
+global StrengthAlliesImportance = 40
+global WisdomAlliesImportance = 25
+global AgilityAlliesImportance = 25
+global ResistanceAlliesImportance = 32
+global ScienceAlliesImportance = 32
+global MagicAlliesImportance = 40
+global TotalTpAlliesImportance = 15
+global TotalMpAlliesImportance = 25
+
+global AbsoluteShieldEnemiesImportance = 0.02
+global RelativeShieldEnemiesImportance = 0.02
+global DamageReturnEnemiesImportance = 0.015
+global PowerEnemiesImportance = 0.03
+global PoisonEnemiesImportance = 0.05
+global PoisonOverTimeEnemiesImportance = 0.2
+global LifeEnemiesImportance = 1
+global TotalLifeEnemiesImportance = 0.5
+global StrengthEnemiesImportance = 40
+global WisdomEnemiesImportance = 25
+global AgilityEnemiesImportance = 25
+global ResistanceEnemiesImportance = 32
+global ScienceEnemiesImportance = 32
+global MagicEnemiesImportance = 40
+global TotalTpEnemiesImportance = 15
+global TotalMpEnemiesImportance = 25
+
+//Coefs (Its Timed Effects Importance)
+
+global COEF_ABSOLUTE_SHIELD = [: ]
+global COEF_RELATIVE_SHIELD = [: ]
+global COEF_DAMAGE_RETURN = [: ]
+global COEF_POWER = [: ]
+global COEF_POISON = [: ]
+global COEF_POISON_OVER_TIME = [: ]
+global COEF_LIFE = [: ]
+global COEF_TOTAL_LIFE = [: ]
+global COEF_STRENGTH = [: ]
+global COEF_WISDOM = [: ]
+global COEF_AGILITY = [: ]
+global COEF_RESISTANCE = [: ]
+global COEF_SCIENCE = [: ]
+global COEF_MAGIC = [: ]
+global COEF_TOTAL_TP = [: ]
+global COEF_TOTAL_MP = [: ]
+
+//Maps
+
+global SummonNameMapScore = [
+	"puny_bulb": SummonPuny,
+	"rocky_bulb": SummonRocky,
+	"iced_bulb": SummonIced,
+	"healer_bulb": SummonHealer,
+	"fire_bulb": SummonFire,
+	"wizard_bulb": SummonWizard,
+	"metallic_bulb": SummonMetallic,
+	"savant_bulb": SummonSavant,
+	"tactician_bulb": SummonTactician,
+	"lightning_bulb": SummonLightning
+]
+
+global SummonChipMapScore = [
+	CHIP_PUNY_BULB: SummonPuny,
+	CHIP_ROCKY_BULB: SummonRocky,
+	CHIP_ICED_BULB: SummonIced,
+	CHIP_HEALER_BULB: SummonHealer,
+	CHIP_FIRE_BULB: SummonFire,
+	CHIP_WIZARD_BULB: SummonWizard,
+	CHIP_METALLIC_BULB: SummonMetallic,
+	CHIP_SAVANT_BULB: SummonSavant,
+	CHIP_TACTICIAN_BULB: SummonTactician,
+	CHIP_LIGHTNING_BULB: SummonLightning,
+	CHIP_RESURRECTION: RESURRECT_SCORE //For Action Fitness
+]
+/*
+global BulbsMapAllyImportance = [
+	"puny_bulb": PunyBulbAllyImportance,
+	"rocky_bulb": RockyBulbAllyImportance,
+	"iced_bulb": IcedBulbAllyImportance,
+	"healer_bulb": HealerBulbAllyImportance,
+	"fire_bulb": FireBulbAllyImportance,
+	"wizard_bulb": WizardBulbAllyImportance,
+	"metallic_bulb": MetallicBulbAllyImportance,
+	"savant_bulb": SavantBulbAllyImportance,
+	"tactician_bulb": TacticianBulbAllyImportance,
+	"lightning_bulb": LightningBulbAllyImportance,
+	"turret": TurretAllyImportance
+]
+
+global BulbsMapEnemyImportance = [
+	"puny_bulb": PunyBulbEnemyImportance,
+	"rocky_bulb": RockyBulbEnemyImportance,
+	"iced_bulb": IcedBulbEnemyImportance,
+	"healer_bulb": HealerBulbEnemyImportance,
+	"fire_bulb": FireBulbEnemyImportance,
+	"wizard_bulb": WizardBulbEnemyImportance,
+	"metallic_bulb": MetallicBulbEnemyImportance,
+	"savant_bulb": SavantBulbEnemyImportance,
+	"tactician_bulb": TacticianBulbEnemyImportance,
+	"lightning_bulb": LightningBulbEnemyImportance,
+	"turret": TurretEnemyImportance,
+	"wooden_chest": WoodenChestImportance,
+	"iron_chest": IronChestImportance,
+	"diamond_chest": DiamondChestImportance
+]

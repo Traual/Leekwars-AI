@@ -1,0 +1,392 @@
+include('auto');
+
+//debug
+resetBench();
+
+// init turn 1
+if(getTurn()==1){
+	for(var i=0;i<=_MAX_CELL;i++){
+		if(isObstacle(i))	_OBSTACLES[i]=true;
+		else				_CELLS_NO_OBSTACLES[i] = i;
+	}
+	for(var i=0;i<=_MAX_CELL;i++){
+		_areaCells1[i]			= prepareCellArea(i, false);
+		_areaCells1Obstacle[i]	= prepareCellArea(i, true);
+		_areaCells2[i]			= prepareCellArea2(i, false);
+		_areaCells3[i]			= prepareCellArea3(i, false);
+		/*if(_areaCells1[i] != null && count(_areaCells1[i])==1){
+			mark(i, COLOR_BLUE);
+			mark(_areaCells1[i][0], COLOR_RED);
+		}*/
+	}
+	for(var i=0; i <= _MAX_ITEM_ID; i++){ // reminder: idmax à 110 @janvier2017
+		_CACHE_ITEM_FROMCELL_TARGETCELLS[i] = [];
+		if(isWeapon(i)){
+			_ITEM_ISWEAP[i]		= true;
+			_ITEM_HAVECD[i]		= false;
+			_ITEM_MINRANGE[i]	= getWeaponMinRange(i);
+			_ITEM_MAXRANGE[i]	= getWeaponMaxRange(i);
+			_ITEM_INLINE[i]		= isInlineWeapon(i);
+			_ITEM_NEEDLOS[i]	= weaponNeedLos(i);
+			_ITEM_COST[i]		= getWeaponCost(i);
+			_ITEM_AREA[i]		= getWeaponArea(i);
+			_ITEM_EFFECTS[i]	= getWeaponEffects(i);
+		}else if(isChip(i)){
+			_ITEM_ISWEAP[i]		= false;
+			_ITEM_HAVECD[i]		= getChipCooldown(i)!=0;
+			_ITEM_MINRANGE[i]	= getChipMinRange(i);
+			_ITEM_MAXRANGE[i]	= getChipMaxRange(i);
+			_ITEM_INLINE[i]		= isInlineChip(i);
+			_ITEM_NEEDLOS[i]	= chipNeedLos(i);
+			_ITEM_COST[i]		= getChipCost(i);
+			_ITEM_AREA[i]		= getChipArea(i);
+			_ITEM_EFFECTS[i]	= getChipEffects(i);
+		}
+	}
+	
+	_ITEM_MINRANGE[WEAPON_GAZOR]		= 4; // on se tire pas dessus !
+	_ITEM_MINRANGE[CHIP_PLAGUE]			= 4;
+	_ITEM_MINRANGE[CHIP_TOXIN]			= 2;
+	_ITEM_MINRANGE[CHIP_SOPORIFIC]		= 3;
+	_ITEM_MINRANGE[CHIP_BALL_AND_CHAIN]	= 3;
+	
+	// config de gestion spécifique :
+	_ITEM_MAXRANGE[CHIP_MOTIVATION]		= 5;
+	_ITEM_MAXRANGE[CHIP_RAGE]			= 5;
+	
+	// trick test sur twogether pour opti des combos avec mon systeme naze
+	_ITEM_MINRANGE[CHIP_FRACTURE] = 0;
+	
+	_ITEM_COST[CHIP_MOTIVATION]			=
+		getChipCost(CHIP_MOTIVATION);
+	_ITEM_COST[CHIP_RAGE]				=
+		getChipCost(CHIP_RAGE);
+	
+}
+
+function refreshLeeksCellsAndAliveStatus(){
+	refreshStuff();
+	_SELF 					= getLeek();
+	// refresh leek cells & alive allies/enemies
+	_ALIVE_ALLIES 			= getAliveAllies();
+	_ALIVE_ENEMIES 			= getAliveEnemies();
+	_ALIVE_ALLIES_LEEKS 	= [];
+	_ALIVE_ALLIES_BULBS 	= [];
+	_ALIVE_ENEMIES_LEEKS 	= [];
+	_ALIVE_ENEMIES_BULBS 	= [];
+	_ALIVE_ENEMIES_DANGER 	= [];
+	_COUNT_PUNY 			= 0;
+	_COUNT_ROCKY 			= 0;
+	_COUNT_ICED 			= 0;
+	_COUNT_HEALER 			= 0;
+	_COUNT_METAL 			= 0;
+	_COUNT_FIRE 			= 0;
+	_COUNT_LIGHTNING 		= 0;
+	
+	_CACHE_CELLS_NO_TELEPORT=null;
+	_CACHE_REACHABLE_DANGER = [];
+	_CACHE_REACHABLE_SIZE	= [];
+	_SCORE_ITEM				= [];
+
+	_LEEKS_CELL				= [];
+	for(var leek in _ALIVE_ALLIES+_ALIVE_ENEMIES){
+		if(_SELF!=leek) _LEEKS_CELL[getCell(leek)] = leek;
+		if(isAlly(leek)){
+			if(isSummon(leek)){
+				push(_ALIVE_ALLIES_BULBS, leek);
+				var eType = getEntityType(leek);
+				if(eType==ENTITY_PUNY_BULB) _COUNT_PUNY++;
+				else if(eType==ENTITY_ROCKY_BULB) _COUNT_ROCKY++;
+				else if(eType==ENTITY_ICED_BULB) _COUNT_ICED++;
+				else if(eType==ENTITY_HEALER_BULB) _COUNT_HEALER++;
+				else if(eType==ENTITY_METALLIC_BULB) _COUNT_METAL++;
+				else if(eType==ENTITY_FIRE_BULB) _COUNT_FIRE++;
+				else if(eType==ENTITY_LIGHTNING_BULB) _COUNT_LIGHTNING++;
+			} else push(_ALIVE_ALLIES_LEEKS, leek);
+		}else{//isEnemy
+			if(isSummon(leek)) push(_ALIVE_ENEMIES_BULBS, leek); 
+			else push(_ALIVE_ENEMIES_LEEKS, leek);
+			
+			if(getStrength(leek) >= 100 || getMagic(leek) >= 100){
+				push(_ALIVE_ENEMIES_DANGER, leek);
+			}else if(getLevel()<30){
+				push(_ALIVE_ENEMIES_DANGER, leek);
+			}
+		}
+	}
+	
+	// sort _ALIVE_ENEMIES_DANGER
+	var myTurnOrder = getEntityTurnOrder();
+	var totalPlayer = count(_ALIVE_ALLIES) + count(_ALIVE_ENEMIES);
+	_ALIVE_ENEMIES_DANGER = arraySort(_ALIVE_ENEMIES_DANGER, function(a, b){
+		var turnOrderA = getEntityTurnOrder(a);
+		var turnOrderB = getEntityTurnOrder(b);
+		if(turnOrderA < myTurnOrder) turnOrderA+= totalPlayer;
+		if(turnOrderB < myTurnOrder) turnOrderB+= totalPlayer;
+		return turnOrderA>turnOrderB ? 1 : turnOrderA==turnOrderB ? 0 : -1;
+	});
+	
+	_NEAREST_ENEMY_LEEK = getNearestEnemyLeek();
+	_NEARE_FULLMAP_PATH_DIST=getReachableCells([getCell(_NEAREST_ENEMY_LEEK):0], 200, [getCell()]);
+	
+	_SELF_FULLMAP_PATH_DIST=getReachableCells([getCell():0], 200, []);
+	
+	if(false && _IS_TELEPORT){
+		var ignoreCells = [];
+		for(var l in _ALIVE_ALLIES+_ALIVE_ENEMIES) push(ignoreCells, getCell(l));
+		//_SELF_FULLMAP_PATH_DIST_UNBLOCKED = getReachableCells([getCell():0], 200, ignoreCells);
+	}
+
+	if(_IS_RESURECT){
+		_RESU_TARGET = null;
+		_RESU_SCORE = 0;
+		var allies = getFightType() == FIGHT_TYPE_BATTLE_ROYALE 
+							? getDeadEnemies()
+							: getDeadAllies();
+		for(var al in allies){
+			var score = getTotalLife(al)*2+getStrength(al)+getWisdom(al)
+						+getScience(al)+getResistance(al)+getAgility(al);
+			score*=2;
+			if(isSummon(al)){
+				if(getTotalLife(al) <= 1500) continue;
+				score/=3;
+			}
+			if(_RESU_SCORE < score){
+				_RESU_TARGET = al;
+				_RESU_SCORE = score;
+			}
+		}
+	}
+}
+
+function refreshLeeksEffectsAndStates(){
+	var debugStr = "LibeScr=";
+	// init de l'état des leeks
+	if(!isSummon()) _LEEKS=[];
+	for(var leek in _ALIVE_ALLIES+_ALIVE_ENEMIES){
+		var effects = [], bulbs = [], psnDmgTurn = 0, psnDmgTotal = 0, scoreLibe = 0, alterateStr = 0, alterateMgc = 0, alterateTP = 0, alterateMP = 0;
+		// gestion getEffects
+		for(var e in getEffects(leek)){
+			setEffectsArray(effects, scoreLibe, psnDmgTurn, psnDmgTotal, alterateStr, alterateMgc, alterateTP, alterateMP, e);
+		}
+		if(!isSummon(leek)){
+			var bulbz;
+			if(isAlly(leek)) bulbz = _ALIVE_ALLIES_BULBS;
+			else bulbz = _ALIVE_ENEMIES_BULBS;
+			for(var b in bulbz){
+				if(getSummoner(b)==leek) push(bulbs, b);
+			}
+		}
+		
+		var leekInfo = [
+			_totallife: getTotalLife(leek)
+			,_life: getLife(leek)
+			,_lifeMissing: getTotalLife(leek)-getLife(leek)
+			,_psnlife: getLife(leek)-psnDmgTurn
+			,_psnTurn: psnDmgTurn
+			,_psnTotal: psnDmgTotal
+			,_effects: @effects
+			,_alterateStr: alterateStr
+			,_alterateMgc: alterateMgc
+			,_alterateTP: alterateTP
+			,_alterateMP: alterateMP
+			,_str: getStrength(leek)
+			,_mgc: getMagic(leek)
+			,_wsd: getWisdom(leek)
+			,_rst: getResistance(leek)
+			,_agi: getAgility(leek)
+			,_snc: getScience(leek)
+			,_tp: getTP(leek)
+			,_mp: getMP(leek)
+			,_relShield: getRelativeShield(leek)
+			,_absShield: getAbsoluteShield(leek)
+			,_dmgReturn: getDamageReturn(leek)
+			,_scoreLibe: scoreLibe
+			,_nbBulbs: count(bulbs)//todo check si ça vaut le coup de garder cette info..
+			,_bulbs: @bulbs
+		];
+		debugStr+=getName(leek)+":"+scoreLibe+"|";
+		if(isSummon()){
+			var items = @_LEEKS[leek][_items],	minItemCost = @_LEEKS[leek][_minItemCost];
+			_LEEKS[leek] = @leekInfo;
+			_LEEKS[leek][_items]= @items;
+			_LEEKS[leek][_minItemCost]= @minItemCost;
+			
+		}else _LEEKS[leek] = @leekInfo;
+	}
+	debug(debugStr);
+	_SELF_AGI = 1+(getAgility()/1000);
+	_STR_100 = false;
+	_STR_300 = false;
+	_SNC_200 = false;
+	_SNC_400 = false;
+	if(inArray(getChips(), CHIP_ANTIDOTE) && getCooldown(CHIP_ANTIDOTE)==0)
+			_CAN_ANTIDOTE = true;
+	else 	_CAN_ANTIDOTE = false;
+	
+	for(var e in _ALIVE_ENEMIES){
+		if(getStrength(e)>100 || _LEEKS[e][_alterateStr] < 0) _STR_100 = true;
+		if(getStrength(e)>300 || _LEEKS[e][_alterateStr] < 0) _STR_300 = true;
+		if(getScience(e)>=200 && !isSummon(e)) _SNC_200 = true;
+		if(getScience(e)>=400) _SNC_400 = true;
+	}
+	if(getLevel()<30) _STR_100 = true;
+	
+	_REDUC_ABS=0;
+	_REDUC_REL=0;
+	for(var e in getEffects()){
+		if(e[0]==EFFECT_ABSOLUTE_SHIELD){
+			if(e[2]!=getLeek() && e[3]<=1) // si c'est pas mon spell et qu'il reste 1tour
+				_REDUC_ABS+=e[1];
+		}
+		if(e[0]==EFFECT_RELATIVE_SHIELD){
+			if(e[2]!=getLeek() && e[3]<=1) // si c'est pas mon spell et qu'il reste 1tour
+				_REDUC_REL+=e[1];
+		}
+	}
+}
+
+function setEffectsArray(@effects, @scoreLibe, @psnDmgTurn, @psnDmgTotal, @alterateStr, @alterateMgc, @alterateTP, @alterateMP, @e){
+	// [type, value, caster_id, turns, critical, item_id, target_id]
+	var type = e[0],
+	item = e[5],
+	value = e[1],
+	duration = e[3];
+	
+	effects[item] += value*duration;
+	
+	if(type==EFFECT_POISON){
+		psnDmgTurn += value;
+		psnDmgTotal += value*duration;
+	}else if(type==EFFECT_HEAL){
+		psnDmgTurn -= value;
+		psnDmgTotal -= value*duration;
+	}else if(type == EFFECT_SHACKLE_STRENGTH){
+		alterateStr -= value;
+	}else if(type == EFFECT_SHACKLE_MAGIC){
+		alterateMgc -= value;
+	}else if(type == EFFECT_SHACKLE_TP){
+		alterateTP -= value;
+	}else if(type == EFFECT_SHACKLE_MP){
+		alterateMP -= value;
+	}else if(type == EFFECT_BUFF_STRENGTH){
+		alterateStr += value;
+	}else if(type == EFFECT_BUFF_TP){
+		alterateTP += value;
+	}else if(type == EFFECT_BUFF_MP){
+		alterateMP += value;
+	}
+	
+	///// ICI on précalcule le score de libération pour chaque leek.
+	// effect négatif, scoreLibe -=
+	scoreLibe += getLibeScore(type, value, duration);
+}
+
+function getLibeScore(@type, @value, @duration){
+	var scoreLibe=0;
+	if(type==EFFECT_POISON){
+		scoreLibe -= value*duration*4;
+	}else if(type == EFFECT_SHACKLE_STRENGTH){
+		scoreLibe -= value*duration*6;
+		//debug("SHACKLESTR:"+value);
+	}else if(type == EFFECT_SHACKLE_MAGIC){
+		scoreLibe -= value*duration*6;
+	}else if(type == EFFECT_SHACKLE_MP){
+		scoreLibe -= value*_SCORE_MP*duration*3;
+	}else if(type == EFFECT_SHACKLE_TP){
+		scoreLibe -= value*_SCORE_TP*duration*3;
+	// A partir d'ici, effet positif, scoreLibe +=
+	}else if(type==EFFECT_HEAL){
+		scoreLibe += value*duration;
+	}else if(type == EFFECT_DAMAGE_RETURN){
+		scoreLibe += value*duration*4;
+	}else if(type == EFFECT_ABSOLUTE_SHIELD){
+		scoreLibe += value*duration*5;
+	}else if(type == EFFECT_RELATIVE_SHIELD){
+		scoreLibe += value*_SCORE_REL_SHIELD*duration*5;
+	}else if(type == EFFECT_BUFF_STRENGTH){
+		scoreLibe += value*duration*2;
+	}else if(type == EFFECT_BUFF_AGILITY){
+		scoreLibe += value*duration;
+	}else if(type == EFFECT_BUFF_MP){
+		scoreLibe += value*_SCORE_MP*duration;
+	}else if(type == EFFECT_BUFF_TP){
+		scoreLibe += value*_SCORE_TP*duration;
+	}else if(type == EFFECT_BUFF_WISDOM){
+		scoreLibe += value*duration;
+	}else if(type == EFFECT_BUFF_RESISTANCE){
+		scoreLibe += value*duration;
+	}else{
+		debugE("Unknown effect type: " + type);
+	}
+	return @scoreLibe;
+}
+
+function refreshGravityCells(@distToEnemy){
+	_GRAVITY_CELLS = [];
+	_GRAVITY_COEFS = [];
+	var coefAlly = 0, coefi;
+	
+	var needArmor = (_STR_300 || _SNC_400) && (getAbsoluteShield()==0 || getRelativeShield()==0);
+	
+	for(var al in _ALIVE_ALLIES_LEEKS){
+		if(al!=_SELF){
+			if(isSummon(getLeek())) 			coefi = 80;
+			else if(getScience(al) >= 600) 		coefi = 30;
+			else if(getScience(al) >= 400) 		coefi = 20;
+			else if(getResistance(al) >=200)	coefi = 10;
+			else if(getWisdom(al) >200) 		coefi = 5;
+			else								coefi = 1;
+			
+			var cell = getCell(al);
+			_GRAVITY_CELLS[cell] = 3;
+			_GRAVITY_COEFS[cell] = coefi;
+			coefAlly+=coefi;
+		}
+	}
+	if(!isSummon(getLeek())) for(var al in _ALIVE_ALLIES_BULBS){
+			var cell = getCell(al), type = getEntityType(al);
+			var ratioPV = getLife()/getTotalLife();
+			if(type==ENTITY_METALLIC_BULB){
+				_GRAVITY_CELLS[cell] = 1;
+				if(needArmor) coefi = 80;
+				else coefi = 6;
+			}else if(type==ENTITY_HEALER_BULB){
+				_GRAVITY_CELLS[cell] = 4;
+				if(ratioPV<0.9) coefi = 40;
+				else coefi = 5;
+			}
+			_GRAVITY_COEFS[cell] = coefi;
+			coefAlly+=coefi;
+		//}
+	}
+	var coef = !isSummon(getLeek())	&& getLife()/getTotalLife()>0.8 && !needArmor
+							? ceil(coefAlly/count(_ALIVE_ENEMIES)) 
+							: floor(coefAlly/count(_ALIVE_ENEMIES));
+	if(coef<1)coef=1;
+	if(distToEnemy==null){ distToEnemy = 30; coef=round(coef*1.1); } 
+	for(var en in _ALIVE_ENEMIES_LEEKS){
+		_GRAVITY_CELLS[getCell(en)] = distToEnemy;
+		_GRAVITY_COEFS[getCell(en)] = coef;
+	}
+	if(distToEnemy<20 && !needArmor) for(var en in _ALIVE_ENEMIES_BULBS){
+		var eType = getEntityType(en);
+		if(eType==ENTITY_HEALER_BULB){
+			_GRAVITY_CELLS[getCell(en)] = 1;
+			_GRAVITY_COEFS[getCell(en)] = coef;
+		}else if(eType==ENTITY_METALLIC_BULB && getStrength()>300){
+			_GRAVITY_CELLS[getCell(en)] = 1;
+			_GRAVITY_COEFS[getCell(en)] = coef*0.5;
+		}
+	}
+	
+	_GRAVITY_CELLS[306] = 3;
+	_GRAVITY_COEFS[306] = 30;
+}
+
+function refreshStuff(){
+	_DECODING_STUFF = @(getWeapons()+getChips());
+	for(var e in _TO_REMOVE_STUFF) removeElement(_DECODING_STUFF, e);
+	sort(_DECODING_STUFF);
+	for(var id : var item in _DECODING_STUFF) _ENCODING_STUFF[item] = id;
+}

@@ -1,0 +1,436 @@
+//Huge Arrays To Convert Binary into Array of Cells
+
+global BaseMapOfConvertion = [0: [], 1: [0], 2: [1], 3: [0, 1], 4: [2], 5: [0, 2], 6: [1, 2], 7: [0, 1, 2], 8: [3], 9: [0, 3], 10: [1, 3], 11: [0, 1, 3], 12: [2, 3], 13: [0, 2, 3], 14: [1, 2, 3], 15: [0, 1, 2, 3], 16: [4], 17: [0, 4], 18: [1, 4], 19: [0, 1, 4], 20: [2, 4], 21: [0, 2, 4], 22: [1, 2, 4], 23: [0, 1, 2, 4], 24: [3, 4], 25: [0, 3, 4], 26: [1, 3, 4], 27: [0, 1, 3, 4], 28: [2, 3, 4], 29: [0, 2, 3, 4], 30: [1, 2, 3, 4], 31: [0, 1, 2, 3, 4], 32: [5], 33: [0, 5], 34: [1, 5], 35: [0, 1, 5], 36: [2, 5], 37: [0, 2, 5], 38: [1, 2, 5], 39: [0, 1, 2, 5], 40: [3, 5], 41: [0, 3, 5], 42: [1, 3, 5], 43: [0, 1, 3, 5], 44: [2, 3, 5], 45: [0, 2, 3, 5], 46: [1, 2, 3, 5], 47: [0, 1, 2, 3, 5], 48: [4, 5], 49: [0, 4, 5], 50: [1, 4, 5], 51: [0, 1, 4, 5], 52: [2, 4, 5], 53: [0, 2, 4, 5], 54: [1, 2, 4, 5], 55: [0, 1, 2, 4, 5], 56: [3, 4, 5], 57: [0, 3, 4, 5], 58: [1, 3, 4, 5], 59: [0, 1, 3, 4, 5], 60: [2, 3, 4, 5], 61: [0, 2, 3, 4, 5], 62: [1, 2, 3, 4, 5], 63: [0, 1, 2, 3, 4, 5]]
+
+global HalvedMapOfConvertion = [0: [], 1: [0], 2: [1], 3: [0, 1], 4: [2], 5: [0, 2], 6: [1, 2], 7: [0, 1, 2], 8: [3], 9: [0, 3], 10: [1, 3], 11: [0, 1, 3], 12: [2, 3], 13: [0, 2, 3], 14: [1, 2, 3], 15: [0, 1, 2, 3], 16: [4], 17: [0, 4], 18: [1, 4], 19: [0, 1, 4], 20: [2, 4], 21: [0, 2, 4], 22: [1, 2, 4], 23: [0, 1, 2, 4], 24: [3, 4], 25: [0, 3, 4], 26: [1, 3, 4], 27: [0, 1, 3, 4], 28: [2, 3, 4], 29: [0, 2, 3, 4], 30: [1, 2, 3, 4], 31: [0, 1, 2, 3, 4]]
+
+function AddToBaseArray(NumberAdded, BaseMapTmp) {
+	var _final = clone(BaseMapTmp, 2)
+	for (var bin: var list in _final) {
+		for (var c = 0;c < count(list);c++) {
+			list[c] += NumberAdded
+		}
+	}
+	return _final
+}
+
+global BINARY_TO_CELL_ZERO_ZERO = function() {
+	return AddToBaseArray(0, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_ZERO_ONE = function() {
+	return AddToBaseArray(6, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_ZERO_TWO = function() {
+	return AddToBaseArray(12, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_ONE_ZERO = function() {
+	return AddToBaseArray(18, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_ONE_ONE = function() {
+	return AddToBaseArray(24, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_ONE_TWO = function() {
+	return AddToBaseArray(30, HalvedMapOfConvertion) //Can Be Stopped at 31 : (last value keeped)
+}()
+
+global BINARY_TO_CELL_TWO_ZERO = function() {
+	return AddToBaseArray(35, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWO_ONE = function() {
+	return AddToBaseArray(41, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWO_TWO = function() {
+	return AddToBaseArray(47, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THREE_ZERO = function() {
+	return AddToBaseArray(53, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THREE_ONE = function() {
+	return AddToBaseArray(59, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THREE_TWO = function() {
+	return AddToBaseArray(65, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_FOUR_ZERO = function() {
+	return AddToBaseArray(70, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_FOUR_ONE = function() {
+	return AddToBaseArray(76, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_FOUR_TWO = function() {
+	return AddToBaseArray(82, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_FIVE_ZERO = function() {
+	return AddToBaseArray(88, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_FIVE_ONE = function() {
+	return AddToBaseArray(94, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_FIVE_TWO = function() {
+	return AddToBaseArray(100, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_SIX_ZERO = function() {
+	return AddToBaseArray(105, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_SIX_ONE = function() {
+	return AddToBaseArray(111, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_SIX_TWO = function() {
+	return AddToBaseArray(117, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_SEVEN_ZERO = function() {
+	return AddToBaseArray(123, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_SEVEN_ONE = function() {
+	return AddToBaseArray(129, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_SEVEN_TWO = function() {
+	return AddToBaseArray(135, HalvedMapOfConvertion)
+}()
+
+
+global BINARY_TO_CELL_EIGHT_ZERO = function() {
+	return AddToBaseArray(140, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_EIGHT_ONE = function() {
+	return AddToBaseArray(146, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_EIGHT_TWO = function() {
+	return AddToBaseArray(152, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_NINE_ZERO = function() {
+	return AddToBaseArray(158, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_NINE_ONE = function() {
+	return AddToBaseArray(164, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_NINE_TWO = function() {
+	return AddToBaseArray(170, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TEN_ZERO = function() {
+	return AddToBaseArray(175, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TEN_ONE = function() {
+	return AddToBaseArray(181, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TEN_TWO = function() {
+	return AddToBaseArray(187, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_ELEVEN_ZERO = function() {
+	return AddToBaseArray(193, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_ELEVEN_ONE = function() {
+	return AddToBaseArray(199, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_ELEVEN_TWO = function() {
+	return AddToBaseArray(205, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWELVE_ZERO = function() {
+	return AddToBaseArray(210, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWELVE_ONE = function() {
+	return AddToBaseArray(216, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWELVE_TWO = function() {
+	return AddToBaseArray(222, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTEEN_ZERO = function() {
+	return AddToBaseArray(228, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTEEN_ONE = function() {
+	return AddToBaseArray(234, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTEEN_TWO = function() {
+	return AddToBaseArray(240, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_FOURTEEN_ZERO = function() {
+	return AddToBaseArray(245, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_FOURTEEN_ONE = function() {
+	return AddToBaseArray(251, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_FOURTEEN_TWO = function() {
+	return AddToBaseArray(257, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_FIFTEEN_ZERO = function() {
+	return AddToBaseArray(263, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_FIFTEEN_ONE = function() {
+	return AddToBaseArray(269, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_FIFTEEN_TWO = function() {
+	return AddToBaseArray(275, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_SIXTEEN_ZERO = function() {
+	return AddToBaseArray(280, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_SIXTEEN_ONE = function() {
+	return AddToBaseArray(286, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_SIXTEEN_TWO = function() {
+	return AddToBaseArray(292, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_SEVENTEEN_ZERO = function() {
+	return AddToBaseArray(298, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_SEVENTEEN_ONE = function() {
+	return AddToBaseArray(304, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_SEVENTEEN_TWO = function() {
+	return AddToBaseArray(310, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_EIGHTEEN_ZERO = function() {
+	return AddToBaseArray(315, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_EIGHTEEN_ONE = function() {
+	return AddToBaseArray(321, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_EIGHTEEN_TWO = function() {
+	return AddToBaseArray(327, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_NINETEEN_ZERO = function() {
+	return AddToBaseArray(333, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_NINETEEN_ONE = function() {
+	return AddToBaseArray(339, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_NINETEEN_TWO = function() {
+	return AddToBaseArray(345, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTY_ZERO = function() {
+	return AddToBaseArray(350, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTY_ONE = function() {
+	return AddToBaseArray(356, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTY_TWO = function() {
+	return AddToBaseArray(362, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYONE_ZERO = function() {
+	return AddToBaseArray(368, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYONE_ONE = function() {
+	return AddToBaseArray(374, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYONE_TWO = function() {
+	return AddToBaseArray(380, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYTWO_ZERO = function() {
+	return AddToBaseArray(385, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYTWO_ONE = function() {
+	return AddToBaseArray(391, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYTWO_TWO = function() {
+	return AddToBaseArray(397, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYTHREE_ZERO = function() {
+	return AddToBaseArray(403, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYTHREE_ONE = function() {
+	return AddToBaseArray(409, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYTHREE_TWO = function() {
+	return AddToBaseArray(415, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYFOUR_ZERO = function() {
+	return AddToBaseArray(420, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYFOUR_ONE = function() {
+	return AddToBaseArray(426, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYFOUR_TWO = function() {
+	return AddToBaseArray(432, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYFIVE_ZERO = function() {
+	return AddToBaseArray(438, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYFIVE_ONE = function() {
+	return AddToBaseArray(444, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYFIVE_TWO = function() {
+	return AddToBaseArray(450, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYSIX_ZERO = function() {
+	return AddToBaseArray(455, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYSIX_ONE = function() {
+	return AddToBaseArray(461, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYSIX_TWO = function() {
+	return AddToBaseArray(467, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYSEVEN_ZERO = function() {
+	return AddToBaseArray(473, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYSEVEN_ONE = function() {
+	return AddToBaseArray(479, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYSEVEN_TWO = function() {
+	return AddToBaseArray(485, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYEIGHT_ZERO = function() {
+	return AddToBaseArray(490, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYEIGHT_ONE = function() {
+	return AddToBaseArray(496, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYEIGHT_TWO = function() {
+	return AddToBaseArray(502, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYNINE_ZERO = function() {
+	return AddToBaseArray(508, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYNINE_ONE = function() {
+	return AddToBaseArray(514, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_TWENTYNINE_TWO = function() {
+	return AddToBaseArray(520, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTY_ZERO = function() {
+	return AddToBaseArray(525, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTY_ONE = function() {
+	return AddToBaseArray(531, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTY_TWO = function() {
+	return AddToBaseArray(537, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTYONE_ZERO = function() {
+	return AddToBaseArray(543, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTYONE_ONE = function() {
+	return AddToBaseArray(549, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTYONE_TWO = function() {
+	return AddToBaseArray(555, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTYTWO_ZERO = function() {
+	return AddToBaseArray(560, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTYTWO_ONE = function() {
+	return AddToBaseArray(566, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTYTWO_TWO = function() {
+	return AddToBaseArray(572, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTYTHREE_ZERO = function() {
+	return AddToBaseArray(578, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTYTHREE_ONE = function() {
+	return AddToBaseArray(584, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTYTHREE_TWO = function() {
+	return AddToBaseArray(590, HalvedMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTYFOUR_ZERO = function() {
+	return AddToBaseArray(595, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTYFOUR_ONE = function() {
+	return AddToBaseArray(601, BaseMapOfConvertion)
+}()
+
+global BINARY_TO_CELL_THIRTYFOUR_TWO = function() {
+	return AddToBaseArray(607, BaseMapOfConvertion)
+}()

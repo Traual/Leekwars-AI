@@ -1,0 +1,8 @@
+include("coeffs.leek");
+if (getStrength() >= Mini) _SCORE_PLAY_SAFE = 9.6; //12.0
+else _SCORE_PLAY_SAFE = 35;
+//if (inArray(getWeapons(), WEAPON_MYSTERIOUS_ELECTRISOR)) _SCORE_PLAY_SAFE -= 2.6;
+if (getMagic() >= Mini) _SCORE_PLAY_SAFE = 7.6;
+if (getStrength() >= Mini) _MIN_MAP_DAMAGE = 0.23; //0.21
+else _MIN_MAP_DAMAGE = 0.1;
+if (getMagic() >= Mini) _MIN_MAP_DAMAGE = 0.20;

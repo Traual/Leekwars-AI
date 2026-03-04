@@ -1,0 +1,666 @@
+include('auto');
+///////////////////////////////////////////
+// Ma lib
+///////////////////////////////////////////
+
+function MustTp(@entity) {
+	if (!inArray(getChips(entity), CHIP_ANTIDOTE)) {
+		return true ;
+	}
+	if (getCooldown(CHIP_ANTIDOTE, entity)>3) {
+		return true ;
+	}
+	if (getLife()*2<getLife(entity)) {
+		return true ;
+	}
+	else return false ;
+}
+
+
+function IsStaingBulbEnemy(@entity) {
+	for (var i in getAliveEnemies()) {
+		if (getEntityType(i)==entity) {
+			return true ;
+		}
+		else
+		return false ;
+	}
+}
+
+
+function AntidoteScore() {
+	return getLife()/2 ;
+}
+
+function getcellwhotpGazor(Enemy) {
+	for (var i in TableauCells) {
+		if (getCellDistance(getCell(Enemy), i)>=4 && canUseWeapon(WEAPON_GAZOR, Enemy)) {
+			return i ;
+		}
+	}
+	
+	
+	
+}
+
+function TableauCells() {
+	var tab = [] ;
+	for (var i = 0; i <=612 ; i++) {
+		push(tab, i);
+	}
+   return tab ;
+}
+
+
+
+
+function GetMaxPossibleDamage(LeekDeAtq , LeekDeDef) {
+	return floor(getTP(LeekDeAtq)/getWeaponCost(WEAPON_M_LASER))*90* (1+getStrength(LeekDeAtq)/100)*(1-getRelativeShield(LeekDeDef)/100)-getAbsoluteShield(LeekDeDef);
+	
+	
+}
+
+function getweapondmg(weapon) {
+	if (weapon == WEAPON_M_LASER) {
+		return 90 ;
+	}
+	else
+	if (weapon == WEAPON_ELECTRISOR) {
+		return 70 ;
+	}
+	else
+	if (weapon == WEAPON_KATANA) {
+		return 76 ;
+	}
+	else
+	if (weapon == WEAPON_GRENADE_LAUNCHER) {
+		return 45 ;
+	}
+	else 
+	if (weapon == WEAPON_DESTROYER) {
+		return 40 ;
+	}
+	return 0 ;
+	
+}
+
+function IsBoostedKiller(Leek) {
+	if (getStrength(Leek)>1000 && !isSummon(Leek)) {
+		return true ;
+	}
+     else
+  return false ;
+}
+
+function IsBuffer(Leek) {
+	if (getScience()>=600 && !isSummon(Leek)) {
+		return true ;
+	}
+	else
+  return false ;
+}
+
+
+function getKiller() {
+	  var taballys = [] ;
+
+  for (var i in getAliveAllies()) {
+    if (!isSummon(i) && getStrength(i)>=500) {
+      push(taballys, i);
+    }
+  }
+  return taballys ;
+}
+
+function GetFarthestKillerNumber() {
+  var tabdist = [];
+    for (var i in getKiller()) {
+      push(tabdist, getCellDistance(getCell(), getCell(i)));
+    }
+  return arrayMax(tabdist);
+}
+
+function GetFarthestKiller() {
+  for (var i in getKiller()) {
+    if (getCellDistance(getCell(), getCell(i))==GetFarthestKillerNumber()) {
+      return i ;
+    }
+    else return null ;
+  }
+}
+
+
+
+function GetBuffer() {
+  var taballys = [] ;
+
+  for (var i in getAliveAllies()) {
+    if (!isSummon(i) && getScience(i)>=600) {
+      push(taballys, i);
+    }
+  }
+  return taballys ;
+}
+
+function GetFarthestBufferNumber() {
+  var tabdist = [];
+    for (var i in GetBuffer()) {
+      push(tabdist, getCellDistance(getCell(), getCell(i)));
+    }
+  return arrayMax(tabdist);
+}
+
+function GetFarthestBuffer() {
+  for (var i in GetBuffer()) {
+    if (getCellDistance(getCell(), getCell(i))==GetFarthestBufferNumber()) {
+      return i ;
+    }
+    else return null ;
+  }
+}
+
+function GetNumberOfEnemyBulbAlive() {
+var a = 0 ;
+	for (var i in getAliveEnemies()) {
+		if (isSummon(i)) {
+			a++ ;
+		}
+	}
+	return a ;
+}
+
+function GetNumberOfAllyBulbAlive() {
+var a = 0 ;
+	for (var i in getAliveAllies()) {
+		if (isSummon(i)) {
+			a++;
+		}
+	}
+	return a ;
+}
+
+include('auto');
+///////////////////////////////////////////
+// Ma lib
+///////////////////////////////////////////
+global _poem = round(rand()), _poem_count=0;
+function sayCupidon(){
+	var poem = [0:[
+		"Un peu de poésie : Mon Diamant, Mon Amant"
+		,"Lucy quitte son ciel étoilé"
+		,"Pour se lover à mes cotés"
+		,"Son corps, son visage en nage"
+		,"Ses yeux perdues, en mydriase"
+		,"La mer effleure ses pieds nues"
+		,"S’écoule le long de la grève"
+		,"Soudain saisi d’un flot d’extase"
+		,"Elle m’enlace, moi l’Inconnu"
+		,"Et me murmure du bout des lèvres"
+		,"Le contenu de ses doux rêves."
+		,"Pour une nuit son âme en peine"
+		,"Du paradis est souveraine."
+	],1:[
+		"Un peu de poésie : Ophélie"
+		,"Ophélie, ma fée lit dans son lit et pâlit,"
+		,"car la vie l'asservie et ses rêves s'en vont."
+		,"Sans espoir dans le noir, désespoir disait on,"
+		,"mais pas de dépression, juste une déception,"
+		,"l'illusion dissipé, voit la vie comme elle est."
+		,"De ce monde parfait qu'enfant elle dessinait"
+		,"ne reste que fumées et cendres dispersées."
+		,"Elle ouvre désormais les yeux pour constater"
+		,"que jamais ses souhaits ne seront exaucés."
+		,"Alors elle lit, préfère la vie imaginaire"
+		,"d'un héros éphémère dans un autre univers."
+		,"Avec un goût amer, elle contemple les guerres"
+		,"ainsi dans sa tanière s'enterre la libertaire."
+	]];
+	if(getAliveEnemiesCount()==0) 
+		say("C'était... très sale.");
+	else if(poem[_poem][_poem_count]!=null && getTP()>0)
+		say(poem[_poem][_poem_count++]);
+	else lama();
+}
+
+function filterCooldownedCombos(@allCombos){
+	var filteredCombos = [];
+	for(var name:var combo in allCombos){
+		var ok = true;
+		for(var item in combo){
+			if(_ITEM_HAVECD[item] && getCooldown(item)!=0){
+				ok=false;
+				break;
+			}
+		}
+		if(ok) push(filteredCombos, combo);
+	}
+	return @filteredCombos;
+}
+
+function getComboSet(){
+	var TP = getTP(), combos = [];
+	// liste des combos à tester
+	var comboz = jsonDecode(getFullRegister(TP));
+	if(comboz==null){
+		debugE("NO JSON FOR "+TP+" TP !");
+		while(comboz==null) comboz = jsonDecode(getFullRegister(--TP));
+	}
+	// choix du set de combo en fonction de mon état
+	if(getWeapon()==null) combos = @comboz["EMPTY"];
+	else combos = @comboz[string(getWeapon())];
+	combos = convertBinariesToCombos(combos);
+	if(TP>=17 && inArray(getWeapons(), WEAPON_M_LASER)) unshift(combos, [WEAPON_M_LASER, WEAPON_M_LASER]);
+	if(getTurn()==1&&getTP()==21) unshift(combos, [CHIP_ARMORING, CHIP_METALLIC_BULB]);
+	unshift(combos, []); // ajout d'une combo vide au début
+	
+	return @combos;
+}
+
+/**
+ * Retourne la liste de tous les poireaux/bulbes qui vont jouer entre l'entité donné et le lanceur de la fonction
+ *
+ * @param int leek ID de l'entité ciblée
+ *
+ * @return array Tableau des ID des entités qui vont jouer entre le caster et la cible (caster et cible exclus)
+ */
+function getListOfLeekWhoPlayBefore(@leek){
+	var leekWhoPlayBefore = [];
+	var casterTurnOrder = getEntityTurnOrder();
+	var limitTurnOrder = getEntityTurnOrder(leek);
+	for(var entity in getAliveAllies() + getAliveEnemies()){
+		var entityTurnOrder = getEntityTurnOrder(entity);
+		//Cas le plus simple, on récupère les entités entre le caster et la cible
+		if(casterTurnOrder < limitTurnOrder){
+			//si l'entité est entre le caster et la cible
+			if(casterTurnOrder < entityTurnOrder && entityTurnOrder < limitTurnOrder){
+				push(leekWhoPlayBefore, entity);
+			}
+		}
+		//Plus complexe, la cible joue avant le caster
+		else{
+			//On récupère déjà toutes les entités jouant après le caster, sans limite
+			if(casterTurnOrder < entityTurnOrder){
+				push(leekWhoPlayBefore, entity);
+			}
+			//Puis toutes celles jouant avant la cible
+			if(entityTurnOrder < limitTurnOrder){
+				push(leekWhoPlayBefore, entity);
+			}
+		}
+	}
+	return @leekWhoPlayBefore;
+}
+
+function getListOfLeekToIgnoreForLazer(@leek){
+	var leekToIgnore = getAliveAllies();
+	var casterTurnOrder = getEntityTurnOrder();
+	var limitTurnOrder = getEntityTurnOrder(leek);
+	for(var entity in getAliveEnemies()){
+		if(isSummon(entity)) push(leekToIgnore, entity);
+		else{
+			var entityTurnOrder = getEntityTurnOrder(entity);
+			//Cas le plus simple, on récupère les entités entre le caster et la cible
+			if(casterTurnOrder < limitTurnOrder){
+				//si l'entité est entre le caster et la cible
+				if(casterTurnOrder < entityTurnOrder && entityTurnOrder < limitTurnOrder){
+					push(leekToIgnore, entity);
+				}
+			}
+			//Plus complexe, la cible joue avant le caster
+			else{
+				//On récupère déjà toutes les entités jouant après le caster, sans limite
+				if(casterTurnOrder < entityTurnOrder){
+					push(leekToIgnore, entity);
+				}
+				//Puis toutes celles jouant avant la cible
+				if(entityTurnOrder < limitTurnOrder){
+					push(leekToIgnore, entity);
+				}
+			}
+		}
+	}
+	return @leekToIgnore;
+}
+
+/**
+ * Retourne la liste de tous les poireaux/bulbes adverses qui vont jouer après l'entité donné et avant le lanceur de la fonction
+ *
+ * @param int leek ID de l'entité ciblée
+ *
+ * @return array Tableau des ID des entités adverses qui vont jouer après le caster et avant la cible (caster et cible exclus)
+ */
+function getListOfEnemyLeekWhoPlayAfter(@leek){
+	var leekWhoPlayBefore = [];
+	var casterTurnOrder = getEntityTurnOrder();
+	var limitTurnOrder = getEntityTurnOrder(leek);
+	for(var entity in getAliveEnemies()){
+		var entityTurnOrder = getEntityTurnOrder(entity);
+		//Cas le plus simple, on récupère les entités entre le caster et la cible
+		if(casterTurnOrder < limitTurnOrder){
+			//si l'entité est entre le caster et la cible
+			if(casterTurnOrder < entityTurnOrder && entityTurnOrder < limitTurnOrder){
+				push(leekWhoPlayBefore, entity);
+			}
+		}
+		//Plus complexe, la cible joue avant le caster
+		else{
+			//On récupère déjà toutes les entités jouant après le caster, sans limite
+			if(casterTurnOrder < entityTurnOrder){
+				push(leekWhoPlayBefore, entity);
+			}
+			//Puis toutes celles jouant avant la cible
+			if(entityTurnOrder < limitTurnOrder){
+				push(leekWhoPlayBefore, entity);
+			}
+		}
+	}
+	var leekWhoWontPlayBefore = getAliveEnemies();
+	for(var en in leekWhoPlayBefore) removeElement(leekWhoWontPlayBefore, en);
+	return @leekWhoWontPlayBefore;
+}
+
+
+function getDamagePercentage(@cell1, @cell2, @area) {     
+	if (cell1 == cell2) return 100;
+	var dist = getCellDistance(cell1, cell2),
+	areaDist = area-2;// tricks pour win 5op ! mais la func bug si area_circle change de value de constante
+	if(dist > areaDist ) return 0;
+	return @(100 - ((50 / areaDist) * dist));
+}
+
+// renvoie si la puce a un effet positif ou négatif sur la cible
+function isPositivChip(@c){
+	return @_CHIP_ISPOSITIV[c];
+}
+
+// renvoie si la puce fait partie des puces non-standard
+// soit summon, resurrection (cible les morts), teleport & inversion (déplacement)
+function isSpecialChip(@c){
+	return @(_CHIP_ISSPECIAL[c]!=null);
+}
+
+// return an array of cell that can be targeted with lazer from c using minrange
+function getLazerTargetsCell(@c, @minrange){
+	var x = getCellX(c), y = getCellY(c), result = [];
+	var cell = getCellFromXY(x+minrange, y);
+	if(cell!=null && _OBSTACLES[cell]==null && lineOfSight(c, cell, [])) push(result, cell);
+	cell = getCellFromXY(x-minrange, y);
+	if(cell!=null && _OBSTACLES[cell]==null && lineOfSight(c, cell, [])) push(result, cell);
+	cell = getCellFromXY(x, y+minrange);
+	if(cell!=null && _OBSTACLES[cell]==null && lineOfSight(c, cell, [])) push(result, cell);
+	cell = getCellFromXY(x, y-minrange);
+	if(cell!=null && _OBSTACLES[cell]==null && lineOfSight(c, cell, [])) push(result, cell);
+	return @result;
+}
+
+// return an array of cell from witch you can shoot on c with lazer having min/max range
+function getLazerFromCellsToTargetCell(@c, @minrange, @maxrange){
+	var x = getCellX(c), y = getCellY(c), result = [];
+	var cell = getCellFromXY(x+minrange, y), inc = 1;
+	if(cell!=null && _OBSTACLES[cell]==null && _LEEKS_CELL[cell]==null && lineOfSight(c, cell, [])){
+		while(cell!=null && _OBSTACLES[cell]==null && _LEEKS_CELL[cell]==null && getCellDistance(c, cell)<=maxrange){
+			push(result, cell);
+			cell = getCellFromXY(x+minrange+inc++, y);
+		}
+	}
+	cell = getCellFromXY(x-minrange, y); inc = 1;
+	if(cell!=null && _OBSTACLES[cell]==null && _LEEKS_CELL[cell]==null && lineOfSight(c, cell, [])){
+		while(cell!=null && _OBSTACLES[cell]==null && _LEEKS_CELL[cell]==null && getCellDistance(c, cell)<=maxrange){
+			push(result, cell);
+			cell = getCellFromXY(x-minrange-inc++, y);
+		}
+	}
+	cell = getCellFromXY(x, y+minrange); inc = 1;
+	if(cell!=null && _OBSTACLES[cell]==null && _LEEKS_CELL[cell]==null && lineOfSight(c, cell, [])){
+		while(cell!=null && _OBSTACLES[cell]==null && _LEEKS_CELL[cell]==null && getCellDistance(c, cell)<=maxrange){
+			push(result, cell);
+			cell = getCellFromXY(x, y+minrange+inc++);
+		}
+	}
+	cell = getCellFromXY(x, y-minrange); inc = 1;
+	if(cell!=null && _OBSTACLES[cell]==null && _LEEKS_CELL[cell]==null && lineOfSight(c, cell, [])){
+		while(cell!=null && _OBSTACLES[cell]==null && _LEEKS_CELL[cell]==null && getCellDistance(c, cell)<=maxrange){
+			push(result, cell);
+			cell = getCellFromXY(x, y-minrange-inc++);
+		}
+	}
+	return @result;
+}
+
+// return lazerTargets array
+function getLazerTargetsFromCell(@from, @to, @minrange, @maxrange){
+	var xFrom = getCellX(from), yFrom = getCellY(from),
+		xTo = getCellX(to), yTo = getCellY(to), result = [],
+		inc = 0, maxInc = maxrange-getCellDistance(from, to), tmpCell, tmpContent;
+	
+	if(xFrom==xTo){
+		if(yFrom<yTo){
+			// y++
+			while(true){
+				tmpCell = getCellFromXY(xTo, yTo+inc);
+				if(tmpCell == null || _OBSTACLES[tmpCell]!=null || inc > maxInc) break;
+				tmpContent = getCellContent(tmpCell);
+				if(tmpContent == CELL_PLAYER) push(result, getLeekOnCell(tmpCell));
+				inc++;
+			}
+		}else{
+			// y--
+			while(true){
+				tmpCell = getCellFromXY(xTo, yTo-inc);
+				if(tmpCell == null || _OBSTACLES[tmpCell]!=null || inc > maxInc) break;
+				tmpContent = getCellContent(tmpCell);
+				if(tmpContent == CELL_PLAYER) push(result, getLeekOnCell(tmpCell));
+				inc++;
+			}
+		}
+	}else if(yFrom==yTo){
+		if(xFrom<xTo){
+			// x++
+			while(true){
+				tmpCell = getCellFromXY(xTo+inc, yTo);
+				if(tmpCell == null || _OBSTACLES[tmpCell]!=null || inc > maxInc) break;
+				tmpContent = getCellContent(tmpCell);
+				if(tmpContent == CELL_PLAYER) push(result, getLeekOnCell(tmpCell));
+				inc++;
+			}
+		}else{
+			// x--
+			while(true){
+				tmpCell = getCellFromXY(xTo-inc, yTo);
+				if(tmpCell == null || _OBSTACLES[tmpCell]!=null || inc > maxInc) break;
+				tmpContent = getCellContent(tmpCell);
+				if(tmpContent == CELL_PLAYER) push(result, getLeekOnCell(tmpCell));
+				inc++;
+			}
+		}
+	}
+	
+	return @result;
+}
+
+// renvoie un array de cell depuis lesquel on peut tirer sur cell
+// ne fonctionne que pour le leek qui l'utilise, j'utilise leekToIgnore = [getLeek()]
+// pour les lignes de vue et _LEEKS pour les cases non accessibles (ou il y a tout le monde sauf le leek)
+// donc pas pour les bulbes cette fonction !
+function _getCellsToUseWeapChipOnCell(@weapChip, @cell){
+	var leekToIgnore = [getLeek()],result = [],
+	x = getCellX(cell), y = getCellY(cell),
+	minrange = _ITEM_MINRANGE[weapChip],
+	maxrange = _ITEM_MAXRANGE[weapChip],
+	inline = _ITEM_INLINE[weapChip],
+	needlos = _ITEM_NEEDLOS[weapChip];
+	if(inline){
+		for(var x1 = x-maxrange; x1 <= x+maxrange; x1++){
+			var dist =((x-x1)<0?-(x-x1):x-x1);
+			if(dist < minrange) continue;
+			var fromCell = getCellFromXY(x1, y);
+			if(fromCell!=null 
+			&& _OBSTACLES[fromCell]==null 
+			&& _LEEKS_CELL[fromCell]==null
+			&& (!needlos || lineOfSight(fromCell, cell, leekToIgnore))){
+				push(result, fromCell);
+			}
+		}
+		for(var y1 = y-maxrange; y1 <= y+maxrange; y1++){
+			var dist =((y-y1)<0?-(y-y1):y-y1);
+			if(dist < minrange) continue;
+			var fromCell = getCellFromXY(x, y1);
+			if(fromCell!=null 
+			&& _OBSTACLES[fromCell]==null 
+			&& _LEEKS_CELL[fromCell]==null
+			&& (!needlos || lineOfSight(fromCell, cell, leekToIgnore))){
+				push(result, fromCell);
+			}
+		}
+	}else{
+		for(var x1 = x-maxrange; x1 <= x+maxrange; x1++){
+			for(var y1 = y-maxrange; y1 <= y+maxrange; y1++){
+				var dist =((x-x1)<0?-(x-x1):x-x1)+(y-y1<0?-(y-y1):y-y1);//trick pour abs(x-x1)+abs(y-y1)..
+				if(dist > maxrange || dist < minrange) continue;
+				var fromCell = getCellFromXY(x1, y1);
+				if(fromCell!=null 
+				&& _OBSTACLES[fromCell]==null 
+				&& _LEEKS_CELL[fromCell]==null
+				&& (!needlos || lineOfSight(fromCell, cell, leekToIgnore))){
+					push(result, fromCell);
+				}
+			}
+		}
+	}
+	return @result;
+}
+
+function bulb_getCellsToUseChipOnCell(@weapChip, @cell){
+	var leekToIgnore = [getLeek()],result = [],
+	x = getCellX(cell), y = getCellY(cell),
+	minrange = _ITEM_MINRANGE[weapChip],
+	maxrange = _ITEM_MAXRANGE[weapChip],
+	inline = _ITEM_INLINE[weapChip],
+	needlos = _ITEM_NEEDLOS[weapChip];
+	for(var x1 = x-maxrange; x1 <= x+maxrange; x1++){
+		for(var y1 = y-maxrange; y1 <= y+maxrange; y1++){
+			var fromCell = getCellFromXY(x1, y1);
+			if(fromCell!=null 
+			&& _OBSTACLES[fromCell]==null 
+			&& !isLeek(fromCell)){
+				var dist = getCellDistance(fromCell,cell);
+				if(dist >= minrange && dist <= maxrange
+				&& (!inline || isOnSameLine(fromCell,cell))
+				&& (!needlos || lineOfSight(fromCell, cell, leekToIgnore))){
+					push(result, fromCell);
+				}
+			}
+		}
+	}
+	return @result;
+}
+
+// fonction avec cache qui considère que los est tjr pareil.
+function _getTargetableCells(@weapChip, @cell){
+	if(_CACHE_ITEM_FROMCELL_TARGETCELLS[weapChip][cell]==null){
+		var result = [], x = getCellX(cell), y = getCellY(cell),
+		minrange = _ITEM_MINRANGE[weapChip],
+		maxrange = _ITEM_MAXRANGE[weapChip],
+		inline = _ITEM_INLINE[weapChip],
+		needlos = _ITEM_NEEDLOS[weapChip];
+		if(inline){
+			for(var x1 = x-maxrange; x1 <= x+maxrange; x1++){
+				var dist =((x-x1)<0?-(x-x1):x-x1);
+				if(dist < minrange) continue;
+				var fromCell = getCellFromXY(x1, y);
+				if(fromCell!=null 
+				&& _OBSTACLES[fromCell]==null 
+				&& _LEEKS_CELL[fromCell]==null
+				&& (!needlos || lineOfSight(fromCell, cell, []))){
+					push(result, fromCell);
+				}
+			}
+			for(var y1 = y-maxrange; y1 <= y+maxrange; y1++){
+				var dist =((y-y1)<0?-(y-y1):y-y1);
+				if(dist < minrange) continue;
+				var fromCell = getCellFromXY(x, y1);
+				if(fromCell!=null 
+				&& _OBSTACLES[fromCell]==null 
+				&& _LEEKS_CELL[fromCell]==null
+				&& (!needlos || lineOfSight(fromCell, cell, []))){
+					push(result, fromCell);
+				}
+			}
+		}else{
+			for(var x1 = x-maxrange; x1 <= x+maxrange; x1++){
+				for(var y1 = y-maxrange; y1 <= y+maxrange; y1++){
+					var dist =((x-x1)<0?-(x-x1):x-x1)+(y-y1<0?-(y-y1):y-y1);//trick pour abs(x-x1)+abs(y-y1)..
+					if(dist > maxrange || dist < minrange) continue;
+					var fromCell = getCellFromXY(x1, y1);
+					if(fromCell!=null 
+					&& _OBSTACLES[fromCell]==null 
+					&& _LEEKS_CELL[fromCell]==null
+					&& (!needlos || lineOfSight(fromCell, cell, []))){
+						push(result, fromCell);
+					}
+				}
+			}
+		}
+		_CACHE_ITEM_FROMCELL_TARGETCELLS[weapChip][cell]= @result;
+	}
+	return @_CACHE_ITEM_FROMCELL_TARGETCELLS[weapChip][cell];
+}
+
+function _getNearCellToUseItemOnCell(@item, @cell, @mapPathDist){
+	var leekToIgnore =@[getLeek()],result, mpDist = 100,
+	x = getCellX(cell), y = getCellY(cell), isWeap = isWeapon(item),
+	minrange = isWeap ? getWeaponMinRange(item) : getChipMinRange(item),
+	maxrange = isWeap ? getWeaponMaxRange(item) : getChipMaxRange(item),
+	inline = isWeap ? isInlineWeapon(item) : isInlineChip(item),
+	needlos = isWeap ? weaponNeedLos(item) : chipNeedLos(item);
+	for(var x1 = x-maxrange; x1 <= x+maxrange; x1++){
+		for(var y1 = y-maxrange; y1 <= y+maxrange; y1++){
+			var fromCell = getCellFromXY(x1, y1);
+			if(fromCell!=null 
+			&& _OBSTACLES[fromCell]==null 
+			&& (_LEEKS_CELL[fromCell]==null || (fromCell==cell && minrange==0))){
+				var dist = getCellDistance(fromCell,cell);
+				if(dist >= minrange && dist <= maxrange
+				&& (!needlos || lineOfSight(fromCell, cell, leekToIgnore))
+				&& (!inline || isOnSameLine(fromCell,cell))){
+					if(mapPathDist[fromCell]!=null && mapPathDist[fromCell]<mpDist){
+						mpDist=mapPathDist[fromCell];
+						result=fromCell;
+					}
+				}
+			}
+		}
+	}
+	return @result;
+}
+
+// doit y avoir un bug, semble return null ou 0
+function simple_getNearCellToUseItemOnCell(@item, @cell){
+	var originCell = getCell();
+	var leekToIgnore =@[getLeek()],result, mpDist = 100,
+	x = getCellX(cell), y = getCellY(cell), isWeap = isWeapon(item),
+	minrange = isWeap ? getWeaponMinRange(item) : getChipMinRange(item),
+	maxrange = isWeap ? getWeaponMaxRange(item) : getChipMaxRange(item),
+	inline = isWeap ? isInlineWeapon(item) : isInlineChip(item),
+	needlos = isWeap ? weaponNeedLos(item) : chipNeedLos(item);
+	for(var x1 = x-maxrange; x1 <= x+maxrange; x1++){
+		for(var y1 = y-maxrange; y1 <= y+maxrange; y1++){
+			var fromCell = getCellFromXY(x1, y1);
+			if(fromCell!=null 
+			&& _OBSTACLES[fromCell]==null 
+			&& (_LEEKS_CELL[fromCell]==null || (fromCell==cell && minrange==0))){
+				var dist = getCellDistance(fromCell,cell);
+				if(dist >= minrange && dist <= maxrange
+				&& (!needlos || lineOfSight(fromCell, cell, leekToIgnore))
+				&& (!inline || isOnSameLine(fromCell,cell))){
+					var distToMe = getCellDistance(fromCell, originCell);
+					if(distToMe<mpDist){
+						mpDist=distToMe;
+						result=fromCell;
+					}
+				}
+			}
+		}
+	}
+	return @result;
+}

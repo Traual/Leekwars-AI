@@ -1,0 +1,1006 @@
+/**
+ * Class to add to ActualStats on the consequences of an action (Only SUMMON Type) : Item To X (For SummonCell)
+ **/
+
+include("../includes")
+
+class BulbStats {
+	//Create a new class very close to stats (constructor asks : id, SummonerLevelTimes, Chip, To, Summoner, SummonerStats) and on this new class, build the bulb stats (with all same names then stats, .LIFE ETC) so both are used the same way and can be mixed in AllStats
+
+	//////////////////////////////////////////////////////////////////////////////////////////Fight Stats
+//////////////////////////////////////////////////////////////////////////////////////
+	ABSOLUTE_SHIELD
+	RELATIVE_SHIELD
+	DAMAGE_RETURN
+	POWER
+	SUMMONER
+	SUMMONS
+	SUMMON
+	ID
+	WEAPON
+	INVENTORY
+	COOLDOWNS
+	ALLIES
+	ENEMIES
+	EVERYONE
+	ALLY
+	ENEMY
+	IS_STRENGTH_ALLIES
+	IS_STRENGTH_ENEMIES
+	SPECIAL_WEAPON
+	EFFECTS
+	EFFECTS_ITEM_MAP
+	POISON
+	POISON_OVER_TIME
+	JUST_POISON
+	JUST_POISON_OVER_TIME
+	TURN_ORDER
+	//////////////////////////////////////////////////////////////////////////////////////////Leek Stats
+//////////////////////////////////////////////////////////////////////////////////////
+	LIFE
+	TOTAL_LIFE
+	STRENGTH
+	TO_SAVE_STRENGTH //Oui on doit save POS et NEG pour Manumission (retire les neg) et liberations (retire 60% de POS et NEG)
+	TO_SAVE_SHACKLE_STRENGTH
+	WISDOM
+	TO_SAVE_WISDOM
+	TO_SAVE_SHACKLE_WISDOM
+	AGILITY
+	TO_SAVE_AGILITY
+	TO_SAVE_SHACKLE_AGILITY
+	RESISTANCE
+	TO_SAVE_RESISTANCE
+	//TO_SAVE_SHACKLE_RESISTANCE //Does not exist (yet)
+	SCIENCE
+	TO_SAVE_SCIENCE
+	//TO_SAVE_SHACKLE_SCIENCE //Does not exist (yet)
+	MAGIC
+	TO_SAVE_MAGIC
+	TO_SAVE_SHACKLE_MAGIC
+	FREQUENCY //No need to save cuz not usefull for Liberation/Manumission 
+	MP
+	TO_SAVE_MP
+	//TO_SAVE_SHACKLE_MP
+	TOTAL_MP
+	TO_SAVE_TOTAL_MP
+	TO_SAVE_SHACKLE_TOTAL_MP
+	TP
+	TO_SAVE_TP
+	//TO_SAVE_SHACKLE_TP
+	TOTAL_TP
+	TO_SAVE_TOTAL_TP
+	TO_SAVE_SHACKLE_TOTAL_TP
+	NAME
+	//AI_NAME
+	//AI_ID
+	//FARMER_NAME	//////////////////////////////////////////////////////////////////////////////////////////Map Stats	//////////////////////////////////////////////////////////////////////////////////////
+
+	CELL
+	STATIC
+	//////////////////////////////////////////////////////////////////////////////////////////INIT
+	//////////////////////////////////////////////////////////////////////////////////////
+	constructor(id, SummonerLevelTimes, Chip, To, Summoner, SummonerStats) {//TO Check Map Out Cuz Ram
+		MAX_ID = id
+		var MapChipsToFunctions = [
+			CHIP_PUNY_BULB: function(id, SummonerLevelTimes, To, Summoner, SummonerStats) {
+				/**
+				 * Fight Stats
+				 **/
+				this.ABSOLUTE_SHIELD = 0
+				this.RELATIVE_SHIELD = 0
+				this.DAMAGE_RETURN = 0 //Its always 0 at the start, so like this i will save the exact total buff of each so not saving it
+				this.POWER = 0
+				this.SUMMONER = Summoner
+				this.SUMMONS = []
+				this.SUMMON = true
+				this.ID = id
+				//this.WEAPON = Not Yet Weapon Bulbs
+				this.INVENTORY = [
+					CHIP_PEBBLE,
+					CHIP_HELMET,
+					CHIP_PROTEIN,
+					CHIP_BANDAGE
+				]
+				this.COOLDOWNS = [: ]
+				for (var i in this.INVENTORY) {
+					this.COOLDOWNS[i] = 0
+					//if (Items.isSpecialWeap(i)) this.SPECIAL_WEAPON = i (not yet ?)
+				}
+				this.ALLY = SummonerStats.ALLY
+				this.ENEMY = SummonerStats.ENEMY
+				this.EFFECTS = []
+				this.EFFECTS_ITEM_MAP = [: ]
+				this.POISON = 0
+				this.POISON_OVER_TIME = 0
+				this.JUST_POISON = 0
+				this.JUST_POISON_OVER_TIME = 0
+				this.TURN_ORDER = getEntityTurnOrder(Summoner) + 1
+				/**
+				 * Leek Stats
+				 **/
+				//Maybe Floor all these values to make it clean and precise ?
+				this.LIFE = 50 + 250 * SummonerLevelTimes
+				this.TOTAL_LIFE = this.LIFE
+				this.STRENGTH = 100 * SummonerLevelTimes
+				this.WISDOM = 100 * SummonerLevelTimes
+				this.AGILITY = 100 * SummonerLevelTimes
+				this.RESISTANCE = 100 * SummonerLevelTimes
+				this.SCIENCE = 100 * SummonerLevelTimes
+				this.MAGIC = 0
+				this.FREQUENCY = 0
+				this.MP = 3 + 2 * SummonerLevelTimes
+				this.TOTAL_MP = this.MP
+				this.TP = 4 + 3 * SummonerLevelTimes
+				this.TOTAL_TP = this.TP
+				this.NAME = "puny_bulb"
+				//this.AI_NAME = SummonerStats.AI_NAME
+				//this.AI_ID = SummonerStats.AI_ID
+				//this.FARMER_NAME = SummonerStats.FARMER_NAME
+				/**
+				 * Original Stats for Libe And Shackle summ for Manumission (No need to edit these with the map after cuz he will spawn without any effects)
+				 **/
+				this.TO_SAVE_STRENGTH = this.STRENGTH //initial strength of the leek
+				this.TO_SAVE_SHACKLE_STRENGTH = 0 //Total Shackle Effects
+				this.TO_SAVE_WISDOM = this.WISDOM
+				this.TO_SAVE_SHACKLE_WISDOM = 0
+				this.TO_SAVE_AGILITY = this.AGILITY
+				this.TO_SAVE_SHACKLE_AGILITY = 0
+				this.TO_SAVE_RESISTANCE = this.RESISTANCE
+				//this.TO_SAVE_SHACKLE_RESISTANCE = 0
+				this.TO_SAVE_SCIENCE = this.SCIENCE
+				//this.TO_SAVE_SHACKLE_SCIENCE = 0
+				this.TO_SAVE_MAGIC = this.MAGIC
+				this.TO_SAVE_SHACKLE_MAGIC = 0
+				this.TO_SAVE_MP = this.MP
+				//this.TO_SAVE_SHACKLE_MP = 0
+				this.TO_SAVE_TOTAL_MP = this.TOTAL_MP
+				this.TO_SAVE_SHACKLE_TOTAL_MP = 0
+				this.TO_SAVE_TP = this.TP
+				//this.TO_SAVE_SHACKLE_TP = 0
+				this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
+				this.TO_SAVE_SHACKLE_TOTAL_TP = 0
+				/**
+				 * Map Stats
+				 **/
+				this.CELL = To
+				this.STATIC = false
+			},
+			CHIP_ROCKY_BULB: function(id, SummonerLevelTimes, To, Summoner, SummonerStats) {
+				/**
+				 * Fight Stats
+				 **/
+				this.ABSOLUTE_SHIELD = 0
+				this.RELATIVE_SHIELD = 0
+				this.DAMAGE_RETURN = 0 //Its always 0 at the start, so like this i will save the exact total buff of each so not saving it
+				this.POWER = 0
+				this.SUMMONER = Summoner
+				this.SUMMONS = []
+				this.SUMMON = true
+				this.ID = id
+				//this.WEAPON = Not Yet Weapon Bulbs
+				this.INVENTORY = [
+					CHIP_PEBBLE,
+					CHIP_HELMET,
+					CHIP_ROCK,
+					CHIP_ROCKFALL
+				]
+				this.COOLDOWNS = [: ]
+				for (var i in this.INVENTORY) {
+					this.COOLDOWNS[i] = 0
+					//if (Items.isSpecialWeap(i)) this.SPECIAL_WEAPON = i (not yet ?)
+				}
+				this.ALLY = SummonerStats.ALLY
+				this.ENEMY = SummonerStats.ENEMY
+				this.EFFECTS = []
+				this.EFFECTS_ITEM_MAP = [: ]
+				this.POISON = 0
+				this.POISON_OVER_TIME = 0
+				this.JUST_POISON = 0
+				this.JUST_POISON_OVER_TIME = 0
+				this.TURN_ORDER = getEntityTurnOrder(Summoner) + 1
+				/**
+				 * Leek Stats
+				 **/
+				//Maybe Floor all these values to make it clean and precise ?
+				this.LIFE = 400 + 200 * SummonerLevelTimes
+				this.TOTAL_LIFE = this.LIFE
+				this.STRENGTH = 200 * SummonerLevelTimes
+				this.WISDOM = 0
+				this.AGILITY = 100 * SummonerLevelTimes
+				this.RESISTANCE = 200 * SummonerLevelTimes
+				this.SCIENCE = 0
+				this.MAGIC = 0
+				this.FREQUENCY = 0
+				this.MP = 2 + 1 * SummonerLevelTimes
+				this.TOTAL_MP = this.MP
+				this.TP = 4 + 4 * SummonerLevelTimes
+				this.TOTAL_TP = this.TP
+				this.NAME = "rocky_bulb"
+				//this.AI_NAME = SummonerStats.AI_NAME
+				//this.AI_ID = SummonerStats.AI_ID
+				//this.FARMER_NAME = SummonerStats.FARMER_NAME
+				/**
+				 * Original Stats for Libe And Shackle summ for Manumission (No need to edit these with the map after cuz he will spawn without any effects)
+				 **/
+				this.TO_SAVE_STRENGTH = this.STRENGTH //initial strength of the leek
+				this.TO_SAVE_SHACKLE_STRENGTH = 0 //Total Shackle Effects
+				this.TO_SAVE_WISDOM = this.WISDOM
+				this.TO_SAVE_SHACKLE_WISDOM = 0
+				this.TO_SAVE_AGILITY = this.AGILITY
+				this.TO_SAVE_SHACKLE_AGILITY = 0
+				this.TO_SAVE_RESISTANCE = this.RESISTANCE
+				//this.TO_SAVE_SHACKLE_RESISTANCE = 0
+				this.TO_SAVE_SCIENCE = this.SCIENCE
+				//this.TO_SAVE_SHACKLE_SCIENCE = 0
+				this.TO_SAVE_MAGIC = this.MAGIC
+				this.TO_SAVE_SHACKLE_MAGIC = 0
+				this.TO_SAVE_MP = this.MP
+				//this.TO_SAVE_SHACKLE_MP = 0
+				this.TO_SAVE_TOTAL_MP = this.TOTAL_MP
+				this.TO_SAVE_SHACKLE_TOTAL_MP = 0
+				this.TO_SAVE_TP = this.TP
+				//this.TO_SAVE_SHACKLE_TP = 0
+				this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
+				this.TO_SAVE_SHACKLE_TOTAL_TP = 0
+				/**
+				 * Map Stats
+				 **/
+				this.CELL = To
+				this.STATIC = false
+			},
+			CHIP_ICED_BULB: function(id, SummonerLevelTimes, To, Summoner, SummonerStats) {
+				/**
+				 * Fight Stats
+				 **/
+				this.ABSOLUTE_SHIELD = 0
+				this.RELATIVE_SHIELD = 0
+				this.DAMAGE_RETURN = 0 //Its always 0 at the start, so like this i will save the exact total buff of each so not saving it
+				this.POWER = 0
+				this.SUMMONER = Summoner
+				this.SUMMONS = []
+				this.SUMMON = true
+				this.ID = id
+				//this.WEAPON = Not Yet Weapon Bulbs
+				this.INVENTORY = [
+					CHIP_ICE,
+					CHIP_STALACTITE,
+					CHIP_ICEBERG,
+					CHIP_WARM_UP
+				]
+				this.COOLDOWNS = [: ]
+				for (var i in this.INVENTORY) {
+					this.COOLDOWNS[i] = 0
+					//if (Items.isSpecialWeap(i)) this.SPECIAL_WEAPON = i (not yet ?)
+				}
+				this.ALLY = SummonerStats.ALLY
+				this.ENEMY = SummonerStats.ENEMY
+				this.EFFECTS = []
+				this.EFFECTS_ITEM_MAP = [: ]
+				this.POISON = 0
+				this.POISON_OVER_TIME = 0
+				this.JUST_POISON = 0
+				this.JUST_POISON_OVER_TIME = 0
+				this.TURN_ORDER = getEntityTurnOrder(Summoner) + 1
+				/**
+				 * Leek Stats
+				 **/
+				//Maybe Floor all these values to make it clean and precise ?
+				this.LIFE = 300 + 200 * SummonerLevelTimes
+				this.TOTAL_LIFE = this.LIFE
+				this.STRENGTH = 300 * SummonerLevelTimes
+				this.WISDOM = 0
+				this.AGILITY = 100 * SummonerLevelTimes
+				this.RESISTANCE = 0
+				this.SCIENCE = 200 * SummonerLevelTimes
+				this.MAGIC = 0
+				this.FREQUENCY = 0
+				this.MP = 3 + 1 * SummonerLevelTimes
+				this.TOTAL_MP = this.MP
+				this.TP = 5 + 3 * SummonerLevelTimes
+				this.TOTAL_TP = this.TP
+				this.NAME = "iced_bulb"
+				//this.AI_NAME = SummonerStats.AI_NAME
+				//this.AI_ID = SummonerStats.AI_ID
+				//this.FARMER_NAME = SummonerStats.FARMER_NAME
+				/**
+				 * Original Stats for Libe And Shackle summ for Manumission (No need to edit these with the map after cuz he will spawn without any effects)
+				 **/
+				this.TO_SAVE_STRENGTH = this.STRENGTH //initial strength of the leek
+				this.TO_SAVE_SHACKLE_STRENGTH = 0 //Total Shackle Effects
+				this.TO_SAVE_WISDOM = this.WISDOM
+				this.TO_SAVE_SHACKLE_WISDOM = 0
+				this.TO_SAVE_AGILITY = this.AGILITY
+				this.TO_SAVE_SHACKLE_AGILITY = 0
+				this.TO_SAVE_RESISTANCE = this.RESISTANCE
+				//this.TO_SAVE_SHACKLE_RESISTANCE = 0
+				this.TO_SAVE_SCIENCE = this.SCIENCE
+				//this.TO_SAVE_SHACKLE_SCIENCE = 0
+				this.TO_SAVE_MAGIC = this.MAGIC
+				this.TO_SAVE_SHACKLE_MAGIC = 0
+				this.TO_SAVE_MP = this.MP
+				//this.TO_SAVE_SHACKLE_MP = 0
+				this.TO_SAVE_TOTAL_MP = this.TOTAL_MP
+				this.TO_SAVE_SHACKLE_TOTAL_MP = 0
+				this.TO_SAVE_TP = this.TP
+				//this.TO_SAVE_SHACKLE_TP = 0
+				this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
+				this.TO_SAVE_SHACKLE_TOTAL_TP = 0
+				/**
+				 * Map Stats
+				 **/
+				this.CELL = To
+				this.STATIC = false
+			},
+			CHIP_HEALER_BULB: function(id, SummonerLevelTimes, To, Summoner, SummonerStats) {
+				/**
+				 * Fight Stats
+				 **/
+				this.ABSOLUTE_SHIELD = 0
+				this.RELATIVE_SHIELD = 0
+				this.DAMAGE_RETURN = 0 //Its always 0 at the start, so like this i will save the exact total buff of each so not saving it
+				this.POWER = 0
+				this.SUMMONER = Summoner
+				this.SUMMONS = []
+				this.SUMMON = true
+				this.ID = id
+				//this.WEAPON = Not Yet Weapon Bulbs
+				this.INVENTORY = [
+					CHIP_BANDAGE,
+					CHIP_DRIP,
+					CHIP_CURE,
+					CHIP_VACCINE
+				]
+				this.COOLDOWNS = [: ]
+				for (var i in this.INVENTORY) {
+					this.COOLDOWNS[i] = 0
+					//if (Items.isSpecialWeap(i)) this.SPECIAL_WEAPON = i (not yet ?)
+				}
+				this.ALLY = SummonerStats.ALLY
+				this.ENEMY = SummonerStats.ENEMY
+				this.EFFECTS = []
+				this.EFFECTS_ITEM_MAP = [: ]
+				this.POISON = 0
+				this.POISON_OVER_TIME = 0
+				this.JUST_POISON = 0
+				this.JUST_POISON_OVER_TIME = 0
+				this.TURN_ORDER = getEntityTurnOrder(Summoner) + 1
+				/**
+				 * Leek Stats
+				 **/
+				//Maybe Floor all these values to make it clean and precise ?
+				this.LIFE = 300 + 100 * SummonerLevelTimes
+				this.TOTAL_LIFE = this.LIFE
+				this.STRENGTH = 0
+				this.WISDOM = 300 * SummonerLevelTimes
+				this.AGILITY = 100 * SummonerLevelTimes
+				this.RESISTANCE = 0
+				this.SCIENCE = 0
+				this.MAGIC = 0
+				this.FREQUENCY = 0
+				this.MP = 3 + 3 * SummonerLevelTimes
+				this.TOTAL_MP = this.MP
+				this.TP = 4 + 4 * SummonerLevelTimes
+				this.TOTAL_TP = this.TP
+				this.NAME = "healer_bulb"
+				//this.AI_NAME = SummonerStats.AI_NAME
+				//this.AI_ID = SummonerStats.AI_ID
+				//this.FARMER_NAME = SummonerStats.FARMER_NAME
+				/**
+				 * Original Stats for Libe And Shackle summ for Manumission (No need to edit these with the map after cuz he will spawn without any effects)
+				 **/
+				this.TO_SAVE_STRENGTH = this.STRENGTH //initial strength of the leek
+				this.TO_SAVE_SHACKLE_STRENGTH = 0 //Total Shackle Effects
+				this.TO_SAVE_WISDOM = this.WISDOM
+				this.TO_SAVE_SHACKLE_WISDOM = 0
+				this.TO_SAVE_AGILITY = this.AGILITY
+				this.TO_SAVE_SHACKLE_AGILITY = 0
+				this.TO_SAVE_RESISTANCE = this.RESISTANCE
+				//this.TO_SAVE_SHACKLE_RESISTANCE = 0
+				this.TO_SAVE_SCIENCE = this.SCIENCE
+				//this.TO_SAVE_SHACKLE_SCIENCE = 0
+				this.TO_SAVE_MAGIC = this.MAGIC
+				this.TO_SAVE_SHACKLE_MAGIC = 0
+				this.TO_SAVE_MP = this.MP
+				//this.TO_SAVE_SHACKLE_MP = 0
+				this.TO_SAVE_TOTAL_MP = this.TOTAL_MP
+				this.TO_SAVE_SHACKLE_TOTAL_MP = 0
+				this.TO_SAVE_TP = this.TP
+				//this.TO_SAVE_SHACKLE_TP = 0
+				this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
+				this.TO_SAVE_SHACKLE_TOTAL_TP = 0
+				/**
+				 * Map Stats
+				 **/
+				this.CELL = To
+				this.STATIC = false
+			},
+			CHIP_FIRE_BULB: function(id, SummonerLevelTimes, To, Summoner, SummonerStats) {
+				/**
+				 * Fight Stats
+				 **/
+				this.ABSOLUTE_SHIELD = 0
+				this.RELATIVE_SHIELD = 0
+				this.DAMAGE_RETURN = 0 //Its always 0 at the start, so like this i will save the exact total buff of each so not saving it
+				this.POWER = 0
+				this.SUMMONER = Summoner
+				this.SUMMONS = []
+				this.SUMMON = true
+				this.ID = id
+				//this.WEAPON = Not Yet Weapon Bulbs
+				this.INVENTORY = [
+					CHIP_SPARK,
+					CHIP_FLAME,
+					CHIP_METEORITE,
+					CHIP_DEVIL_STRIKE
+				]
+				this.COOLDOWNS = [: ]
+				for (var i in this.INVENTORY) {
+					this.COOLDOWNS[i] = 0
+					//if (Items.isSpecialWeap(i)) this.SPECIAL_WEAPON = i (not yet ?)
+				}
+				this.ALLY = SummonerStats.ALLY
+				this.ENEMY = SummonerStats.ENEMY
+				this.EFFECTS = []
+				this.EFFECTS_ITEM_MAP = [: ]
+				this.POISON = 0
+				this.POISON_OVER_TIME = 0
+				this.JUST_POISON = 0
+				this.JUST_POISON_OVER_TIME = 0
+				this.TURN_ORDER = getEntityTurnOrder(Summoner) + 1
+				/**
+				 * Leek Stats
+				 **/
+				//Maybe Floor all these values to make it clean and precise ?
+				this.LIFE = 300 + 200 * SummonerLevelTimes
+				this.TOTAL_LIFE = this.LIFE
+				this.STRENGTH = 300 * SummonerLevelTimes
+				this.WISDOM = 200 * SummonerLevelTimes
+				this.AGILITY = 100 * SummonerLevelTimes
+				this.RESISTANCE = 0
+				this.SCIENCE = 0
+				this.MAGIC = 0
+				this.FREQUENCY = 0
+				this.MP = 3 + 2 * SummonerLevelTimes
+				this.TOTAL_MP = this.MP
+				this.TP = 4 + 5 * SummonerLevelTimes
+				this.TOTAL_TP = this.TP
+				this.NAME = "fire_bulb"
+				//this.AI_NAME = SummonerStats.AI_NAME
+				//this.AI_ID = SummonerStats.AI_ID
+				//this.FARMER_NAME = SummonerStats.FARMER_NAME
+				/**
+				 * Original Stats for Libe And Shackle summ for Manumission (No need to edit these with the map after cuz he will spawn without any effects)
+				 **/
+				this.TO_SAVE_STRENGTH = this.STRENGTH //initial strength of the leek
+				this.TO_SAVE_SHACKLE_STRENGTH = 0 //Total Shackle Effects
+				this.TO_SAVE_WISDOM = this.WISDOM
+				this.TO_SAVE_SHACKLE_WISDOM = 0
+				this.TO_SAVE_AGILITY = this.AGILITY
+				this.TO_SAVE_SHACKLE_AGILITY = 0
+				this.TO_SAVE_RESISTANCE = this.RESISTANCE
+				//this.TO_SAVE_SHACKLE_RESISTANCE = 0
+				this.TO_SAVE_SCIENCE = this.SCIENCE
+				//this.TO_SAVE_SHACKLE_SCIENCE = 0
+				this.TO_SAVE_MAGIC = this.MAGIC
+				this.TO_SAVE_SHACKLE_MAGIC = 0
+				this.TO_SAVE_MP = this.MP
+				//this.TO_SAVE_SHACKLE_MP = 0
+				this.TO_SAVE_TOTAL_MP = this.TOTAL_MP
+				this.TO_SAVE_SHACKLE_TOTAL_MP = 0
+				this.TO_SAVE_TP = this.TP
+				//this.TO_SAVE_SHACKLE_TP = 0
+				this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
+				this.TO_SAVE_SHACKLE_TOTAL_TP = 0
+				/**
+				 * Map Stats
+				 **/
+				this.CELL = To
+				this.STATIC = false
+			},
+			CHIP_WIZARD_BULB: function(id, SummonerLevelTimes, To, Summoner, SummonerStats) {
+				/**
+				 * Fight Stats
+				 **/
+				this.ABSOLUTE_SHIELD = 0
+				this.RELATIVE_SHIELD = 0
+				this.DAMAGE_RETURN = 0 //Its always 0 at the start, so like this i will save the exact total buff of each so not saving it
+				this.POWER = 0
+				this.SUMMONER = Summoner
+				this.SUMMONS = []
+				this.SUMMON = true
+				this.ID = id
+				//this.WEAPON = Not Yet Weapon Bulbs
+				this.INVENTORY = [
+					CHIP_VENOM,
+					CHIP_TOXIN,
+					CHIP_TRANQUILIZER,
+					CHIP_SLOW_DOWN
+				]
+				this.COOLDOWNS = [: ]
+				for (var i in this.INVENTORY) {
+					this.COOLDOWNS[i] = 0
+					//if (Items.isSpecialWeap(i)) this.SPECIAL_WEAPON = i (not yet ?)
+				}
+				this.ALLY = SummonerStats.ALLY
+				this.ENEMY = SummonerStats.ENEMY
+				this.EFFECTS = []
+				this.EFFECTS_ITEM_MAP = [: ]
+				this.POISON = 0
+				this.POISON_OVER_TIME = 0
+				this.JUST_POISON = 0
+				this.JUST_POISON_OVER_TIME = 0
+				this.TURN_ORDER = getEntityTurnOrder(Summoner) + 1
+				/**
+				 * Leek Stats
+				 **/
+				//Maybe Floor all these values to make it clean and precise ?
+				this.LIFE = 300 + 300 * SummonerLevelTimes
+				this.TOTAL_LIFE = this.LIFE
+				this.STRENGTH = 0
+				this.WISDOM = 0
+				this.AGILITY = 100 * SummonerLevelTimes
+				this.RESISTANCE = 0
+				this.SCIENCE = 0
+				this.MAGIC = 240 * SummonerLevelTimes
+				this.FREQUENCY = 0
+				this.MP = 4 + 3 * SummonerLevelTimes
+				this.TOTAL_MP = this.MP
+				this.TP = 5 + 3 * SummonerLevelTimes
+				this.TOTAL_TP = this.TP
+				this.NAME = "wizard_bulb"
+				//this.AI_NAME = SummonerStats.AI_NAME
+				//this.AI_ID = SummonerStats.AI_ID
+				//this.FARMER_NAME = SummonerStats.FARMER_NAME
+				/**
+				 * Original Stats for Libe And Shackle summ for Manumission (No need to edit these with the map after cuz he will spawn without any effects)
+				 **/
+				this.TO_SAVE_STRENGTH = this.STRENGTH //initial strength of the leek
+				this.TO_SAVE_SHACKLE_STRENGTH = 0 //Total Shackle Effects
+				this.TO_SAVE_WISDOM = this.WISDOM
+				this.TO_SAVE_SHACKLE_WISDOM = 0
+				this.TO_SAVE_AGILITY = this.AGILITY
+				this.TO_SAVE_SHACKLE_AGILITY = 0
+				this.TO_SAVE_RESISTANCE = this.RESISTANCE
+				//this.TO_SAVE_SHACKLE_RESISTANCE = 0
+				this.TO_SAVE_SCIENCE = this.SCIENCE
+				//this.TO_SAVE_SHACKLE_SCIENCE = 0
+				this.TO_SAVE_MAGIC = this.MAGIC
+				this.TO_SAVE_SHACKLE_MAGIC = 0
+				this.TO_SAVE_MP = this.MP
+				//this.TO_SAVE_SHACKLE_MP = 0
+				this.TO_SAVE_TOTAL_MP = this.TOTAL_MP
+				this.TO_SAVE_SHACKLE_TOTAL_MP = 0
+				this.TO_SAVE_TP = this.TP
+				//this.TO_SAVE_SHACKLE_TP = 0
+				this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
+				this.TO_SAVE_SHACKLE_TOTAL_TP = 0
+				/**
+				 * Map Stats
+				 **/
+				this.CELL = To
+				this.STATIC = false
+			},
+			CHIP_METALLIC_BULB: function(id, SummonerLevelTimes, To, Summoner, SummonerStats) {
+				/**
+				 * Fight Stats
+				 **/
+				this.ABSOLUTE_SHIELD = 0
+				this.RELATIVE_SHIELD = 0
+				this.DAMAGE_RETURN = 0 //Its always 0 at the start, so like this i will save the exact total buff of each so not saving it
+				this.POWER = 0
+				this.SUMMONER = Summoner
+				this.SUMMONS = []
+				this.SUMMON = true
+				this.ID = id
+				//this.WEAPON = Not Yet Weapon Bulbs
+				this.INVENTORY = [
+					CHIP_SHIELD,
+					CHIP_ARMOR,
+					CHIP_WALL,
+					CHIP_WINGED_BOOTS
+				]
+				this.COOLDOWNS = [: ]
+				for (var i in this.INVENTORY) {
+					this.COOLDOWNS[i] = 0
+					//if (Items.isSpecialWeap(i)) this.SPECIAL_WEAPON = i (not yet ?)
+				}
+				this.ALLY = SummonerStats.ALLY
+				this.ENEMY = SummonerStats.ENEMY
+				this.EFFECTS = []
+				this.EFFECTS_ITEM_MAP = [: ]
+				this.POISON = 0
+				this.POISON_OVER_TIME = 0
+				this.JUST_POISON = 0
+				this.JUST_POISON_OVER_TIME = 0
+				this.TURN_ORDER = getEntityTurnOrder(Summoner) + 1
+				/**
+				 * Leek Stats
+				 **/
+				//Maybe Floor all these values to make it clean and precise ?
+				this.LIFE = 800 + 300 * SummonerLevelTimes
+				this.TOTAL_LIFE = this.LIFE
+				this.STRENGTH = 0
+				this.WISDOM = 0
+				this.AGILITY = 100 * SummonerLevelTimes
+				this.RESISTANCE = 300 * SummonerLevelTimes
+				this.SCIENCE = 200 * SummonerLevelTimes
+				this.MAGIC = 0
+				this.FREQUENCY = 0
+				this.MP = 1 + 1 * SummonerLevelTimes
+				this.TOTAL_MP = this.MP
+				this.TP = 5 + 4 * SummonerLevelTimes
+				this.TOTAL_TP = this.TP
+				this.NAME = "metallic_bulb"
+				//this.AI_NAME = SummonerStats.AI_NAME
+				//this.AI_ID = SummonerStats.AI_ID
+				//this.FARMER_NAME = SummonerStats.FARMER_NAME
+				/**
+				 * Original Stats for Libe And Shackle summ for Manumission (No need to edit these with the map after cuz he will spawn without any effects)
+				 **/
+				this.TO_SAVE_STRENGTH = this.STRENGTH //initial strength of the leek
+				this.TO_SAVE_SHACKLE_STRENGTH = 0 //Total Shackle Effects
+				this.TO_SAVE_WISDOM = this.WISDOM
+				this.TO_SAVE_SHACKLE_WISDOM = 0
+				this.TO_SAVE_AGILITY = this.AGILITY
+				this.TO_SAVE_SHACKLE_AGILITY = 0
+				this.TO_SAVE_RESISTANCE = this.RESISTANCE
+				//this.TO_SAVE_SHACKLE_RESISTANCE = 0
+				this.TO_SAVE_SCIENCE = this.SCIENCE
+				//this.TO_SAVE_SHACKLE_SCIENCE = 0
+				this.TO_SAVE_MAGIC = this.MAGIC
+				this.TO_SAVE_SHACKLE_MAGIC = 0
+				this.TO_SAVE_MP = this.MP
+				//this.TO_SAVE_SHACKLE_MP = 0
+				this.TO_SAVE_TOTAL_MP = this.TOTAL_MP
+				this.TO_SAVE_SHACKLE_TOTAL_MP = 0
+				this.TO_SAVE_TP = this.TP
+				//this.TO_SAVE_SHACKLE_TP = 0
+				this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
+				this.TO_SAVE_SHACKLE_TOTAL_TP = 0
+				/**
+				 * Map Stats
+				 **/
+				this.CELL = To
+				this.STATIC = false
+			},
+			CHIP_SAVANT_BULB: function(id, SummonerLevelTimes, To, Summoner, SummonerStats) {
+				/**
+				 * Fight Stats
+				 **/
+				this.ABSOLUTE_SHIELD = 0
+				this.RELATIVE_SHIELD = 0
+				this.DAMAGE_RETURN = 0 //Its always 0 at the start, so like this i will save the exact total buff of each so not saving it
+				this.POWER = 0
+				this.SUMMONER = Summoner
+				this.SUMMONS = []
+				this.SUMMON = true
+				this.ID = id
+				//this.WEAPON = Not Yet Weapon Bulbs
+				this.INVENTORY = [
+					CHIP_ALTERATION,
+					CHIP_MUTATION,
+					CHIP_ADRENALINE,
+					CHIP_THORN
+				]
+				this.COOLDOWNS = [: ]
+				for (var i in this.INVENTORY) {
+					this.COOLDOWNS[i] = 0
+					//if (Items.isSpecialWeap(i)) this.SPECIAL_WEAPON = i (not yet ?)
+				}
+				this.ALLY = SummonerStats.ALLY
+				this.ENEMY = SummonerStats.ENEMY
+				this.EFFECTS = []
+				this.EFFECTS_ITEM_MAP = [: ]
+				this.POISON = 0
+				this.POISON_OVER_TIME = 0
+				this.JUST_POISON = 0
+				this.JUST_POISON_OVER_TIME = 0
+				this.TURN_ORDER = getEntityTurnOrder(Summoner) + 1
+				/**
+				 * Leek Stats
+				 **/
+				//Maybe Floor all these values to make it clean and precise ?
+				this.LIFE = 400 + 200 * SummonerLevelTimes
+				this.TOTAL_LIFE = this.LIFE
+				this.STRENGTH = 0
+				this.WISDOM = 0
+				this.AGILITY = 200 * SummonerLevelTimes
+				this.RESISTANCE = 0
+				this.SCIENCE = 300 * SummonerLevelTimes
+				this.MAGIC = 0
+				this.FREQUENCY = 0
+				this.MP = 4 + 2 * SummonerLevelTimes
+				this.TOTAL_MP = this.MP
+				this.TP = 6 + 2 * SummonerLevelTimes
+				this.TOTAL_TP = this.TP
+				this.NAME = "savant_bulb"
+				//this.AI_NAME = SummonerStats.AI_NAME
+				//this.AI_ID = SummonerStats.AI_ID
+				//this.FARMER_NAME = SummonerStats.FARMER_NAME
+				/**
+				 * Original Stats for Libe And Shackle summ for Manumission (No need to edit these with the map after cuz he will spawn without any effects)
+				 **/
+				this.TO_SAVE_STRENGTH = this.STRENGTH //initial strength of the leek
+				this.TO_SAVE_SHACKLE_STRENGTH = 0 //Total Shackle Effects
+				this.TO_SAVE_WISDOM = this.WISDOM
+				this.TO_SAVE_SHACKLE_WISDOM = 0
+				this.TO_SAVE_AGILITY = this.AGILITY
+				this.TO_SAVE_SHACKLE_AGILITY = 0
+				this.TO_SAVE_RESISTANCE = this.RESISTANCE
+				//this.TO_SAVE_SHACKLE_RESISTANCE = 0
+				this.TO_SAVE_SCIENCE = this.SCIENCE
+				//this.TO_SAVE_SHACKLE_SCIENCE = 0
+				this.TO_SAVE_MAGIC = this.MAGIC
+				this.TO_SAVE_SHACKLE_MAGIC = 0
+				this.TO_SAVE_MP = this.MP
+				//this.TO_SAVE_SHACKLE_MP = 0
+				this.TO_SAVE_TOTAL_MP = this.TOTAL_MP
+				this.TO_SAVE_SHACKLE_TOTAL_MP = 0
+				this.TO_SAVE_TP = this.TP
+				//this.TO_SAVE_SHACKLE_TP = 0
+				this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
+				this.TO_SAVE_SHACKLE_TOTAL_TP = 0
+				/**
+				 * Map Stats
+				 **/
+				this.CELL = To
+				this.STATIC = false
+			},
+			CHIP_TACTICIAN_BULB: function(id, SummonerLevelTimes, To, Summoner, SummonerStats) {
+				/**
+				 * Fight Stats
+				 **/
+				this.ABSOLUTE_SHIELD = 0
+				this.RELATIVE_SHIELD = 0
+				this.DAMAGE_RETURN = 0 //Its always 0 at the start, so like this i will save the exact total buff of each so not saving it
+				this.POWER = 0
+				this.SUMMONER = Summoner
+				this.SUMMONS = []
+				this.SUMMON = true
+				this.ID = id
+				//this.WEAPON = Not Yet Weapon Bulbs
+				this.INVENTORY = [
+					CHIP_TELEPORTATION,
+					CHIP_INVERSION,
+					CHIP_JUMP,
+					CHIP_COVETOUSNESS,
+					CHIP_BOXING_GLOVE,
+					CHIP_GRAPPLE
+				]
+				this.COOLDOWNS = [: ]
+				for (var i in this.INVENTORY) {
+					this.COOLDOWNS[i] = 0
+					//if (Items.isSpecialWeap(i)) this.SPECIAL_WEAPON = i (not yet ?)
+				}
+				this.ALLY = SummonerStats.ALLY
+				this.ENEMY = SummonerStats.ENEMY
+				this.EFFECTS = []
+				this.EFFECTS_ITEM_MAP = [: ]
+				this.POISON = 0
+				this.POISON_OVER_TIME = 0
+				this.JUST_POISON = 0
+				this.JUST_POISON_OVER_TIME = 0
+				this.TURN_ORDER = getEntityTurnOrder(Summoner) + 1
+				/**
+				 * Leek Stats
+				 **/
+				//Maybe Floor all these values to make it clean and precise ?
+				this.LIFE = 500 + 200 * SummonerLevelTimes
+				this.TOTAL_LIFE = this.LIFE
+				this.STRENGTH = 0
+				this.WISDOM = 0
+				this.AGILITY = 200 * SummonerLevelTimes
+				this.RESISTANCE = 0
+				this.SCIENCE = 0
+				this.MAGIC = 0
+				this.FREQUENCY = 0
+				this.MP = 6
+				this.TOTAL_MP = this.MP
+				this.TP = 6
+				this.TOTAL_TP = this.TP
+				this.NAME = "tactician_bulb"
+				//this.AI_NAME = SummonerStats.AI_NAME
+				//this.AI_ID = SummonerStats.AI_ID
+				//this.FARMER_NAME = SummonerStats.FARMER_NAME
+				/**
+				 * Original Stats for Libe And Shackle summ for Manumission (No need to edit these with the map after cuz he will spawn without any effects)
+				 **/
+				this.TO_SAVE_STRENGTH = this.STRENGTH //initial strength of the leek
+				this.TO_SAVE_SHACKLE_STRENGTH = 0 //Total Shackle Effects
+				this.TO_SAVE_WISDOM = this.WISDOM
+				this.TO_SAVE_SHACKLE_WISDOM = 0
+				this.TO_SAVE_AGILITY = this.AGILITY
+				this.TO_SAVE_SHACKLE_AGILITY = 0
+				this.TO_SAVE_RESISTANCE = this.RESISTANCE
+				//this.TO_SAVE_SHACKLE_RESISTANCE = 0
+				this.TO_SAVE_SCIENCE = this.SCIENCE
+				//this.TO_SAVE_SHACKLE_SCIENCE = 0
+				this.TO_SAVE_MAGIC = this.MAGIC
+				this.TO_SAVE_SHACKLE_MAGIC = 0
+				this.TO_SAVE_MP = this.MP
+				//this.TO_SAVE_SHACKLE_MP = 0
+				this.TO_SAVE_TOTAL_MP = this.TOTAL_MP
+				this.TO_SAVE_SHACKLE_TOTAL_MP = 0
+				this.TO_SAVE_TP = this.TP
+				//this.TO_SAVE_SHACKLE_TP = 0
+				this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
+				this.TO_SAVE_SHACKLE_TOTAL_TP = 0
+				/**
+				 * Map Stats
+				 **/
+				this.CELL = To
+				this.STATIC = false
+			},
+			CHIP_LIGHTNING_BULB: function(id, SummonerLevelTimes, To, Summoner, SummonerStats) {
+				/**
+				 * Fight Stats
+				 **/
+				this.ABSOLUTE_SHIELD = 0
+				this.RELATIVE_SHIELD = 0
+				this.DAMAGE_RETURN = 0 //Its always 0 at the start, so like this i will save the exact total buff of each so not saving it
+				this.POWER = 0
+				this.SUMMONER = Summoner
+				this.SUMMONS = []
+				this.SUMMON = true
+				this.ID = id
+				//this.WEAPON = Not Yet Weapon Bulbs
+				this.INVENTORY = [
+					CHIP_SHOCK,
+					CHIP_FLASH,
+					CHIP_LIGHTNING,
+					CHIP_STEROID
+				]
+				this.COOLDOWNS = [: ]
+				for (var i in this.INVENTORY) {
+					this.COOLDOWNS[i] = 0
+					//if (Items.isSpecialWeap(i)) this.SPECIAL_WEAPON = i (not yet ?)
+				}
+				this.ALLY = SummonerStats.ALLY
+				this.ENEMY = SummonerStats.ENEMY
+				this.EFFECTS = []
+				this.EFFECTS_ITEM_MAP = [: ]
+				this.POISON = 0
+				this.POISON_OVER_TIME = 0
+				this.JUST_POISON = 0
+				this.JUST_POISON_OVER_TIME = 0
+				this.TURN_ORDER = getEntityTurnOrder(Summoner) + 1
+				/**
+				 * Leek Stats
+				 **/
+				//Maybe Floor all these values to make it clean and precise ?
+				this.LIFE = 400 + 200 * SummonerLevelTimes
+				this.TOTAL_LIFE = this.LIFE
+				this.STRENGTH = 400 * SummonerLevelTimes
+				this.WISDOM = 0
+				this.AGILITY = 100 * SummonerLevelTimes
+				this.RESISTANCE = 0
+				this.SCIENCE = 200 * SummonerLevelTimes
+				this.MAGIC = 0
+				this.FREQUENCY = 0
+				this.MP = 4 + 2 * SummonerLevelTimes
+				this.TOTAL_MP = this.MP
+				this.TP = 6 + 4 * SummonerLevelTimes
+				this.TOTAL_TP = this.TP
+				this.NAME = "lightning_bulb"
+				//this.AI_NAME = SummonerStats.AI_NAME
+				//this.AI_ID = SummonerStats.AI_ID
+				//this.FARMER_NAME = SummonerStats.FARMER_NAME
+				/**
+				 * Original Stats for Libe And Shackle summ for Manumission (No need to edit these with the map after cuz he will spawn without any effects)
+				 **/
+				this.TO_SAVE_STRENGTH = this.STRENGTH //initial strength of the leek
+				this.TO_SAVE_SHACKLE_STRENGTH = 0 //Total Shackle Effects
+				this.TO_SAVE_WISDOM = this.WISDOM
+				this.TO_SAVE_SHACKLE_WISDOM = 0
+				this.TO_SAVE_AGILITY = this.AGILITY
+				this.TO_SAVE_SHACKLE_AGILITY = 0
+				this.TO_SAVE_RESISTANCE = this.RESISTANCE
+				//this.TO_SAVE_SHACKLE_RESISTANCE = 0
+				this.TO_SAVE_SCIENCE = this.SCIENCE
+				//this.TO_SAVE_SHACKLE_SCIENCE = 0
+				this.TO_SAVE_MAGIC = this.MAGIC
+				this.TO_SAVE_SHACKLE_MAGIC = 0
+				this.TO_SAVE_MP = this.MP
+				//this.TO_SAVE_SHACKLE_MP = 0
+				this.TO_SAVE_TOTAL_MP = this.TOTAL_MP
+				this.TO_SAVE_SHACKLE_TOTAL_MP = 0
+				this.TO_SAVE_TP = this.TP
+				//this.TO_SAVE_SHACKLE_TP = 0
+				this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
+				this.TO_SAVE_SHACKLE_TOTAL_TP = 0
+				/**
+				 * Map Stats
+				 **/
+				this.CELL = To
+				this.STATIC = false
+			}
+		]
+		MapChipsToFunctions[Chip](id, SummonerLevelTimes, To, Summoner, SummonerStats)
+	}
+
+	static getInventory(Chip) {
+		return InventoryMap[Chip]
+	}
+
+	static InventoryMap = [
+		CHIP_PUNY_BULB: [
+			CHIP_PEBBLE,
+			CHIP_HELMET,
+			CHIP_PROTEIN,
+			CHIP_BANDAGE
+		],
+		CHIP_ROCKY_BULB: [
+			CHIP_PEBBLE,
+			CHIP_HELMET,
+			CHIP_ROCK,
+			CHIP_ROCKFALL
+		],
+		CHIP_ICED_BULB: [
+			CHIP_ICE,
+			CHIP_STALACTITE,
+			CHIP_ICEBERG,
+			CHIP_WARM_UP
+		],
+		CHIP_HEALER_BULB: [
+			CHIP_BANDAGE,
+			CHIP_DRIP,
+			CHIP_CURE,
+			CHIP_VACCINE
+		],
+		CHIP_FIRE_BULB: [
+			CHIP_SPARK,
+			CHIP_FLAME,
+			CHIP_METEORITE,
+			CHIP_DEVIL_STRIKE
+		],
+		CHIP_WIZARD_BULB: [
+			CHIP_VENOM,
+			CHIP_TOXIN,
+			CHIP_TRANQUILIZER,
+			CHIP_SLOW_DOWN
+		],
+		CHIP_METALLIC_BULB: [
+			CHIP_SHIELD,
+			CHIP_ARMOR,
+			CHIP_WALL,
+			CHIP_WINGED_BOOTS
+		],
+		CHIP_SAVANT_BULB: [
+			CHIP_ALTERATION,
+			CHIP_MUTATION,
+			CHIP_ADRENALINE,
+			CHIP_THORN
+		],
+		CHIP_TACTICIAN_BULB: [
+			CHIP_TELEPORTATION,
+			CHIP_INVERSION,
+			CHIP_JUMP,
+			CHIP_COVETOUSNESS,
+			CHIP_BOXING_GLOVE,
+			CHIP_GRAPPLE
+		],
+		CHIP_LIGHTNING_BULB: [
+			CHIP_SHOCK,
+			CHIP_FLASH,
+			CHIP_LIGHTNING,
+			CHIP_STEROID
+		]
+	]
+
+	static getNameFromChip(Chip) {
+		return MapChipToName[Chip]
+	}
+
+	static MapChipToName = [
+		CHIP_PUNY_BULB: "puny_bulb",
+		CHIP_ROCKY_BULB: "rocky_bulb",
+		CHIP_ICED_BULB: "iced_bulb",
+		CHIP_HEALER_BULB: "healer_bulb",
+		CHIP_FIRE_BULB: "fire_bulb",
+		CHIP_WIZARD_BULB: "wizard_bulb",
+		CHIP_METALLIC_BULB: "metallic_bulb",
+		CHIP_SAVANT_BULB: "savant_bulb",
+		CHIP_TACTICIAN_BULB: "tactician_bulb",
+		CHIP_LIGHTNING_BULB: "lightning_bulb"
+	]
+}

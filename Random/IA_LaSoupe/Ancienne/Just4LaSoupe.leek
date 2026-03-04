@@ -1,0 +1,47 @@
+var bulbes = getNearestEnemy();
+var poto = getNearestAlly()!=CHIP_PUNY_BULB;
+
+moveToward(poto);
+moveToward(bulbes);
+
+if (getTurn()==1) {
+setWeapon(WEAPON_SHOTGUN);
+}
+
+ 
+if (getLife(poto()<getTotalLife())) {
+useChip(CHIP_CURE, poto());
+useChip(CHIP_BANDAGE, poto);}
+useChip(CHIP_LEATHER_BOOTS, poto);
+useChip(CHIP_SHIELD, poto());
+useChip(CHIP_HELMET, poto());
+useChip(CHIP_PROTEIN, poto());
+
+
+useWeapon(bulbes);	
+useWeapon(bulbes);	
+useWeapon(bulbes);	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

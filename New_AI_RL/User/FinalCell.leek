@@ -1,0 +1,78 @@
+/**
+ * Here we are creating a random action
+ **/
+
+include("../includes")
+
+class FinalCell {
+	//Finding the cell to end my turn :
+    //Relatively simple : (closest cell to ennemi with OK danger or lowest danger cell)
+    //I sort cells by average enemy dist (or path could be better with binaries walkcells ?)
+    //Then i check each cell's danger 
+    //If a cell has danger < life * min map danger / 10
+    //Break and return this cell
+    //Else if danger < BestDanger, save this cell for return and update BestDanger
+    static get(State, BaseHash) {
+        //We start by initializing vars
+        var MyState = State[Me]
+        var walk_cells_map = new WalkCellsClass(State, Me, true, true, true, true, BaseHash).MAX
+        var array_cells_sorted_by_ennemi_dist = getSortedCellsByDistToEnnemies(State, walk_cells_map)
+        //Loading Stats Hash For Basic Danger Cache and this function's cache
+        var thisStatsHashForDanger = DangerClass.getStatsHashForDanger(MyState, State, BaseHash)
+        //Loading entity to skip map
+        var thisToSkipMap = DangerClass.EntitiesToSkip(MyState, State, BaseHash)
+        //Loading entity's enemies walk cells
+        var thisEnemiesWalkableCellsMap = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, thisToSkipMap, BaseHash)
+        //Then we create the return var
+        var min_danger = MAX_VALUE
+        var min_danger_cell
+        //After this we can loop in cells
+        for (var cell in array_cells_sorted_by_ennemi_dist) {
+            var this_cell_danger = DangerClass.get(cell, State, MyState, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger)
+            var this_cell_min_danger = NeuralClass.getMinMapDanger(State, cell) * MyState.LIFE
+            if (this_cell_danger > this_cell_min_danger) {
+                if (this_cell_danger < min_danger) {
+                    min_danger = this_cell_danger
+                    min_danger_cell = cell
+                }
+            } else {
+                return cell
+            }
+        }
+        return min_danger_cell
+    }
+
+    static MapToGetCloseTo = [
+        "puny_bulb" : 1,
+        "rocky_bulb" : 1,
+        "iced_bulb" : 2,
+        "healer_bulb" : 4,
+        "fire_bulb" : 2,
+        "wizard_bulb" : 2,
+        "metallic_bulb" : 3,
+        "savant_bulb" : 5,
+        "tactician_bulb" : 3,
+        "lightning_bulb" : 3
+    ]
+
+    static getSortedCellsByDistToEnnemies(State, WalkCellsMap) {
+        //First we innit the variables
+        var my_side = State[Me].SIDE
+        var scoring_map = [: ]
+        //Then we score the map
+        for (var entity_state in State) {
+            if (entity_state.SIDE == my_side) continue //Avoid wanting to go near allies
+            var entity_name = entity_state.NAME
+            var raw_score = entity_name in MapToGetCloseTo ? MapToGetCloseTo[entity_name] : 10
+            var entity_cell = entity_state.CELL
+            for (var cell:var mp in WalkCellsMap) {
+                scoring_map[cell] -= CellClass.getDist(cell, entity_cell) 
+            }
+        }
+        //Then we sort the map to return it
+        var _final = mapKeys(scoring_map)
+        return arraySort(_final, function(a,b) {
+            return scoring_map[b] - scoring_map[a]
+        })
+    }
+}

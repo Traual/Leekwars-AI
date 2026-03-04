@@ -1,0 +1,257 @@
+/**
+ * Class State : Variables of a state
+**/
+
+include("../includes")
+
+class EntityStateClass extends EntityClass {
+	ABSOLUTE_SHIELD
+	RELATIVE_SHIELD
+	DAMAGE_RETURN
+	POWER
+	SUMMONS
+	WEAPON
+	COOLDOWNS
+	USES
+	EFFECTS
+	EFFECTS_ITEM_MAP
+	POISON
+	POISON_OVER_TIME
+	JUST_POISON
+	JUST_POISON_OVER_TIME
+	LIFE
+	TOTAL_LIFE
+	STRENGTH
+	TO_SAVE_STRENGTH //Oui on doit save POS et NEG pour Manumission (retire les neg) et liberations (retire 60% de POS et NEG)
+	TO_SAVE_SHACKLE_STRENGTH
+	WISDOM
+	TO_SAVE_WISDOM
+	TO_SAVE_SHACKLE_WISDOM
+	AGILITY
+	TO_SAVE_AGILITY
+	TO_SAVE_SHACKLE_AGILITY
+	RESISTANCE
+	TO_SAVE_RESISTANCE
+	//TO_SAVE_SHACKLE_RESISTANCE //Does not exist (yet)
+	SCIENCE
+	TO_SAVE_SCIENCE
+	//TO_SAVE_SHACKLE_SCIENCE //Does not exist (yet)
+	MAGIC
+	TO_SAVE_MAGIC
+	TO_SAVE_SHACKLE_MAGIC
+	FREQUENCY //No need to save cuz not usefull for Liberation/Manumission 
+	MP
+	TOTAL_MP
+	TO_SAVE_TOTAL_MP
+	TO_SAVE_SHACKLE_TOTAL_MP
+	TP
+	TOTAL_TP
+	TO_SAVE_TOTAL_TP
+	TO_SAVE_SHACKLE_TOTAL_TP
+	CELL
+    constructor(id) {
+		super(id)
+		this.ABSOLUTE_SHIELD = getAbsoluteShield(id)
+		this.RELATIVE_SHIELD = getRelativeShield(id)
+		this.DAMAGE_RETURN = getDamageReturn(id) //Its always 0 at the start, so like this i will save the exact total buff of each so not saving it
+		this.POWER = getPower(id)
+		this.SUMMONS = getSummons(id)
+		this.WEAPON = getWeapon(id)
+		this.COOLDOWNS = [: ]
+		this.USES = [: ]
+		for (var i in this.INVENTORY) {
+			this.COOLDOWNS[i] = ItemClass.Cooldown(i, id)
+			this.USES[i] = getItemUses(i)
+		}
+		this.EFFECTS = getEffects(id)
+		//this.EFFECTS_ITEM_MAP = getEffectsMapItem(this.EFFECTS)
+		this.POISON = getPoisons(this.EFFECTS)
+		this.POISON_OVER_TIME = getPoisonsOverTime(this.EFFECTS)
+		this.JUST_POISON = getJustPoisons(this.EFFECTS)
+		this.JUST_POISON_OVER_TIME = getJustPoisonsOverTime(this.EFFECTS)
+		/**
+		 * Leek Stats
+		 **/
+		this.LIFE = getLife(id)
+		this.TOTAL_LIFE = getTotalLife(id)
+		this.STRENGTH = getStrength(id)
+		this.WISDOM = getWisdom(id)
+		this.AGILITY = getAgility(id)
+		this.RESISTANCE = getResistance(id)
+		this.SCIENCE = getScience(id)
+		this.MAGIC = getMagic(id)
+		this.FREQUENCY = getFrequency(id)
+		this.MP = getMP(id)
+		this.TOTAL_MP = getTotalMP(id)
+		this.TP = getTP(id)
+		this.TOTAL_TP = getTotalTP(id)
+		/**
+		 * Original Stats for Libe And Shackle summ for Manumission
+		 **/
+		this.TO_SAVE_STRENGTH = this.STRENGTH //initial strength of the leek
+		this.TO_SAVE_SHACKLE_STRENGTH = 0 //Total Shackle Effects
+		this.TO_SAVE_WISDOM = this.WISDOM
+		this.TO_SAVE_SHACKLE_WISDOM = 0
+		this.TO_SAVE_AGILITY = this.AGILITY
+		this.TO_SAVE_SHACKLE_AGILITY = 0
+		this.TO_SAVE_RESISTANCE = this.RESISTANCE
+		//this.TO_SAVE_SHACKLE_RESISTANCE = 0
+		this.TO_SAVE_SCIENCE = this.SCIENCE
+		//this.TO_SAVE_SHACKLE_SCIENCE = 0
+		this.TO_SAVE_MAGIC = this.MAGIC
+		this.TO_SAVE_SHACKLE_MAGIC = 0
+		//this.TO_SAVE_MP = this.MP
+		//this.TO_SAVE_SHACKLE_MP = 0
+		this.TO_SAVE_TOTAL_MP = this.TOTAL_MP
+		this.TO_SAVE_SHACKLE_TOTAL_MP = 0
+		//this.TO_SAVE_TP = this.TP
+		//this.TO_SAVE_SHACKLE_TP = 0
+		this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
+		this.TO_SAVE_SHACKLE_TOTAL_TP = 0
+		
+		var MapFunctionsToSave = [ //No  need to save Pos / Neg, just save Original stats so i can compare them later with stat.AGILITY for exemple
+			/*EFFECT_ALLY_KILLED_TO_AGILITY: function(effect) {
+				this.TO_SAVE_AGILITY -= effect[1] Irreductible effect so bypass on this one (yet ?)
+			},*/
+			EFFECT_BUFF_AGILITY: function(effect) {
+				this.TO_SAVE_AGILITY -= effect[1]
+			},
+			EFFECT_BUFF_MP: function(effect) {
+				//this.TO_SAVE_MP -= effect[1]
+				this.TO_SAVE_TOTAL_MP -= effect[1]
+			},
+			EFFECT_BUFF_RESISTANCE: function(effect) {
+				this.TO_SAVE_RESISTANCE -= effect[1]
+			},
+			EFFECT_BUFF_STRENGTH: function(effect) {
+				this.TO_SAVE_STRENGTH -= effect[1]
+			},
+			EFFECT_BUFF_TP: function(effect) {
+				//this.TO_SAVE_TP -= effect[1]
+				this.TO_SAVE_TOTAL_TP -= effect[1]
+			},
+			EFFECT_BUFF_WISDOM: function(effect) {
+				this.TO_SAVE_WISDOM -= effect[1]
+			},
+			EFFECT_DAMAGE_TO_STRENGTH: function(effect) {
+				this.TO_SAVE_STRENGTH -= effect[1]
+			},
+			EFFECT_KILL_TO_TP: function(effect) {
+				//this.TO_SAVE_TP -= effect[1]
+				this.TO_SAVE_TOTAL_TP -= effect[1]
+			},
+			EFFECT_MOVED_TO_MP: function(effect) {
+				//this.TO_SAVE_MP -= effect[1]
+				this.TO_SAVE_TOTAL_MP -= effect[1]
+			},
+			EFFECT_NOVA_DAMAGE_TO_MAGIC: function(effect) {
+				this.TO_SAVE_MAGIC -= effect[1]
+			},
+			EFFECT_POISON_TO_SCIENCE: function(effect) {
+				this.TO_SAVE_SCIENCE -= effect[1]
+			},
+			EFFECT_RAW_BUFF_AGILITY: function(effect) {
+				this.TO_SAVE_AGILITY -= effect[1]
+			},
+			EFFECT_RAW_BUFF_MAGIC: function(effect) {
+				this.TO_SAVE_MAGIC -= effect[1]
+			},
+			EFFECT_RAW_BUFF_MP: function(effect) {
+				//this.TO_SAVE_MP -= effect[1]
+				this.TO_SAVE_TOTAL_MP -= effect[1]
+			},
+			EFFECT_RAW_BUFF_RESISTANCE: function(effect) {
+				this.TO_SAVE_RESISTANCE -= effect[1]
+			},
+			EFFECT_RAW_BUFF_SCIENCE: function(effect) {
+				this.TO_SAVE_SCIENCE -= effect[1]
+			},
+			EFFECT_RAW_BUFF_STRENGTH: function(effect) {
+				this.TO_SAVE_STRENGTH -= effect[1]
+			},
+			EFFECT_RAW_BUFF_TP: function(effect) {
+				//this.TO_SAVE_TP -= effect[1]
+				this.TO_SAVE_TOTAL_TP -= effect[1]
+			},
+			EFFECT_RAW_BUFF_WISDOM: function(effect) {
+				this.TO_SAVE_WISDOM -= effect[1]
+			},
+			EFFECT_SHACKLE_AGILITY: function(effect) {
+				this.TO_SAVE_SHACKLE_AGILITY += effect[1]
+			},
+			EFFECT_SHACKLE_MAGIC: function(effect) {
+				this.TO_SAVE_SHACKLE_MAGIC += effect[1]
+			},
+			EFFECT_SHACKLE_MP: function(effect) {
+				//this.TO_SAVE_SHACKLE_MP += effect[1]
+				this.TO_SAVE_SHACKLE_TOTAL_MP += effect[1]
+			},
+			EFFECT_SHACKLE_STRENGTH: function(effect) {
+				this.TO_SAVE_SHACKLE_STRENGTH += effect[1]
+			},
+			EFFECT_SHACKLE_TP: function(effect) {
+				//this.TO_SAVE_SHACKLE_TP += effect[1]
+				this.TO_SAVE_SHACKLE_TOTAL_TP += effect[1]
+			},
+			EFFECT_SHACKLE_WISDOM: function(effect) {
+				this.TO_SAVE_SHACKLE_WISDOM += effect[1]
+			}
+		]
+		
+		for (var eff in this.EFFECTS) {
+			if (MapFunctionsToSave[eff[0]]) MapFunctionsToSave[eff[0]](eff)
+		}
+		
+		/**
+		 * Map Stats
+		 **/
+		this.CELL = getCell(id)
+    }
+
+    getPoisons(Effects) {
+		var Poisons = 0
+		for (var eff in Effects) {
+			if (eff[0] == EFFECT_POISON) {
+				Poisons += eff[1]
+				//Poisons_over_time += eff[1]*eff[3]
+			} else if (eff[0] == EFFECT_HEAL) {
+				Poisons -= eff[1]
+				//Poisons_over_time -= eff[1]*eff[3]
+			}
+		}
+		return Poisons
+	}
+
+	getPoisonsOverTime(Effects) {
+		var Poisons = 0
+		for (var eff in Effects) {
+			if (eff[0] == EFFECT_POISON) {
+				Poisons += eff[1] * eff[3]
+			} else if (eff[0] == EFFECT_HEAL) {
+				Poisons -= eff[1] * eff[3]
+			}
+		}
+		return Poisons
+	}
+
+	getJustPoisons(Effects) {
+		var Poisons = 0
+		for (var eff in Effects) {
+			if (eff[0] == EFFECT_POISON) {
+				Poisons += eff[1]
+			}
+		}
+		return Poisons
+	}
+
+	getJustPoisonsOverTime(Effects) {
+		var Poisons = 0
+		for (var eff in Effects) {
+			if (eff[0] == EFFECT_POISON) {
+				Poisons += eff[1] * eff[3]
+			}
+		}
+		return Poisons
+	}
+
+}

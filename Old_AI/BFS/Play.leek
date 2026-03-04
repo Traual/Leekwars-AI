@@ -1,0 +1,68 @@
+/**
+ * Here we are creating a random action
+ **/
+
+include("../includes")
+
+class Play { 
+	//TODO CHANGE VAR NAMES HERE
+	//TODO : Check if there are still enemies (if not then i have won i can dance or dunno what to do) after loading everystats
+	//TODO : Re Do play clean its ugly AF
+
+	/* Playing function, seeks the best action to do until there are none, then go hide itself to minimize danger
+    *
+    * @return Nothing
+    */
+
+	constructor() {
+		while (true) {//While i have something to play :
+			var EveryStats = new AllStats().MAP //I reload the stats
+			Coefs.Update(EveryStats) //I Update my coefs depending on stats
+			var Nod = ActionSuite.getBestActionTreeInState(EveryStats) //I get the best action to play
+			if (Nod == null || Nod.ACTION.ITEM == null) break //if there are none then i break, otherwise i play it
+			var act = Nod.ACTION
+			var From = act.FROM
+			var Item = act.ITEM
+			var To = act.TO
+			var TmpBaseHash = Tree.getBaseHash(EveryStats)
+			WalkCells.MoveTo(From, EveryStats, TmpBaseHash)
+			if (ITEMINFO[Item].EFFECTS[0][0] != EFFECT_SUMMON && ITEMINFO[Item].EFFECTS[0][0] != EFFECT_RESURRECT) {
+				useItem(Item, To)
+			} else {
+				if (ITEMINFO[Item].EFFECTS[0][0] != EFFECT_RESURRECT) {
+					summon(Item, To, Bulb.AI)
+				} else {
+					resurrect(RESURRECT_ID, To)
+				}
+			}
+			//Then i empty Cache cuz i haven't coded los with basehash yet
+			if (Tree.getBaseHash(EveryStats) != Tree.getBaseHash(Nod.END_STATS)) {//Reset Cache For Cell Dependant Only Things : (If i moved somebody) (WILL BE REMOVED WHEN I WILL CODE MY LOS FUNCTION)
+				ENTITY_ACTIONS_CACHE = [: ]
+				LOS_WITH_BASE_HASH_CACHE = [: ] //TO REMOVE ONCE I CODED LOS OPTIMIZED
+			}
+		}
+		//Then i reload stats and find the final cell to go with theses stats :
+		var EveryStats = new AllStats().MAP
+		var BaseHash = Tree.getBaseHash(EveryStats)
+		var WalkFinal = new WalkCells(EveryStats, Me, true, true, false, false, BaseHash)
+		var EndCell = new FinalCell(WalkFinal, EveryStats, BaseHash)
+		debug("I will go on cell : " + EndCell.CELL + " and take : " + EndCell.DANGER + " damages")
+		//And i go to my final cell to end my turn
+		WalkCells.MoveTo(EndCell.CELL, EveryStats, BaseHash)
+	}
+
+	/* Little function that uses item (it can set Weapon if my weapon isn't in hand) and uses the item (either usechip or useweapon)
+    *
+	* @param Item : To use on cell To
+	* @param To : Cell to use item to 
+    *
+    * @return Nothing
+    */
+
+	useItem(Item, To) {
+		if (ITEMINFO[Item].IS_WEAPON) {
+			if (getWeapon() != Item) setWeapon(Item)
+			useWeaponOnCell(To)
+		} else useChipOnCell(Item, To)
+	}
+}

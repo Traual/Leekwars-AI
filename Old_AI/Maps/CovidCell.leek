@@ -1,0 +1,48 @@
+/**
+ * This is a map lockable / locked cells
+ **/
+
+include("../includes")
+
+class CovidCell {
+    /* Returns a map of Cell:Array<Entity Id> hit by my covid. This gives me for each cell that is 2 dist from an entity everyone of its covid propagation if i place there
+    *
+    * @param EveryStats : Map Id:Stats
+    * @param BaseHash : Hash Id:Cell
+    *
+	* @return Map : <Cell : Array> Array of ids for targets
+    */
+    static getCovidCells(EveryStats, BaseHash) {
+        if (BaseHash in COVID_CELLS_CACHE) return COVID_CELLS_CACHE[BaseHash]
+        var _final = [: ]
+        for (var e: var stat in EveryStats) {
+            if (e == Me) continue
+            var TargetCell = stat.CELL
+            for (var c: var bool in ALLCELLINFO[TargetCell].CIRCLE_TWO) {
+                if (c in _final) continue //I Already did this cell with another entity's area
+                _final[c] = getCovidTargets(EveryStats, c)
+            }
+        }
+        COVID_CELLS_CACHE[BaseHash] = _final
+        return _final
+    }
+
+    /* Returns an array of covid targets if i place on testedCell (and i have covid)
+    *
+    * @param EveryStats : Map Id:Stats
+    * @param testedCell : cell where i should be to propagate to the targets
+    *
+	* @return Array --> Array of ids for targets
+    */
+    static getCovidTargets(EveryStats, testedCell) {
+        var _final = []
+        var PropagationCells = ALLCELLINFO[testedCell].CIRCLE_TWO
+        for (var e: var stat in EveryStats) {
+            if (e == Me) continue
+            if (PropagationCells[stat.CELL]) {
+                push(_final, e)
+            }
+        }
+        return _final
+    }
+}

@@ -1,0 +1,185 @@
+include("include");
+global _COEF_DMG = 1;
+global _COEF_ABS_SHIELD = 2.5;
+global _COEF_HEAL = 2;
+global _COEF_BOOST_STR = 3;
+global _COEF_BOOST_MP = 120;
+global _COEF_BOOST_TP = 110;
+global _COEF_BOOST_AGILITY = 1.25;
+global _COEF_REL_SHIELD = 10;
+global _COEF_SUMMON = 30000;
+if (_RESISTANCE[_MY_SELF]==0 && _STRENGTH[EnemyLeekG]<200) _COEF_SUMMON +=20000;
+if (_RESISTANCE[_MY_SELF]==0) _COEF_SUMMON +=20000;
+if (getScience()>=600) _COEF_SUMMON /=50;
+global _COEF_BOOST_MAX_LIFE = 2.5;
+global _COEF_BUFF_RESI = 2;
+global _COEF_BUFF_WISDOM = 1.5;
+global _COEF_DMG_RETURN = 10;
+global _COEF_SHACKLE_STRENGTH = 8;
+global _COEF_SHACKLE_MP = 50;
+global _COEF_VULNERABILITY = 10000;
+global _COEF_SHACKLE_TP = 12;
+global COEF_DMG = 0;
+global COEF_SHACKLE_STRENGTH = 0;
+global COEF_SHACKLE_TP = 0;
+global _COEF_AGILITY = 0;
+global _COEF_BOOST_RESI = 0;
+
+if (getStrength(EnemyLeekG)<200) {
+	_COEF_SUMMON *=0.7;
+}
+
+function getCoef(@target) {
+
+	_COEF_DMG = 1;
+	_COEF_SHACKLE_STRENGTH = 1;
+	_COEF_VULNERABILITY = 1;
+	_COEF_SHACKLE_TP = 1;
+	var nBulb = getNumberOfBulb();
+	var str = getStrength(target);
+	var mgc = getMagic(target);
+	var wsd = getWisdom(target);
+	var rs = getRelativeShield(target);
+	var as = getAbsoluteShield(target);
+	var tp = getTP(target);
+	var life = getLife(target);
+	var totallife = getTotalLife(target);
+	var melife = getLife();
+	var dist = getCellDistance(_CELL[_MY_SELF], _CELL[target]);
+	var lp = LifePercent(getLife(target), getTotalLife(target));
+	var dft = DmgForTurn(target);
+	var mestr = getStrength();
+	var memgc = getMagic();
+	var sum = isSummon(target);
+	if (isEnemy(target)) {
+
+		if (mestr < 400) {
+			_COEF_VULNERABILITY -= 20;
+		}
+		/*if (nBulb[0] >= nBulb[1]) {
+			_COEF_DMG += 4;
+			_COEF_VULNERABILITY -= 8;
+		}*/
+		//if (!isSummon(target)) _COEF_DMG += 2000 - getTotalLife(target) / 100;
+		if (getCooldown(CHIP_ANTIDOTE, target) == 0 && mgc > 0) _COEF_DMG += 10;
+		if (nBulb[1] == 0) _COEF_DMG += 3;
+		if (getTurn() > 55) _COEF_DMG += 3;
+		if (lp < 90) _COEF_DMG += 2;
+		if (lp < 80) _COEF_DMG += 3;
+		if (lp < 70) _COEF_DMG += 4;
+		if (lp < 60) _COEF_DMG += 5;
+		if (lp < 50) _COEF_DMG += 6;
+		if (lp < 40) _COEF_DMG += 7;
+		if (lp < 30) _COEF_DMG += 8;
+		if (lp < 20) _COEF_DMG += 9;
+		if (lp < 10) _COEF_DMG += 10;
+		if (wsd < 200) _COEF_DMG += 10;
+		if (str >= 200) _COEF_DMG += 1;
+		if (mgc >= 200) _COEF_DMG += 1;
+		if (str >= 400) _COEF_DMG += 1.5;
+		if (mgc >= 400) _COEF_DMG += 1.5;
+		if (str >= 600) _COEF_DMG += 2;
+		if (mgc >= 600) _COEF_DMG += 2;
+		if (str >= 800) _COEF_DMG += 2.5;
+		if (str >= 1000) _COEF_DMG += 3;
+		if (str >= 1200) _COEF_DMG += 3.5;
+		//if (isSummon(target)) _COEF_DMG /= _COEF_FOCUS_LEEK;
+		if (dist < 15) {
+			_COEF_DMG += 4;
+			_COEF_VULNERABILITY += 4;
+		}
+		if (dist < 10) {
+			_COEF_DMG += 6;
+			_COEF_VULNERABILITY += 6;
+		}
+		if (dist < 5) {
+			_COEF_DMG += 8;
+			_COEF_VULNERABILITY += 10;
+		}
+		if (dist <= 1) {
+			_COEF_DMG += 4;
+			_COEF_VULNERABILITY += 100;
+		}
+		//if (bulbname(target, getLeek())[0] == ENTITY_PUNY_BULB) _COEF_DMG -=2000;
+		if (str >= 200) _COEF_SHACKLE_STRENGTH += 4;
+		if (mgc >= 200) _COEF_SHACKLE_STRENGTH += 2;
+		if (str >= 400) _COEF_SHACKLE_STRENGTH += 6;
+		if (mgc >= 400) _COEF_SHACKLE_STRENGTH += 5;
+		if (str >= 600) _COEF_SHACKLE_STRENGTH += 8;
+		if (mgc >= 600) _COEF_SHACKLE_STRENGTH += 6;
+		if (str >= 800) _COEF_SHACKLE_STRENGTH += 8;
+		if (str >= 1000) _COEF_SHACKLE_STRENGTH += 10;
+		if (str >= 1200) _COEF_SHACKLE_STRENGTH += 15;
+
+		if (dist < 15 && str > 1 ||dist < 15 && mgc > 1  ) _COEF_SHACKLE_STRENGTH += 1;
+		if (dist < 10 && str > 1 ||dist < 10 && mgc > 1  ) _COEF_SHACKLE_STRENGTH += 2;
+		if (dist < 5 && str > 1 ||dist < 5 && mgc > 1  ) _COEF_SHACKLE_STRENGTH += 3;
+		if (dist < 1 && str > 1 ||dist < 1 && mgc > 1  ) _COEF_SHACKLE_STRENGTH += 4;
+		if (dft >= 500) _COEF_SHACKLE_STRENGTH -= 2;
+		if (dft >= 300) _COEF_SHACKLE_STRENGTH -= 2;
+		if (sum) _COEF_SHACKLE_STRENGTH -= 15;
+		//if (DmgForTurn(target)==0) _COEF_SHACKLE_STRENGTH-=15;
+		if (str <= 0 && mgc <= 0) _COEF_SHACKLE_STRENGTH = 0;
+		//if (getStrength(target) >0) _COEF_SHACKLE_STRENGTH*=1000000000000;
+		if (rs > 10 && memgc <= 200) _COEF_DMG -= 1;
+		if (rs > 20 && memgc <= 200) _COEF_DMG -= 1.25;
+		if (rs > 30 && memgc <= 200) _COEF_DMG -= 1.5;
+		if (rs > 40 && memgc <= 200) _COEF_DMG -= 2;
+		if (rs > 60 && memgc <= 200) _COEF_DMG -= 4;
+		if (rs > 80 && memgc <= 200) _COEF_DMG -= 5;
+		if (rs > 100 && memgc <= 200) _COEF_DMG -= 9999999999999999999;
+		if (as > 50 && memgc <= 200) _COEF_DMG -= 1;
+		if (as > 100 && memgc <= 200) _COEF_DMG -= 1.5;
+		if (as > 150 && memgc <= 200) _COEF_DMG -= 2;
+		if (as > 200 && memgc <= 200) _COEF_DMG -= 2.5;
+		if (as > 250 && memgc <= 200) _COEF_DMG -= 3;
+		if (as > 300 && memgc <= 200) _COEF_DMG -= 3.5;
+		if (as > 350 && memgc <= 200) _COEF_DMG -= 4;
+		if (as > 400 && memgc <= 200) _COEF_DMG -= 4.5;
+		if (as > 450 && memgc <= 200) _COEF_DMG -= 5;
+		/*if (life < 1500) _COEF_DMG += 2;
+		if (life < 1200) _COEF_DMG += 3;
+		if (life < 1000) _COEF_DMG += 4;
+		if (life < 700) _COEF_DMG += 5;
+		if (life < 400) _COEF_DMG +=7;
+		if (totallife < 1500) _COEF_DMG += 3;
+		if (totallife < 1200) _COEF_DMG += 4;
+		if (totallife < 1000) _COEF_DMG += 5;
+		if (totallife < 700) _COEF_DMG += 6;
+		if (totallife < 400) _COEF_DMG +=10;*/
+		
+		if (as == 0 && rs == 0 && mestr >= 300) _COEF_DMG += 2.5;
+		if (tp > 20) _COEF_SHACKLE_TP += 10;
+		if (tp > 16) _COEF_SHACKLE_TP += 8;
+		if (tp > 14) _COEF_SHACKLE_TP += 6;
+		if (tp > 12) _COEF_SHACKLE_TP += 4;
+		if (tp >= 10) _COEF_SHACKLE_TP += 2;
+		_COEF_SHACKLE_TP *= 65000;
+		if (melife > life) {
+			_COEF_DMG += 20;
+			_COEF_VULNERABILITY += 6;
+		}
+		if (_TP[_MY_SELF] == getTotalTP(_MY_SELF)) _COEF_VULNERABILITY += 15;
+		else _COEF_VULNERABILITY -= 10;
+		if (life == RealLeeklife(target) && memgc >= 200) _COEF_DMG += 7;
+		if (LifePercent(life, getTotalLife()) < 40) _COEF_DMG -= 5;
+		if (bulbname(target, _MY_SELF)[1]>0) {
+			_COEF_DMG += (bulbname(target, _MY_SELF)[1]);
+		} else _COEF_DMG = 0;
+		_COEF_DMG *= 2;//0.90
+		if (getFightType()==FIGHT_TYPE_FARMER ||getFightType()==FIGHT_TYPE_TEAM) {
+			_COEF_DMG *= 0.4;
+		}
+		_COEF_VULNERABILITY *= 56000;
+		_COEF_SHACKLE_STRENGTH *= 4400;
+	}
+	return [target, _COEF_HEAL, _COEF_BOOST_MAX_LIFE, _COEF_ABS_SHIELD, _COEF_REL_SHIELD, _COEF_DMG, _COEF_SHACKLE_STRENGTH, _COEF_VULNERABILITY * 1000, _COEF_SHACKLE_TP];
+}
+
+global _COEF_MP_VALUE = getCoefMp(EnemyLeekG);
+//debugW(tabCOEF);
+function LibeScore(@entity) {
+	var Score = 0;
+	Score += HelpLibeScoreEnemy(entity);
+	return Score;
+}

@@ -1,0 +1,120 @@
+/**
+ * Class that define what to aim for (ally or enemy or both or neither)
+ **/
+
+include("../includes")
+
+class Target {
+
+	static ENEMY = 1
+	static ALLY = 2
+	static ALL = 3
+	static NONE = 4
+
+	static MapEnemyOkWeird = [
+		CHIP_COVETOUSNESS: true,
+		CHIP_PRECIPITATION: true,
+		CHIP_VAMPIRIZATION: true
+	]
+
+	static Targetable(entity, item, EveryStats) { //TODO: Redo cache with names to avoid fails ?
+		//define wether an entity should be calculated to be targetted
+		var Hash = item * MAX_ITEM + entity
+		if (Hash in TARGETABLECACHE) return TARGETABLECACHE[Hash]
+
+		var EntityStats = EveryStats[entity]
+		if (MapEnemyOkWeird[item]) {
+			if (EntityStats.ENEMY) {
+				TARGETABLECACHE[Hash] = true
+				return true
+			} else { //Should not return true on allies otherwise i will want to come by to take aoe of Covetousness
+				TARGETABLECACHE[Hash] = false
+				return false
+			}
+		} //To Redo Clean ?
+
+		for (var eff in ITEMINFO[item].EFFECTS) {
+			if (eff[5] & EFFECT_MODIFIER_ON_CASTER) continue
+			var Eff4 = eff[4]
+			if (!(Eff4 & EFFECT_TARGET_ALLIES) && EntityStats.ALLY) continue
+			if (!(Eff4 & EFFECT_TARGET_ENEMIES) && EntityStats.ENEMY) continue
+			if (!(Eff4 & EFFECT_TARGET_NON_SUMMONS) && !EntityStats.SUMMON) continue
+			if (!(Eff4 & EFFECT_TARGET_SUMMONS) && EntityStats.SUMMON) continue
+			var TarType = TargetType[eff[0]]
+			if ((TarType == Target.ENEMY || TarType == Target.ALL) && EntityStats.ENEMY) {
+				TARGETABLECACHE[Hash] = true
+				return true
+			}
+			if ((TarType == Target.ALLY || TarType == Target.ALL) && EntityStats.ALLY) {
+				TARGETABLECACHE[Hash] = true
+				return true
+			}
+		}
+		return false
+	}
+
+
+
+	static ImTargetable(itemEffects) {
+		for (var eff in itemEffects) {
+			if (!(eff[5] & EFFECT_MODIFIER_ON_CASTER) || !(eff[4] & EFFECT_TARGET_ALLIES) || TargetType[eff[0]] != Target.ALLY) continue
+
+			return true
+		}
+	}
+
+	static TargetType = [
+		EFFECT_DAMAGE: Target.ENEMY,
+		EFFECT_POISON: Target.ENEMY,
+		EFFECT_NOVA_DAMAGE: Target.ENEMY,
+		EFFECT_LIFE_DAMAGE: Target.ENEMY,
+		EFFECT_VULNERABILITY: Target.ENEMY,
+		EFFECT_ABSOLUTE_VULNERABILITY: Target.ENEMY,
+		EFFECT_KILL: Target.ENEMY,
+		EFFECT_SHACKLE_AGILITY: Target.ENEMY,
+		EFFECT_SHACKLE_WISDOM: Target.ENEMY,
+		EFFECT_SHACKLE_MAGIC: Target.ENEMY,
+		EFFECT_SHACKLE_STRENGTH: Target.ENEMY,
+		EFFECT_SHACKLE_MP: Target.ENEMY,
+		EFFECT_SHACKLE_TP: Target.ENEMY,
+
+		EFFECT_ANTIDOTE: Target.ALLY,
+		EFFECT_REMOVE_SHACKLES: Target.ALLY,
+		EFFECT_HEAL: Target.ALLY,
+		EFFECT_BOOST_MAX_LIFE: Target.ALLY,
+		EFFECT_RAW_ABSOLUTE_SHIELD: Target.ALLY,
+		EFFECT_RAW_RELATIVE_SHIELD: Target.ALLY,
+		EFFECT_RAW_HEAL: Target.ALLY,
+		EFFECT_RAW_BUFF_AGILITY: Target.ALLY,
+		EFFECT_RAW_BUFF_MAGIC: Target.ALLY,
+		EFFECT_RAW_BUFF_MP: Target.ALLY,
+		EFFECT_RAW_BUFF_RESISTANCE: Target.ALLY,
+		EFFECT_RAW_BUFF_SCIENCE: Target.ALLY,
+		EFFECT_RAW_BUFF_STRENGTH: Target.ALLY,
+		EFFECT_RAW_BUFF_TP: Target.ALLY,
+		EFFECT_RAW_BUFF_WISDOM: Target.ALLY,
+		EFFECT_BUFF_AGILITY: Target.ALLY,
+		EFFECT_BUFF_MP: Target.ALLY,
+		EFFECT_BUFF_RESISTANCE: Target.ALLY,
+		EFFECT_BUFF_STRENGTH: Target.ALLY,
+		EFFECT_BUFF_TP: Target.ALLY,
+		EFFECT_BUFF_WISDOM: Target.ALLY,
+		EFFECT_ABSOLUTE_SHIELD: Target.ALLY,
+		EFFECT_RELATIVE_SHIELD: Target.ALLY,
+		EFFECT_DAMAGE_RETURN: Target.ALLY,
+		EFFECT_NOVA_VITALITY: Target.ALLY,
+		EFFECT_REMOVE_SHACKLES: Target.ALLY,
+		EFFECT_RESURRECT: Target.ALLY,
+
+		EFFECT_DEBUFF: Target.ALL,
+		EFFECT_ATTRACT: Target.ALL,
+		EFFECT_INVERT: Target.ALL,
+		EFFECT_PUSH: Target.ALL,
+		EFFECT_STEAL_ABSOLUTE_SHIELD: Target.ALL,
+
+		EFFECT_AFTEREFFECT: Target.NONE, //Because it is mean but only hittable on allies
+		EFFECT_PROPAGATION: Target.NONE,
+		EFFECT_TELEPORT: Target.NONE,
+		EFFECT_SUMMON: Target.NONE
+	]
+}

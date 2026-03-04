@@ -1,0 +1,18 @@
+$dir = "c:\Users\aurel\Leekwars-AI\Random\IA_LaSoupe\Ancienne"
+Get-ChildItem -LiteralPath $dir -File | ForEach-Object {
+    $oldName = $_.Name
+    # Nettoyage brutal : on garde que les alphanumériques et le point
+    # On remplace tout le reste par _
+    $cleanName = $oldName -replace '[^a-zA-Z0-9.]', '_'
+    # On enlève les underscores en début/fin (souvent dus aux espaces)
+    $cleanName = $cleanName.Trim('_')
+    
+    if ($cleanName -notmatch '\.leek$') {
+        $cleanName = $cleanName + ".leek"
+    }
+
+    if ($oldName -ne $cleanName) {
+        Write-Host "Fixing: '$oldName' -> '$cleanName'"
+        Rename-Item -LiteralPath $_.FullName -NewName $cleanName -Force
+    }
+}

@@ -1,0 +1,20 @@
+/**
+ * This is the BulbAI
+**/
+
+include("../includes")
+
+class Bulb {
+	static AI() {
+		var ASS = new AllStats() //I Reload the stats 
+		//I start by emptying caches
+		ENTITY_ACTIONS_CACHE = [: ]
+		LOS_WITH_BASE_HASH_CACHE = [: ]
+		//Then i play
+		new Play()
+		//Then i speak and debug my ops
+		Pipotron.ReRollRand() //If i don't re roll the rands, then i will have the same says for every entities on turn T
+		say(Pipotron.generate(100))
+		Benchmark.DebugAllOps()
+	}
+}

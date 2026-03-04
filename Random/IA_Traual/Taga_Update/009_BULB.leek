@@ -1,0 +1,167 @@
+include('auto');
+
+/////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
+//====================================== BULB =====================================//
+/////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
+
+function findBestSingleAction(@stuff, @dead){
+	reachableCells = getReachableCells([getCell():0], getMP(), []);
+	var bestScore = 0, bestAction, bestDead = [];
+	for(var item in stuff){
+		if(_ITEM_COST[item] <= getTP() && getCooldown(item)==0){
+			var area = _ITEM_AREA[item];
+			// reminder : simplification du test car aucun bulb n'a de puce onlyBulb
+			var targetCells = @(
+				area == AREA_POINT 
+					?(_CHIP_ISPOSITIV[item] 
+						?(_CHIP_ISONLYBULB[item]===null 
+							? getCellsFromLeeks(_ALIVE_ALLIES_LEEKS)
+							: defCellsPoint)
+						: atkCellsPoint)
+				: (area == AREA_CIRCLE_1
+					? (_CHIP_ISPOSITIV[item] ? defCellsArea1 : atkCellsArea1)
+				: (area == AREA_CIRCLE_2
+					? (_CHIP_ISPOSITIV[item] ? defCellsArea2 : atkCellsArea2)  
+				: (area == AREA_CIRCLE_3
+					? (_CHIP_ISPOSITIV[item] ? defCellsArea3 : atkCellsArea3)
+				: debugE("Cas impossible dans 009_BULB:findBestSingleAction(stuff)")))));
+			
+			for(var targetCell in targetCells){
+				if(targetCell==null) continue;
+				var cell = _getNearCellToUseItemOnCell(item, targetCell, reachableCells);
+				if(cell!=null){
+					var actionBin = getBinFromAction_(cell, targetCell, item);
+					if(map_action_targets[actionBin]==null)
+						map_action_targets[actionBin] = getChipTargets(item, targetCell);
+					var death = [], score = getScoreOfAction(actionBin, [], death);
+					if(score > 0 && score > bestScore){
+						bestScore = score;
+						bestAction = actionBin;
+						bestDead = @death;
+					}
+				}
+			}
+			if(bestAction != null && area == AREA_POINT) break;
+		}
+	}
+	pushAll(dead, bestDead);
+	return @bestAction;
+}
+
+function ia_bulb_main(){ startOp();
+	// init
+	refreshLeeksCellsAndAliveStatus();
+	refreshLeeksEffectsAndStates();
+	stopOpkW("refresh");
+	startOp();
+	prepareSetMapActions(); // 2k op pour ré-init les positions de tout le monde (bug selfcast)
+	if(getTurn()==getBirthTurn()) updateCoef(getLeek());
+	
+	var type = getEntityType(getLeek()), stuff, distToE = 0;
+	if(type==ENTITY_PUNY_BULB){
+		stuff =@[CHIP_PROTEIN, CHIP_HELMET, CHIP_BANDAGE, CHIP_PEBBLE];
+	}else if(type==ENTITY_ROCKY_BULB){
+		_RATIO_IGNORE_DANGER = 10;
+		stuff =@[CHIP_ROCKFALL, CHIP_ROCK, CHIP_HELMET, CHIP_PEBBLE];
+	}else if(type==ENTITY_ICED_BULB){
+		stuff =@[CHIP_ICEBERG, CHIP_STALACTITE, CHIP_ICE, CHIP_REFLEXES];
+	}else if(type==ENTITY_HEALER_BULB){
+		_RATIO_IGNORE_DANGER = 0;
+		distToE = null;
+		stuff =@[CHIP_CURE, CHIP_DRIP, CHIP_VACCINE, CHIP_BANDAGE];
+	}else if(type==ENTITY_METALLIC_BULB){
+		_RATIO_IGNORE_DANGER = 0;
+		distToE = null;
+		stuff = _STR_300 || _SNC_400
+			? @[CHIP_ARMOR, CHIP_SHIELD, CHIP_WALL, CHIP_SEVEN_LEAGUE_BOOTS]
+			: @[CHIP_SEVEN_LEAGUE_BOOTS, CHIP_ARMOR, CHIP_SHIELD, CHIP_WALL];
+	}else if(type==ENTITY_FIRE_BULB){
+		stuff =@[CHIP_METEORITE, CHIP_DEVIL_STRIKE, CHIP_FLAME, CHIP_SPARK];
+	}else if(type==ENTITY_LIGHTNING_BULB){
+		stuff =@[CHIP_LIGHTNING, CHIP_DOPING, CHIP_SHOCK, CHIP_FLASH];
+	}
+	if(_STATE_LEEK_MIGHT_DIE) _RATIO_IGNORE_DANGER = 1000;
+	refreshGravityCells(distToE);
+	// playing
+	var dead = [];
+	while(true){
+		var bin = findBestSingleAction(stuff, dead);
+		if(bin==null) break;
+		else{
+			var action = getActionFromBin(bin);
+			debugW(getItemName(action[_item]));
+			
+			moveTowardCell(action[_from]);
+			useChipOnCell(action[_item], action[_to]);
+		}
+	}
+	// find end cell
+	if(type==ENTITY_METALLIC_BULB && 
+	(_STATE_LEEK_MIGHT_DIE || getCellDistance(getCell(), getCell(getSummoner())) > 7))
+		moveTowardCell(getCellToUseChip(CHIP_SEVEN_LEAGUE_BOOTS, getSummoner()));
+	else {
+		var final = findFinalCell(dead);
+		debug("danger: "+ final[_danger]);
+		moveTowardCell(final[_sCell]);
+	}
+	say("Bonjour, moi c'est Fab.");
+	stopOpkW("IA_Bulb:" + getName(getLeek()));
+}
+
+// new safe cell
+function findFinalCell(@dead){
+	var fromC = getCell(), mp = getMP(), life = getLife();
+	var minDanger = _MAX_INT, score = _MIN_INT, safeCell = -1, mpUsed = -1;
+	var nearECell = getCell(_NEAREST_ENEMY_LEEK);
+	var reachable = getCachedReachableCells(fromC, mp, dead);
+	var countBulb = _COUNT_PUNY+_COUNT_ROCKY+_COUNT_ICED+_COUNT_HEALER
+					+_COUNT_METAL+_COUNT_FIRE+_COUNT_LIGHTNING;
+	var shouldIgnoreDanger = countBulb > 5;
+	var isHealer = getEntityType(getLeek())==ENTITY_HEALER_BULB;
+	for(var sCell:var mpused in reachable){ if(mpused > mp) break;
+		// gestion du danger
+		var cellDanger = getCellDanger(sCell, dead, []);
+		var danger = cellDanger[_danger], eMpUsed = cellDanger[_mpused], tmpScore=0;
+		//debuging color
+		/*
+		var color = danger > life 	? getColor(255, 255, 255) : 
+				   (danger==0 		? getColor(0, 255, 0) : 
+									getColor(round(danger/life*255), 0, 0));
+		mark(sCell, color);
+		*/
+		//end debuging color
+		
+		if(!shouldIgnoreDanger)tmpScore -= danger < life*_RATIO_IGNORE_DANGER ? 0 
+			: danger < life*_RATIO_RISK_DEATH ? 
+				danger*_RATIO_DANGER
+				: danger*_RATIO_DANGER + _SCORE_DEATH;
+		else if(isHealer)tmpScore -= danger < life ? 0 : _SCORE_DEATH;
+		// enemy mp used
+		if(!shouldIgnoreDanger)tmpScore += tmpScore == 0 ? 50
+													: eMpUsed*_RATIO_MP_USED;
+		// espacement entre les leeks
+		for(var cell in _areaCells1[sCell]) if(_LEEKS_CELL[cell]!=null) tmpScore-=1000;
+		for(var cell in _areaCells2[sCell]) if(_LEEKS_CELL[cell]!=null) tmpScore-=300;
+		for(var cell in _areaCells3[sCell]) if(_LEEKS_CELL[cell]!=null) tmpScore-=100;
+		// gravityCells
+		for(var cell:var dist in _GRAVITY_CELLS){				
+			tmpScore -= abs(dist-getCellDistance(cell, sCell))*_GRAVITY_COEFS[cell];
+		}
+		// blocking
+		if(count(@_areaCells1[nearECell])==1){
+			for(var cell in _areaCells1[nearECell]){
+				if(cell==sCell) tmpScore+= _SCORE_LOCK*5;
+			}
+		}
+		// validation du meilleure coup
+		if(safeCell==null || tmpScore > score){
+			safeCell = sCell;
+			minDanger = danger;
+			score = tmpScore;
+			mpUsed = eMpUsed;
+		}
+	} // caching de l'objet résultat.
+	return @[_sCell: safeCell, _danger: minDanger, _score: score, _mpused: mpUsed];
+}

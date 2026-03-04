@@ -1,0 +1,244 @@
+include("include");
+
+function PiptronBulb() {
+	var ArrayParoles = [
+	"Pour faire une chanson facile, facile," ,
+	"Faut d’abord des paroles débiles, débiles," ,
+	"Une petite mélodie qui te prend bien la tête," ,
+	"Et une chorégraphie pour bien faire la fête," ,
+	"Dans celle là, on se rassemble, à 5, ou 6, ou 7" ,
+	"Et on se colle tous ensemble, en chantant à tue tête." ,
+	"Ha! Qu’est-ce qu’on est serré, au fond de cette boite," ,
+	"Chantent les sardines, chantent les sardines," ,
+	"Ha! Qu’est-ce qu’on est serré, au fond de cette boite," ,
+	"Chantent les sardines, chantent les sardines," ,
+	"Ha! Qu’est-ce qu’on est serré, au fond de cette boite," ,
+	"Chantent les sardines, chantent les sardines," ,
+	"Ha! Qu’est-ce qu’on est serré, au fond de cette boite," ,
+	"Chantent les sardines, chantent les sardines," ,
+	"Bien sûr, que c’est vraiment facile, facile," ,
+	"C’est même complètement débile, débile," ,
+	"C’est pas fait pour penser, c’est fait pour faire la fête," ,
+	"C’est fait pour se toucher, se frotter les arêtes ," ,
+	"Alors on se rassemble, à 5, ou 6, ou 7," ,
+	"Et puis on saute ensemble en chantant à tue tête," ,
+	"Ha! Qu’est-ce qu’on est serré, au fond de cette boite," ,
+	"Chantent les sardines, chantent les sardines," ,
+	"Ha! Qu’est-ce qu’on est serré, au fond de cette boite," ,
+	"Chantent les sardines entre l’huile et les aromates.," ,
+	"Ha! Qu’est-ce qu’on est serré, au fond de cette boite," ,
+	"Chantent les sardines, chantent les sardines," ,
+	"Ha! Qu’est-ce qu’on est serré, au fond de cette boite," ,
+	"Chantent les sardines entre l’huile et les aromates." ,
+	"Et puis, pour respirer un p’tit peu, on s’écarte en se tenant la main," ,
+	"Et puis, … pour être encore plus heureux," ,
+	"On fait, là, là, en chantant mon refrain !" ,
+	"Là, là, et les mains en l’air, là, là !" ,
+	"Là, là, là, là, là, là, là, là, là, là, là, là,là, là, là..." ,
+	"Et maintenant, on se resserre tous !" ,
+	"On se resserre, et maintenant qu’on l’a connaît, " ,
+	"on va chanter la chanson des sardines! Attention! Allez!" ,
+	"Ha! Qu’est-ce qu’on est serré, au fond de cette boite," ,
+	"Chantent les sardines, chantent les sardines," ,
+	"Ha! Qu’est-ce qu’on est serré, au fond de cette boite," ,
+	"Chantent les sardines entre l’huile et les aromates.," ,
+	"Ha! Qu’est-ce qu’on est serré, au fond de cette boite," ,
+	"Chantent les sardines, chantent les sardines," ,
+	"Ha! Qu’est-ce qu’on est serré, au fond de cette boite," ,
+	"Chantent les sardines entre l’huile et les aromates." ,
+	"Ha! Qu’est-ce qu’on est serré, au fond de cette boite," ,
+	"Chantent les sardines, chantent les sardines," ,
+	"Ha! Qu’est-ce qu’on est serré, au fond de cette boite," ,
+	"Chantent les sardines entre l’huile et les aromates.," ,
+	"Là, là, là, là, là, là, là, là, là, là, là, là,là, là, là..." ,
+	"Là, là, là, là, là, là, là, là, là, là, là, là,là, là, là..." 
+	];
+	if (getTP()>0) {
+	say(ArrayParoles[PourChanterEnRythme]);
+	PourChanterEnRythme ++;
+	}
+	if (PourChanterEnRythme >=count(ArrayParoles)) {
+		PourChanterEnRythme = 0;
+	}
+}
+
+function Pipotron() {
+	if (getEnemiesCount()==0) {
+		say("Omg comment t'es nul");
+	}
+	else
+	{
+
+	var sujet = [
+		'Je' ,
+		'Tu' ,
+		'Il' ,
+		'Nous' ,
+		'Vous' ,
+		'Ils' ,
+		'Pilow' ,
+		"Quelqu'un" ,
+		'Mon poney unijambiste'
+	] ;
+
+	var verbe = [
+	// 1er groupe
+	[
+		'march' ,
+		'test' ,
+		'chauss' ,
+		'tortur' ,
+		'flatul' ,
+		'gout' ,
+		'bouff' ,
+		'troll' ,
+		'douill',
+		'port',
+		'pleur',
+		'pens',
+		'frapp',
+		'pass',
+		'montr',
+		'tu',
+		'cass',
+		'tromp',
+		'pouss',
+		'racont',
+		'form',
+		'assiég' ,
+		'achet' ,
+		'transfér'
+	],
+	// 2nd groupe
+	[
+		'pol',
+		'englout',
+		'convert',
+		'rebât',
+		'pun',
+		'pétr',
+		'vom',
+		'bann',
+		'enlaid',
+		'guerr',
+		'fin' ,
+		'définir' ,
+		'enfouir' , 
+		'élargir'
+	]];
+
+	var terminaison = [
+		// 1er groupe
+		[
+			// passé
+			[ 'ais', 'ais', 'ait', 'ions', 'iez', 'aient' ],
+			// présent
+			[ 'e', 'es', 'e', 'ons', 'ez', 'ent' ],
+			// futur
+			[ 'erai', 'eras', 'era', 'erons', 'erez', 'eront' ],
+		],
+		// 2nd groupe
+		[
+			// passé
+			[ 'issais', 'issais', 'issait', 'issions', 'issiez', 'issaient' ],
+			// présent
+			[ 'is', 'is', 'it', 'issons', 'issez', 'issent' ],
+			// futur
+			[ 'irais', 'iras', 'ira', 'irons', 'irez', 'iront' ],
+		]
+	];
+
+	var COD = [
+		'Pilow' ,
+		'un crocodile' ,
+		'une pasteque' ,
+		'une chaise' ,
+		'une porte' ,
+		'un trou noir' ,
+		'une antenne' ,
+		'un piporton' ,
+		'un dictionnaire',
+		'un singe',
+		'un pommier',
+		'un poiral',
+		'une brique',
+		'un nuage',
+		'un toit',
+		'des panneaux',
+		'une noix',
+		'un cochon',
+		'une imprimante',
+		'un chalet',
+		'un mur',
+		'une feuille',
+		'personne(Ulysse)',
+		'une palourde',
+		'une démocratie',
+		'une personnalité',
+		'un medaillon',
+		'une plume',
+		'un altimètre',
+		'un accoudoir',
+		'une carotte',
+		'une casserole',
+		'un deltaplane',
+		'un dinosaure',
+		'une friteuse',
+		'une merguez',
+		'les pompiers'
+	];
+
+	var CCL = [
+		'sur leekwars' ,
+		'dans la rue' ,
+		'dans le potager' ,
+		'sur un bâteau' ,
+		'dans un château' ,
+		'sous la table' ,
+		'sur le toit' ,
+		"dans l'avion" ,
+		"devant l'ordinateur" ,
+		'en cours de oenologie',
+		'dans une prison',
+		'en maternelle',
+		'la tête en bas',
+		'sur une montagne',
+		'sur la mer',
+		'sur la plage',
+		'acroché à un fil' ,
+		'en pls' ,
+		'en sautant'
+	]  ;
+
+	var rand_sujet = randInt(0 , count(sujet));
+	var rand_sujet_conj = (rand_sujet>=5) ? 2 : rand_sujet;
+	var rand_groupe = randInt(0 , 1.1);
+	var rand_temps = randInt(0 , 2.1);
+	var verbe_groupe = verbe[rand_groupe];
+	var rand_verbe = randInt(0 , count(verbe_groupe));
+	var rand_COD = randInt(0 , count(COD));
+	var rand_CCL = randInt(0 , count(CCL));
+
+	say(sujet[rand_sujet] + ' ' + verbe_groupe[rand_verbe] + terminaison[rand_groupe][rand_temps][rand_sujet_conj] + ' ' + COD[rand_COD] + ' ' + CCL[rand_CCL]);
+	}
+}
+
+function Pasteque() {
+	var rouge = getColor(255, 0, 0);
+var noire = getColor(0, 0, 0);
+var peche = getColor(255, 160,122);
+var kaki = getColor(108, 163, 0);
+var fonce = getColor(0, 100, 0);
+//cells
+var cell_fonce = [266,301,408,354,372,390,426,427,445,428,446,429,447,430,431,414,397,380,363,346,311,276,336];
+var cell_kaki = [249,284,319,337,355,373,391,409,410,411,412,413,396,379,362,345,328,293,258];
+var cell_peche = [267,285,302,320,338,356,374,392,375,393,394,377,395,378,361,344,327,310,292,275];
+var cell_rouge = [256,250,251,252,253,254,255,256,257,268,269,270,271,272,273,274,287,288,289,290,303,304,306,308,309,321,322,323,324,325,326,339,340,341,342,343,357,358,359,360,376];
+var cell_noire = [286,305,307,291];
+
+mark(cell_noire, noire);
+mark(cell_rouge, rouge);
+mark(cell_kaki, kaki);
+mark(cell_peche, peche);
+mark(cell_fonce, fonce);
+}

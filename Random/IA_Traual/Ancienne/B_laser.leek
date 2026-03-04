@@ -1,0 +1,132 @@
+include("Cache cache");
+global leek2 = nearestrealenemy();
+if (getLife(leek2) == 0) {leek2 = nearestrealenemy();
+	
+}
+var enemy = getNearestEnemy();
+var mycell = getCell();
+var enemycell = getCell(leek2);
+var dist = getDistance(mycell, getCell(leek2));
+var tour = getTurn();
+var disto = getPathLength(mycell, getCell(leek2));
+
+if (getLife()<=400) {
+useChip(CHIP_REGENERATION, getLeek());
+}
+
+if (getAbsoluteShield(leek2)>25) {
+useChip(CHIP_LIBERATION, leek2);	
+}
+if (getRelativeShield(leek2)>25) {
+useChip(CHIP_LIBERATION, leek2);	
+}
+
+
+if (tour == 1) {
+setWeapon(WEAPON_B_LASER);}
+
+if (getTP()==15) {
+moveTowardCell(getCellToUseChip(CHIP_ICEBERG, leek2));	
+}
+
+while (canUseWeapon(leek2) && getTP()>=0) {
+useWeapon(leek2);	
+}
+
+if (getLife(getNearestAlly())<getTotalLife(getNearestAlly())) {
+useWeapon(getNearestAlly());
+}
+
+if (getLife(getNearestAlly())<getTotalLife(getNearestAlly())) {
+useWeapon(getNearestAlly());
+}
+
+if (getLife(getNearestAlly())<getTotalLife(getNearestAlly())) {
+useWeapon(getNearestAlly());
+}
+
+summon(CHIP_HEALER_BULB, getCellToUseChip(CHIP_HEALER_BULB, getLeek()), bulbeSoigneur());
+summon(CHIP_ROCKY_BULB, getCellToUseChip(CHIP_ROCKY_BULB, getLeek()), bulbeRocheux());
+summon(CHIP_ICED_BULB, getCellToUseChip(CHIP_ICED_BULB, getLeek()), bulbAI());
+
+if (canUseWeapon(leek2)==false && canUseChip(CHIP_ICEBERG, leek2) && getCooldown(CHIP_ICEBERG)==0 && canUseChip(CHIP_METEORITE, leek2) && getCooldown(CHIP_METEORITE)==0 ) {
+useChipOnCell(CHIP_ICEBERG, useCHiporWeaponarea(CHIP_ICEBERG, 2, leek2));
+useChipOnCell(CHIP_METEORITE, useCHiporWeaponarea(CHIP_METEORITE, 2, leek2));
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if (getTP()<=4) {
+moveTowardCell(tableaucellscacher());	
+}

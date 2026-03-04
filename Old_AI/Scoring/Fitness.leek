@@ -1,0 +1,210 @@
+include("../includes")
+
+/*
+ *  This is a Fitness Function For a Whole Branch, From Stats to Stats, it rates a branch
+ */
+
+class Fitness {//TODO : Put Special scores like kill in the life or poison evaluation function
+
+	static getMapIdScore(NewStats, OldStats, Targets, OldScoreMap) { //Base Function Will Be Removed
+		Benchmark.FitnessStart()
+		var _final = clone(OldScoreMap)
+		
+		if (mapIsEmpty(Targets)) { //No Targets of item so its a summon or resu
+			for (var e: var stat in NewStats) {
+				if (e in OldStats) continue
+				if (stat.NAME in SummonNameMapScore) { //Its a summon so i add the corresponding summon score :
+					_final[e] = SummonNameMapScore[stat.NAME]
+				} else { //Its a resu so i add the corresponding resu score :
+					_final[e] = RESURRECT_SCORE
+				}
+			}
+		} else {
+			var MyStats = NewStats[Me]
+
+			//Then we score the difference of scores of OldEntities (The ones that are already in game)
+			for (var e: var dist in Targets + [Me : 0]) { //I add myself, its a fix to count me everytime. For exemple if i play pistol on enemy i should also look for my lifesteal, by looking at me everytime i can do it
+				var stat = OldStats[e]
+				var nstats = NewStats[e]
+				if (nstats.LIFE <= 0) { //Kill Scenario :
+					if (stat.LIFE >= 0) _final[e] = KILL_SCORE[e]
+					continue //We do not see the rest of the scores cuz entity is dead so for exemple shackles will get removed at death
+				}
+				if (nstats.LIFE <= nstats.POISON) { //Kill Poison Scenario :
+					if (stat.LIFE >= stat.POISON) _final[e] = KILL_SCORE_POISON[e]
+					continue //We do not see the rest of the scores cuz entity is dead so for exemple shackles will get removed at death
+				}
+
+				if (!(e in _final)) _final[e] = 0 //If it doesn't already has a value, then i need to put his score to 0
+
+				if (nstats.LIFE <= nstats.POISON_OVER_TIME && stat.LIFE > stat.POISON_OVER_TIME) { //Kill Poison Over Time Scenario :
+					_final[e] += KILL_SCORE_POISON_LONG[e]
+					//Continue or not ?
+				}
+			
+				//Absolute Shield
+				if (stat.ABSOLUTE_SHIELD != nstats.ABSOLUTE_SHIELD) _final[e] += Fitness.AbsoluteShieldFunction(nstats.ABSOLUTE_SHIELD - stat.ABSOLUTE_SHIELD, e)
+				//Relative Shield
+				if (stat.RELATIVE_SHIELD != nstats.RELATIVE_SHIELD) _final[e] += Fitness.RelativeShieldFunction(nstats.RELATIVE_SHIELD, stat.RELATIVE_SHIELD, e)
+				//Damage Return
+				if (stat.DAMAGE_RETURN != nstats.DAMAGE_RETURN) _final[e] += Fitness.DamageReturnFunction(nstats.DAMAGE_RETURN - stat.DAMAGE_RETURN, e)
+				//Power
+				if (stat.POWER != nstats.POWER) _final[e] += Fitness.PowerFunction(nstats.POWER - stat.POWER, e)
+				//Poison
+				if (stat.POISON != nstats.POISON) _final[e] += Fitness.PoisonFunction(nstats.POISON, stat.POISON, stat)
+				//Poison Over Time
+				if (stat.POISON_OVER_TIME != nstats.POISON_OVER_TIME) _final[e] += Fitness.PoisonOverTimeFunction(nstats.POISON_OVER_TIME, stat.POISON_OVER_TIME, stat)
+				//Life
+				if (stat.LIFE != nstats.LIFE) _final[e] += Fitness.LifeFunction(nstats.LIFE, stat.LIFE, stat)
+				//Total Life
+				if (stat.TOTAL_LIFE != nstats.TOTAL_LIFE) _final[e] += Fitness.TotalLifeFunction(nstats.TOTAL_LIFE - stat.TOTAL_LIFE, e)
+				//Strength
+				if (stat.STRENGTH != nstats.STRENGTH) _final[e] += Fitness.StrengthFunction(nstats.STRENGTH - stat.STRENGTH, e)
+				//Wisdom
+				if (stat.WISDOM != nstats.WISDOM) _final[e] += Fitness.WisdomFunction(nstats.WISDOM - stat.WISDOM, e)
+				//Agility
+				if (stat.AGILITY != nstats.AGILITY) _final[e] += Fitness.AgilityFunction(nstats.AGILITY - stat.AGILITY, e)
+				//Resistance
+				if (stat.RESISTANCE != nstats.RESISTANCE) _final[e] += Fitness.ResistanceFunction(nstats.RESISTANCE - stat.RESISTANCE, e)
+				//Science
+				if (stat.SCIENCE != nstats.SCIENCE) _final[e] += Fitness.ScienceFunction(nstats.SCIENCE - stat.SCIENCE, e)
+				//Magic
+				if (stat.MAGIC != nstats.MAGIC) _final[e] += Fitness.MagicFunction(nstats.MAGIC - stat.MAGIC, e)
+				//Total Tp
+				if (stat.TOTAL_TP != nstats.TOTAL_TP) _final[e] += Fitness.TotalTpFunction(nstats.TOTAL_TP - stat.TOTAL_TP, e)
+				//Total Mp
+				if (stat.TOTAL_MP != nstats.TOTAL_MP) _final[e] += Fitness.TotalMpFunction(nstats.TOTAL_MP - stat.TOTAL_MP, e)
+			}
+		}
+
+		Benchmark.FitnessStop()
+		return _final
+	}
+
+	static getNodeFinalScore(Nod) {
+		var ScoreWithoutCooldowns = Nod.SCORE_ID_MAP instanceof Map ? mapSum(Nod.SCORE_ID_MAP) : 0
+		var MyStats = Nod.END_STATS[Me]
+		ScoreWithoutCooldowns += MyStats.TP * 0.00001 + MyStats.MP * 0.00001 //To avoid a tie between 2 nodes with one less opti than the other
+		var CooldownScore = 0
+		for (var item:var cooldown in MyStats.COOLDOWNS) {
+			if (item in COOLDOWN_SCORES_MAP && cooldown == ITEMINFO[item].COOLDOWN) CooldownScore += COOLDOWN_SCORES_MAP[item]
+		}
+		return ScoreWithoutCooldowns - CooldownScore
+	}
+	/*
+	static getScoreFromMapIdScores(MapIdScores, EveryStats) { //TODO : remove and do only mapSum()
+		var _final = 0
+
+		for (var id: var score in MapIdScores) {
+			_final += score
+		}
+
+		//Removing Cooldown Scores
+		//this.SCORE -= (Coefs.getCooldownScore(NewStats[Me].COOLDOWNS) - Coefs.getCooldownScore(OldStats[Me].COOLDOWNS))
+
+		//Removing TP / MP Fix ?
+
+		return _final
+	}*/
+	/*
+	static CooldownScore(item) {
+		if (item in ITEMINFO) return (ITEMINFO[item].COOLDOWN ** 0.7) * 1
+		return 0
+	}*/
+
+	static getDangerScore(Danger, GScore, MyStats) {//TODO : Add Gravity Score into IT
+		var BaseScoreWithoutKills = max(0, (Danger * COEF_LIFE[MyStats.ID] - GScore))
+		if (MyStats.LIFE <= Danger) { //DEATH Situation
+			return DEATH_SCORE + BaseScoreWithoutKills
+		} else if ((MyStats.LIFE - MyStats.POISON) <= Danger) { //POISON DEATH Situation
+			return DEATH_SCORE_POISON + BaseScoreWithoutKills
+		} else if ((MyStats.LIFE - MyStats.POISON_OVER_TIME) <= Danger) {//POISON OVER TIME DEATH Situation
+			return DEATH_SCORE_POISON_OVER_TIME + BaseScoreWithoutKills
+		}
+		return BaseScoreWithoutKills
+	}
+
+	static AbsoluteShieldFunction(AddedShield, TargetID) {
+		return AddedShield * COEF_ABSOLUTE_SHIELD[TargetID]
+	}
+
+	static RelativeShieldFunction(NewValue, OldValue, TargetID) {
+		var AddedShield = (min(MAX_RELATIVE_SHIELD_SCORED, NewValue) - OldValue)//To Cap at 100 Relative Shield
+		return AddedShield * COEF_RELATIVE_SHIELD[TargetID]
+	}
+
+	static DamageReturnFunction(AddedValue, TargetID) {
+		return AddedValue * COEF_DAMAGE_RETURN[TargetID]
+	}
+
+	static PowerFunction(AddedValue, TargetID) {
+		return AddedValue * COEF_POWER[TargetID]
+	}
+
+	static PoisonFunction(NewValue, OldValue, TargetStats) {
+		//if (NewValue > TargetStats.LIFE) return KILL_SCORE_POISON[TargetStats.ID]
+		var AddedPoison = (min(NewValue, TargetStats.LIFE) - OldValue)
+		/*if (NewValue >= TargetStats.LIFE && OldValue < TargetStats.LIFE) _final += KILL_SCORE_POISON
+		if (TargetStats.POISON_OVER_TIME >= TargetStats.LIFE) _final += KILL_SCORE_POISON_LONG
+		if (NewValue <= TargetStats.LIFE && OldValue > TargetStats.LIFE) _final -= KILL_SCORE_POISON //Save*/
+		//if (NewValue > TargetStats.LIFE) _final += KILL_SCORE_POISON_LONG //Didn't save all
+		return AddedPoison * COEF_POISON[TargetStats.ID]
+	}
+
+	static PoisonOverTimeFunction(NewValue, OldValue, TargetStats) {
+		//if (LifePercentage <= 0) return 0
+		var AddedPoison = (NewValue - OldValue)
+		/*
+		if (NewValue >= TargetStats.LIFE && OldValue < TargetStats.LIFE) _final += KILL_SCORE_POISON_LONG
+		if (NewValue <= TargetStats.LIFE && OldValue > TargetStats.LIFE) _final -= KILL_SCORE_POISON_LONG //Save Score*/
+		return NewValue > TargetStats.LIFE ? AddedPoison * COEF_POISON_OVER_TIME[TargetStats.ID] + KILL_SCORE_POISON_LONG[TargetStats.ID] : AddedPoison * COEF_POISON_OVER_TIME[TargetStats.ID]
+	}
+
+	static LifeFunction(NewValue, OldValue, TargetStats) {
+		//if (NewValue <= 0) return KILL_SCORE[TargetStats.ID]
+		//if (LifePercentage <= 0) return 0
+		var AddedLife = (NewValue - OldValue)
+		/*if (NewValue <= 0 && OldValue > 0) _final -= KILL_SCORE
+		if (TargetStats.POISON >= NewValue && TargetStats.POISON < OldValue) _final -= KILL_SCORE_POISON
+		if (TargetStats.POISON_OVER_TIME >= NewValue && TargetStats.POISON_OVER_TIME < OldValue) _final -= KILL_SCORE_POISON_LONG*/
+		//if (TargetStats.POISON >= OldValue || NewValue <= 0) _final += KILL_SCORE_POISON
+		//if (TargetStats.POISON_OVER_TIME >= OldValue || NewValue <= 0) _final += KILL_SCORE_POISON_LONG
+		return AddedLife * COEF_LIFE[TargetStats.ID]
+	}
+
+	static TotalLifeFunction(AddedValue, TargetID) {
+		return AddedValue * COEF_TOTAL_LIFE[TargetID]
+	}
+
+	static StrengthFunction(AddedValue, TargetID) {
+		return AddedValue * COEF_STRENGTH[TargetID]
+	}
+
+	static WisdomFunction(AddedValue, TargetID) {
+		return AddedValue * COEF_WISDOM[TargetID]
+	}
+
+	static AgilityFunction(AddedValue, TargetID) {
+		return AddedValue * COEF_AGILITY[TargetID]
+	}
+
+	static ResistanceFunction(AddedValue, TargetID) {
+		return AddedValue * COEF_RESISTANCE[TargetID]
+	}
+
+	static ScienceFunction(AddedValue, TargetID) {
+		return AddedValue * COEF_SCIENCE[TargetID]
+	}
+
+	static MagicFunction(AddedValue, TargetID) {
+		return AddedValue * COEF_MAGIC[TargetID]
+	}
+
+	static TotalTpFunction(AddedValue, TargetID) {
+		return AddedValue * COEF_TOTAL_TP[TargetID]
+	}
+
+	static TotalMpFunction(AddedValue, TargetID) {
+		return AddedValue * COEF_TOTAL_MP[TargetID]
+	}
+}

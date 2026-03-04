@@ -1,0 +1,2018 @@
+/**
+ * Here we put cache globals 
+ **/
+
+include("../includes")
+
+function ReloadCacheNewTurn() { //Simple function that refresh cache that need to be refreshed
+    TARGETABLECACHE = [: ]
+    MAP_CELL_ITEM_AOE_CACHE = [: ]
+    CELL_DANGER_GET_CACHE = [: ]
+    COMBO_FROM_ITEM_AOE_CACHE = [: ]
+    HAVE_AN_HITTABLE_ITEM_CACHE = [: ]
+    TO_SKIP_MAP_CACHE = [: ]
+    ENEMIES_BASE_HASH_CACHE = [: ]
+    ENTITY_DANGER_CACHE_FOR_ME = [: ]
+    AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
+    AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
+    ENTITY_ACTIONS_CACHE = [: ]
+    ACTIONS_ON_ME_CACHE = [: ]
+    ACTIONS_SUMMON_CACHE = [: ]
+    ACTIONS_ON_VOID_CACHE = [: ]
+    COOLDOWN_SCORE_CACHE = [: ]
+}
+
+// STATE
+
+global ENTITY_SORTED_BY_TURN_ORDER_CACHE = [: ]
+
+// CELL CLASS
+
+global CELL_X = [: ]
+global CELL_Y = [: ]
+
+global TMPOBSTACLES = [: ]
+global ALLCELLINFO = [: ]
+
+global DISTANCE_CACHE = [: ]
+global LOS_CACHE = [: ]
+global LOS_WITH_BASE_HASH_CACHE = [: ]
+global FILLED_CELLS_CACHE = [: ]
+
+global DISK_CACHE = [: ]
+global CIRCLE_CACHE = [: ]
+global CIRCLE_WITH_LOS_CACHE = [: ]
+global DISC_WITH_LOS_CACHE = [: ]
+
+global LINE_CACHE = [: ]
+global POINTS_LINE_CACHE = [: ]
+global LINE_WITH_LOS_CACHE = [: ]
+global POINTS_LINE_WITH_LOS_CACHE = [: ]
+
+
+global DIAGONAL_CACHE = [: ]
+global POINTS_DIAGONAL_CACHE = [: ]
+global DIAGONAL_WITH_LOS_CACHE = [: ]
+global POINTS_DIAGONAL_WITH_LOS_CACHE = [: ]
+
+global STAR_CACHE = [: ]
+global POINTS_STAR_CACHE = [: ]
+global STAR_WITH_LOS_CACHE = [: ]
+global POINTS_STAR_WITH_LOS_CACHE = [: ]
+
+global INVERTED_STAR_CACHE = [: ]
+global POINTS_INVERTED_STAR_CACHE = [: ]
+global INVERTED_STAR_WITH_LOS_CACHE = [: ]
+global POINTS_INVERTED_STAR_WITH_LOS_CACHE = [: ]
+
+
+global LASERS = [: ]
+global FIRST_INLINE = [: ]
+
+// For Item Class
+
+global ITEMINFO = [: ]
+
+
+// Target
+
+global TARGETABLECACHE = [: ]
+
+// Consequences
+
+global IS_HITABLE_CACHE = [: ]
+global CONSEQUENCE_TARGET_CACHE = [: ]
+
+//Stuff for Summons :
+
+global SUMMONER_LEVEL_TIMES = min(300, getLevel()) / 300
+
+//For Cell Danger : 
+
+global MAP_CELL_ITEM_AOE_CACHE = [: ]
+global CELL_DANGER_GET_CACHE = [: ]
+global COMBO_FROM_ITEM_AOE_CACHE = [: ]
+global BFS_CELL_DANGER_CACHE = [: ]
+global HAVE_AN_HITTABLE_ITEM_CACHE = [: ]
+global DANGER_ENTITY_CACHE = [: ]
+global DANGER_ENTITY_INVENTORY = [: ]
+global EVERY_ENEMIES_WALKABLES = [: ]
+
+//Theses two are weird, they are optimisations from BaseHash (if baseHash is the same then theses results will also be the same)
+global TO_SKIP_MAP_CACHE = [: ]
+global ENEMIES_BASE_HASH_CACHE = [: ] 
+
+//Branch Danger Cache : 
+
+global ENTITY_DANGER_CACHE_FOR_ME = [: ]
+global ENTITY_DANGER_CACHE_FOR_OTHERS = [: ]
+
+//For Walkable cells / Jump Walkable cells
+
+global WALKABLE_CACHE = [: ]
+global JUMP_CACHE = [: ]
+global TELEPORTATION_CACHE = [: ]
+global TELEPORTATION_AND_JUMP_CACHE = [: ]
+global IGNORE_CELLLS_CACHE = [: ]
+
+//For Entity Actions :
+
+global ENTITY_ACTIONS_CACHE = [: ] //Actions on Everybody else then me
+global ACTIONS_ON_ME_CACHE = [: ]//Actions on me only Item from to me (either same cell or aoe)
+global ACTIONS_SUMMON_CACHE = [: ]//Actions of summoning something (Resu or Bulbs)
+global ACTIONS_ON_VOID_CACHE = [: ]//Actions on void for positive effects (glaive etc)
+global COEFFED_MAP_ENTITY_CACHE = [: ]
+global HASHED_MAP_ITEM_CACHE = [: ]
+
+//For Neural : 
+
+global AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
+global AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
+global COOLDOWN_SCORE_CACHE = [: ]
+global NEURAL_SCORE_CACHE = [: ]
+
+//For WalkCells : 
+
+global OBSTACLES_ARRAY = getObstacles()
+global MAP_CELL_TO_LINE = [: ]
+global MAP_CELL_TO_POS = [: ]
+
+global MAP_OBSTACLES_LOADED
+
+global MAP_OBSTACLES_ZERO
+global MAP_OBSTACLES_ONE
+global MAP_OBSTACLES_TWO
+global MAP_OBSTACLES_THREE
+global MAP_OBSTACLES_FOUR
+global MAP_OBSTACLES_FIVE
+global MAP_OBSTACLES_SIX
+global MAP_OBSTACLES_SEVEN
+global MAP_OBSTACLES_EIGHT
+global MAP_OBSTACLES_NINE
+global MAP_OBSTACLES_TEN
+global MAP_OBSTACLES_ELEVEN
+global MAP_OBSTACLES_TWELVE
+global MAP_OBSTACLES_THIRTEEN
+global MAP_OBSTACLES_FOURTEEN
+global MAP_OBSTACLES_FIFTEEN
+global MAP_OBSTACLES_SIXTEEN
+global MAP_OBSTACLES_SEVENTEEN
+global MAP_OBSTACLES_EIGHTEEN
+global MAP_OBSTACLES_NINETEEN
+global MAP_OBSTACLES_TWENTY
+global MAP_OBSTACLES_TWENTYONE
+global MAP_OBSTACLES_TWENTYTWO
+global MAP_OBSTACLES_TWENTYTHREE
+global MAP_OBSTACLES_TWENTYFOUR
+global MAP_OBSTACLES_TWENTYFIVE
+global MAP_OBSTACLES_TWENTYSIX
+global MAP_OBSTACLES_TWENTYSEVEN
+global MAP_OBSTACLES_TWENTYEIGHT
+global MAP_OBSTACLES_TWENTYNINE
+global MAP_OBSTACLES_THIRTY
+global MAP_OBSTACLES_THIRTYONE
+global MAP_OBSTACLES_THIRTYTWO
+global MAP_OBSTACLES_THIRTYTHREE
+global MAP_OBSTACLES_THIRTYFOUR
+
+global MAP_OBSTACLES_ZERO_CACHE
+global MAP_OBSTACLES_ONE_CACHE
+global MAP_OBSTACLES_TWO_CACHE
+global MAP_OBSTACLES_THREE_CACHE
+global MAP_OBSTACLES_FOUR_CACHE
+global MAP_OBSTACLES_FIVE_CACHE
+global MAP_OBSTACLES_SIX_CACHE
+global MAP_OBSTACLES_SEVEN_CACHE
+global MAP_OBSTACLES_EIGHT_CACHE
+global MAP_OBSTACLES_NINE_CACHE
+global MAP_OBSTACLES_TEN_CACHE
+global MAP_OBSTACLES_ELEVEN_CACHE
+global MAP_OBSTACLES_TWELVE_CACHE
+global MAP_OBSTACLES_THIRTEEN_CACHE
+global MAP_OBSTACLES_FOURTEEN_CACHE
+global MAP_OBSTACLES_FIFTEEN_CACHE
+global MAP_OBSTACLES_SIXTEEN_CACHE
+global MAP_OBSTACLES_SEVENTEEN_CACHE
+global MAP_OBSTACLES_EIGHTEEN_CACHE
+global MAP_OBSTACLES_NINETEEN_CACHE
+global MAP_OBSTACLES_TWENTY_CACHE
+global MAP_OBSTACLES_TWENTYONE_CACHE
+global MAP_OBSTACLES_TWENTYTWO_CACHE
+global MAP_OBSTACLES_TWENTYTHREE_CACHE
+global MAP_OBSTACLES_TWENTYFOUR_CACHE
+global MAP_OBSTACLES_TWENTYFIVE_CACHE
+global MAP_OBSTACLES_TWENTYSIX_CACHE
+global MAP_OBSTACLES_TWENTYSEVEN_CACHE
+global MAP_OBSTACLES_TWENTYEIGHT_CACHE
+global MAP_OBSTACLES_TWENTYNINE_CACHE
+global MAP_OBSTACLES_THIRTY_CACHE
+global MAP_OBSTACLES_THIRTYONE_CACHE
+global MAP_OBSTACLES_THIRTYTWO_CACHE
+global MAP_OBSTACLES_THIRTYTHREE_CACHE
+global MAP_OBSTACLES_THIRTYFOUR_CACHE
+
+//Globales pour marcher simplement
+global ACCZero
+global ACCOne
+global ACCTwo
+global ACCThree
+global ACCFour
+global ACCFive
+global ACCSix
+global ACCSeven
+global ACCEight
+global ACCNine
+global ACCTen
+global ACCEleven
+global ACCTwelve
+global ACCThirteen
+global ACCFourteen
+global ACCFifteen
+global ACCSixteen
+global ACCSeventeen
+global ACCEighteen
+global ACCNineteen
+global ACCTwenty
+global ACCTwentyOne
+global ACCTwentyTwo
+global ACCTwentyThree
+global ACCTwentyFour
+global ACCTwentyFive
+global ACCTwentySix
+global ACCTwentySeven
+global ACCTwentyEight
+global ACCTwentyNine
+global ACCThirty
+global ACCThirtyOne
+global ACCThirtyTwo
+global ACCThirtyThree
+global ACCThirtyFour
+
+global TMPZero
+global TMPOne
+global TMPTwo
+global TMPThree
+global TMPFour
+global TMPFive
+global TMPSix
+global TMPSeven
+global TMPEight
+global TMPNine
+global TMPTen
+global TMPEleven
+global TMPTwelve
+global TMPThirteen
+global TMPFourteen
+global TMPFifteen
+global TMPSixteen
+global TMPSeventeen
+global TMPEighteen
+global TMPNineteen
+global TMPTwenty
+global TMPTwentyOne
+global TMPTwentyTwo
+global TMPTwentyThree
+global TMPTwentyFour
+global TMPTwentyFive
+global TMPTwentySix
+global TMPTwentySeven
+global TMPTwentyEight
+global TMPTwentyNine
+global TMPThirty
+global TMPThirtyOne
+global TMPThirtyTwo
+global TMPThirtyThree
+global TMPThirtyFour
+
+global ACCESMPZero
+global ACCESMPOne
+global ACCESMPTwo
+global ACCESMPThree
+global ACCESMPFour
+global ACCESMPFive
+global ACCESMPSix
+global ACCESMPSeven
+global ACCESMPEight
+global ACCESMPNine
+global ACCESMPTen
+global ACCESMPEleven
+global ACCESMPTwelve
+global ACCESMPThirteen
+global ACCESMPFourteen
+global ACCESMPFifteen
+global ACCESMPSixteen
+global ACCESMPSeventeen
+global ACCESMPEighteen
+global ACCESMPNineteen
+global ACCESMPTwenty
+global ACCESMPTwentyOne
+global ACCESMPTwentyTwo
+global ACCESMPTwentyThree
+global ACCESMPTwentyFour
+global ACCESMPTwentyFive
+global ACCESMPTwentySix
+global ACCESMPTwentySeven
+global ACCESMPTwentyEight
+global ACCESMPTwentyNine
+global ACCESMPThirty
+global ACCESMPThirtyOne
+global ACCESMPThirtyTwo
+global ACCESMPThirtyThree
+global ACCESMPThirtyFour
+
+//Globales pour marcher et Jump
+
+global ACCJZero
+global ACCJOne
+global ACCJTwo
+global ACCJThree
+global ACCJFour
+global ACCJFive
+global ACCJSix
+global ACCJSeven
+global ACCJEight
+global ACCJNine
+global ACCJTen
+global ACCJEleven
+global ACCJTwelve
+global ACCJThirteen
+global ACCJFourteen
+global ACCJFifteen
+global ACCJSixteen
+global ACCJSeventeen
+global ACCJEighteen
+global ACCJNineteen
+global ACCJTwenty
+global ACCJTwentyOne
+global ACCJTwentyTwo
+global ACCJTwentyThree
+global ACCJTwentyFour
+global ACCJTwentyFive
+global ACCJTwentySix
+global ACCJTwentySeven
+global ACCJTwentyEight
+global ACCJTwentyNine
+global ACCJThirty
+global ACCJThirtyOne
+global ACCJThirtyTwo
+global ACCJThirtyThree
+global ACCJThirtyFour
+
+global TMPJZero
+global TMPJOne
+global TMPJTwo
+global TMPJThree
+global TMPJFour
+global TMPJFive
+global TMPJSix
+global TMPJSeven
+global TMPJEight
+global TMPJNine
+global TMPJTen
+global TMPJEleven
+global TMPJTwelve
+global TMPJThirteen
+global TMPJFourteen
+global TMPJFifteen
+global TMPJSixteen
+global TMPJSeventeen
+global TMPJEighteen
+global TMPJNineteen
+global TMPJTwenty
+global TMPJTwentyOne
+global TMPJTwentyTwo
+global TMPJTwentyThree
+global TMPJTwentyFour
+global TMPJTwentyFive
+global TMPJTwentySix
+global TMPJTwentySeven
+global TMPJTwentyEight
+global TMPJTwentyNine
+global TMPJThirty
+global TMPJThirtyOne
+global TMPJThirtyTwo
+global TMPJThirtyThree
+global TMPJThirtyFour
+
+global ACCESMPJZero
+global ACCESMPJOne
+global ACCESMPJTwo
+global ACCESMPJThree
+global ACCESMPJFour
+global ACCESMPJFive
+global ACCESMPJSix
+global ACCESMPJSeven
+global ACCESMPJEight
+global ACCESMPJNine
+global ACCESMPJTen
+global ACCESMPJEleven
+global ACCESMPJTwelve
+global ACCESMPJThirteen
+global ACCESMPJFourteen
+global ACCESMPJFifteen
+global ACCESMPJSixteen
+global ACCESMPJSeventeen
+global ACCESMPJEighteen
+global ACCESMPJNineteen
+global ACCESMPJTwenty
+global ACCESMPJTwentyOne
+global ACCESMPJTwentyTwo
+global ACCESMPJTwentyThree
+global ACCESMPJTwentyFour
+global ACCESMPJTwentyFive
+global ACCESMPJTwentySix
+global ACCESMPJTwentySeven
+global ACCESMPJTwentyEight
+global ACCESMPJTwentyNine
+global ACCESMPJThirty
+global ACCESMPJThirtyOne
+global ACCESMPJThirtyTwo
+global ACCESMPJThirtyThree
+global ACCESMPJThirtyFour
+
+//Globales pour marcher et Teleportation
+
+global ACCTZero
+global ACCTOne
+global ACCTTwo
+global ACCTThree
+global ACCTFour
+global ACCTFive
+global ACCTSix
+global ACCTSeven
+global ACCTEight
+global ACCTNine
+global ACCTTen
+global ACCTEleven
+global ACCTTwelve
+global ACCTThirteen
+global ACCTFourteen
+global ACCTFifteen
+global ACCTSixteen
+global ACCTSeventeen
+global ACCTEighteen
+global ACCTNineteen
+global ACCTTwenty
+global ACCTTwentyOne
+global ACCTTwentyTwo
+global ACCTTwentyThree
+global ACCTTwentyFour
+global ACCTTwentyFive
+global ACCTTwentySix
+global ACCTTwentySeven
+global ACCTTwentyEight
+global ACCTTwentyNine
+global ACCTThirty
+global ACCTThirtyOne
+global ACCTThirtyTwo
+global ACCTThirtyThree
+global ACCTThirtyFour
+
+global TMPTZero
+global TMPTOne
+global TMPTTwo
+global TMPTThree
+global TMPTFour
+global TMPTFive
+global TMPTSix
+global TMPTSeven
+global TMPTEight
+global TMPTNine
+global TMPTTen
+global TMPTEleven
+global TMPTTwelve
+global TMPTThirteen
+global TMPTFourteen
+global TMPTFifteen
+global TMPTSixteen
+global TMPTSeventeen
+global TMPTEighteen
+global TMPTNineteen
+global TMPTTwenty
+global TMPTTwentyOne
+global TMPTTwentyTwo
+global TMPTTwentyThree
+global TMPTTwentyFour
+global TMPTTwentyFive
+global TMPTTwentySix
+global TMPTTwentySeven
+global TMPTTwentyEight
+global TMPTTwentyNine
+global TMPTThirty
+global TMPTThirtyOne
+global TMPTThirtyTwo
+global TMPTThirtyThree
+global TMPTThirtyFour
+
+global ACCESMPTZero
+global ACCESMPTOne
+global ACCESMPTTwo
+global ACCESMPTThree
+global ACCESMPTFour
+global ACCESMPTFive
+global ACCESMPTSix
+global ACCESMPTSeven
+global ACCESMPTEight
+global ACCESMPTNine
+global ACCESMPTTen
+global ACCESMPTEleven
+global ACCESMPTTwelve
+global ACCESMPTThirteen
+global ACCESMPTFourteen
+global ACCESMPTFifteen
+global ACCESMPTSixteen
+global ACCESMPTSeventeen
+global ACCESMPTEighteen
+global ACCESMPTNineteen
+global ACCESMPTTwenty
+global ACCESMPTTwentyOne
+global ACCESMPTTwentyTwo
+global ACCESMPTTwentyThree
+global ACCESMPTTwentyFour
+global ACCESMPTTwentyFive
+global ACCESMPTTwentySix
+global ACCESMPTTwentySeven
+global ACCESMPTTwentyEight
+global ACCESMPTTwentyNine
+global ACCESMPTThirty
+global ACCESMPTThirtyOne
+global ACCESMPTThirtyTwo
+global ACCESMPTThirtyThree
+global ACCESMPTThirtyFour
+
+//Globales pour marcher, Jump et Teleportation
+
+global ACCTJZero
+global ACCTJOne
+global ACCTJTwo
+global ACCTJThree
+global ACCTJFour
+global ACCTJFive
+global ACCTJSix
+global ACCTJSeven
+global ACCTJEight
+global ACCTJNine
+global ACCTJTen
+global ACCTJEleven
+global ACCTJTwelve
+global ACCTJThirteen
+global ACCTJFourteen
+global ACCTJFifteen
+global ACCTJSixteen
+global ACCTJSeventeen
+global ACCTJEighteen
+global ACCTJNineteen
+global ACCTJTwenty
+global ACCTJTwentyOne
+global ACCTJTwentyTwo
+global ACCTJTwentyThree
+global ACCTJTwentyFour
+global ACCTJTwentyFive
+global ACCTJTwentySix
+global ACCTJTwentySeven
+global ACCTJTwentyEight
+global ACCTJTwentyNine
+global ACCTJThirty
+global ACCTJThirtyOne
+global ACCTJThirtyTwo
+global ACCTJThirtyThree
+global ACCTJThirtyFour
+
+global TMPTJZero
+global TMPTJOne
+global TMPTJTwo
+global TMPTJThree
+global TMPTJFour
+global TMPTJFive
+global TMPTJSix
+global TMPTJSeven
+global TMPTJEight
+global TMPTJNine
+global TMPTJTen
+global TMPTJEleven
+global TMPTJTwelve
+global TMPTJThirteen
+global TMPTJFourteen
+global TMPTJFifteen
+global TMPTJSixteen
+global TMPTJSeventeen
+global TMPTJEighteen
+global TMPTJNineteen
+global TMPTJTwenty
+global TMPTJTwentyOne
+global TMPTJTwentyTwo
+global TMPTJTwentyThree
+global TMPTJTwentyFour
+global TMPTJTwentyFive
+global TMPTJTwentySix
+global TMPTJTwentySeven
+global TMPTJTwentyEight
+global TMPTJTwentyNine
+global TMPTJThirty
+global TMPTJThirtyOne
+global TMPTJThirtyTwo
+global TMPTJThirtyThree
+global TMPTJThirtyFour
+
+global ACCESMPTJZero
+global ACCESMPTJOne
+global ACCESMPTJTwo
+global ACCESMPTJThree
+global ACCESMPTJFour
+global ACCESMPTJFive
+global ACCESMPTJSix
+global ACCESMPTJSeven
+global ACCESMPTJEight
+global ACCESMPTJNine
+global ACCESMPTJTen
+global ACCESMPTJEleven
+global ACCESMPTJTwelve
+global ACCESMPTJThirteen
+global ACCESMPTJFourteen
+global ACCESMPTJFifteen
+global ACCESMPTJSixteen
+global ACCESMPTJSeventeen
+global ACCESMPTJEighteen
+global ACCESMPTJNineteen
+global ACCESMPTJTwenty
+global ACCESMPTJTwentyOne
+global ACCESMPTJTwentyTwo
+global ACCESMPTJTwentyThree
+global ACCESMPTJTwentyFour
+global ACCESMPTJTwentyFive
+global ACCESMPTJTwentySix
+global ACCESMPTJTwentySeven
+global ACCESMPTJTwentyEight
+global ACCESMPTJTwentyNine
+global ACCESMPTJThirty
+global ACCESMPTJThirtyOne
+global ACCESMPTJThirtyTwo
+global ACCESMPTJThirtyThree
+global ACCESMPTJThirtyFour
+
+//Globales pour save les décalages binaires pour jump et tp (pour save quelques opés)
+
+global ACCOneShiftedLeftSix
+global ACCOneShiftedLeftFive
+global ACCOneShiftedLeftFour
+global ACCOneShiftedLeftThree
+global ACCOneShiftedLeftTwo
+global ACCOneShiftedLeftOne
+global ACCOneShiftedRightOne
+global ACCOneShiftedRightTwo
+global ACCOneShiftedRightThree
+global ACCOneShiftedRightFour
+global ACCOneShiftedRightFive
+global ACCOneShiftedRightSix
+
+global ACCThreeShiftedLeftSix
+global ACCThreeShiftedLeftFive
+global ACCThreeShiftedLeftFour
+global ACCThreeShiftedLeftThree
+global ACCThreeShiftedLeftTwo
+global ACCThreeShiftedLeftOne
+global ACCThreeShiftedRightOne
+global ACCThreeShiftedRightTwo
+global ACCThreeShiftedRightThree
+global ACCThreeShiftedRightFour
+global ACCThreeShiftedRightFive
+global ACCThreeShiftedRightSix
+
+global ACCFiveShiftedLeftSix
+global ACCFiveShiftedLeftFive
+global ACCFiveShiftedLeftFour
+global ACCFiveShiftedLeftThree
+global ACCFiveShiftedLeftTwo
+global ACCFiveShiftedLeftOne
+global ACCFiveShiftedRightOne
+global ACCFiveShiftedRightTwo
+global ACCFiveShiftedRightThree
+global ACCFiveShiftedRightFour
+global ACCFiveShiftedRightFive
+global ACCFiveShiftedRightSix
+
+global ACCSevenShiftedLeftSix
+global ACCSevenShiftedLeftFive
+global ACCSevenShiftedLeftFour
+global ACCSevenShiftedLeftThree
+global ACCSevenShiftedLeftTwo
+global ACCSevenShiftedLeftOne
+global ACCSevenShiftedRightOne
+global ACCSevenShiftedRightTwo
+global ACCSevenShiftedRightThree
+global ACCSevenShiftedRightFour
+global ACCSevenShiftedRightFive
+global ACCSevenShiftedRightSix
+
+global ACCNineShiftedLeftSix
+global ACCNineShiftedLeftFive
+global ACCNineShiftedLeftFour
+global ACCNineShiftedLeftThree
+global ACCNineShiftedLeftTwo
+global ACCNineShiftedLeftOne
+global ACCNineShiftedRightOne
+global ACCNineShiftedRightTwo
+global ACCNineShiftedRightThree
+global ACCNineShiftedRightFour
+global ACCNineShiftedRightFive
+global ACCNineShiftedRightSix
+
+global ACCElevenShiftedLeftSix
+global ACCElevenShiftedLeftFive
+global ACCElevenShiftedLeftFour
+global ACCElevenShiftedLeftThree
+global ACCElevenShiftedLeftTwo
+global ACCElevenShiftedLeftOne
+global ACCElevenShiftedRightOne
+global ACCElevenShiftedRightTwo
+global ACCElevenShiftedRightThree
+global ACCElevenShiftedRightFour
+global ACCElevenShiftedRightFive
+global ACCElevenShiftedRightSix
+
+global ACCThirteenShiftedLeftSix
+global ACCThirteenShiftedLeftFive
+global ACCThirteenShiftedLeftFour
+global ACCThirteenShiftedLeftThree
+global ACCThirteenShiftedLeftTwo
+global ACCThirteenShiftedLeftOne
+global ACCThirteenShiftedRightOne
+global ACCThirteenShiftedRightTwo
+global ACCThirteenShiftedRightThree
+global ACCThirteenShiftedRightFour
+global ACCThirteenShiftedRightFive
+global ACCThirteenShiftedRightSix
+
+global ACCFifteenShiftedLeftSix
+global ACCFifteenShiftedLeftFive
+global ACCFifteenShiftedLeftFour
+global ACCFifteenShiftedLeftThree
+global ACCFifteenShiftedLeftTwo
+global ACCFifteenShiftedLeftOne
+global ACCFifteenShiftedRightOne
+global ACCFifteenShiftedRightTwo
+global ACCFifteenShiftedRightThree
+global ACCFifteenShiftedRightFour
+global ACCFifteenShiftedRightFive
+global ACCFifteenShiftedRightSix
+
+global ACCSeventeenShiftedLeftSix
+global ACCSeventeenShiftedLeftFive
+global ACCSeventeenShiftedLeftFour
+global ACCSeventeenShiftedLeftThree
+global ACCSeventeenShiftedLeftTwo
+global ACCSeventeenShiftedLeftOne
+global ACCSeventeenShiftedRightOne
+global ACCSeventeenShiftedRightTwo
+global ACCSeventeenShiftedRightThree
+global ACCSeventeenShiftedRightFour
+global ACCSeventeenShiftedRightFive
+global ACCSeventeenShiftedRightSix
+
+global ACCNineteenShiftedLeftSix
+global ACCNineteenShiftedLeftFive
+global ACCNineteenShiftedLeftFour
+global ACCNineteenShiftedLeftThree
+global ACCNineteenShiftedLeftTwo
+global ACCNineteenShiftedLeftOne
+global ACCNineteenShiftedRightOne
+global ACCNineteenShiftedRightTwo
+global ACCNineteenShiftedRightThree
+global ACCNineteenShiftedRightFour
+global ACCNineteenShiftedRightFive
+global ACCNineteenShiftedRightSix
+
+global ACCTwentyOneShiftedLeftSix
+global ACCTwentyOneShiftedLeftFive
+global ACCTwentyOneShiftedLeftFour
+global ACCTwentyOneShiftedLeftThree
+global ACCTwentyOneShiftedLeftTwo
+global ACCTwentyOneShiftedLeftOne
+global ACCTwentyOneShiftedRightOne
+global ACCTwentyOneShiftedRightTwo
+global ACCTwentyOneShiftedRightThree
+global ACCTwentyOneShiftedRightFour
+global ACCTwentyOneShiftedRightFive
+global ACCTwentyOneShiftedRightSix
+
+global ACCTwentyThreeShiftedLeftSix
+global ACCTwentyThreeShiftedLeftFive
+global ACCTwentyThreeShiftedLeftFour
+global ACCTwentyThreeShiftedLeftThree
+global ACCTwentyThreeShiftedLeftTwo
+global ACCTwentyThreeShiftedLeftOne
+global ACCTwentyThreeShiftedRightOne
+global ACCTwentyThreeShiftedRightTwo
+global ACCTwentyThreeShiftedRightThree
+global ACCTwentyThreeShiftedRightFour
+global ACCTwentyThreeShiftedRightFive
+global ACCTwentyThreeShiftedRightSix
+
+global ACCTwentyFiveShiftedLeftSix
+global ACCTwentyFiveShiftedLeftFive
+global ACCTwentyFiveShiftedLeftFour
+global ACCTwentyFiveShiftedLeftThree
+global ACCTwentyFiveShiftedLeftTwo
+global ACCTwentyFiveShiftedLeftOne
+global ACCTwentyFiveShiftedRightOne
+global ACCTwentyFiveShiftedRightTwo
+global ACCTwentyFiveShiftedRightThree
+global ACCTwentyFiveShiftedRightFour
+global ACCTwentyFiveShiftedRightFive
+global ACCTwentyFiveShiftedRightSix
+
+global ACCTwentySevenShiftedLeftSix
+global ACCTwentySevenShiftedLeftFive
+global ACCTwentySevenShiftedLeftFour
+global ACCTwentySevenShiftedLeftThree
+global ACCTwentySevenShiftedLeftTwo
+global ACCTwentySevenShiftedLeftOne
+global ACCTwentySevenShiftedRightOne
+global ACCTwentySevenShiftedRightTwo
+global ACCTwentySevenShiftedRightThree
+global ACCTwentySevenShiftedRightFour
+global ACCTwentySevenShiftedRightFive
+global ACCTwentySevenShiftedRightSix
+
+global ACCTwentyNineShiftedLeftSix
+global ACCTwentyNineShiftedLeftFive
+global ACCTwentyNineShiftedLeftFour
+global ACCTwentyNineShiftedLeftThree
+global ACCTwentyNineShiftedLeftTwo
+global ACCTwentyNineShiftedLeftOne
+global ACCTwentyNineShiftedRightOne
+global ACCTwentyNineShiftedRightTwo
+global ACCTwentyNineShiftedRightThree
+global ACCTwentyNineShiftedRightFour
+global ACCTwentyNineShiftedRightFive
+global ACCTwentyNineShiftedRightSix
+
+global ACCThirtyOneShiftedLeftSix
+global ACCThirtyOneShiftedLeftFive
+global ACCThirtyOneShiftedLeftFour
+global ACCThirtyOneShiftedLeftThree
+global ACCThirtyOneShiftedLeftTwo
+global ACCThirtyOneShiftedLeftOne
+global ACCThirtyOneShiftedRightOne
+global ACCThirtyOneShiftedRightTwo
+global ACCThirtyOneShiftedRightThree
+global ACCThirtyOneShiftedRightFour
+global ACCThirtyOneShiftedRightFive
+global ACCThirtyOneShiftedRightSix
+
+global ACCThirtyThreeShiftedLeftSix
+global ACCThirtyThreeShiftedLeftFive
+global ACCThirtyThreeShiftedLeftFour
+global ACCThirtyThreeShiftedLeftThree
+global ACCThirtyThreeShiftedLeftTwo
+global ACCThirtyThreeShiftedLeftOne
+global ACCThirtyThreeShiftedRightOne
+global ACCThirtyThreeShiftedRightTwo
+global ACCThirtyThreeShiftedRightThree
+global ACCThirtyThreeShiftedRightFour
+global ACCThirtyThreeShiftedRightFive
+global ACCThirtyThreeShiftedRightSix
+
+global ACCZeroShiftedLeftSix
+global ACCZeroShiftedLeftFive
+global ACCZeroShiftedLeftFour
+global ACCZeroShiftedLeftThree
+global ACCZeroShiftedLeftTwo
+global ACCZeroShiftedLeftOne
+global ACCZeroShiftedRightOne
+global ACCZeroShiftedRightTwo
+global ACCZeroShiftedRightThree
+global ACCZeroShiftedRightFour
+global ACCZeroShiftedRightFive
+global ACCZeroShiftedRightSix
+
+global ACCTwoShiftedLeftSix
+global ACCTwoShiftedLeftFive
+global ACCTwoShiftedLeftFour
+global ACCTwoShiftedLeftThree
+global ACCTwoShiftedLeftTwo
+global ACCTwoShiftedLeftOne
+global ACCTwoShiftedRightOne
+global ACCTwoShiftedRightTwo
+global ACCTwoShiftedRightThree
+global ACCTwoShiftedRightFour
+global ACCTwoShiftedRightFive
+global ACCTwoShiftedRightSix
+
+global ACCFourShiftedLeftSix
+global ACCFourShiftedLeftFive
+global ACCFourShiftedLeftFour
+global ACCFourShiftedLeftThree
+global ACCFourShiftedLeftTwo
+global ACCFourShiftedLeftOne
+global ACCFourShiftedRightOne
+global ACCFourShiftedRightTwo
+global ACCFourShiftedRightThree
+global ACCFourShiftedRightFour
+global ACCFourShiftedRightFive
+global ACCFourShiftedRightSix
+
+global ACCSixShiftedLeftSix
+global ACCSixShiftedLeftFive
+global ACCSixShiftedLeftFour
+global ACCSixShiftedLeftThree
+global ACCSixShiftedLeftTwo
+global ACCSixShiftedLeftOne
+global ACCSixShiftedRightOne
+global ACCSixShiftedRightTwo
+global ACCSixShiftedRightThree
+global ACCSixShiftedRightFour
+global ACCSixShiftedRightFive
+global ACCSixShiftedRightSix
+
+global ACCEightShiftedLeftSix
+global ACCEightShiftedLeftFive
+global ACCEightShiftedLeftFour
+global ACCEightShiftedLeftThree
+global ACCEightShiftedLeftTwo
+global ACCEightShiftedLeftOne
+global ACCEightShiftedRightOne
+global ACCEightShiftedRightTwo
+global ACCEightShiftedRightThree
+global ACCEightShiftedRightFour
+global ACCEightShiftedRightFive
+global ACCEightShiftedRightSix
+
+global ACCTenShiftedLeftSix
+global ACCTenShiftedLeftFive
+global ACCTenShiftedLeftFour
+global ACCTenShiftedLeftThree
+global ACCTenShiftedLeftTwo
+global ACCTenShiftedLeftOne
+global ACCTenShiftedRightOne
+global ACCTenShiftedRightTwo
+global ACCTenShiftedRightThree
+global ACCTenShiftedRightFour
+global ACCTenShiftedRightFive
+global ACCTenShiftedRightSix
+
+global ACCTwelveShiftedLeftSix
+global ACCTwelveShiftedLeftFive
+global ACCTwelveShiftedLeftFour
+global ACCTwelveShiftedLeftThree
+global ACCTwelveShiftedLeftTwo
+global ACCTwelveShiftedLeftOne
+global ACCTwelveShiftedRightOne
+global ACCTwelveShiftedRightTwo
+global ACCTwelveShiftedRightThree
+global ACCTwelveShiftedRightFour
+global ACCTwelveShiftedRightFive
+global ACCTwelveShiftedRightSix
+
+global ACCFourteenShiftedLeftSix
+global ACCFourteenShiftedLeftFive
+global ACCFourteenShiftedLeftFour
+global ACCFourteenShiftedLeftThree
+global ACCFourteenShiftedLeftTwo
+global ACCFourteenShiftedLeftOne
+global ACCFourteenShiftedRightOne
+global ACCFourteenShiftedRightTwo
+global ACCFourteenShiftedRightThree
+global ACCFourteenShiftedRightFour
+global ACCFourteenShiftedRightFive
+global ACCFourteenShiftedRightSix
+
+global ACCSixteenShiftedLeftSix
+global ACCSixteenShiftedLeftFive
+global ACCSixteenShiftedLeftFour
+global ACCSixteenShiftedLeftThree
+global ACCSixteenShiftedLeftTwo
+global ACCSixteenShiftedLeftOne
+global ACCSixteenShiftedRightOne
+global ACCSixteenShiftedRightTwo
+global ACCSixteenShiftedRightThree
+global ACCSixteenShiftedRightFour
+global ACCSixteenShiftedRightFive
+global ACCSixteenShiftedRightSix
+
+global ACCEighteenShiftedLeftSix
+global ACCEighteenShiftedLeftFive
+global ACCEighteenShiftedLeftFour
+global ACCEighteenShiftedLeftThree
+global ACCEighteenShiftedLeftTwo
+global ACCEighteenShiftedLeftOne
+global ACCEighteenShiftedRightOne
+global ACCEighteenShiftedRightTwo
+global ACCEighteenShiftedRightThree
+global ACCEighteenShiftedRightFour
+global ACCEighteenShiftedRightFive
+global ACCEighteenShiftedRightSix
+
+global ACCTwentyShiftedLeftSix
+global ACCTwentyShiftedLeftFive
+global ACCTwentyShiftedLeftFour
+global ACCTwentyShiftedLeftThree
+global ACCTwentyShiftedLeftTwo
+global ACCTwentyShiftedLeftOne
+global ACCTwentyShiftedRightOne
+global ACCTwentyShiftedRightTwo
+global ACCTwentyShiftedRightThree
+global ACCTwentyShiftedRightFour
+global ACCTwentyShiftedRightFive
+global ACCTwentyShiftedRightSix
+
+global ACCTwentyTwoShiftedLeftSix
+global ACCTwentyTwoShiftedLeftFive
+global ACCTwentyTwoShiftedLeftFour
+global ACCTwentyTwoShiftedLeftThree
+global ACCTwentyTwoShiftedLeftTwo
+global ACCTwentyTwoShiftedLeftOne
+global ACCTwentyTwoShiftedRightOne
+global ACCTwentyTwoShiftedRightTwo
+global ACCTwentyTwoShiftedRightThree
+global ACCTwentyTwoShiftedRightFour
+global ACCTwentyTwoShiftedRightFive
+global ACCTwentyTwoShiftedRightSix
+
+global ACCTwentyFourShiftedLeftSix
+global ACCTwentyFourShiftedLeftFive
+global ACCTwentyFourShiftedLeftFour
+global ACCTwentyFourShiftedLeftThree
+global ACCTwentyFourShiftedLeftTwo
+global ACCTwentyFourShiftedLeftOne
+global ACCTwentyFourShiftedRightOne
+global ACCTwentyFourShiftedRightTwo
+global ACCTwentyFourShiftedRightThree
+global ACCTwentyFourShiftedRightFour
+global ACCTwentyFourShiftedRightFive
+global ACCTwentyFourShiftedRightSix
+
+global ACCTwentySixShiftedLeftSix
+global ACCTwentySixShiftedLeftFive
+global ACCTwentySixShiftedLeftFour
+global ACCTwentySixShiftedLeftThree
+global ACCTwentySixShiftedLeftTwo
+global ACCTwentySixShiftedLeftOne
+global ACCTwentySixShiftedRightOne
+global ACCTwentySixShiftedRightTwo
+global ACCTwentySixShiftedRightThree
+global ACCTwentySixShiftedRightFour
+global ACCTwentySixShiftedRightFive
+global ACCTwentySixShiftedRightSix
+
+global ACCTwentyEightShiftedLeftSix
+global ACCTwentyEightShiftedLeftFive
+global ACCTwentyEightShiftedLeftFour
+global ACCTwentyEightShiftedLeftThree
+global ACCTwentyEightShiftedLeftTwo
+global ACCTwentyEightShiftedLeftOne
+global ACCTwentyEightShiftedRightOne
+global ACCTwentyEightShiftedRightTwo
+global ACCTwentyEightShiftedRightThree
+global ACCTwentyEightShiftedRightFour
+global ACCTwentyEightShiftedRightFive
+global ACCTwentyEightShiftedRightSix
+
+global ACCThirtyShiftedLeftSix
+global ACCThirtyShiftedLeftFive
+global ACCThirtyShiftedLeftFour
+global ACCThirtyShiftedLeftThree
+global ACCThirtyShiftedLeftTwo
+global ACCThirtyShiftedLeftOne
+global ACCThirtyShiftedRightOne
+global ACCThirtyShiftedRightTwo
+global ACCThirtyShiftedRightThree
+global ACCThirtyShiftedRightFour
+global ACCThirtyShiftedRightFive
+global ACCThirtyShiftedRightSix
+
+global ACCThirtyTwoShiftedLeftSix
+global ACCThirtyTwoShiftedLeftFive
+global ACCThirtyTwoShiftedLeftFour
+global ACCThirtyTwoShiftedLeftThree
+global ACCThirtyTwoShiftedLeftTwo
+global ACCThirtyTwoShiftedLeftOne
+global ACCThirtyTwoShiftedRightOne
+global ACCThirtyTwoShiftedRightTwo
+global ACCThirtyTwoShiftedRightThree
+global ACCThirtyTwoShiftedRightFour
+global ACCThirtyTwoShiftedRightFive
+global ACCThirtyTwoShiftedRightSix
+
+global ACCThirtyFourShiftedLeftSix
+global ACCThirtyFourShiftedLeftFive
+global ACCThirtyFourShiftedLeftFour
+global ACCThirtyFourShiftedLeftThree
+global ACCThirtyFourShiftedLeftTwo
+global ACCThirtyFourShiftedLeftOne
+global ACCThirtyFourShiftedRightOne
+global ACCThirtyFourShiftedRightTwo
+global ACCThirtyFourShiftedRightThree
+global ACCThirtyFourShiftedRightFour
+global ACCThirtyFourShiftedRightFive
+global ACCThirtyFourShiftedRightSix
+
+global ACCJOneShiftedLeftSix
+global ACCJOneShiftedLeftFive
+global ACCJOneShiftedLeftFour
+global ACCJOneShiftedLeftThree
+global ACCJOneShiftedLeftTwo
+global ACCJOneShiftedLeftOne
+global ACCJOneShiftedRightOne
+global ACCJOneShiftedRightTwo
+global ACCJOneShiftedRightThree
+global ACCJOneShiftedRightFour
+global ACCJOneShiftedRightFive
+global ACCJOneShiftedRightSix
+
+global ACCJThreeShiftedLeftSix
+global ACCJThreeShiftedLeftFive
+global ACCJThreeShiftedLeftFour
+global ACCJThreeShiftedLeftThree
+global ACCJThreeShiftedLeftTwo
+global ACCJThreeShiftedLeftOne
+global ACCJThreeShiftedRightOne
+global ACCJThreeShiftedRightTwo
+global ACCJThreeShiftedRightThree
+global ACCJThreeShiftedRightFour
+global ACCJThreeShiftedRightFive
+global ACCJThreeShiftedRightSix
+
+global ACCJFiveShiftedLeftSix
+global ACCJFiveShiftedLeftFive
+global ACCJFiveShiftedLeftFour
+global ACCJFiveShiftedLeftThree
+global ACCJFiveShiftedLeftTwo
+global ACCJFiveShiftedLeftOne
+global ACCJFiveShiftedRightOne
+global ACCJFiveShiftedRightTwo
+global ACCJFiveShiftedRightThree
+global ACCJFiveShiftedRightFour
+global ACCJFiveShiftedRightFive
+global ACCJFiveShiftedRightSix
+
+global ACCJSevenShiftedLeftSix
+global ACCJSevenShiftedLeftFive
+global ACCJSevenShiftedLeftFour
+global ACCJSevenShiftedLeftThree
+global ACCJSevenShiftedLeftTwo
+global ACCJSevenShiftedLeftOne
+global ACCJSevenShiftedRightOne
+global ACCJSevenShiftedRightTwo
+global ACCJSevenShiftedRightThree
+global ACCJSevenShiftedRightFour
+global ACCJSevenShiftedRightFive
+global ACCJSevenShiftedRightSix
+
+global ACCJNineShiftedLeftSix
+global ACCJNineShiftedLeftFive
+global ACCJNineShiftedLeftFour
+global ACCJNineShiftedLeftThree
+global ACCJNineShiftedLeftTwo
+global ACCJNineShiftedLeftOne
+global ACCJNineShiftedRightOne
+global ACCJNineShiftedRightTwo
+global ACCJNineShiftedRightThree
+global ACCJNineShiftedRightFour
+global ACCJNineShiftedRightFive
+global ACCJNineShiftedRightSix
+
+global ACCJElevenShiftedLeftSix
+global ACCJElevenShiftedLeftFive
+global ACCJElevenShiftedLeftFour
+global ACCJElevenShiftedLeftThree
+global ACCJElevenShiftedLeftTwo
+global ACCJElevenShiftedLeftOne
+global ACCJElevenShiftedRightOne
+global ACCJElevenShiftedRightTwo
+global ACCJElevenShiftedRightThree
+global ACCJElevenShiftedRightFour
+global ACCJElevenShiftedRightFive
+global ACCJElevenShiftedRightSix
+
+global ACCJThirteenShiftedLeftSix
+global ACCJThirteenShiftedLeftFive
+global ACCJThirteenShiftedLeftFour
+global ACCJThirteenShiftedLeftThree
+global ACCJThirteenShiftedLeftTwo
+global ACCJThirteenShiftedLeftOne
+global ACCJThirteenShiftedRightOne
+global ACCJThirteenShiftedRightTwo
+global ACCJThirteenShiftedRightThree
+global ACCJThirteenShiftedRightFour
+global ACCJThirteenShiftedRightFive
+global ACCJThirteenShiftedRightSix
+
+global ACCJFifteenShiftedLeftSix
+global ACCJFifteenShiftedLeftFive
+global ACCJFifteenShiftedLeftFour
+global ACCJFifteenShiftedLeftThree
+global ACCJFifteenShiftedLeftTwo
+global ACCJFifteenShiftedLeftOne
+global ACCJFifteenShiftedRightOne
+global ACCJFifteenShiftedRightTwo
+global ACCJFifteenShiftedRightThree
+global ACCJFifteenShiftedRightFour
+global ACCJFifteenShiftedRightFive
+global ACCJFifteenShiftedRightSix
+
+global ACCJSeventeenShiftedLeftSix
+global ACCJSeventeenShiftedLeftFive
+global ACCJSeventeenShiftedLeftFour
+global ACCJSeventeenShiftedLeftThree
+global ACCJSeventeenShiftedLeftTwo
+global ACCJSeventeenShiftedLeftOne
+global ACCJSeventeenShiftedRightOne
+global ACCJSeventeenShiftedRightTwo
+global ACCJSeventeenShiftedRightThree
+global ACCJSeventeenShiftedRightFour
+global ACCJSeventeenShiftedRightFive
+global ACCJSeventeenShiftedRightSix
+
+global ACCJNineteenShiftedLeftSix
+global ACCJNineteenShiftedLeftFive
+global ACCJNineteenShiftedLeftFour
+global ACCJNineteenShiftedLeftThree
+global ACCJNineteenShiftedLeftTwo
+global ACCJNineteenShiftedLeftOne
+global ACCJNineteenShiftedRightOne
+global ACCJNineteenShiftedRightTwo
+global ACCJNineteenShiftedRightThree
+global ACCJNineteenShiftedRightFour
+global ACCJNineteenShiftedRightFive
+global ACCJNineteenShiftedRightSix
+
+global ACCJTwentyOneShiftedLeftSix
+global ACCJTwentyOneShiftedLeftFive
+global ACCJTwentyOneShiftedLeftFour
+global ACCJTwentyOneShiftedLeftThree
+global ACCJTwentyOneShiftedLeftTwo
+global ACCJTwentyOneShiftedLeftOne
+global ACCJTwentyOneShiftedRightOne
+global ACCJTwentyOneShiftedRightTwo
+global ACCJTwentyOneShiftedRightThree
+global ACCJTwentyOneShiftedRightFour
+global ACCJTwentyOneShiftedRightFive
+global ACCJTwentyOneShiftedRightSix
+
+global ACCJTwentyThreeShiftedLeftSix
+global ACCJTwentyThreeShiftedLeftFive
+global ACCJTwentyThreeShiftedLeftFour
+global ACCJTwentyThreeShiftedLeftThree
+global ACCJTwentyThreeShiftedLeftTwo
+global ACCJTwentyThreeShiftedLeftOne
+global ACCJTwentyThreeShiftedRightOne
+global ACCJTwentyThreeShiftedRightTwo
+global ACCJTwentyThreeShiftedRightThree
+global ACCJTwentyThreeShiftedRightFour
+global ACCJTwentyThreeShiftedRightFive
+global ACCJTwentyThreeShiftedRightSix
+
+global ACCJTwentyFiveShiftedLeftSix
+global ACCJTwentyFiveShiftedLeftFive
+global ACCJTwentyFiveShiftedLeftFour
+global ACCJTwentyFiveShiftedLeftThree
+global ACCJTwentyFiveShiftedLeftTwo
+global ACCJTwentyFiveShiftedLeftOne
+global ACCJTwentyFiveShiftedRightOne
+global ACCJTwentyFiveShiftedRightTwo
+global ACCJTwentyFiveShiftedRightThree
+global ACCJTwentyFiveShiftedRightFour
+global ACCJTwentyFiveShiftedRightFive
+global ACCJTwentyFiveShiftedRightSix
+
+global ACCJTwentySevenShiftedLeftSix
+global ACCJTwentySevenShiftedLeftFive
+global ACCJTwentySevenShiftedLeftFour
+global ACCJTwentySevenShiftedLeftThree
+global ACCJTwentySevenShiftedLeftTwo
+global ACCJTwentySevenShiftedLeftOne
+global ACCJTwentySevenShiftedRightOne
+global ACCJTwentySevenShiftedRightTwo
+global ACCJTwentySevenShiftedRightThree
+global ACCJTwentySevenShiftedRightFour
+global ACCJTwentySevenShiftedRightFive
+global ACCJTwentySevenShiftedRightSix
+
+global ACCJTwentyNineShiftedLeftSix
+global ACCJTwentyNineShiftedLeftFive
+global ACCJTwentyNineShiftedLeftFour
+global ACCJTwentyNineShiftedLeftThree
+global ACCJTwentyNineShiftedLeftTwo
+global ACCJTwentyNineShiftedLeftOne
+global ACCJTwentyNineShiftedRightOne
+global ACCJTwentyNineShiftedRightTwo
+global ACCJTwentyNineShiftedRightThree
+global ACCJTwentyNineShiftedRightFour
+global ACCJTwentyNineShiftedRightFive
+global ACCJTwentyNineShiftedRightSix
+
+global ACCJThirtyOneShiftedLeftSix
+global ACCJThirtyOneShiftedLeftFive
+global ACCJThirtyOneShiftedLeftFour
+global ACCJThirtyOneShiftedLeftThree
+global ACCJThirtyOneShiftedLeftTwo
+global ACCJThirtyOneShiftedLeftOne
+global ACCJThirtyOneShiftedRightOne
+global ACCJThirtyOneShiftedRightTwo
+global ACCJThirtyOneShiftedRightThree
+global ACCJThirtyOneShiftedRightFour
+global ACCJThirtyOneShiftedRightFive
+global ACCJThirtyOneShiftedRightSix
+
+global ACCJThirtyThreeShiftedLeftSix
+global ACCJThirtyThreeShiftedLeftFive
+global ACCJThirtyThreeShiftedLeftFour
+global ACCJThirtyThreeShiftedLeftThree
+global ACCJThirtyThreeShiftedLeftTwo
+global ACCJThirtyThreeShiftedLeftOne
+global ACCJThirtyThreeShiftedRightOne
+global ACCJThirtyThreeShiftedRightTwo
+global ACCJThirtyThreeShiftedRightThree
+global ACCJThirtyThreeShiftedRightFour
+global ACCJThirtyThreeShiftedRightFive
+global ACCJThirtyThreeShiftedRightSix
+
+global ACCJZeroShiftedLeftSix
+global ACCJZeroShiftedLeftFive
+global ACCJZeroShiftedLeftFour
+global ACCJZeroShiftedLeftThree
+global ACCJZeroShiftedLeftTwo
+global ACCJZeroShiftedLeftOne
+global ACCJZeroShiftedRightOne
+global ACCJZeroShiftedRightTwo
+global ACCJZeroShiftedRightThree
+global ACCJZeroShiftedRightFour
+global ACCJZeroShiftedRightFive
+global ACCJZeroShiftedRightSix
+
+global ACCJTwoShiftedLeftSix
+global ACCJTwoShiftedLeftFive
+global ACCJTwoShiftedLeftFour
+global ACCJTwoShiftedLeftThree
+global ACCJTwoShiftedLeftTwo
+global ACCJTwoShiftedLeftOne
+global ACCJTwoShiftedRightOne
+global ACCJTwoShiftedRightTwo
+global ACCJTwoShiftedRightThree
+global ACCJTwoShiftedRightFour
+global ACCJTwoShiftedRightFive
+global ACCJTwoShiftedRightSix
+
+global ACCJFourShiftedLeftSix
+global ACCJFourShiftedLeftFive
+global ACCJFourShiftedLeftFour
+global ACCJFourShiftedLeftThree
+global ACCJFourShiftedLeftTwo
+global ACCJFourShiftedLeftOne
+global ACCJFourShiftedRightOne
+global ACCJFourShiftedRightTwo
+global ACCJFourShiftedRightThree
+global ACCJFourShiftedRightFour
+global ACCJFourShiftedRightFive
+global ACCJFourShiftedRightSix
+
+global ACCJSixShiftedLeftSix
+global ACCJSixShiftedLeftFive
+global ACCJSixShiftedLeftFour
+global ACCJSixShiftedLeftThree
+global ACCJSixShiftedLeftTwo
+global ACCJSixShiftedLeftOne
+global ACCJSixShiftedRightOne
+global ACCJSixShiftedRightTwo
+global ACCJSixShiftedRightThree
+global ACCJSixShiftedRightFour
+global ACCJSixShiftedRightFive
+global ACCJSixShiftedRightSix
+
+global ACCJEightShiftedLeftSix
+global ACCJEightShiftedLeftFive
+global ACCJEightShiftedLeftFour
+global ACCJEightShiftedLeftThree
+global ACCJEightShiftedLeftTwo
+global ACCJEightShiftedLeftOne
+global ACCJEightShiftedRightOne
+global ACCJEightShiftedRightTwo
+global ACCJEightShiftedRightThree
+global ACCJEightShiftedRightFour
+global ACCJEightShiftedRightFive
+global ACCJEightShiftedRightSix
+
+global ACCJTenShiftedLeftSix
+global ACCJTenShiftedLeftFive
+global ACCJTenShiftedLeftFour
+global ACCJTenShiftedLeftThree
+global ACCJTenShiftedLeftTwo
+global ACCJTenShiftedLeftOne
+global ACCJTenShiftedRightOne
+global ACCJTenShiftedRightTwo
+global ACCJTenShiftedRightThree
+global ACCJTenShiftedRightFour
+global ACCJTenShiftedRightFive
+global ACCJTenShiftedRightSix
+
+global ACCJTwelveShiftedLeftSix
+global ACCJTwelveShiftedLeftFive
+global ACCJTwelveShiftedLeftFour
+global ACCJTwelveShiftedLeftThree
+global ACCJTwelveShiftedLeftTwo
+global ACCJTwelveShiftedLeftOne
+global ACCJTwelveShiftedRightOne
+global ACCJTwelveShiftedRightTwo
+global ACCJTwelveShiftedRightThree
+global ACCJTwelveShiftedRightFour
+global ACCJTwelveShiftedRightFive
+global ACCJTwelveShiftedRightSix
+
+global ACCJFourteenShiftedLeftSix
+global ACCJFourteenShiftedLeftFive
+global ACCJFourteenShiftedLeftFour
+global ACCJFourteenShiftedLeftThree
+global ACCJFourteenShiftedLeftTwo
+global ACCJFourteenShiftedLeftOne
+global ACCJFourteenShiftedRightOne
+global ACCJFourteenShiftedRightTwo
+global ACCJFourteenShiftedRightThree
+global ACCJFourteenShiftedRightFour
+global ACCJFourteenShiftedRightFive
+global ACCJFourteenShiftedRightSix
+
+global ACCJSixteenShiftedLeftSix
+global ACCJSixteenShiftedLeftFive
+global ACCJSixteenShiftedLeftFour
+global ACCJSixteenShiftedLeftThree
+global ACCJSixteenShiftedLeftTwo
+global ACCJSixteenShiftedLeftOne
+global ACCJSixteenShiftedRightOne
+global ACCJSixteenShiftedRightTwo
+global ACCJSixteenShiftedRightThree
+global ACCJSixteenShiftedRightFour
+global ACCJSixteenShiftedRightFive
+global ACCJSixteenShiftedRightSix
+
+global ACCJEighteenShiftedLeftSix
+global ACCJEighteenShiftedLeftFive
+global ACCJEighteenShiftedLeftFour
+global ACCJEighteenShiftedLeftThree
+global ACCJEighteenShiftedLeftTwo
+global ACCJEighteenShiftedLeftOne
+global ACCJEighteenShiftedRightOne
+global ACCJEighteenShiftedRightTwo
+global ACCJEighteenShiftedRightThree
+global ACCJEighteenShiftedRightFour
+global ACCJEighteenShiftedRightFive
+global ACCJEighteenShiftedRightSix
+
+global ACCJTwentyShiftedLeftSix
+global ACCJTwentyShiftedLeftFive
+global ACCJTwentyShiftedLeftFour
+global ACCJTwentyShiftedLeftThree
+global ACCJTwentyShiftedLeftTwo
+global ACCJTwentyShiftedLeftOne
+global ACCJTwentyShiftedRightOne
+global ACCJTwentyShiftedRightTwo
+global ACCJTwentyShiftedRightThree
+global ACCJTwentyShiftedRightFour
+global ACCJTwentyShiftedRightFive
+global ACCJTwentyShiftedRightSix
+
+global ACCJTwentyTwoShiftedLeftSix
+global ACCJTwentyTwoShiftedLeftFive
+global ACCJTwentyTwoShiftedLeftFour
+global ACCJTwentyTwoShiftedLeftThree
+global ACCJTwentyTwoShiftedLeftTwo
+global ACCJTwentyTwoShiftedLeftOne
+global ACCJTwentyTwoShiftedRightOne
+global ACCJTwentyTwoShiftedRightTwo
+global ACCJTwentyTwoShiftedRightThree
+global ACCJTwentyTwoShiftedRightFour
+global ACCJTwentyTwoShiftedRightFive
+global ACCJTwentyTwoShiftedRightSix
+
+global ACCJTwentyFourShiftedLeftSix
+global ACCJTwentyFourShiftedLeftFive
+global ACCJTwentyFourShiftedLeftFour
+global ACCJTwentyFourShiftedLeftThree
+global ACCJTwentyFourShiftedLeftTwo
+global ACCJTwentyFourShiftedLeftOne
+global ACCJTwentyFourShiftedRightOne
+global ACCJTwentyFourShiftedRightTwo
+global ACCJTwentyFourShiftedRightThree
+global ACCJTwentyFourShiftedRightFour
+global ACCJTwentyFourShiftedRightFive
+global ACCJTwentyFourShiftedRightSix
+
+global ACCJTwentySixShiftedLeftSix
+global ACCJTwentySixShiftedLeftFive
+global ACCJTwentySixShiftedLeftFour
+global ACCJTwentySixShiftedLeftThree
+global ACCJTwentySixShiftedLeftTwo
+global ACCJTwentySixShiftedLeftOne
+global ACCJTwentySixShiftedRightOne
+global ACCJTwentySixShiftedRightTwo
+global ACCJTwentySixShiftedRightThree
+global ACCJTwentySixShiftedRightFour
+global ACCJTwentySixShiftedRightFive
+global ACCJTwentySixShiftedRightSix
+
+global ACCJTwentyEightShiftedLeftSix
+global ACCJTwentyEightShiftedLeftFive
+global ACCJTwentyEightShiftedLeftFour
+global ACCJTwentyEightShiftedLeftThree
+global ACCJTwentyEightShiftedLeftTwo
+global ACCJTwentyEightShiftedLeftOne
+global ACCJTwentyEightShiftedRightOne
+global ACCJTwentyEightShiftedRightTwo
+global ACCJTwentyEightShiftedRightThree
+global ACCJTwentyEightShiftedRightFour
+global ACCJTwentyEightShiftedRightFive
+global ACCJTwentyEightShiftedRightSix
+
+global ACCJThirtyShiftedLeftSix
+global ACCJThirtyShiftedLeftFive
+global ACCJThirtyShiftedLeftFour
+global ACCJThirtyShiftedLeftThree
+global ACCJThirtyShiftedLeftTwo
+global ACCJThirtyShiftedLeftOne
+global ACCJThirtyShiftedRightOne
+global ACCJThirtyShiftedRightTwo
+global ACCJThirtyShiftedRightThree
+global ACCJThirtyShiftedRightFour
+global ACCJThirtyShiftedRightFive
+global ACCJThirtyShiftedRightSix
+
+global ACCJThirtyTwoShiftedLeftSix
+global ACCJThirtyTwoShiftedLeftFive
+global ACCJThirtyTwoShiftedLeftFour
+global ACCJThirtyTwoShiftedLeftThree
+global ACCJThirtyTwoShiftedLeftTwo
+global ACCJThirtyTwoShiftedLeftOne
+global ACCJThirtyTwoShiftedRightOne
+global ACCJThirtyTwoShiftedRightTwo
+global ACCJThirtyTwoShiftedRightThree
+global ACCJThirtyTwoShiftedRightFour
+global ACCJThirtyTwoShiftedRightFive
+global ACCJThirtyTwoShiftedRightSix
+
+global ACCJThirtyFourShiftedLeftSix
+global ACCJThirtyFourShiftedLeftFive
+global ACCJThirtyFourShiftedLeftFour
+global ACCJThirtyFourShiftedLeftThree
+global ACCJThirtyFourShiftedLeftTwo
+global ACCJThirtyFourShiftedLeftOne
+global ACCJThirtyFourShiftedRightOne
+global ACCJThirtyFourShiftedRightTwo
+global ACCJThirtyFourShiftedRightThree
+global ACCJThirtyFourShiftedRightFour
+global ACCJThirtyFourShiftedRightFive
+global ACCJThirtyFourShiftedRightSix
+
+global ACCTOneShiftedLeftSix
+global ACCTOneShiftedLeftFive
+global ACCTOneShiftedLeftFour
+global ACCTOneShiftedLeftThree
+global ACCTOneShiftedLeftTwo
+global ACCTOneShiftedLeftOne
+global ACCTOneShiftedRightOne
+global ACCTOneShiftedRightTwo
+global ACCTOneShiftedRightThree
+global ACCTOneShiftedRightFour
+global ACCTOneShiftedRightFive
+global ACCTOneShiftedRightSix
+
+global ACCTThreeShiftedLeftSix
+global ACCTThreeShiftedLeftFive
+global ACCTThreeShiftedLeftFour
+global ACCTThreeShiftedLeftThree
+global ACCTThreeShiftedLeftTwo
+global ACCTThreeShiftedLeftOne
+global ACCTThreeShiftedRightOne
+global ACCTThreeShiftedRightTwo
+global ACCTThreeShiftedRightThree
+global ACCTThreeShiftedRightFour
+global ACCTThreeShiftedRightFive
+global ACCTThreeShiftedRightSix
+
+global ACCTFiveShiftedLeftSix
+global ACCTFiveShiftedLeftFive
+global ACCTFiveShiftedLeftFour
+global ACCTFiveShiftedLeftThree
+global ACCTFiveShiftedLeftTwo
+global ACCTFiveShiftedLeftOne
+global ACCTFiveShiftedRightOne
+global ACCTFiveShiftedRightTwo
+global ACCTFiveShiftedRightThree
+global ACCTFiveShiftedRightFour
+global ACCTFiveShiftedRightFive
+global ACCTFiveShiftedRightSix
+
+global ACCTSevenShiftedLeftSix
+global ACCTSevenShiftedLeftFive
+global ACCTSevenShiftedLeftFour
+global ACCTSevenShiftedLeftThree
+global ACCTSevenShiftedLeftTwo
+global ACCTSevenShiftedLeftOne
+global ACCTSevenShiftedRightOne
+global ACCTSevenShiftedRightTwo
+global ACCTSevenShiftedRightThree
+global ACCTSevenShiftedRightFour
+global ACCTSevenShiftedRightFive
+global ACCTSevenShiftedRightSix
+
+global ACCTNineShiftedLeftSix
+global ACCTNineShiftedLeftFive
+global ACCTNineShiftedLeftFour
+global ACCTNineShiftedLeftThree
+global ACCTNineShiftedLeftTwo
+global ACCTNineShiftedLeftOne
+global ACCTNineShiftedRightOne
+global ACCTNineShiftedRightTwo
+global ACCTNineShiftedRightThree
+global ACCTNineShiftedRightFour
+global ACCTNineShiftedRightFive
+global ACCTNineShiftedRightSix
+
+global ACCTElevenShiftedLeftSix
+global ACCTElevenShiftedLeftFive
+global ACCTElevenShiftedLeftFour
+global ACCTElevenShiftedLeftThree
+global ACCTElevenShiftedLeftTwo
+global ACCTElevenShiftedLeftOne
+global ACCTElevenShiftedRightOne
+global ACCTElevenShiftedRightTwo
+global ACCTElevenShiftedRightThree
+global ACCTElevenShiftedRightFour
+global ACCTElevenShiftedRightFive
+global ACCTElevenShiftedRightSix
+
+global ACCTThirteenShiftedLeftSix
+global ACCTThirteenShiftedLeftFive
+global ACCTThirteenShiftedLeftFour
+global ACCTThirteenShiftedLeftThree
+global ACCTThirteenShiftedLeftTwo
+global ACCTThirteenShiftedLeftOne
+global ACCTThirteenShiftedRightOne
+global ACCTThirteenShiftedRightTwo
+global ACCTThirteenShiftedRightThree
+global ACCTThirteenShiftedRightFour
+global ACCTThirteenShiftedRightFive
+global ACCTThirteenShiftedRightSix
+
+global ACCTFifteenShiftedLeftSix
+global ACCTFifteenShiftedLeftFive
+global ACCTFifteenShiftedLeftFour
+global ACCTFifteenShiftedLeftThree
+global ACCTFifteenShiftedLeftTwo
+global ACCTFifteenShiftedLeftOne
+global ACCTFifteenShiftedRightOne
+global ACCTFifteenShiftedRightTwo
+global ACCTFifteenShiftedRightThree
+global ACCTFifteenShiftedRightFour
+global ACCTFifteenShiftedRightFive
+global ACCTFifteenShiftedRightSix
+
+global ACCTSeventeenShiftedLeftSix
+global ACCTSeventeenShiftedLeftFive
+global ACCTSeventeenShiftedLeftFour
+global ACCTSeventeenShiftedLeftThree
+global ACCTSeventeenShiftedLeftTwo
+global ACCTSeventeenShiftedLeftOne
+global ACCTSeventeenShiftedRightOne
+global ACCTSeventeenShiftedRightTwo
+global ACCTSeventeenShiftedRightThree
+global ACCTSeventeenShiftedRightFour
+global ACCTSeventeenShiftedRightFive
+global ACCTSeventeenShiftedRightSix
+
+global ACCTNineteenShiftedLeftSix
+global ACCTNineteenShiftedLeftFive
+global ACCTNineteenShiftedLeftFour
+global ACCTNineteenShiftedLeftThree
+global ACCTNineteenShiftedLeftTwo
+global ACCTNineteenShiftedLeftOne
+global ACCTNineteenShiftedRightOne
+global ACCTNineteenShiftedRightTwo
+global ACCTNineteenShiftedRightThree
+global ACCTNineteenShiftedRightFour
+global ACCTNineteenShiftedRightFive
+global ACCTNineteenShiftedRightSix
+
+global ACCTTwentyOneShiftedLeftSix
+global ACCTTwentyOneShiftedLeftFive
+global ACCTTwentyOneShiftedLeftFour
+global ACCTTwentyOneShiftedLeftThree
+global ACCTTwentyOneShiftedLeftTwo
+global ACCTTwentyOneShiftedLeftOne
+global ACCTTwentyOneShiftedRightOne
+global ACCTTwentyOneShiftedRightTwo
+global ACCTTwentyOneShiftedRightThree
+global ACCTTwentyOneShiftedRightFour
+global ACCTTwentyOneShiftedRightFive
+global ACCTTwentyOneShiftedRightSix
+
+global ACCTTwentyThreeShiftedLeftSix
+global ACCTTwentyThreeShiftedLeftFive
+global ACCTTwentyThreeShiftedLeftFour
+global ACCTTwentyThreeShiftedLeftThree
+global ACCTTwentyThreeShiftedLeftTwo
+global ACCTTwentyThreeShiftedLeftOne
+global ACCTTwentyThreeShiftedRightOne
+global ACCTTwentyThreeShiftedRightTwo
+global ACCTTwentyThreeShiftedRightThree
+global ACCTTwentyThreeShiftedRightFour
+global ACCTTwentyThreeShiftedRightFive
+global ACCTTwentyThreeShiftedRightSix
+
+global ACCTTwentyFiveShiftedLeftSix
+global ACCTTwentyFiveShiftedLeftFive
+global ACCTTwentyFiveShiftedLeftFour
+global ACCTTwentyFiveShiftedLeftThree
+global ACCTTwentyFiveShiftedLeftTwo
+global ACCTTwentyFiveShiftedLeftOne
+global ACCTTwentyFiveShiftedRightOne
+global ACCTTwentyFiveShiftedRightTwo
+global ACCTTwentyFiveShiftedRightThree
+global ACCTTwentyFiveShiftedRightFour
+global ACCTTwentyFiveShiftedRightFive
+global ACCTTwentyFiveShiftedRightSix
+
+global ACCTTwentySevenShiftedLeftSix
+global ACCTTwentySevenShiftedLeftFive
+global ACCTTwentySevenShiftedLeftFour
+global ACCTTwentySevenShiftedLeftThree
+global ACCTTwentySevenShiftedLeftTwo
+global ACCTTwentySevenShiftedLeftOne
+global ACCTTwentySevenShiftedRightOne
+global ACCTTwentySevenShiftedRightTwo
+global ACCTTwentySevenShiftedRightThree
+global ACCTTwentySevenShiftedRightFour
+global ACCTTwentySevenShiftedRightFive
+global ACCTTwentySevenShiftedRightSix
+
+global ACCTTwentyNineShiftedLeftSix
+global ACCTTwentyNineShiftedLeftFive
+global ACCTTwentyNineShiftedLeftFour
+global ACCTTwentyNineShiftedLeftThree
+global ACCTTwentyNineShiftedLeftTwo
+global ACCTTwentyNineShiftedLeftOne
+global ACCTTwentyNineShiftedRightOne
+global ACCTTwentyNineShiftedRightTwo
+global ACCTTwentyNineShiftedRightThree
+global ACCTTwentyNineShiftedRightFour
+global ACCTTwentyNineShiftedRightFive
+global ACCTTwentyNineShiftedRightSix
+
+global ACCTThirtyOneShiftedLeftSix
+global ACCTThirtyOneShiftedLeftFive
+global ACCTThirtyOneShiftedLeftFour
+global ACCTThirtyOneShiftedLeftThree
+global ACCTThirtyOneShiftedLeftTwo
+global ACCTThirtyOneShiftedLeftOne
+global ACCTThirtyOneShiftedRightOne
+global ACCTThirtyOneShiftedRightTwo
+global ACCTThirtyOneShiftedRightThree
+global ACCTThirtyOneShiftedRightFour
+global ACCTThirtyOneShiftedRightFive
+global ACCTThirtyOneShiftedRightSix
+
+global ACCTThirtyThreeShiftedLeftSix
+global ACCTThirtyThreeShiftedLeftFive
+global ACCTThirtyThreeShiftedLeftFour
+global ACCTThirtyThreeShiftedLeftThree
+global ACCTThirtyThreeShiftedLeftTwo
+global ACCTThirtyThreeShiftedLeftOne
+global ACCTThirtyThreeShiftedRightOne
+global ACCTThirtyThreeShiftedRightTwo
+global ACCTThirtyThreeShiftedRightThree
+global ACCTThirtyThreeShiftedRightFour
+global ACCTThirtyThreeShiftedRightFive
+global ACCTThirtyThreeShiftedRightSix
+
+global ACCTZeroShiftedLeftSix
+global ACCTZeroShiftedLeftFive
+global ACCTZeroShiftedLeftFour
+global ACCTZeroShiftedLeftThree
+global ACCTZeroShiftedLeftTwo
+global ACCTZeroShiftedLeftOne
+global ACCTZeroShiftedRightOne
+global ACCTZeroShiftedRightTwo
+global ACCTZeroShiftedRightThree
+global ACCTZeroShiftedRightFour
+global ACCTZeroShiftedRightFive
+global ACCTZeroShiftedRightSix
+
+global ACCTTwoShiftedLeftSix
+global ACCTTwoShiftedLeftFive
+global ACCTTwoShiftedLeftFour
+global ACCTTwoShiftedLeftThree
+global ACCTTwoShiftedLeftTwo
+global ACCTTwoShiftedLeftOne
+global ACCTTwoShiftedRightOne
+global ACCTTwoShiftedRightTwo
+global ACCTTwoShiftedRightThree
+global ACCTTwoShiftedRightFour
+global ACCTTwoShiftedRightFive
+global ACCTTwoShiftedRightSix
+
+global ACCTFourShiftedLeftSix
+global ACCTFourShiftedLeftFive
+global ACCTFourShiftedLeftFour
+global ACCTFourShiftedLeftThree
+global ACCTFourShiftedLeftTwo
+global ACCTFourShiftedLeftOne
+global ACCTFourShiftedRightOne
+global ACCTFourShiftedRightTwo
+global ACCTFourShiftedRightThree
+global ACCTFourShiftedRightFour
+global ACCTFourShiftedRightFive
+global ACCTFourShiftedRightSix
+
+global ACCTSixShiftedLeftSix
+global ACCTSixShiftedLeftFive
+global ACCTSixShiftedLeftFour
+global ACCTSixShiftedLeftThree
+global ACCTSixShiftedLeftTwo
+global ACCTSixShiftedLeftOne
+global ACCTSixShiftedRightOne
+global ACCTSixShiftedRightTwo
+global ACCTSixShiftedRightThree
+global ACCTSixShiftedRightFour
+global ACCTSixShiftedRightFive
+global ACCTSixShiftedRightSix
+
+global ACCTEightShiftedLeftSix
+global ACCTEightShiftedLeftFive
+global ACCTEightShiftedLeftFour
+global ACCTEightShiftedLeftThree
+global ACCTEightShiftedLeftTwo
+global ACCTEightShiftedLeftOne
+global ACCTEightShiftedRightOne
+global ACCTEightShiftedRightTwo
+global ACCTEightShiftedRightThree
+global ACCTEightShiftedRightFour
+global ACCTEightShiftedRightFive
+global ACCTEightShiftedRightSix
+
+global ACCTTenShiftedLeftSix
+global ACCTTenShiftedLeftFive
+global ACCTTenShiftedLeftFour
+global ACCTTenShiftedLeftThree
+global ACCTTenShiftedLeftTwo
+global ACCTTenShiftedLeftOne
+global ACCTTenShiftedRightOne
+global ACCTTenShiftedRightTwo
+global ACCTTenShiftedRightThree
+global ACCTTenShiftedRightFour
+global ACCTTenShiftedRightFive
+global ACCTTenShiftedRightSix
+
+global ACCTTwelveShiftedLeftSix
+global ACCTTwelveShiftedLeftFive
+global ACCTTwelveShiftedLeftFour
+global ACCTTwelveShiftedLeftThree
+global ACCTTwelveShiftedLeftTwo
+global ACCTTwelveShiftedLeftOne
+global ACCTTwelveShiftedRightOne
+global ACCTTwelveShiftedRightTwo
+global ACCTTwelveShiftedRightThree
+global ACCTTwelveShiftedRightFour
+global ACCTTwelveShiftedRightFive
+global ACCTTwelveShiftedRightSix
+
+global ACCTFourteenShiftedLeftSix
+global ACCTFourteenShiftedLeftFive
+global ACCTFourteenShiftedLeftFour
+global ACCTFourteenShiftedLeftThree
+global ACCTFourteenShiftedLeftTwo
+global ACCTFourteenShiftedLeftOne
+global ACCTFourteenShiftedRightOne
+global ACCTFourteenShiftedRightTwo
+global ACCTFourteenShiftedRightThree
+global ACCTFourteenShiftedRightFour
+global ACCTFourteenShiftedRightFive
+global ACCTFourteenShiftedRightSix
+
+global ACCTSixteenShiftedLeftSix
+global ACCTSixteenShiftedLeftFive
+global ACCTSixteenShiftedLeftFour
+global ACCTSixteenShiftedLeftThree
+global ACCTSixteenShiftedLeftTwo
+global ACCTSixteenShiftedLeftOne
+global ACCTSixteenShiftedRightOne
+global ACCTSixteenShiftedRightTwo
+global ACCTSixteenShiftedRightThree
+global ACCTSixteenShiftedRightFour
+global ACCTSixteenShiftedRightFive
+global ACCTSixteenShiftedRightSix
+
+global ACCTEighteenShiftedLeftSix
+global ACCTEighteenShiftedLeftFive
+global ACCTEighteenShiftedLeftFour
+global ACCTEighteenShiftedLeftThree
+global ACCTEighteenShiftedLeftTwo
+global ACCTEighteenShiftedLeftOne
+global ACCTEighteenShiftedRightOne
+global ACCTEighteenShiftedRightTwo
+global ACCTEighteenShiftedRightThree
+global ACCTEighteenShiftedRightFour
+global ACCTEighteenShiftedRightFive
+global ACCTEighteenShiftedRightSix
+
+global ACCTTwentyShiftedLeftSix
+global ACCTTwentyShiftedLeftFive
+global ACCTTwentyShiftedLeftFour
+global ACCTTwentyShiftedLeftThree
+global ACCTTwentyShiftedLeftTwo
+global ACCTTwentyShiftedLeftOne
+global ACCTTwentyShiftedRightOne
+global ACCTTwentyShiftedRightTwo
+global ACCTTwentyShiftedRightThree
+global ACCTTwentyShiftedRightFour
+global ACCTTwentyShiftedRightFive
+global ACCTTwentyShiftedRightSix
+
+global ACCTTwentyTwoShiftedLeftSix
+global ACCTTwentyTwoShiftedLeftFive
+global ACCTTwentyTwoShiftedLeftFour
+global ACCTTwentyTwoShiftedLeftThree
+global ACCTTwentyTwoShiftedLeftTwo
+global ACCTTwentyTwoShiftedLeftOne
+global ACCTTwentyTwoShiftedRightOne
+global ACCTTwentyTwoShiftedRightTwo
+global ACCTTwentyTwoShiftedRightThree
+global ACCTTwentyTwoShiftedRightFour
+global ACCTTwentyTwoShiftedRightFive
+global ACCTTwentyTwoShiftedRightSix
+
+global ACCTTwentyFourShiftedLeftSix
+global ACCTTwentyFourShiftedLeftFive
+global ACCTTwentyFourShiftedLeftFour
+global ACCTTwentyFourShiftedLeftThree
+global ACCTTwentyFourShiftedLeftTwo
+global ACCTTwentyFourShiftedLeftOne
+global ACCTTwentyFourShiftedRightOne
+global ACCTTwentyFourShiftedRightTwo
+global ACCTTwentyFourShiftedRightThree
+global ACCTTwentyFourShiftedRightFour
+global ACCTTwentyFourShiftedRightFive
+global ACCTTwentyFourShiftedRightSix
+
+global ACCTTwentySixShiftedLeftSix
+global ACCTTwentySixShiftedLeftFive
+global ACCTTwentySixShiftedLeftFour
+global ACCTTwentySixShiftedLeftThree
+global ACCTTwentySixShiftedLeftTwo
+global ACCTTwentySixShiftedLeftOne
+global ACCTTwentySixShiftedRightOne
+global ACCTTwentySixShiftedRightTwo
+global ACCTTwentySixShiftedRightThree
+global ACCTTwentySixShiftedRightFour
+global ACCTTwentySixShiftedRightFive
+global ACCTTwentySixShiftedRightSix
+
+global ACCTTwentyEightShiftedLeftSix
+global ACCTTwentyEightShiftedLeftFive
+global ACCTTwentyEightShiftedLeftFour
+global ACCTTwentyEightShiftedLeftThree
+global ACCTTwentyEightShiftedLeftTwo
+global ACCTTwentyEightShiftedLeftOne
+global ACCTTwentyEightShiftedRightOne
+global ACCTTwentyEightShiftedRightTwo
+global ACCTTwentyEightShiftedRightThree
+global ACCTTwentyEightShiftedRightFour
+global ACCTTwentyEightShiftedRightFive
+global ACCTTwentyEightShiftedRightSix
+
+global ACCTThirtyShiftedLeftSix
+global ACCTThirtyShiftedLeftFive
+global ACCTThirtyShiftedLeftFour
+global ACCTThirtyShiftedLeftThree
+global ACCTThirtyShiftedLeftTwo
+global ACCTThirtyShiftedLeftOne
+global ACCTThirtyShiftedRightOne
+global ACCTThirtyShiftedRightTwo
+global ACCTThirtyShiftedRightThree
+global ACCTThirtyShiftedRightFour
+global ACCTThirtyShiftedRightFive
+global ACCTThirtyShiftedRightSix
+
+global ACCTThirtyTwoShiftedLeftSix
+global ACCTThirtyTwoShiftedLeftFive
+global ACCTThirtyTwoShiftedLeftFour
+global ACCTThirtyTwoShiftedLeftThree
+global ACCTThirtyTwoShiftedLeftTwo
+global ACCTThirtyTwoShiftedLeftOne
+global ACCTThirtyTwoShiftedRightOne
+global ACCTThirtyTwoShiftedRightTwo
+global ACCTThirtyTwoShiftedRightThree
+global ACCTThirtyTwoShiftedRightFour
+global ACCTThirtyTwoShiftedRightFive
+global ACCTThirtyTwoShiftedRightSix
+
+global ACCTThirtyFourShiftedLeftSix
+global ACCTThirtyFourShiftedLeftFive
+global ACCTThirtyFourShiftedLeftFour
+global ACCTThirtyFourShiftedLeftThree
+global ACCTThirtyFourShiftedLeftTwo
+global ACCTThirtyFourShiftedLeftOne
+global ACCTThirtyFourShiftedRightOne
+global ACCTThirtyFourShiftedRightTwo
+global ACCTThirtyFourShiftedRightThree
+global ACCTThirtyFourShiftedRightFour
+global ACCTThirtyFourShiftedRightFive
+global ACCTThirtyFourShiftedRightSix

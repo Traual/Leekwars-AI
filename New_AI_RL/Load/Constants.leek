@@ -1,0 +1,74 @@
+/**
+ * Game constants
+ **/
+
+include("../includes")
+
+global EVERYONE
+EVERYONE = getAllies() + getEnemies()
+global ALLIES
+ALLIES = getAllies()
+global ENEMIES 
+ENEMIES = getEnemies()
+
+global Me// = getEntity()
+global BASE_INVENTORY// = getWeapons(Me) + getChips(Me)
+global MY_INVENTORY_ON_ME// = Actions.getInventoryOnMe(BASE_INVENTORY, ASSS.MAP)
+global MY_INVENTORY_ON_VOID// = Actions.getInventoryOnVoid(BASE_INVENTORY)
+global MY_INVENTORY_SUMMON// = Actions.getInventorySummon(BASE_INVENTORY)
+global MY_INVENTORY_ON_EVERYONE// = Actions.getInventoryOnEveryOne(BASE_INVENTORY)
+
+global MAP_TO_TENSOR
+// Dimensions de la map LeekWars
+global MAP_ROWS = 18
+global MAP_COLS = 34
+
+
+//FOR HASH
+
+global MAX_LIFE = 20000
+global MAX_CELL = 614
+global MAX_POSSIBLE_RANGE = 17
+global MAX_ITEM = 500
+global MAX_TP = 70
+global MAX_MP = 50
+global MAX_ENTITY_ID = 30
+global MAX_STAT = 2000
+global MAX_SHIELD = 2000 //FOR EITHER ABSOLUTE OR RELATIVE I GUESS
+global MAX_AOE_DIST = 10 //To be safe, but i may make it smaller
+global MAX_ANTIDOTE_CD = 5
+global MAX_POWER = 700
+global MAX_COOLDOWN = 65
+global MAX_POISON = 10000
+global MAX_POISON_OVER_TIME = 100000
+
+//For Hash But Binary
+
+global MAX_CELL_BINARY = 11
+global MAX_ENTITY_ID_BINARY = 5
+global MAX_AOE_DIST_BINARY = 3
+
+//For Every Stats Hash
+
+global MAX_VALUE = 9223372036854775807
+global OFFSET_BASIS = 1469598103934665603
+global SHIFT = 13
+global HIGH_SHIFT = 64 - SHIFT
+global MASK_HIGH = (1 << SHIFT) - 1
+
+function addValueToBinHash(BaseHashValue, AddedValue) {
+    return ((BaseHashValue << SHIFT) | ((BaseHashValue >> HIGH_SHIFT) & MASK_HIGH)) ^ AddedValue
+}
+
+
+//FOR CONSEQUENCES
+global EROSION_NO_POISON = 0.05
+global EROSION_POISON = 0.10
+//TODO: Effects like % of Mysterious elec / Revoked M_LASER and Fix Gazor at 20%
+
+//GAME : 
+
+global MAX_NUMBER_OF_BULB = 8
+global MAX_USEFUL_RELATIVE_SHIELD = 100
+global MIN_AGILITY_TO_FULLY_CRIT = 950
+global FIGHT_TYPE = getFightType() //Used to compute power in consequences

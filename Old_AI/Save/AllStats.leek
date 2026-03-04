@@ -1,0 +1,66 @@
+/**
+ * Saving every stats for an ID
+ **/
+
+include("../includes")
+
+class AllStats {
+	MAP = [:]
+	constructor() {
+		MAX_ID = 0
+		Me = getEntity()
+		BASE_INVENTORY = getWeapons(Me) + getChips(Me)
+		for (var e in getAliveAllies()+getAliveEnemies()) {
+			if (e>MAX_ID) MAX_ID = e
+			this.MAP[e] = new Stats(e)
+		}
+		for (var de in getDeadAllies()+getDeadEnemies()) {//Maybe load stats differently cuz no need to check for effects cuz dead people does not have effects
+			if (de>MAX_ID) MAX_ID = de
+			ALL_DEAD_ENTITIES[de] = new Stats(de)
+		}
+		//DO_I_HAVE_COVID //= Gravity.DoesHaveCovid(this.MAP[Me])
+		//GET_MAX_AOE_USABLE_BY_ENEMY = Gravity.getMaxEnemyAoeItemUsable(this.MAP)
+		//GET_MAX_AOE_USABLE_BY_ALLY = Gravity.getMaxAllyAoeItemUsable(this.MAP)
+		MY_INVENTORY_ON_ME = Actions.getInventoryOnMe(BASE_INVENTORY, this.MAP)
+		MY_INVENTORY_ON_VOID = Actions.getInventoryOnVoid(BASE_INVENTORY)
+		MY_INVENTORY_SUMMON = Actions.getInventorySummon(BASE_INVENTORY)
+		MY_INVENTORY_ON_EVERYONE = Actions.getInventoryOnEveryOne(BASE_INVENTORY)
+		MINIMUM_COST_ITEM = Items.getCheapestItemValue(BASE_INVENTORY)
+	}
+
+	/* Returns an array of entities sorted by turn order
+    *
+	* @param EntityStats Stats of the caster (not the target)
+    *
+    * @return Array <EntityId>
+    */
+
+	static getSortedEntityByTurnOrder(EveryStats) {
+		var Hash = getHashedEntities(EveryStats)
+		if (Hash in ENTITY_SORTED_BY_TURN_ORDER_CACHE) return ENTITY_SORTED_BY_TURN_ORDER_CACHE[Hash]
+		var tmp = []
+		for (var e:var stat in EveryStats) {
+			push(tmp, e)
+		}
+		var _final = arraySort(tmp, function(a, b) {
+    		return EveryStats[a].TURN_ORDER - EveryStats[b].TURN_ORDER
+		})
+		ENTITY_SORTED_BY_TURN_ORDER_CACHE[Hash] = _final
+		return _final
+	}
+
+	/* Hash every ids of EveryStats
+    *
+	* @param EveryStats map <Id: Stats>
+    *
+    * @return Hash
+    */
+
+	static getHashedEntities(EveryStats) {
+		var _final = 1
+		for (var e:var stat in EveryStats) {
+			_final = (_final * MAX_ID) + e
+		}
+		return _final
+	}
+}

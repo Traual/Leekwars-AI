@@ -1,0 +1,19 @@
+/**
+ * Fight constants
+**/
+
+include("../includes")
+
+class Fight {
+	ALIVEALLIES = []
+	ALIVEENEMIES = []
+	constructor() {//Not checked
+		//this.SELF = getEntity()
+		for (var e in getAliveAllies()) {
+			push(this.ALIVEALLIES, e)
+		}
+		for (var e in getAliveEnemies()) {
+			push(this.ALIVEENEMIES, e)
+		}
+	}
+}

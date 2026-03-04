@@ -1,0 +1,175 @@
+//--------------------------------
+//----------Fonctions ------------
+//--------------------------------
+function realenemy() {
+	var realen;
+	for (var leek in getAliveEnemies()) {
+		if (!isSummon(leek)) {
+			realen =leek;
+
+		}
+
+	}
+	return @realen;
+}
+function neighbouringCells(cell) { // les voisins
+	var accesscells1 = [];
+	if (cell != null) {
+
+		var x = getCellX(cell);
+		var y = getCellY(cell);
+
+		var c = getCellFromXY(x, y);
+		c = getCellFromXY(x - 1, y);
+		if (c != null && isEmptyCell(c)) push(accesscells1, c);
+
+		c = getCellFromXY(x + 1, y);
+		if (c != null && isEmptyCell(c)) push(accesscells1, c);
+
+		c = getCellFromXY(x, y - 1);
+		if (c != null && isEmptyCell(c)) push(accesscells1, c);
+
+		c = getCellFromXY(x, y + 1);
+		if (c != null && isEmptyCell(c)) push(accesscells1, c);
+
+
+		return @accesscells1;
+
+	}
+
+}
+
+
+function accessiblescells1(leek) { // cells accessibles
+	var accesscells = [getCell(leek)]; // Ceci represente tes cellules accessibles.
+	var set = [getCell(leek)]; // Ceci represente les cellules a `i` de distance de la cellule de depart.
+	for (var i = 0; i < getMP(leek); i++) {
+
+		var tmp = [];
+		for (var cell in set) {
+			var neighbors = neighbouringCells(cell);
+
+			for (var c in neighbors) {
+				if (!inArray(accesscells, c)) {
+					push(accesscells, c);
+					push(tmp, c);
+
+				}
+			}
+		}
+		set = tmp;
+	}
+	return @accesscells;
+}
+debug("Conso Oper :" + ((getOperations() * 100) / OPERATIONS_LIMIT) + " %");
+
+for (var leek in (getAliveAllies())) {
+	var neighbour = accessiblescells1(leek);
+	mark(neighbour, COLOR_BLUE);
+}
+for (var leek1 in (getAliveEnemies())) {
+	var neighbour = accessiblescells1(realenemy());
+	mark(neighbour, COLOR_RED);
+}
+
+
+
+function tableaucellscacher() {
+	var cellscacher = accessiblescells1(getLeek());
+	for (var Icell in accessiblescells1(getLeek())) {
+		for (var enemycell in accessiblescells1(realenemy())) {
+
+			if (lineOfSight(enemycell, Icell)) {
+				removeElement(cellscacher, Icell);
+
+			}
+
+		}
+
+	}
+	
+	reverse(cellscacher);
+	return @cellscacher[0];
+}
+
+debug("Conso Oper :" + ((getOperations() * 100) / OPERATIONS_LIMIT) + " %");
+
+//--------------------
+//Fin des fonctions---
+//--------------------
+
+// Variable me;enemy;ally...
+var enemy = getNearestEnemy();
+global  me = getLeek();
+var DistME = getDistance(getCell(me), getCell(enemy));
+//On utilise Vaccin si un allié a moins de 50% de sa vie
+for(var ally in getAliveAllies()){
+if(ally != getLeek())
+if (getName(ally != bulbechetif()))
+if(getLife(ally) < 0.5* getTotalLife(ally)) useChip(CHIP_VACCINE, ally);
+}
+// on utilise Regeneration
+
+// On avance vers l'enemie la cellule ou on peut utiliser la Hache
+moveTowardCell(getCellToUseWeapon(WEAPON_AXE, enemy));
+
+// Equiper le Laser 
+if (getWeapon() != WEAPON_LASER && !canUseWeapon(WEAPON_AXE, enemy)) {
+		setWeapon(WEAPON_LASER);
+	}
+
+//Equiper la hache si on peut l'utiliser.
+if (canUseWeapon(WEAPON_AXE, enemy) && getWeapon()!=WEAPON_AXE) {
+	setWeapon(WEAPON_AXE);
+}
+//Si on ne peut pas utiliser la hache ni le laser.
+// Si je peux tirer avec arme,tirer
+if (canUseWeapon(getWeapon(), enemy)==true) {
+	useWeapon(enemy);
+	useWeapon(enemy);
+}
+if (getTurn()>1) {
+	useChip(CHIP_ARMOR, me);
+	useChip(CHIP_SHIELD, me);}
+	
+	if (canUseChip(CHIP_STALACTITE, enemy)==true ) {
+		useChip(CHIP_STALACTITE, enemy);
+		if (canUseChip(CHIP_LIGHTNING, enemy)==true) {
+			
+useChip(CHIP_LIGHTNING, enemy);
+useChip(CHIP_LIGHTNING, enemy);
+useChip(CHIP_LIGHTNING, enemy);
+}}
+
+
+
+//---------------------
+//----Bulbes_Chetif----
+//---------------------
+
+function bulbechetif() {
+	var summoner = getSummoner();
+	var dist = getDistance(getLeek(), getSummoner());
+	if (dist > 1) {
+		moveToward(getNearestEnemy());
+	}
+	if (dist == 1) {
+		moveAwayFrom(summoner, 2);
+
+	}
+	useChip(CHIP_HELMET, summoner);
+	if (getLife(summoner)<getTotalLife(summoner)) {
+		useChip(CHIP_BANDAGE, summoner);
+	}
+	
+	useChip(CHIP_PROTEIN, summoner);
+	
+	
+	useChip(CHIP_HELMET, getNearestAlly());
+	if (getLife(getNearestAlly())<getTotalLife(getNearestAlly())) {
+	useChip(CHIP_BANDAGE, getNearestAlly());
+	}
+	useChip(CHIP_PROTEIN, getNearestAlly());
+	useChip(CHIP_PEBBLE, getNearestEnemy());
+}
+summon(CHIP_PUNY_BULB, getCellToUseChip(CHIP_PUNY_BULB, getLeek()),bulbechetif);

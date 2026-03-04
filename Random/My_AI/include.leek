@@ -1,0 +1,13 @@
+include('001_GLOBALS');
+include('002_UTILS');
+include('003_PRELOAD');
+include("004_COEFS");
+include('005_TARGETS');
+include("006_AREA");
+include('007_DESCISION');
+include("008_MAP_DANGER");
+include("009_COMBOS");
+include('010_PIPOTRON');
+include("011_ONESHOOT_TEAM");
+include("012_BULB");
+include('013_PLAY');

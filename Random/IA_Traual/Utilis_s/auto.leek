@@ -1,0 +1,10 @@
+include('001_GLOBAL');
+include('002_UTILES');
+include('003_PRELOAD');
+include('004_LIB');
+include('005_MAP_DANGER');
+include('006_MAP_ACTION');
+include('007_SCORING');
+include('008_COMBOS');
+include('009_BULB');
+include('010_PLAY');

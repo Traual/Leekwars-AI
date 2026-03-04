@@ -1,0 +1,30 @@
+/**
+ * Class Entity : Doesn't move during a turn
+**/
+
+include("../includes")
+
+class EntityClass {
+    SUMMONER
+    IS_SUMMON
+    ID
+    INVENTORY
+    SIDE
+    SPECIAL_WEAPON
+    TURN_ORDER
+    NAME
+    STATIC
+    constructor(id) {
+		  this.SUMMONER = getSummoner(id)
+		  this.IS_SUMMON = isSummon(id)
+		  this.ID = id
+		  this.INVENTORY = getWeapons(id) + getChips(id)
+          for (var i in this.INVENTORY) {
+			if (ItemClass.isSpecialWeap(i)) this.SPECIAL_WEAPON = i
+		  }
+		  this.SIDE = getSide(id)
+		  this.TURN_ORDER = getEntityTurnOrder(id)
+		  this.NAME = getName(id)
+		  this.STATIC = isStatic(id)
+    }
+}

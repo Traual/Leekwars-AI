@@ -1,0 +1,26 @@
+/*global CellDid = [];
+
+function CellToDo() {
+var Celltodo = [];
+	for (var i = 0; i < 612; i++) {
+		if (!isObstacle(i) && !isLeek(i) && !inArray(CellDid, i)) push(Celltodo, i);
+	}
+	return Celltodo;
+}
+
+for (var i = 0; i < 50; i++) {
+	for (var cell in CellToDo()) {
+			moveTowardCell(cell);
+			push(CellDid, cell);
+			break;
+	}
+}*/
+
+for (var i = 0; i < 51; i++) {
+	moveTowardCell(randInt(0, 612));
+}
+
+
+
+
+

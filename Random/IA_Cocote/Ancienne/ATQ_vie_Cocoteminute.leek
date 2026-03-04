@@ -1,0 +1,38 @@
+var enemy=getNearestEnemy();
+var me = getLeek();
+
+
+
+function bulbAI() 
+    {var summoner = getSummoner();
+    moveToward(summoner);
+	if (getLife(getNearestEnemy()<10)) {useChip(CHIP_PEBBLE, getNearestEnemy());}
+	if (getLife(summoner)<500) {useChip(CHIP_BANDAGE, summoner);}
+    if (getTurn()>1) {useChip(CHIP_PROTEIN, summoner);
+	useChip(CHIP_HELMET, summoner);}}
+
+if (getLife(enemy)>200) {summon(CHIP_PUNY_BULB, getCellFromXY(getCellX(getCell())-1, getCellY(getCell())-1), bulbAI);}
+
+moveToward(enemy);
+
+if (canUseChip(CHIP_STALACTITE, enemy)) {useChip(CHIP_STALACTITE, enemy);}
+
+if (getTurn()==2) {useChip(CHIP_SHIELD, me);}
+if (getTurn()==5) {useChip(CHIP_SHIELD, me);}
+if (getTurn()==9) {useChip(CHIP_SHIELD, me);}
+if (getTurn()==13) {useChip(CHIP_SHIELD, me);}
+ 
+ 
+
+if (getWeapon()!=WEAPON_MAGNUM && canUseWeapon(WEAPON_AXE, enemy)==false) {setWeapon(WEAPON_MAGNUM);}
+if (getWeapon()!=WEAPON_AXE && canUseWeapon(WEAPON_AXE, enemy)==true){setWeapon(WEAPON_AXE);} 
+if (canUseWeapon(enemy)==true) {useWeapon(enemy);
+useWeapon(enemy);}
+
+
+
+
+
+
+
+if (getLife(me)<515) {useChip(CHIP_CURE, me);}

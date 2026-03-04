@@ -1,0 +1,23 @@
+/**
+ * Benchmark (to test operations)
+**/
+
+class BenchmarkClass {
+	static DEBUGOP
+	static StartOp() {
+		DEBUGOP = getOperations()
+	}
+	static StopOp(name) {
+		debug(name+" opés "+((getOperations()-DEBUGOP-17)/1000)+" k")
+	}
+}
+
+class BenchmarkRamClass {
+	static RAM
+	static Start() {
+		RAM = getUsedRAM()
+	}
+	static Stop(name) {
+		debug(name+" Ram : "+(((getUsedRAM()-RAM)/getMaxRAM())*100)+" %");
+	}
+}

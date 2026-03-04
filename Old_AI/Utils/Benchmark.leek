@@ -1,0 +1,242 @@
+/**
+ * Benchmark (to test operations)
+**/
+
+class Benchmark {
+	static CellDangerAreaOps
+	static CellDangerComboOps
+	static ActionsAoeHashOps
+	static ActionsLoadingClassOps
+	static ActionsCellsDependantOps
+	static ActionsCellsIndependantOps
+	static TreeOps
+	static GravityOps
+	static ConsequencesOps
+	static FitnessOps
+	static WalkcellsOps
+	static FinalCellOps
+	static BFSOps
+	static DFSOps
+	static CloneOps
+	static LoadingBaseActions
+	static ScoringEveryNodes
+	static FitnessActionsOps
+	static SortedWalkOps
+	static ForInBFSOps
+	static SortingInBFSOps
+	static CoefLoadingOps
+	DEBUGOP
+	StartOp() {
+		DEBUGOP = getOperations()
+	}
+	StopOp(name) {
+		debug(name+" opés "+((getOperations()-DEBUGOP-17)/1000)+" k")
+	}
+	static Init() {
+		CellDangerAreaOps = 0
+		CellDangerComboOps = 0
+		ActionsAoeHashOps = 0
+		ActionsLoadingClassOps = 0
+		ActionsCellsDependantOps = 0
+		ActionsCellsIndependantOps = 0
+		TreeOps = 0
+		GravityOps = 0
+		ConsequencesOps = 0
+		FitnessOps = 0
+		WalkcellsOps = 0
+		FinalCellOps = 0
+		BFSOps = 0
+		DFSOps = 0
+		CloneOps = 0
+		SortedWalkOps = 0
+		LoadingBaseActions = 0
+		ScoringEveryNodes = 0
+		ForInBFSOps = 0
+		SortingInBFSOps = 0
+		FitnessActionsOps = 0
+		CoefLoadingOps = 0
+	}
+	static CellDangerAreaStart() {
+		CellDangerAreaOps -= getOperations()
+	}
+	static CellDangerAreaStop() {
+		CellDangerAreaOps += getOperations()
+	}
+	static CellDangerComboStart() {
+		CellDangerComboOps -= getOperations()
+	}
+	static CellDangerComboStop() {
+		CellDangerComboOps += getOperations()
+	}
+	static ActionsAoeHashStart() {
+		ActionsAoeHashOps -= getOperations()
+	}
+	static ActionsAoeHashStop() {
+		ActionsAoeHashOps += getOperations()
+	}
+	static ActionsLoadingClassStart() {
+		ActionsLoadingClassOps -= getOperations()
+	}
+	static ActionsLoadingClassStop() {
+		ActionsLoadingClassOps += getOperations()
+	}
+	static ActionsCellsDependantStart() {
+		ActionsCellsDependantOps -= getOperations()
+	}
+	static ActionsCellsDependantStop() {
+		ActionsCellsDependantOps += getOperations()
+	}
+	static ActionsCellsIndependantStart() {
+		ActionsCellsIndependantOps -= getOperations()
+	}
+	static ActionsCellsIndependantStop() {
+		ActionsCellsIndependantOps += getOperations()
+	}
+	/*static TreeStart() {
+		TreeOps -= getOperations()
+	}
+	static TreeStop() {
+		TreeOps += getOperations()
+	}*/
+	static GravityStart() {
+		GravityOps -= getOperations()
+	}
+	static GravityStop() {
+		GravityOps += getOperations()
+	}
+	static ConsequencesStart() {
+		ConsequencesOps -= getOperations()
+	}
+	static ConsequencesStop() {
+		ConsequencesOps += getOperations()
+	}
+	static FitnessStart() {
+		FitnessOps -= getOperations()
+	}
+	static FitnessStop() {
+		FitnessOps += getOperations()
+	}
+	/*static CloneStart() {
+		CloneOps -= getOperations()
+	}
+	static CloneStop() {
+		CloneOps += getOperations()
+	}*/
+	static WalkcellsStart() {
+		WalkcellsOps -= getOperations()
+	}
+	static WalkcellsStop() {
+		WalkcellsOps += getOperations()
+	}
+	static FinalCellStart() {
+		FinalCellOps -= getOperations()
+	}
+	static FinalCellStop() {
+		FinalCellOps += getOperations()
+	}
+	static BFSStart() {
+		BFSOps -= getOperations()
+	}
+	static BFSStop() {
+		BFSOps += getOperations()
+	}
+	static DFSStart() {
+		DFSOps -= getOperations()
+	}
+	static DFSStop() {
+		DFSOps += getOperations()
+	}
+	/*static SortedWalkOpsStart() {
+		SortedWalkOps -= getOperations()
+	}
+	static SortedWalkOpsStop() {
+		SortedWalkOps += getOperations()
+	}*/
+	static LoadingBaseActionsStart() {
+		LoadingBaseActions -= getOperations()
+	}
+	static LoadingBaseActionsStop() {
+		LoadingBaseActions += getOperations()
+	}
+	static ScoringEveryNodesStart() {
+		ScoringEveryNodes -= getOperations()
+	}
+	static ScoringEveryNodesStop() {
+		ScoringEveryNodes += getOperations()
+	}
+	static ForInBFSOpsStart() {
+		ForInBFSOps -= getOperations()
+	}
+	static ForInBFSOpsStop() {
+		ForInBFSOps += getOperations()
+	}
+	static SortingInBFSOpsStart() {
+		SortingInBFSOps -= getOperations()
+	}
+	static SortingInBFSOpsStop() {
+		SortingInBFSOps += getOperations()
+	}
+	static FitnessActionStart() {
+		FitnessActionsOps -= getOperations()
+	}
+	static FitnessActionStop() {
+		FitnessActionsOps += getOperations()
+	}
+	static CoefLoadingStart() {
+		CoefLoadingOps -= getOperations()
+	}
+	static CoefLoadingStop() {
+		CoefLoadingOps += getOperations()
+	}
+	static DebugAllOps() {
+		debug(
+			"Cell Danger Area Took : " + CellDangerAreaOps / 1000000 + "M opés
+			" +
+			"Cell Danger Combo Took : " + CellDangerComboOps / 1000000 + "M opés
+			" +
+			"Final Cell Took : " + FinalCellOps / 1000000 + "M opés
+			" +
+			"Actions Aoe Hash Took : " + ActionsAoeHashOps / 1000000 + "M opés
+			" +
+			"Actions Loading Class Took : " + ActionsLoadingClassOps / 1000000 + "M opés
+			" +
+			"Actions Cells Dependant Took : " + ActionsCellsDependantOps / 1000000 + "M opés
+			" +
+			"Actions Cells Independant Took : " + ActionsCellsIndependantOps / 1000000 + "M opés
+			" +
+			"Gravity Took : " + GravityOps / 1000000 + "M opés
+			" +
+			"Consequences Took : " + ConsequencesOps / 1000000 + "M opés
+			" +
+			"Fitness Took : " + FitnessOps / 1000000 + "M opés
+			" +
+			"WalkCells Took : " + WalkcellsOps / 1000000 + "M opés
+			" +
+			"BFS (Total) Took : " + BFSOps / 1000000 + "M opés
+			" +
+			"DFS (Total) Took : " + DFSOps / 1000000 + "M opés
+			" +
+			"Loading Base Actions Took : " + LoadingBaseActions / 1000000 + "M opés
+			" +
+			"Scoring Every Nodes Ops : " + ScoringEveryNodes / 1000000 + "M opés
+			" +
+			"Fitness Action Took : " + FitnessActionsOps / 1000000 + "M opés
+			" +
+			"Coef Loading took : " + CoefLoadingOps / 1000000 + "M opés
+			" +
+			"Sorting in BFS took : " + SortingInBFSOps / 1000000 + "M opés
+			" +
+			"For in BFS took : " + ForInBFSOps / 1000000 + "M opés"
+		)
+	}
+}
+
+class BenchmarkRam {
+	static RAM
+	static Start() {
+		RAM = getUsedRAM()
+	}
+	static Stop(name) {
+		debug(name+" Ram : "+(((getUsedRAM()-RAM)/getMaxRAM())*100)+" %");
+	}
+}

@@ -1,0 +1,331 @@
+include('auto');
+
+/* if (getFightContext()==FIGHT_CONTEXT_CHALLENGE) {
+ var i;
+ 	say("Attends je reflechis");
+	while (true) {
+		i++;
+	}
+ } */
+/*
+ var tabPFC = [
+ "Pierre" ,
+ "Feuille",
+ "Ciseau"
+ ];
+ 
+ 
+ if (getFarmerID(getNearestEnemy())==32657 && getFightType()==FIGHT_TYPE_SOLO) {
+ 	if (getTurn()==1) {
+ 		say("moi");
+ 	}
+	say(tabPFC[randInt(0, count(tabPFC))]);
+	
+ }
+ */
+/////////////////////////////////////////////////////////////////////////////////////////////
+//PRELOAD Turn 1
+//
+///////////////////////////////////////////////////////////////////////////////////////////
+global TpKill = false;
+
+if (getTurn() == 1) {
+	_SHOULD_KEEP_MAINWEAP_INHAND = true;
+	getMainWeapon = function() {
+		if (true) return WEAPON_GAZOR;
+		if (getLife(_NEAREST_ENEMY_LEEK) <= 0) _NEAREST_ENEMY_LEEK = getNearestEnemyLeek();
+		return getCellDistance(getCell(), getCell(_NEAREST_ENEMY_LEEK)) <= getTotalMP() ? WEAPON_KATANA : WEAPON_GAZOR;
+	};
+	failSafe = function() {
+		if (getTP() >= 15 && getCooldown(CHIP_RESURRECTION) == 0 && _RESU_TARGET != null && !isSummon(_RESU_TARGET)) {
+			var cell = findSafestCellToRez(_RESU_TARGET, getCell());
+			resurrect(_RESU_TARGET, cell);
+		}
+		var arrayTrySummon = [CHIP_HEALER_BULB, CHIP_METALLIC_BULB, CHIP_LIGHTNING_BULB, CHIP_FIRE_BULB, CHIP_ICED_BULB, CHIP_ROCKY_BULB, CHIP_PUNY_BULB];
+		if (getAbsoluteShield() > 150 && _COUNT_METAL > 5) removeElement(arrayTrySummon, CHIP_METALLIC_BULB);
+		for (var item in arrayTrySummon) {
+			if (getTP() >= getChipCost(item) && getCooldown(item) == 0) {
+				summon(item, getCellToUseChip(item, _SELF), ia_bulb_main);
+			}
+		}
+		var arrayTryChip = [CHIP_ARMORING, CHIP_REMISSION, CHIP_BANDAGE];
+		for (var item in arrayTryChip) {
+			if (getTP() >= getChipCost(item) && getCooldown(item) == 0) {
+				useChip(item, _SELF);
+			}
+		}
+		var arrayTryIfNotOnEffect = [CHIP_VACCINE, CHIP_FORTRESS, CHIP_ARMOR, CHIP_WALL, CHIP_SHIELD, CHIP_HELMET];
+		for (var item in arrayTryIfNotOnEffect) {
+			if (getTP() >= getChipCost(item) && getCooldown(item) == 0) {
+				if (_LEEKS[_SELF][_effects][item] == null) useChip(item, _SELF);
+			}
+		}
+	};
+	getTeleportComboSet = function() {
+		var combos = [],
+			inHand = getWeapon();
+		var TP = getTP() - _ITEM_COST[CHIP_TELEPORTATION];
+		if (TP >= 14 && inHand == WEAPON_GAZOR) push(combos, [WEAPON_GAZOR, WEAPON_GAZOR]);
+		if (TP >= 14 && inHand == WEAPON_KATANA) push(combos, [WEAPON_KATANA, WEAPON_KATANA]);
+		return @combos;
+	};
+}
+
+if (TpKill && getFightType() == FIGHT_TYPE_SOLO && getScience() >= 500) {
+	if (getTurn() == 1) {
+		useChip(CHIP_REFLEXES, getLeek());
+		useChip(CHIP_STRETCHING, getLeek());
+		useChip(CHIP_RAGE, getLeek());
+		useChip(CHIP_MOTIVATION, getLeek());
+		useChip(CHIP_DOPING, getLeek());
+		setWeapon(WEAPON_ELECTRISOR);
+		moveTowardCell(useChipOnCell(CHIP_TELEPORTATION, getCellToUseWeapon(WEAPON_ELECTRISOR, _NEAREST_ENEMY_LEEK)));
+		while (true) {
+			say("Tu vas Kiffer Jusqu'a la fin quite a mourrir d'une éspéctase");
+		}
+	}
+	if (getTurn() == 2) {
+		if (getWeapon() != WEAPON_ELECTRISOR) {
+			setWeapon(WEAPON_ELECTRISOR);
+		}
+		moveTowardCell(useChipOnCell(CHIP_TELEPORTATION, getCellToUseWeapon(WEAPON_ELECTRISOR, _NEAREST_ENEMY_LEEK)));
+		useChipOnCell(CHIP_TELEPORTATION, getCellToUseWeapon(WEAPON_ELECTRISOR, _NEAREST_ENEMY_LEEK));
+		useChip(CHIP_PROTEIN, getLeek());
+		while (getTP() >= getWeaponCost(WEAPON_ELECTRISOR) && canUseWeapon(_NEAREST_ENEMY_LEEK)) {
+			useWeapon(_NEAREST_ENEMY_LEEK);
+		}
+		if (getEnemiesCount() == 0) {
+			say("EZZZZZZZZZZ Je t'ai soulevé :)");
+		} else say("Oh Merde J'ai raté");
+	}
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+//CHECK TP OS
+//
+///////////////////////////////////////////////////////////////////////////////////////////
+if (getFightType() == FIGHT_TYPE_TEAM && getTurn() > 1 || getFightType() == FIGHT_TYPE_FARMER && getTurn() > 3) {
+	TpOs();
+}
+
+if (getTurn() == 1 && getStrength() > 700) {
+	TpOs();
+}
+/////////////////////////////////////////////////////////////////////////////////////////////
+//ADD MOTIVATION / RAGE 
+//
+///////////////////////////////////////////////////////////////////////////////////////////
+if (inArray(getChips(), CHIP_MOTIVATION) || inArray(getChips(), CHIP_RAGE)) {
+	useChip(CHIP_MOTIVATION, getLeek());
+	useChip(CHIP_RAGE, getLeek());
+}
+/////////////////////////////////////////////////////////////////////////////////////////////
+//Télé Shield = 0 
+//
+///////////////////////////////////////////////////////////////////////////////////////////
+/* var k ;
+ for (var i in getAliveEnemies()) {
+ 	if (getRelativeShield(i)<5 && getAbsoluteShield(i)<50 && getFightType()==FIGHT_TYPE_SOLO && !isSummon(i)) {
+	if (getWeapon()!=WEAPON_M_LASER) {
+		setWeapon(WEAPON_M_LASER);
+	}
+	k = getCellToUseWeapon(WEAPON_M_LASER, i);
+ 		if (getPathLength(getCell(), getCellToUseChipOnCell(CHIP_TELEPORTATION, k))<5) {
+ 			moveTowardCell(getCellToUseChip(CHIP_TELEPORTATION, k));
+ 		}
+		useChipOnCell(CHIP_TELEPORTATION, k);
+		while (getTP()>=getWeaponCost(WEAPON_M_LASER) && getWeapon()!=null && canUseWeapon( i )) {
+			useWeapon(i);
+		}
+ 	}
+ }
+ */
+
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+//ADD TELE COLLé ENEMY 
+//
+///////////////////////////////////////////////////////////////////////////////////////////
+if (count(_areaCells1[getCell()]) == 1) {
+	for (var cell in _areaCells1[getCell()]) {
+		var leek = getLeekOnCell(cell);
+		if (leek != -1) {
+			useChip(CHIP_INVERSION, leek);
+			countUsage(CHIP_INVERSION);
+		}
+	}
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+//ADD INVERSION ENEMY BULB > ALLY BULB
+//
+///////////////////////////////////////////////////////////////////////////////////////////
+/*if (getFightType()==FIGHT_TYPE_SOLO || getRelativeShield()>=75 || getAbsoluteShield()>=400 || getRelativeShield()> 40 && getAbsoluteShield()> 150) {
+for (var i in getAliveEnemies()) {
+var c = getCellToUseChip(CHIP_INVERSION, i);
+	if (getPathLength(getCell(), c)<=5 && GetNumberOfEnemyBulbAlive()>GetNumberOfAllyBulbAlive() && !isSummon(i) && getCellDistance(c, getCell(i))>=6) {
+		moveTowardCell(getCellToUseChip(CHIP_INVERSION, i));
+		useChip(CHIP_INVERSION, i);
+	}
+}
+}
+/////////////////////////////////////////////////////////////////////////////////////////////
+//ADD INVERSION POTO (HEAL + ELOIGNEMENT ENEMY)
+//
+///////////////////////////////////////////////////////////////////////////////////////////
+ 
+ for (var i in getAliveAllies()) {
+	if (!getFightType()==FIGHT_TYPE_SOLO && getTotalLife(i)-getLife(i)>50*(getWisdom()/100) && getPathLength(getCell(), getCellToUseChip(CHIP_INVERSION, i)<=5) && getPathLength(getCell(i), getCell(_NEAREST_ENEMY_LEEK))<getPathLength(getCellToUseChip(CHIP_INVERSION, i), getCell(_NEAREST_ENEMY_LEEK)) && getCooldown(CHIP_INVERSION)==0) {
+	moveTowardCell(getCellToUseChip(CHIP_INVERSION, i));
+		useChip(CHIP_INVERSION, i);
+		countUsage(CHIP_INVERSION);
+	}
+}
+ */
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+//Télé Anti TP KILL
+//
+///////////////////////////////////////////////////////////////////////////////////////////
+for (var e in getAliveEnemies()) {
+	if (!isSummon(e) && getStrength(e) > 800 && getFightType() == FIGHT_TYPE_SOLO) {
+		if (_ENCODING_STUFF[CHIP_LIBERATION] != null && getCooldown(CHIP_LIBERATION) == 0) {
+			var cellFrom = getCellToUseChip(CHIP_LIBERATION, e);
+			if (reachableCells[cellFrom] != null) {
+				moveTowardCell(cellFrom);
+				useChip(CHIP_LIBERATION, e);
+			} else if (_IS_TELEPORT && getCooldown(CHIP_TELEPORTATION) == 0) {
+				var cellFromTele = getCellToUseChipOnCell(CHIP_TELEPORTATION, cellFrom);
+				var dist = reachableCells[cellFromTele];
+				if (dist != null && dist < getFightType() == FIGHT_TYPE_SOLO ? getMP() : getMP() / 2) {
+					moveTowardCell(cellFromTele);
+					useChipOnCell(CHIP_TELEPORTATION, cellFrom);
+					countUsage(CHIP_TELEPORTATION);
+					useChip(CHIP_LIBERATION, e);
+				} else break;
+			} else break;
+			countUsage(CHIP_LIBERATION);
+			refreshLeeksCellsAndAliveStatus();
+			refreshLeeksEffectsAndStates();
+			reachableCells = getReachableCells([getCell(): 0], getMP(), []);
+		} else debug("fuck j'ai pas libé... :(");
+	}
+}
+
+/*for (var i in getAliveEnemies()) {
+	if (getFightType()==FIGHT_TYPE_SOLO && getRelativeShield(i)==0 && getAbsoluteShield(i)==0 && getLife()>1700 && !isSummon(i)  && getCooldown(CHIP_DEVIL_STRIKE)==0 && getCooldown(CHIP_TELEPORTATION)==0 && getStrength()>400) {
+		var Cell = getCellToUseWeapon(WEAPON_KATANA, i);
+		if (getPathLength(getCell(), getCellToUseChipOnCell(CHIP_TELEPORTATION, Cell))<=getMP()) {
+			moveTowardCell(getCellToUseChipOnCell(CHIP_TELEPORTATION, Cell));
+		}
+		useChipOnCell(CHIP_TELEPORTATION, Cell);
+		if (canUseWeapon(WEAPON_KATANA, i)) {
+		if (getWeapon()!=WEAPON_KATANA) {
+		setWeapon(WEAPON_KATANA);
+	}
+			useWeapon(i);
+			useChip(CHIP_DEVIL_STRIKE, getLeek());
+			
+		}
+	}
+}
+*/
+
+
+/*
+var g ;
+for (var i in getAliveEnemies()) {
+	if (MustTp(i) && !isSummon(i) && getMagic()>200 && getLife()  * 1.3 > getLife(i)) {
+		g = getCellToUseWeapon(WEAPON_ELECTRISOR, i);
+		if (getPathLength(getCell(), getCellToUseChipOnCell(CHIP_TELEPORTATION, g))<6 && getPathLength(getCell(), g)>6) {
+			moveTowardCell(getCellToUseChipOnCell(CHIP_TELEPORTATION,g));
+			useChipOnCell(CHIP_TELEPORTATION, g);
+		}
+	}
+}
+*/
+/*for (var i in getAliveEnemies()) {
+	if (getLife()*1.35 > getLife(i) && GetNumberOfEnemyBulbAlive() < GetNumberOfAllyBulbAlive() && getCooldown(CHIP_TELEPORTATION)==0 && !isSummon(i)) {
+		var p = getCellToUseWeapon(WEAPON_ELECTRISOR, i);
+		var k = getCellToUseChipOnCell(CHIP_TELEPORTATION, p);
+		if (getPathLength(getCell(), k)<6) {
+			moveTowardCell(k);
+		}
+		if (getPathLength(getCell(), p)>6) {
+			useChipOnCell(CHIP_TELEPORTATION, p);
+		}
+	}
+}
+*/
+refreshLeeksCellsAndAliveStatus();
+refreshLeeksEffectsAndStates();
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+//ADD ANTIDOTE 
+//
+///////////////////////////////////////////////////////////////////////////////////////////
+if (_LEEKS[_SELF][_psnTotal] > AntidoteScore()) { // 600 DE BASE , JE TEST 800
+	useChip(CHIP_ANTIDOTE, _SELF);
+	countUsage(CHIP_ANTIDOTE);
+	refreshLeeksEffectsAndStates();
+}
+
+reachableCells = getReachableCells([getCell(): 0], getMP(), []);
+
+function MustRegen() {
+	if (getLife() < 600 && getCooldown(CHIP_REGENERATION) == 0) {
+		return true;
+	}
+	/*if (getLife()<getTotalLife() - 200*(1+getWisdom()/100)) {
+		return true ;
+	}
+	*/
+}
+
+if (MustRegen()) {
+	useChip(CHIP_REGENERATION, getLeek());
+}
+// debugW(getCooldown(CHIP_REGENERATION));
+/////////////////////////////////////////////////////////////////////////////////////////////
+//Play
+//
+///////////////////////////////////////////////////////////////////////////////////////////
+var bpzd = getStrength() > 1 ? 12 : 19;
+// choix de la gravityCell
+global distToEnemyLeek = _SNC_200 && _STR_300 ? bpzd : 7; // 14 : 7
+if (getTurn() % 10 == 0 && distToEnemyLeek > 0) distToEnemyLeek--;
+refreshGravityCells(distToEnemyLeek);
+
+loadMapsDanger(_OPERATION_MAP_DANGER);
+updateCoef(null);
+setMapActions();
+/*
+for (var i in getAliveEnemies()) {
+	if (!isSummon(i) && getCellDistance(getCell(), getCell(i))>6 && getFightType()==FIGHT_TYPE_SOLO) {
+	    tryTeleKillWithCombo(findBestMove(getComboSet()), i);
+	}
+}
+*/
+playBestMove(findBestMove(getComboSet()));
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+//Say Troll
+//
+///////////////////////////////////////////////////////////////////////////////////////////
+if (getFarmerID(_NEAREST_ENEMY_LEEK) == 23299) {
+	say("Rien A part se faire Défoncer ^^");
+}
+
+
+//sayCupidon();
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+//DEBUG
+//
+///////////////////////////////////////////////////////////////////////////////////////////
+displayBench(); //kékecquecetruc :')
+debugC("Number Of Enemy Bulb :" + GetNumberOfEnemyBulbAlive(), COLOR_BLUE);
+debugC("Number Of Ally Bulb :" + GetNumberOfAllyBulbAlive(), COLOR_BLUE);
+debugW('TOTALOP:' + round(getOperations() / 1000) + "k");
