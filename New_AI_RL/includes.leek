@@ -24,8 +24,7 @@ include("Modifier/Consequences.leek")
 include("Maps/Danger/EntityDanger.leek")
 include("Maps/Danger/Danger.leek")
 
-include("Neural/Weights.leek")
-include("Neural/Neural.leek")
+include("Scoring/Scoring.leek")
 
 include("User/BFS.leek")
 include("User/FinalCell.leek")

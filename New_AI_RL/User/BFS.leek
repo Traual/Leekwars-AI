@@ -62,7 +62,7 @@ class ActionSuite {
 		for (var Nod in Tree_Array) {
 			BenchmarkClass.StartOp()
 			var NodeBaseHash = StateClass.getBaseHash(Nod.END_STATS)
-			var ThisNodeScore = NeuralClass.getStateScore(Nod.END_STATS, Nod.END_STATS[Me].SIDE, NodeBaseHash)
+			var ThisNodeScore = ScoringClass.getStateScore(Nod.END_STATS, Nod.END_STATS[Me].SIDE, NodeBaseHash)
 			/*if (Nod.ACTION.Item) {
 				debug("Ranking this action's node : "
 				+ITEMINFO[Nod.ACTION.Item].NAME+" From : "
