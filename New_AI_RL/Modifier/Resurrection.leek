@@ -34,7 +34,7 @@ class ResurrectionClass {
 		var top_score = 0
 		for (var id:var entity_state in State) {
 			if (entity_state.LIFE > 0) continue
-			var Score = NeuralClass.getResurrectionScore(entity_state, State)
+			var Score = ScoringClass.getResurrectionScore(entity_state, State)
 			if (Score > top_score) {
 				_final_id = id
 				top_score = Score

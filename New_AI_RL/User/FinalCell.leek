@@ -29,7 +29,7 @@ class FinalCell {
         //After this we can loop in cells
         for (var cell in array_cells_sorted_by_ennemi_dist) {
             var this_cell_danger = DangerClass.get(cell, State, MyState, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger)
-            var this_cell_min_danger = NeuralClass.getMinMapDanger(State, cell) * MyState.LIFE
+            var this_cell_min_danger = ScoringClass.getMinMapDanger(State, cell) * MyState.LIFE
             if (this_cell_danger > this_cell_min_danger) {
                 if (this_cell_danger < min_danger) {
                     min_danger = this_cell_danger
