@@ -1,0 +1,81 @@
+/**
+ * EntityIndexes Class
+ * Calcule les index de puissance brute pour chaque statistique sans utiliser de Map
+ **/
+
+include("../includes.leek")
+
+class EntityIndexes {
+    STRENGTH
+    WISDOM
+    AGILITY
+    RESISTANCE
+    SCIENCE
+    MAGIC
+
+    constructor(entityStats) {
+        var powerFactorStrength = ScoringClass.solvePoly(POLY_POWER_STRENGTH, entityStats.POWER)
+        var powerFactorMagic = ScoringClass.solvePoly(POLY_POWER_MAGIC, entityStats.POWER)
+
+        var TOTAL_TP = entityStats.TOTAL_TP != null ? entityStats.TOTAL_TP : entityStats.TP
+
+        this.STRENGTH = ScoringClass.solvePoly(POLY_STRENGTH, entityStats.STRENGTH) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "STRENGTH")) * powerFactorStrength
+        this.WISDOM = ScoringClass.solvePoly(POLY_WISDOM, entityStats.WISDOM) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "WISDOM"))
+        this.AGILITY = ScoringClass.solvePoly(POLY_AGILITY, entityStats.AGILITY) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "AGILITY"))
+        this.RESISTANCE = ScoringClass.solvePoly(POLY_RESISTANCE, entityStats.RESISTANCE) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "RESISTANCE"))
+        this.SCIENCE = ScoringClass.solvePoly(POLY_SCIENCE, entityStats.SCIENCE) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "SCIENCE"))
+        this.MAGIC = ScoringClass.solvePoly(POLY_MAGIC, entityStats.MAGIC) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "MAGIC")) * powerFactorMagic
+    }
+
+    static isEffectUsefulForStat(ItemEffects, statTypeString) {
+        var MapFctUsefull = [
+            "STRENGTH": function(effectType) {
+                return effectType == EFFECT_DAMAGE
+            },
+            "WISDOM": function(effectType) {
+                return effectType == EFFECT_HEAL || effectType == EFFECT_BOOST_MAX_LIFE
+            },
+            "AGILITY": function(effectType) {
+                return effectType == EFFECT_DAMAGE_RETURN
+            },
+            "RESISTANCE": function(effectType) {
+                return effectType == EFFECT_ABSOLUTE_SHIELD || effectType == EFFECT_RELATIVE_SHIELD
+            },
+            "SCIENCE": function(effectType) {
+                return effectType == EFFECT_BUFF_AGILITY || effectType == EFFECT_BUFF_MP || effectType == EFFECT_BUFF_RESISTANCE || effectType == EFFECT_BUFF_STRENGTH || effectType == EFFECT_BUFF_TP || effectType == EFFECT_BUFF_WISDOM || effectType == EFFECT_NOVA_DAMAGE || effectType == EFFECT_NOVA_VITALITY
+            },
+            "MAGIC": function(effectType) {
+                return effectType == EFFECT_POISON || effectType == EFFECT_SHACKLE_AGILITY || effectType == EFFECT_SHACKLE_MAGIC || effectType == EFFECT_SHACKLE_MP || effectType == EFFECT_SHACKLE_TP || effectType == EFFECT_SHACKLE_WISDOM
+            }
+        ]
+
+        for (var eff in ItemEffects) {
+            if (statTypeString in MapFctUsefull && MapFctUsefull[statTypeString](eff[0])) return true
+        }
+        return false
+    }
+
+    static getMaxTPUsableForStat(entityStats, statTypeString) {
+        var Hash = entityStats.NAME + statTypeString + String(entityStats.ID)
+        if (Hash in MAX_TP_USABLE_FOR_STAT_CACHE) return MAX_TP_USABLE_FOR_STAT_CACHE[Hash]
+        var tpUsable = 0
+
+        for (var itemId: var cd in entityStats.COOLDOWNS) {
+            if (cd > 0) continue
+            var Infos = ITEMINFO[itemId]
+            if (Infos == null) continue
+
+            var isUseful = EntityIndexes.isEffectUsefulForStat(Infos.EFFECTS, statTypeString)
+            if (!isUseful) continue
+
+            var Cost = Infos.COST
+            if (Infos.COOLDOWN == 0) {
+                Cost *= Infos.MAX_USES
+            }
+
+            tpUsable += Cost
+        }
+        MAX_TP_USABLE_FOR_STAT_CACHE[Hash] = tpUsable
+        return tpUsable
+    }
+}

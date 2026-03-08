@@ -1,5 +1,6 @@
 /**
- * Here we are doing neural layers
+ * Scoring Module: Dynamic Indexed Scoring
+ * Calcule dynamiquement l'importance de chaque entité
  **/
 
 include("../includes.leek")
@@ -13,107 +14,143 @@ global MeanBulbs = [
     CHIP_LIGHTNING_BULB
 ]
 
-class ScoringClass {
+//POLYNOMES POUR LE CALCUL DE ENTITY INTRINSIC SCORE
 
-    /* Gives a score for the state (ideally between -100 and 100 to fit well final cell)
-     *
-     * @param State Map <Id : Class Stats of Id>
-     * @param MySide getSide of my entity
-     * @param BaseHash : Hash <id : cell> of every alive entities
-     *
-     * @return score : Actual State Advantage Score
-     */
+// Polynômes de réglage (Degré 2 : [a, b, c] pour ax^2 + bx + c)
+global POLY_STRENGTH = [0.0, 1.0, 0.0]
+global POLY_WISDOM = [0.0, 1.0, 0.0]
+global POLY_AGILITY = [0.0, 1.0, 0.0]
+global POLY_RESISTANCE = [0.0, 1.0, 0.0]
+global POLY_SCIENCE = [0.0, 1.0, 0.0]
+global POLY_MAGIC = [0.0, 1.0, 0.0]
+
+// Polynômes pour la puissance (POWER)
+global POLY_POWER_STRENGTH = [0.0, 0.01, 1.0] // Défaut: 1 + (POWER / 100)
+global POLY_POWER_MAGIC = [0.0, 0.0066, 1.0] // Défaut: 1 + (POWER / 150)
+
+// Polynômes pour les Coefficents d'ajustement (ex: StrengthCoef = solvePoly(POLY_COEF_STR, EnemyResIndex))
+global POLY_COEF_STR = [0.0, 0.00025, 0.0]
+global POLY_COEF_WIS = [0.0, 0.0, 1.0]
+global POLY_COEF_AGI = [0.0, 0.0001, 1.0]
+global POLY_COEF_RES = [0.0, 0.0001, 0]
+global POLY_COEF_SCI = [0.0, 0.0, 1.0]
+global POLY_COEF_MAG = [0.0, 0.0, 1.0]
+
+// Polynômes pour les bonus finaux (MP, Agi/Crit)
+global POLY_BONUS_MP = [0.0, 0.033, 1.0] // Défaut: 1 + (MP / 30)
+global POLY_BONUS_CRIT = [0.0, 0.0014, 1.0] // Défaut: 1 + (AGI * 0.0014)
+
+// Polynômes pour la menace (Threat)
+global POLY_THREAT_DANGER = [0.0, 0.45, 0.0]
+global POLY_THREAT_POISON = [0.0, 0.8, 0.0]
+global POLY_THREAT_POT = [0.0, 0.3, 0.0]
+
+// Polynôme de survie final (Input: Ratio de survie, Output: Multiplicateur de score)
+global POLY_SURVIVAL = [0.0, 1.0, 0.0]
+
+//TODO : ADD DISTS
+
+class ScoringClass {
 
     static getStateScore(State, MySide, BaseHash) {
         var _score = 0
-        for (var entityID: var entityState in State) {
-            if (entityState.SIDE == MySide) { // Entity is ally so i add its score
-                _score += getEntityScoreFromStats(entityID, entityState, State, BaseHash)
-            } else { // Entity is enemy so i remove its score
-                _score -= getEntityScoreFromStats(entityID, entityState, State, BaseHash)
+        for (var e: var stat in State) {
+            if (stat.LIFE > 0) {
+                var is_ally = (stat.SIDE == MySide)
+                var entity_value = getEntityIntrinsicScore(stat, State)
+                var danger = DangerClass.getEntityDanger(stat, State, e, BaseHash)
+
+                // On applique le multiplicateur de survie au score intrinsèque
+                var multiplier = getSurvivalMultiplier(stat, danger)
+                var finalValue = entity_value * multiplier
+
+                if (is_ally) {
+                    _score += finalValue
+                } else {
+                    _score -= finalValue
+                }
+            }
+        }
+        return _score
+    }
+
+    static getResurrectionScore(entity_state, State) {
+        var v_stat = clone(entity_state, 3)
+        var v_State = clone(State, 2)
+        v_State[v_stat.ID] = v_stat
+
+        v_stat.LIFE = v_stat.TOTAL_LIFE
+        v_stat.POISON_OVER_TIME = 0
+        v_stat.JUST_POISON = 0
+        v_stat.POISON = 0
+        v_stat.JUST_POISON_OVER_TIME = 0
+
+        v_stat.TP = v_stat.TOTAL_TP
+        v_stat.MP = v_stat.TOTAL_MP
+        v_stat.ABSOLUTE_SHIELD = 0
+        v_stat.RELATIVE_SHIELD = 0
+        v_stat.DAMAGE_RETURN = 0
+
+        return getEntityIntrinsicScore(v_stat, v_State)
+    }
+
+    static getEntityIntrinsicScore(EntityStats, State) {
+        var EnemyResIndexTotal = 0
+        var EnemyStrIndexTotal = 0
+        var enemyCount = 0
+
+        for (var e: var e_stat in State) {
+            if (e_stat.LIFE > 0 && e_stat.SIDE != EntityStats.SIDE) {
+                var e_idx = new EntityIndexes(e_stat)
+                EnemyResIndexTotal += e_idx.RESISTANCE
+                EnemyStrIndexTotal += e_idx.STRENGTH
+                enemyCount++
             }
         }
 
-        return _score
-    }
+        var EIndexes = new EntityIndexes(EntityStats)
 
-    /* Gives a score for an entity alone which i then add or remove from advantage score
-     *
-     * @param entity_ID ID of the entity which i want to score
-     * @param entity_state State Class of ID
-     * @param State Map <Id : Class State of Id>
-     * @param base_hash : Hash <id : cell> of every alive entities
-     *
-     * @return score : Actual entity's score
-     */
+        var StrengthCoef = solvePoly(POLY_COEF_STR, EnemyResIndexTotal)
+        var WisdomCoef = 1
+        var AgilityCoef = solvePoly(POLY_COEF_AGI, EnemyStrIndexTotal)
+        var ResistanceCoef = solvePoly(POLY_COEF_RES, EnemyStrIndexTotal)
+        var ScienceCoef = 1
+        var MagicCoef = 1
 
-    static getEntityScoreFromStats(entity_ID, entity_state, state, base_hash) {
-        var _final = 0
-        //Loading variables
-        var EntityDanger = DangerClass.getEntityDanger(entity_state, state, entity_ID, base_hash)
-        var AverageAlliesDist = StateClass.getAverageDistFromAllies(entity_state.SIDE, state, entity_state.CELL, entity_state.ID, base_hash)
+        var _final = EIndexes.STRENGTH * StrengthCoef +
+            EIndexes.WISDOM * WisdomCoef +
+            EIndexes.AGILITY * AgilityCoef +
+            EIndexes.RESISTANCE * ResistanceCoef +
+            EIndexes.SCIENCE * ScienceCoef +
+            EIndexes.MAGIC * MagicCoef
 
-        var CooldownScore = getCooldownScore(entity_state)
-        var summon_score = 0
-        for (var summ in entity_state.SUMMONS) {
-            summon_score += getEntityScoreFromStats(summ, state[summ], state, base_hash)
-        }
+        var TOTAL_MP = EntityStats.TOTAL_MP != null ? EntityStats.TOTAL_MP : EntityStats.MP
+        _final *= solvePoly(POLY_BONUS_MP, TOTAL_MP)
+        _final *= solvePoly(POLY_BONUS_CRIT, EntityStats.AGILITY)
 
-        //Decision engine based on everything TODO
-        _final += (entity_state.LIFE - EntityDanger * 0.5) / 1000
+        if (EntityStats.STATIC) _final /= 100
+
         return _final
     }
 
-    /* Gives the resurrection score of an entity (just used to pick which entity to resurrect)
-     *
-     * @param entity_state State Class of ID
-     * @param state Map <Id : Class State of Id>
-     *
-     * @return score : Dead entity's resurrection Score
-     */
+    static getSurvivalMultiplier(stat, danger) {
+        // 1. Calcul de la menace pondérée via polynômes
+        var totalThreat = solvePoly(POLY_THREAT_DANGER, danger) +
+            solvePoly(POLY_THREAT_POISON, stat.POISON) +
+            solvePoly(POLY_THREAT_POT, stat.POISON_OVER_TIME)
 
-    static getResurrectionScore(entity_state, state) {
-        return entity_state.TOTAL_LIFE //TODO : Better
+        // 2. Calcul du ratio de santé prédictif
+        var survivalRatio = (stat.LIFE - totalThreat) / stat.TOTAL_LIFE
+
+        // 3. Application du polynôme de survie
+        return solvePoly(POLY_SURVIVAL, survivalRatio)
     }
 
-    /* Gives me the min map danger (point at which i'm going to take danger into account, it depends on the advantage, my futur distance to my allies etc)
-     *
-     * @param state Map <Id : Class State of Id>
-     * @param cellToCheck (the cell at which imma count the danger)
-     *
-     * @return MinMapDanger (if danger < MinMapDanger * Life -> Danger == 0) it helps me play more pushy in good situation and less pushy in harsh situations
-     */
+    static solvePoly(poly, x) {
+        return poly[0] * x * x + poly[1] * x + poly[2]
+    }
 
-    static getMinMapDanger(state, cellToCheck) { //TODO : Not use advantage score cuz it'll not work, i can add in it if i go near allies with high danger and reduce it if any allies takes danger (i don't want to be alone getting shot at)
+    static getMinMapDanger(state, cellToCheck) {
         return 0.2
     }
-
-    /* Gives me the cooldown score of an entity (High -> can play a lot of cooldown chips, Low -> Either don't have thoses or can't play them)
-     *
-     * @param entity_state State Class of ID
-     *
-     * @return cooldown score
-     */
-
-    static getCooldownScore(entity_state) {
-        var entity_id = entity_state.ID
-        if (entity_id in COOLDOWN_SCORE_CACHE) return COOLDOWN_SCORE_CACHE[entity_id]
-        var _score = 0
-        for (var item: var cooldown in entity_state.COOLDOWNS) {
-            if (item in cooldown_score_map && cooldown == 0) _score += cooldown_score_map[item]
-        }
-        if (entity_id != Me) COOLDOWN_SCORE_CACHE[entity_id] = _score //Cache if its not me, cuz on me cooldowns will move, on other people : no
-        return _score
-    }
-
-    //Map to make getCooldownScore less ops consumming (the score of each of theses chips)
-
-    static cooldown_score_map = [
-        CHIP_REGENERATION: 500,
-        CHIP_ADRENALINE: 51,
-        CHIP_BRAMBLE: 75,
-        CHIP_COVID: 100,
-        CHIP_TELEPORTATION: 200,
-        CHIP_JUMP: 50
-    ]
 }

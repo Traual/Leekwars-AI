@@ -49,7 +49,6 @@ global POINTS_LINE_CACHE = [: ]
 global LINE_WITH_LOS_CACHE = [: ]
 global POINTS_LINE_WITH_LOS_CACHE = [: ]
 
-
 global DIAGONAL_CACHE = [: ]
 global POINTS_DIAGONAL_CACHE = [: ]
 global DIAGONAL_WITH_LOS_CACHE = [: ]
@@ -65,14 +64,12 @@ global POINTS_INVERTED_STAR_CACHE = [: ]
 global INVERTED_STAR_WITH_LOS_CACHE = [: ]
 global POINTS_INVERTED_STAR_WITH_LOS_CACHE = [: ]
 
-
 global LASERS = [: ]
 global FIRST_INLINE = [: ]
 
 // For Item Class
 
 global ITEMINFO = [: ]
-
 
 // Target
 
@@ -100,7 +97,7 @@ global EVERY_ENEMIES_WALKABLES = [: ]
 
 //Theses two are weird, they are optimisations from BaseHash (if baseHash is the same then theses results will also be the same)
 global TO_SKIP_MAP_CACHE = [: ]
-global ENEMIES_BASE_HASH_CACHE = [: ] 
+global ENEMIES_BASE_HASH_CACHE = [: ]
 
 //Branch Danger Cache : 
 
@@ -118,9 +115,9 @@ global IGNORE_CELLLS_CACHE = [: ]
 //For Entity Actions :
 
 global ENTITY_ACTIONS_CACHE = [: ] //Actions on Everybody else then me
-global ACTIONS_ON_ME_CACHE = [: ]//Actions on me only Item from to me (either same cell or aoe)
-global ACTIONS_SUMMON_CACHE = [: ]//Actions of summoning something (Resu or Bulbs)
-global ACTIONS_ON_VOID_CACHE = [: ]//Actions on void for positive effects (glaive etc)
+global ACTIONS_ON_ME_CACHE = [: ] //Actions on me only Item from to me (either same cell or aoe)
+global ACTIONS_SUMMON_CACHE = [: ] //Actions of summoning something (Resu or Bulbs)
+global ACTIONS_ON_VOID_CACHE = [: ] //Actions on void for positive effects (glaive etc)
 global COEFFED_MAP_ENTITY_CACHE = [: ]
 global HASHED_MAP_ITEM_CACHE = [: ]
 
@@ -128,8 +125,7 @@ global HASHED_MAP_ITEM_CACHE = [: ]
 
 global AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
 global AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
-global COOLDOWN_SCORE_CACHE = [: ]
-global NEURAL_SCORE_CACHE = [: ]
+global MAX_TP_USABLE_FOR_STAT_CACHE = [: ]
 
 //For WalkCells : 
 
