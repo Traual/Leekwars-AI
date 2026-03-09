@@ -26,6 +26,7 @@ include("Maps/Danger/Danger.leek")
 
 include("Scoring/Scoring.leek")
 include("Scoring/EntityIndexes.leek")
+include("Scoring/EnemiesTeamIndexes.leek")
 
 include("User/BFS.leek")
 include("User/FinalCell.leek")

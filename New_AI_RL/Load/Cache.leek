@@ -15,11 +15,11 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     ENTITY_DANGER_CACHE_FOR_ME = [: ]
     AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
+    MAX_TP_USABLE_FOR_STAT_CACHE = [: ]
     ENTITY_ACTIONS_CACHE = [: ]
     ACTIONS_ON_ME_CACHE = [: ]
     ACTIONS_SUMMON_CACHE = [: ]
     ACTIONS_ON_VOID_CACHE = [: ]
-    COOLDOWN_SCORE_CACHE = [: ]
 }
 
 // STATE
@@ -121,7 +121,7 @@ global ACTIONS_ON_VOID_CACHE = [: ] //Actions on void for positive effects (glai
 global COEFFED_MAP_ENTITY_CACHE = [: ]
 global HASHED_MAP_ITEM_CACHE = [: ]
 
-//For Neural : 
+//For Scoring : 
 
 global AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
 global AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]

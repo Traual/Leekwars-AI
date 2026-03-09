@@ -20,10 +20,15 @@ class EntityIndexes {
         var TOTAL_TP = entityStats.TOTAL_TP != null ? entityStats.TOTAL_TP : entityStats.TP
 
         this.STRENGTH = ScoringClass.solvePoly(POLY_STRENGTH, entityStats.STRENGTH) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "STRENGTH")) * powerFactorStrength
+
         this.WISDOM = ScoringClass.solvePoly(POLY_WISDOM, entityStats.WISDOM) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "WISDOM"))
+
         this.AGILITY = ScoringClass.solvePoly(POLY_AGILITY, entityStats.AGILITY) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "AGILITY"))
+
         this.RESISTANCE = ScoringClass.solvePoly(POLY_RESISTANCE, entityStats.RESISTANCE) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "RESISTANCE"))
+
         this.SCIENCE = ScoringClass.solvePoly(POLY_SCIENCE, entityStats.SCIENCE) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "SCIENCE"))
+
         this.MAGIC = ScoringClass.solvePoly(POLY_MAGIC, entityStats.MAGIC) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "MAGIC")) * powerFactorMagic
     }
 
@@ -56,7 +61,7 @@ class EntityIndexes {
     }
 
     static getMaxTPUsableForStat(entityStats, statTypeString) {
-        var Hash = entityStats.NAME + statTypeString + String(entityStats.ID)
+        var Hash = entityStats.NAME + statTypeString + entityStats.ID
         if (Hash in MAX_TP_USABLE_FOR_STAT_CACHE) return MAX_TP_USABLE_FOR_STAT_CACHE[Hash]
         var tpUsable = 0
 

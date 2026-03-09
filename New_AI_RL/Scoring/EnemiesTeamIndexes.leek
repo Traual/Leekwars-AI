@@ -1,0 +1,40 @@
+/**
+ * TeamIndexes Class
+ * Calcule les index de puissance brute additionnés pour chaque énemi de la map
+ **/
+
+include("../includes.leek")
+
+class EnemiesTeamIndexes {
+    STRENGTH
+    WISDOM
+    AGILITY
+    RESISTANCE
+    SCIENCE
+    MAGIC
+
+    constructor(State, EntityStats) {
+        this.STRENGTH = 0
+        this.WISDOM = 0
+        this.AGILITY = 0
+        this.RESISTANCE = 0
+        this.SCIENCE = 0
+        this.MAGIC = 0
+
+        for (var e: var e_stat in State) {
+            if (e_stat.LIFE > 0 && e_stat.SIDE != EntityStats.SIDE) {
+                var e_idx = new EntityIndexes(e_stat)
+                this.STRENGTH += e_idx.STRENGTH
+                this.WISDOM += e_idx.WISDOM
+                this.AGILITY += e_idx.AGILITY
+                this.RESISTANCE += e_idx.RESISTANCE
+                this.SCIENCE += e_idx.SCIENCE
+                this.MAGIC += e_idx.MAGIC
+            }
+        }
+    }
+
+    static getWithCache(State, EntityStats) { //TODO : ADD CACHE
+        return new EnemiesTeamIndexes(State, EntityStats)
+    }
+}

@@ -46,9 +46,10 @@ global POLY_THREAT_POISON = [0.0, 0.8, 0.0]
 global POLY_THREAT_POT = [0.0, 0.3, 0.0]
 
 // Polynôme de survie final (Input: Ratio de survie, Output: Multiplicateur de score)
-global POLY_SURVIVAL = [0.0, 1.0, 0.0]
+global POLY_SURVIVAL = [0.0, 0.7, 0.3]
 
-//TODO : ADD DISTS
+//TODO : ADD DISTS and check Threat > 0.5 to let kill score thrive
+
 
 class ScoringClass {
 
@@ -95,25 +96,14 @@ class ScoringClass {
     }
 
     static getEntityIntrinsicScore(EntityStats, State) {
-        var EnemyResIndexTotal = 0
-        var EnemyStrIndexTotal = 0
-        var enemyCount = 0
-
-        for (var e: var e_stat in State) {
-            if (e_stat.LIFE > 0 && e_stat.SIDE != EntityStats.SIDE) {
-                var e_idx = new EntityIndexes(e_stat)
-                EnemyResIndexTotal += e_idx.RESISTANCE
-                EnemyStrIndexTotal += e_idx.STRENGTH
-                enemyCount++
-            }
-        }
-
+        
         var EIndexes = new EntityIndexes(EntityStats)
+        var TeamIndexes = EnemiesTeamIndexes.getWithCache(State, EntityStats)
 
-        var StrengthCoef = solvePoly(POLY_COEF_STR, EnemyResIndexTotal)
+        var StrengthCoef = solvePoly(POLY_COEF_STR, TeamIndexes.RESISTANCE)
         var WisdomCoef = 1
-        var AgilityCoef = solvePoly(POLY_COEF_AGI, EnemyStrIndexTotal)
-        var ResistanceCoef = solvePoly(POLY_COEF_RES, EnemyStrIndexTotal)
+        var AgilityCoef = solvePoly(POLY_COEF_AGI, TeamIndexes.STRENGTH)
+        var ResistanceCoef = solvePoly(POLY_COEF_RES, TeamIndexes.STRENGTH)
         var ScienceCoef = 1
         var MagicCoef = 1
 
@@ -143,7 +133,7 @@ class ScoringClass {
         var survivalRatio = (stat.LIFE - totalThreat) / stat.TOTAL_LIFE
 
         // 3. Application du polynôme de survie
-        return solvePoly(POLY_SURVIVAL, survivalRatio)
+        return max(0, solvePoly(POLY_SURVIVAL, survivalRatio)) //to Avoid having a negative ratio
     }
 
     static solvePoly(poly, x) {
