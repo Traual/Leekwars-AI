@@ -109,97 +109,77 @@ class EntityStateClass extends EntityClass {
 		this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
 		this.TO_SAVE_SHACKLE_TOTAL_TP = 0
 
-		var MapFunctionsToSave = [ //No  need to save Pos / Neg, just save Original stats so i can compare them later with stat.AGILITY for exemple
-			/*EFFECT_ALLY_KILLED_TO_AGILITY: function(effect) {
-				this.TO_SAVE_AGILITY -= effect[1] Irreductible effect so bypass on this one (yet ?)
-			},*/
-			EFFECT_BUFF_AGILITY: function(effect) {
-				this.TO_SAVE_AGILITY -= effect[1]
-			},
-			EFFECT_BUFF_MP: function(effect) {
-				//this.TO_SAVE_MP -= effect[1]
-				this.TO_SAVE_TOTAL_MP -= effect[1]
-			},
-			EFFECT_BUFF_RESISTANCE: function(effect) {
-				this.TO_SAVE_RESISTANCE -= effect[1]
-			},
-			EFFECT_BUFF_STRENGTH: function(effect) {
-				this.TO_SAVE_STRENGTH -= effect[1]
-			},
-			EFFECT_BUFF_TP: function(effect) {
-				//this.TO_SAVE_TP -= effect[1]
-				this.TO_SAVE_TOTAL_TP -= effect[1]
-			},
-			EFFECT_BUFF_WISDOM: function(effect) {
-				this.TO_SAVE_WISDOM -= effect[1]
-			},
-			EFFECT_DAMAGE_TO_STRENGTH: function(effect) {
-				this.TO_SAVE_STRENGTH -= effect[1]
-			},
-			EFFECT_KILL_TO_TP: function(effect) {
-				//this.TO_SAVE_TP -= effect[1]
-				this.TO_SAVE_TOTAL_TP -= effect[1]
-			},
-			EFFECT_MOVED_TO_MP: function(effect) {
-				//this.TO_SAVE_MP -= effect[1]
-				this.TO_SAVE_TOTAL_MP -= effect[1]
-			},
-			EFFECT_NOVA_DAMAGE_TO_MAGIC: function(effect) {
-				this.TO_SAVE_MAGIC -= effect[1]
-			},
-			EFFECT_POISON_TO_SCIENCE: function(effect) {
-				this.TO_SAVE_SCIENCE -= effect[1]
-			},
-			EFFECT_RAW_BUFF_AGILITY: function(effect) {
-				this.TO_SAVE_AGILITY -= effect[1]
-			},
-			EFFECT_RAW_BUFF_MAGIC: function(effect) {
-				this.TO_SAVE_MAGIC -= effect[1]
-			},
-			EFFECT_RAW_BUFF_MP: function(effect) {
-				//this.TO_SAVE_MP -= effect[1]
-				this.TO_SAVE_TOTAL_MP -= effect[1]
-			},
-			EFFECT_RAW_BUFF_RESISTANCE: function(effect) {
-				this.TO_SAVE_RESISTANCE -= effect[1]
-			},
-			EFFECT_RAW_BUFF_SCIENCE: function(effect) {
-				this.TO_SAVE_SCIENCE -= effect[1]
-			},
-			EFFECT_RAW_BUFF_STRENGTH: function(effect) {
-				this.TO_SAVE_STRENGTH -= effect[1]
-			},
-			EFFECT_RAW_BUFF_TP: function(effect) {
-				//this.TO_SAVE_TP -= effect[1]
-				this.TO_SAVE_TOTAL_TP -= effect[1]
-			},
-			EFFECT_RAW_BUFF_WISDOM: function(effect) {
-				this.TO_SAVE_WISDOM -= effect[1]
-			},
-			EFFECT_SHACKLE_AGILITY: function(effect) {
-				this.TO_SAVE_SHACKLE_AGILITY += effect[1]
-			},
-			EFFECT_SHACKLE_MAGIC: function(effect) {
-				this.TO_SAVE_SHACKLE_MAGIC += effect[1]
-			},
-			EFFECT_SHACKLE_MP: function(effect) {
-				//this.TO_SAVE_SHACKLE_MP += effect[1]
-				this.TO_SAVE_SHACKLE_TOTAL_MP += effect[1]
-			},
-			EFFECT_SHACKLE_STRENGTH: function(effect) {
-				this.TO_SAVE_SHACKLE_STRENGTH += effect[1]
-			},
-			EFFECT_SHACKLE_TP: function(effect) {
-				//this.TO_SAVE_SHACKLE_TP += effect[1]
-				this.TO_SAVE_SHACKLE_TOTAL_TP += effect[1]
-			},
-			EFFECT_SHACKLE_WISDOM: function(effect) {
-				this.TO_SAVE_SHACKLE_WISDOM += effect[1]
-			}
-		]
-
 		for (var eff in this.EFFECTS) {
-			if (MapFunctionsToSave[eff[0]]) MapFunctionsToSave[eff[0]](eff)
+			switch (eff[0]) {
+				// --- AGILITY ---
+				case EFFECT_BUFF_AGILITY:
+				case EFFECT_RAW_BUFF_AGILITY:
+					this.TO_SAVE_AGILITY -= eff[1]
+					break
+				case EFFECT_SHACKLE_AGILITY:
+					this.TO_SAVE_SHACKLE_AGILITY += eff[1]
+					break
+
+					// --- STRENGTH ---
+				case EFFECT_BUFF_STRENGTH:
+				case EFFECT_RAW_BUFF_STRENGTH:
+				case EFFECT_DAMAGE_TO_STRENGTH:
+					this.TO_SAVE_STRENGTH -= eff[1]
+					break
+				case EFFECT_SHACKLE_STRENGTH:
+					this.TO_SAVE_SHACKLE_STRENGTH += eff[1]
+					break
+
+					// --- WISDOM ---
+				case EFFECT_BUFF_WISDOM:
+				case EFFECT_RAW_BUFF_WISDOM:
+					this.TO_SAVE_WISDOM -= eff[1]
+					break
+				case EFFECT_SHACKLE_WISDOM:
+					this.TO_SAVE_SHACKLE_WISDOM += eff[1]
+					break
+
+					// --- MAGIC ---
+				case EFFECT_RAW_BUFF_MAGIC:
+				case EFFECT_NOVA_DAMAGE_TO_MAGIC:
+					this.TO_SAVE_MAGIC -= eff[1]
+					break
+				case EFFECT_SHACKLE_MAGIC:
+					this.TO_SAVE_SHACKLE_MAGIC += eff[1]
+					break
+
+					// --- SCIENCE ---
+				case EFFECT_RAW_BUFF_SCIENCE:
+				case EFFECT_POISON_TO_SCIENCE:
+					this.TO_SAVE_SCIENCE -= eff[1]
+					break
+
+					// --- RESISTANCE ---
+				case EFFECT_BUFF_RESISTANCE:
+				case EFFECT_RAW_BUFF_RESISTANCE:
+					this.TO_SAVE_RESISTANCE -= eff[1]
+					break
+
+					// --- MP ---
+				case EFFECT_BUFF_MP:
+				case EFFECT_RAW_BUFF_MP:
+				case EFFECT_MOVED_TO_MP:
+					this.TO_SAVE_TOTAL_MP -= eff[1]
+					break
+				case EFFECT_SHACKLE_MP:
+					this.TO_SAVE_SHACKLE_TOTAL_MP += eff[1]
+					break
+
+					// --- TP ---
+				case EFFECT_BUFF_TP:
+				case EFFECT_RAW_BUFF_TP:
+				case EFFECT_KILL_TO_TP:
+					this.TO_SAVE_TOTAL_TP -= eff[1]
+					break
+				case EFFECT_SHACKLE_TP:
+					this.TO_SAVE_SHACKLE_TOTAL_TP += eff[1]
+					break
+			}
 		}
 
 		/**
@@ -211,12 +191,13 @@ class EntityStateClass extends EntityClass {
 	getPoisons(Effects) {
 		var Poisons = 0
 		for (var eff in Effects) {
-			if (eff[0] == EFFECT_POISON) {
-				Poisons += eff[1]
-				//Poisons_over_time += eff[1]*eff[3]
-			} else if (eff[0] == EFFECT_HEAL) {
-				Poisons -= eff[1]
-				//Poisons_over_time -= eff[1]*eff[3]
+			switch (eff[0]) {
+				case EFFECT_POISON:
+					Poisons += eff[1]
+					break
+				case EFFECT_HEAL:
+					Poisons -= eff[1]
+					break
 			}
 		}
 		return Poisons
@@ -225,10 +206,13 @@ class EntityStateClass extends EntityClass {
 	getPoisonsOverTime(Effects) {
 		var Poisons = 0
 		for (var eff in Effects) {
-			if (eff[0] == EFFECT_POISON) {
-				Poisons += eff[1] * eff[3]
-			} else if (eff[0] == EFFECT_HEAL) {
-				Poisons -= eff[1] * eff[3]
+			switch (eff[0]) {
+				case EFFECT_POISON:
+					Poisons += eff[1] * eff[3]
+					break
+				case EFFECT_HEAL:
+					Poisons -= eff[1] * eff[3]
+					break
 			}
 		}
 		return Poisons
@@ -237,8 +221,10 @@ class EntityStateClass extends EntityClass {
 	getJustPoisons(Effects) {
 		var Poisons = 0
 		for (var eff in Effects) {
-			if (eff[0] == EFFECT_POISON) {
-				Poisons += eff[1]
+			switch (eff[0]) {
+				case EFFECT_POISON:
+					Poisons += eff[1]
+					break
 			}
 		}
 		return Poisons
@@ -247,8 +233,10 @@ class EntityStateClass extends EntityClass {
 	getJustPoisonsOverTime(Effects) {
 		var Poisons = 0
 		for (var eff in Effects) {
-			if (eff[0] == EFFECT_POISON) {
-				Poisons += eff[1] * eff[3]
+			switch (eff[0]) {
+				case EFFECT_POISON:
+					Poisons += eff[1] * eff[3]
+					break
 			}
 		}
 		return Poisons

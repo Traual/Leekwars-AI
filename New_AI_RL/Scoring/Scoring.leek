@@ -76,6 +76,7 @@ class ScoringClass {
                 } else {
                     _score -= finalValue
                 }
+
             }
         }
         return _score
