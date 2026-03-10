@@ -100,7 +100,7 @@ class StateClass {
     *
     * @return Hash id:Entity Cell of alive enemies
     */
-
+/*
 	static getEnemiesBaseHash(State, BaseHash) { //This is the Enemies BaseHash (For enemies walkcells in Final Cell Loading)
 		if (BaseHash in ENEMIES_BASE_HASH_CACHE) return ENEMIES_BASE_HASH_CACHE[BaseHash] //Its an optimisation of a hash function (weird but working)
 
@@ -116,7 +116,7 @@ class StateClass {
 		ENEMIES_BASE_HASH_CACHE[BaseHash] = hash_value
 
 		return hash_value
-	}
+	}*/
 
 	static getEntityCellsMap(State) {
 		var _final = [: ]

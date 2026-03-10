@@ -48,7 +48,14 @@ global POLY_THREAT_POT = [0.0, 0.3, 0.0]
 // Polynôme de survie final (Input: Ratio de survie, Output: Multiplicateur de score)
 global POLY_SURVIVAL = [0.0, 0.7, 0.3]
 
-//TODO : ADD DISTS and caches
+// Polynome de Distance Relation entre deux entités (dépand de la distance d)
+global POLY_DIST_RELATION_ALLY = [-0.02, 0.16, 0.8]
+global POLY_DIST_RELATION_ENEMY = [-0.01, 0.08, 0.4]
+// Transformation du score de cohésion global en multiplicateur final
+global POLY_DIST_FINAL = [0.0, 1.0, 0.0] // Linéaire par défaut (1:1)
+
+
+//TODO : Add caches
 
 
 class ScoringClass {
@@ -61,9 +68,10 @@ class ScoringClass {
                 var entity_value = getEntityIntrinsicScore(stat, State)
                 var danger = DangerClass.getEntityDanger(stat, State, e, BaseHash)
 
-                // On applique le multiplicateur de survie au score intrinsèque
+                // On applique les multiplicateurs au score intraseque
                 var SurvivalMultiplier = getSurvivalMultiplier(stat, danger)
-                var finalValue = entity_value * SurvivalMultiplier
+                var DistanceMultiplier = getDistMultiplier(stat.ID, stat.SIDE, stat.CELL, State, BaseHash)
+                var finalValue = entity_value * SurvivalMultiplier * DistanceMultiplier
 
                 if (is_ally) {
                     _score += finalValue
@@ -136,9 +144,43 @@ class ScoringClass {
         return max(0, solvePoly(POLY_SURVIVAL, survivalRatio)) //to Avoid having a negative ratio
     }
 
-    static getDistMultiplier(stat, dist) {
-        //TODO (
+    static getDistMultiplier(id, side, cell, State, BaseHash) {
+        var ThisHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), (cell << 32) | id)
+        if (ThisHash in DIST_MULTIPLIER_CACHE) return DIST_MULTIPLIER_CACHE[ThisHash]
+
+        var allyRelSum = 0, allyWeight = 0
+        var enemyRelSum = 0, enemyWeight = 0
+        
+        for (var e : var other in State) {
+            if (other.LIFE > 0 && other.ID != id) {
+                var dist = CellClass.getDist(cell, other.CELL)
+                var otherValue = getEntityIntrinsicScore(other, State)
+                
+                if (other.SIDE == side) {
+                    // Score de COHÉSION
+                    allyRelSum += otherValue * solvePoly(POLY_DIST_RELATION_ALLY, dist)
+                    allyWeight += otherValue
+                } else {
+                    // Score d'ENGAGEMENT
+                    enemyRelSum += otherValue * solvePoly(POLY_DIST_RELATION_ENEMY, dist)
+                    enemyWeight += otherValue
+                }
+            }
+        }
+        // 1. On calcule les moyennes séparément
+        // Si on est seul (ex: fin de game), on met 1.0 pour ne pas impacter le score
+        var allyScore = (allyWeight > 0) ? (allyRelSum / allyWeight) : 1.0
+        var enemyScore = (enemyWeight > 0) ? (enemyRelSum / enemyWeight) : 1.0
+        
+        // 2. On fusionne les deux (50/50 ou avec des coefficients de priorité)
+        // Ici, l'importance des alliés vs ennemis est ÉQUILIBRÉE peu importe leur nombre
+        var avgRelation = (allyScore + enemyScore) / 2.0
+        
+        var result = max(0.2, solvePoly(POLY_DIST_FINAL, avgRelation))
+        DIST_MULTIPLIER_CACHE[ThisHash] = result
+        return result
     }
+
 
     static solvePoly(poly, x) {
         return poly[0] * x * x + poly[1] * x + poly[2]
