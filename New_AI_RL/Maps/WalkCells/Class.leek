@@ -1,6 +1,6 @@
 /**
  * Class Walkcells
-**/
+ **/
 
 include("../../includes.leek")
 
@@ -9,6 +9,7 @@ class WalkCellsClass {
 	JUMP
 	TELEPORTATION
 	TELEPORTATION_AND_JUMP
+	TYPES // Map : Cell:MoveType (0=Walk, 1=Jump, 2=Tele, 3=TeleJump)
 	MAX
 	constructor(EveryStats, Entity, DoWalk, DoJump, DoTeleportation, DoTeleportationAndJump, BaseHash) {
 		var EntityStats = EveryStats[Entity]
@@ -21,6 +22,7 @@ class WalkCellsClass {
 		var Mp = EntityStats.MP
 		var Tp = EntityStats.TP
 		var LeekCells = LoadIgnoreCells(EveryStats, Entity, BaseHash)
+		this.TYPES = [: ]
 		var HashWalk = HashWalkCells(EntityCell, Mp, BaseHash) //Conditions already checked in constructor so no need to check them in cache
 
 		if (DoWalk) {
@@ -35,14 +37,14 @@ class WalkCellsClass {
 		} else {
 			this.JUMP = [: ]
 		}
-		
+
 		var CanTeleport = (TeleportationCooldown == 0 || Entity != Me && TeleportationCooldown <= 1) && Tp >= TeleportationCost
 		if (DoTeleportation && CanTeleport) {
 			LoadTeleportationCells(EntityCell, LeekCells, Mp, HashWalk)
 		} else {
 			this.TELEPORTATION = [: ]
 		}
-		
+
 		if (DoTeleportationAndJump && CanJump && CanTeleport && Tp >= JumpCost + TeleportationCost) {
 			LoadTeleportationAndJumpCells(EntityCell, LeekCells, Mp, HashWalk)
 		} else {
@@ -60,6 +62,7 @@ class WalkCellsClass {
 			this.MAX = this.WALK
 			WALKABLE_CACHE[HashWalk] = this.WALK
 		}
+		for (var c: var mp in this.WALK) this.TYPES[c] = 0
 	}
 
 	LoadJumpCells(EntityCell, LeekCells, Mp, HashWalk) {
@@ -72,6 +75,8 @@ class WalkCellsClass {
 			this.MAX = this.JUMP
 			JUMP_CACHE[HashWalk] = this.JUMP
 		}
+		for (var c: var mp in this.JUMP)
+			if (!(c in this.TYPES)) this.TYPES[c] = 1
 	}
 
 	LoadTeleportationCells(EntityCell, LeekCells, Mp, HashWalk) {
@@ -84,6 +89,8 @@ class WalkCellsClass {
 			this.MAX = this.TELEPORTATION
 			TELEPORTATION_CACHE[HashWalk] = this.TELEPORTATION
 		}
+		for (var c: var mp in this.TELEPORTATION)
+			if (!(c in this.TYPES)) this.TYPES[c] = 2
 	}
 
 	LoadTeleportationAndJumpCells(EntityCell, LeekCells, Mp, HashWalk) {
@@ -96,6 +103,8 @@ class WalkCellsClass {
 			this.MAX = this.TELEPORTATION_AND_JUMP
 			TELEPORTATION_AND_JUMP_CACHE[HashWalk] = this.TELEPORTATION_AND_JUMP
 		}
+		for (var c: var mp in this.TELEPORTATION_AND_JUMP)
+			if (!(c in this.TYPES)) this.TYPES[c] = 3
 	}
 
 	HashWalkCells(Cell, Mp, BaseHash) {
@@ -113,9 +122,9 @@ class WalkCellsClass {
 		var TeleportationCost = ITEMINFO[CHIP_TELEPORTATION].COST
 		var CanJump = (JumpCooldown == 0 || Entity != Me && JumpCooldown <= 1) && Tp >= JumpCost
 		var CanTeleport = (TeleportationCooldown == 0 || Entity != Me && TeleportationCooldown <= 1) && Tp >= TeleportationCost
-		var BaseValue = CanJump ? 
-						CanTeleport ? 4 : 2 : 
-						CanTeleport ? 3 : 1
+		var BaseValue = CanJump ?
+			CanTeleport ? 4 : 2 :
+			CanTeleport ? 3 : 1
 		return addValueToBinHash((OFFSET_BASIS ^ BaseValue), (entity_state.CELL << 32) | entity_state.MP)
 	}
 
@@ -126,26 +135,26 @@ class WalkCellsClass {
 		var Jump = WalkCells.JUMP
 		var Tele = WalkCells.TELEPORTATION
 		var TeleAndJump = WalkCells.TELEPORTATION_AND_JUMP
-		for (var c:var mp in WalkCells.MAX) {
+		for (var c: var mp in WalkCells.MAX) {
 			push(TmpArray, c)
-			TmpMapScoring[c] = (c in Walk) ? Walk[c] : 
-            			 		(c in Jump) ? Jump[c] + 100 : 
-            			 		(c in Tele) ? Tele[c] + 1000 : 
-            			 		TeleAndJump[c] + 10000
+			TmpMapScoring[c] = (c in Walk) ? Walk[c] :
+				(c in Jump) ? Jump[c] + 100 :
+				(c in Tele) ? Tele[c] + 1000 :
+				TeleAndJump[c] + 10000
 		}
 		return arraySort(TmpArray, function(a, b) {
 			return TmpMapScoring[a] - TmpMapScoring[b]
 		})
 	}
-	
+
 	//Soon Obselete : 
-	static LoadCoeffedCellsFromWalkCellsClass(WalkCells) {//Used for Action Map Loading (Should i walk or jump and save mp ...) No need to cache cuz its already cached only by BaseHash in Action Map
+	static LoadCoeffedCellsFromWalkCellsClass(WalkCells) { //Used for Action Map Loading (Should i walk or jump and save mp ...) No need to cache cuz its already cached only by BaseHash in Action Map
 		var _final = [: ]
 		var Walk = WalkCells.WALK
 		var Jump = WalkCells.JUMP
 		var Tele = WalkCells.TELEPORTATION
 		var TeleAndJump = WalkCells.TELEPORTATION_AND_JUMP
-		for (var c:var mp in WalkCells.MAX) {
+		for (var c: var mp in WalkCells.MAX) {
 			if (c in Walk) {
 				_final[c] = Walk[c]
 			} else if (c in Jump) {
@@ -175,15 +184,15 @@ class WalkCellsClass {
 		var maps = [
 			"walk": AccesMpWalk,
 			"jump": AccesMpJump,
-			"tp":   AccesMpTeleportation,
+			"tp": AccesMpTeleportation,
 			"tpJump": AccesMpTeleportationAndJump
 		]
 
 		// downgrade capabilities per layer
 		var downgrade = [
 			"tpJump": ['jump', 'tp'],
-			"tp":     ['tp'],
-			"jump":   ['jump']
+			"tp": ['tp'],
+			"jump": ['jump']
 		]
 
 		var cur = to
@@ -199,7 +208,7 @@ class WalkCellsClass {
 		while (true) {
 
 			if (!layer) {
-				debug(cur+" isn't reachable")
+				debug(cur + " isn't reachable")
 				break
 			}
 
@@ -223,13 +232,13 @@ class WalkCellsClass {
 				}
 
 				// compute next layer after using this ability
-				var nextLayer = (layer == 'tpJump')
-					? (ability == 'jump' ? 'tp' : 'jump')
-					: 'walk'
+				var nextLayer = (layer == 'tpJump') ?
+					(ability == 'jump' ? 'tp' : 'jump') :
+					'walk'
 				var nextCosts = maps[nextLayer]
 
 				// look for a valid landing cell
-				for (var neigh:var dist in neighs) {
+				for (var neigh: var dist in neighs) {
 					if (neigh in nextCosts && nextCosts[neigh] <= curCost) {
 						// prepend action
 						var chip = (ability == 'jump' ? CHIP_JUMP : CHIP_TELEPORTATION)
@@ -245,7 +254,7 @@ class WalkCellsClass {
 			if (progressed) continue
 
 			// 2) fallback: walk one step in same layer (no Action recorded here)
-			for (var neigh:var dist in ALLCELLINFO[cur].CIRCLE_ONE_DIST) {
+			for (var neigh: var dist in ALLCELLINFO[cur].CIRCLE_ONE_DIST) {
 				if (neigh in maps[layer] && maps[layer][neigh] < curCost) {
 					cur = neigh
 					progressed = true
@@ -255,7 +264,7 @@ class WalkCellsClass {
 			if (progressed) continue;
 
 			// 3) no way forward
-			debug("Cannot find path from "+from+" to "+to)
+			debug("Cannot find path from " + from + " to " + to)
 			break
 		}
 
@@ -289,7 +298,7 @@ class WalkCellsClass {
 		var acces = getAccesibleT(mp)
 		return getAccessT()
 	}
-	
+
 	static WalkableCellsWithTeleportationAndJump(from, leekcells, mp) {
 		InitObstacles(OBSTACLES_ARRAY)
 		InitLeekCells(leekcells)

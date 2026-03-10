@@ -140,16 +140,21 @@ class ActionSuite {
 			var Cost = Info.IS_WEAPON && MyWeapon != Item ?
 				Info.COST + 1 :
 				Info.COST
-			if (!(From in MyWalkCells.WALK)) { //I need to add the item to move to the cost
-				if (From in MyWalkCells.JUMP) {
-					Cost += JumpCost
-				} else if (From in MyWalkCells.TELEPORTATION) {
-					Cost += TpCost
-				} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
-					Cost += TpCost + JumpCost
-				} else {
-					continue //Cell No reachable
-				}
+			var moveType = MyWalkCells.TYPES[From]
+			switch (moveType) {
+				case 0:
+					break // WALK
+				case 1:
+					Cost += JumpCost;
+					break
+				case 2:
+					Cost += TpCost;
+					break
+				case 3:
+					Cost += TpCost + JumpCost;
+					break
+				default:
+					continue // Cell Not Reachable
 			}
 			if (Cost <= MyTp && MyCooldowns[Item] == 0 && MyUses[Item] < Info.MAX_USES) {
 				push(_final, Action)
