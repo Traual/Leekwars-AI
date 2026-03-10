@@ -54,9 +54,7 @@ global POLY_DIST_RELATION_ENEMY = [-0.01, 0.08, 0.4]
 // Transformation du score de cohésion global en multiplicateur final
 global POLY_DIST_FINAL = [0.0, 1.0, 0.0] // Linéaire par défaut (1:1)
 
-
 //TODO : Add caches
-
 
 class ScoringClass {
 
@@ -83,12 +81,16 @@ class ScoringClass {
         return _score
     }
 
-    static getResurrectionScore(entity_state, State) { //TODO : Cache here with entity_state stats
+    static getResurrectionScore(entity_state, State) {
+        var ThisHash = entity_state.ID
+        if (ThisHash in RESURRECTION_SCORE_CACHE) return RESURRECTION_SCORE_CACHE[ThisHash]
+
         var v_stat = clone(entity_state, 3)
         var v_State = clone(State, 4)
         v_State[v_stat.ID] = v_stat
 
-        v_stat.LIFE = v_stat.TOTAL_LIFE
+        v_stat.TOTAL_LIFE /= 2
+        v_stat.LIFE = v_stat.TOTAL_LIFE / 2
         v_stat.POISON_OVER_TIME = 0
         v_stat.JUST_POISON = 0
         v_stat.POISON = 0
@@ -100,11 +102,13 @@ class ScoringClass {
         v_stat.RELATIVE_SHIELD = 0
         v_stat.DAMAGE_RETURN = 0
 
-        return getEntityIntrinsicScore(v_stat, v_State)
+        var result = getEntityIntrinsicScore(v_stat, v_State)
+        RESURRECTION_SCORE_CACHE[ThisHash] = result
+        return result
     }
 
     static getEntityIntrinsicScore(EntityStats, State) { //TODO : Cache here again ? (Start with Entity Indexes then there)
-        
+
         var EIndexes = new EntityIndexes(EntityStats)
         var TeamIndexes = EnemiesTeamIndexes.getWithCache(State, EntityStats)
 
@@ -131,7 +135,18 @@ class ScoringClass {
         return _final
     }
 
-    static getSurvivalMultiplier(stat, danger) { //TODO : Cache with values 
+    static getSurvivalMultiplier(stat, danger) {
+        // Optimisation : On pack 3 valeurs dans le premier mot (48 bits total)
+        // Danger (16 bits) | Life (16 bits) | TotalLife (16 bits)
+        var combined1 = (danger << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE
+
+        // On pack les poisons dans le second mot (32 bits total)
+        var combined2 = (stat.POISON << 16) | stat.POISON_OVER_TIME
+
+        var ThisHash = addValueToBinHash(addValueToBinHash(OFFSET_BASIS, combined1), combined2)
+
+        if (ThisHash in SURVIVAL_MULTIPLIER_CACHE) return SURVIVAL_MULTIPLIER_CACHE[ThisHash]
+
         // 1. Calcul de la menace pondérée via polynômes
         var totalThreat = solvePoly(POLY_THREAT_DANGER, danger) +
             solvePoly(POLY_THREAT_POISON, stat.POISON) +
@@ -141,21 +156,26 @@ class ScoringClass {
         var survivalRatio = (stat.LIFE - totalThreat) / stat.TOTAL_LIFE
 
         // 3. Application du polynôme de survie
-        return max(0, solvePoly(POLY_SURVIVAL, survivalRatio)) //to Avoid having a negative ratio
+        var result = max(0, solvePoly(POLY_SURVIVAL, survivalRatio)) //to Avoid having a negative ratio
+
+        SURVIVAL_MULTIPLIER_CACHE[ThisHash] = result
+        return result
     }
 
     static getDistMultiplier(id, side, cell, State, BaseHash) {
         var ThisHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), (cell << 32) | id)
         if (ThisHash in DIST_MULTIPLIER_CACHE) return DIST_MULTIPLIER_CACHE[ThisHash]
 
-        var allyRelSum = 0, allyWeight = 0
-        var enemyRelSum = 0, enemyWeight = 0
-        
-        for (var e : var other in State) {
+        var allyRelSum = 0,
+            allyWeight = 0
+        var enemyRelSum = 0,
+            enemyWeight = 0
+
+        for (var e: var other in State) {
             if (other.LIFE > 0 && other.ID != id) {
                 var dist = CellClass.getDist(cell, other.CELL)
                 var otherValue = getEntityIntrinsicScore(other, State)
-                
+
                 if (other.SIDE == side) {
                     // Score de COHÉSION
                     allyRelSum += otherValue * solvePoly(POLY_DIST_RELATION_ALLY, dist)
@@ -171,16 +191,15 @@ class ScoringClass {
         // Si on est seul (ex: fin de game), on met 1.0 pour ne pas impacter le score
         var allyScore = (allyWeight > 0) ? (allyRelSum / allyWeight) : 1.0
         var enemyScore = (enemyWeight > 0) ? (enemyRelSum / enemyWeight) : 1.0
-        
+
         // 2. On fusionne les deux (50/50 ou avec des coefficients de priorité)
         // Ici, l'importance des alliés vs ennemis est ÉQUILIBRÉE peu importe leur nombre
         var avgRelation = (allyScore + enemyScore) / 2.0
-        
+
         var result = max(0.2, solvePoly(POLY_DIST_FINAL, avgRelation))
         DIST_MULTIPLIER_CACHE[ThisHash] = result
         return result
     }
-
 
     static solvePoly(poly, x) {
         return poly[0] * x * x + poly[1] * x + poly[2]

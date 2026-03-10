@@ -1,6 +1,6 @@
 /**
  * Class State : Variables of a state
-**/
+ **/
 
 include("../includes.leek")
 
@@ -49,7 +49,7 @@ class EntityStateClass extends EntityClass {
 	TO_SAVE_TOTAL_TP
 	TO_SAVE_SHACKLE_TOTAL_TP
 	CELL
-    constructor(id) {
+	constructor(id) {
 		super(id)
 		this.ABSOLUTE_SHIELD = getAbsoluteShield(id)
 		this.RELATIVE_SHIELD = getRelativeShield(id)
@@ -108,7 +108,7 @@ class EntityStateClass extends EntityClass {
 		//this.TO_SAVE_SHACKLE_TP = 0
 		this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
 		this.TO_SAVE_SHACKLE_TOTAL_TP = 0
-		
+
 		var MapFunctionsToSave = [ //No  need to save Pos / Neg, just save Original stats so i can compare them later with stat.AGILITY for exemple
 			/*EFFECT_ALLY_KILLED_TO_AGILITY: function(effect) {
 				this.TO_SAVE_AGILITY -= effect[1] Irreductible effect so bypass on this one (yet ?)
@@ -197,18 +197,18 @@ class EntityStateClass extends EntityClass {
 				this.TO_SAVE_SHACKLE_WISDOM += effect[1]
 			}
 		]
-		
+
 		for (var eff in this.EFFECTS) {
 			if (MapFunctionsToSave[eff[0]]) MapFunctionsToSave[eff[0]](eff)
 		}
-		
+
 		/**
 		 * Map Stats
 		 **/
 		this.CELL = getCell(id)
-    }
+	}
 
-    getPoisons(Effects) {
+	getPoisons(Effects) {
 		var Poisons = 0
 		for (var eff in Effects) {
 			if (eff[0] == EFFECT_POISON) {

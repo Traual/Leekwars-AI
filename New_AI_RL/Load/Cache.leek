@@ -18,6 +18,8 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     MAX_TP_USABLE_FOR_STAT_CACHE = [: ]
     TEAM_INDEXES_CACHE = [: ]
     DIST_MULTIPLIER_CACHE = [: ]
+    SURVIVAL_MULTIPLIER_CACHE = [: ]
+    RESURRECTION_SCORE_CACHE = [: ]
     ENTITY_ACTIONS_CACHE = [: ]
     ACTIONS_ON_ME_CACHE = [: ]
     ACTIONS_SUMMON_CACHE = [: ]
@@ -130,6 +132,8 @@ global AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
 global MAX_TP_USABLE_FOR_STAT_CACHE = [: ]
 global TEAM_INDEXES_CACHE = [: ]
 global DIST_MULTIPLIER_CACHE = [: ]
+global SURVIVAL_MULTIPLIER_CACHE = [: ]
+global RESURRECTION_SCORE_CACHE = [: ]
 
 //For WalkCells : 
 

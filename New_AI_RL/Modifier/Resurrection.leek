@@ -15,8 +15,8 @@ class ResurrectionClass {
 		this.ID = id
 		this.SCORE = score
 	}
-	
-	static Update(To, State)  {
+
+	static Update(To, State) {
 		var Resurrect_ID = ScoringWichId(State).ID
 		if (Resurrect_ID == null) return;
 		State[Resurrect_ID].TOTAL_LIFE /= 2
@@ -32,7 +32,7 @@ class ResurrectionClass {
 	static ScoringWichId(State) {
 		var _final_id
 		var top_score = 0
-		for (var id:var entity_state in State) {
+		for (var id: var entity_state in State) {
 			if (entity_state.LIFE > 0) continue
 			var Score = ScoringClass.getResurrectionScore(entity_state, State)
 			if (Score > top_score) {
@@ -42,8 +42,8 @@ class ResurrectionClass {
 		}
 		return new ResurrectionClass(_final_id, top_score)
 	}
-	
+
 	static HashEveryScores(EntityId, EntityMaxLife) { //This the hash for caching Resurrects Scores
-   		return EntityId * MAX_LIFE + EntityMaxLife
+		return EntityId * MAX_LIFE + EntityMaxLife
 	}
 }
