@@ -23,7 +23,7 @@ class EnemiesTeamIndexes {
 
         for (var e: var e_stat in State) {
             if (e_stat.LIFE > 0 && e_stat.SIDE != EntityStats.SIDE) {
-                var e_idx = new EntityIndexes(e_stat)
+                var e_idx = EntityIndexes.getWithCache(e_stat)
                 this.STRENGTH += e_idx.STRENGTH
                 this.WISDOM += e_idx.WISDOM
                 this.AGILITY += e_idx.AGILITY

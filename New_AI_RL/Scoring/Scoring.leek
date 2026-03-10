@@ -109,7 +109,7 @@ class ScoringClass {
 
     static getEntityIntrinsicScore(EntityStats, State) { //TODO : Cache here again ? (Start with Entity Indexes then there)
 
-        var EIndexes = new EntityIndexes(EntityStats)
+        var EIndexes = EntityIndexes.getWithCache(EntityStats)
         var TeamIndexes = EnemiesTeamIndexes.getWithCache(State, EntityStats)
 
         var StrengthCoef = solvePoly(POLY_COEF_STR, TeamIndexes.RESISTANCE)
