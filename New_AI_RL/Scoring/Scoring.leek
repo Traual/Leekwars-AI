@@ -48,7 +48,7 @@ global POLY_THREAT_POT = [0.0, 0.3, 0.0]
 // Polynôme de survie final (Input: Ratio de survie, Output: Multiplicateur de score)
 global POLY_SURVIVAL = [0.0, 0.7, 0.3]
 
-//TODO : ADD DISTS and check Threat > 0.5 to let kill score thrive
+//TODO : ADD DISTS and caches
 
 
 class ScoringClass {
@@ -62,8 +62,8 @@ class ScoringClass {
                 var danger = DangerClass.getEntityDanger(stat, State, e, BaseHash)
 
                 // On applique le multiplicateur de survie au score intrinsèque
-                var multiplier = getSurvivalMultiplier(stat, danger)
-                var finalValue = entity_value * multiplier
+                var SurvivalMultiplier = getSurvivalMultiplier(stat, danger)
+                var finalValue = entity_value * SurvivalMultiplier
 
                 if (is_ally) {
                     _score += finalValue
@@ -75,9 +75,9 @@ class ScoringClass {
         return _score
     }
 
-    static getResurrectionScore(entity_state, State) {
+    static getResurrectionScore(entity_state, State) { //TODO : Cache here with entity_state stats
         var v_stat = clone(entity_state, 3)
-        var v_State = clone(State, 2)
+        var v_State = clone(State, 4)
         v_State[v_stat.ID] = v_stat
 
         v_stat.LIFE = v_stat.TOTAL_LIFE
@@ -95,7 +95,7 @@ class ScoringClass {
         return getEntityIntrinsicScore(v_stat, v_State)
     }
 
-    static getEntityIntrinsicScore(EntityStats, State) {
+    static getEntityIntrinsicScore(EntityStats, State) { //TODO : Cache here again ? (Start with Entity Indexes then there)
         
         var EIndexes = new EntityIndexes(EntityStats)
         var TeamIndexes = EnemiesTeamIndexes.getWithCache(State, EntityStats)
@@ -123,7 +123,7 @@ class ScoringClass {
         return _final
     }
 
-    static getSurvivalMultiplier(stat, danger) {
+    static getSurvivalMultiplier(stat, danger) { //TODO : Cache with values 
         // 1. Calcul de la menace pondérée via polynômes
         var totalThreat = solvePoly(POLY_THREAT_DANGER, danger) +
             solvePoly(POLY_THREAT_POISON, stat.POISON) +
@@ -136,11 +136,15 @@ class ScoringClass {
         return max(0, solvePoly(POLY_SURVIVAL, survivalRatio)) //to Avoid having a negative ratio
     }
 
+    static getDistMultiplier(stat, dist) {
+        //TODO (
+    }
+
     static solvePoly(poly, x) {
         return poly[0] * x * x + poly[1] * x + poly[2]
     }
 
-    static getMinMapDanger(state, cellToCheck) {
+    static getMinMapDanger(state, cellToCheck) { //WILL BE REMOVED
         return 0.2
     }
 }

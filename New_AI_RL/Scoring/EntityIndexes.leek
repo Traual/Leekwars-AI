@@ -13,11 +13,11 @@ class EntityIndexes {
     SCIENCE
     MAGIC
 
-    constructor(entityStats) {
+    constructor(entityStats) { //TODO : Cache with POWER, TOTAL_TP, Strength, Wisdom, Agility, Resistance, Science, Magic, ID (4 Int per Hash Int) (name is not really useful cuz there is a lot of chances to get 2 bulbs have the same exact stats that i want to summon (same turn) so i am willing to take this risk and get back some ops) (4 Int per Hash Int)
         var powerFactorStrength = ScoringClass.solvePoly(POLY_POWER_STRENGTH, entityStats.POWER)
         var powerFactorMagic = ScoringClass.solvePoly(POLY_POWER_MAGIC, entityStats.POWER)
 
-        var TOTAL_TP = entityStats.TOTAL_TP != null ? entityStats.TOTAL_TP : entityStats.TP
+        var TOTAL_TP = entityStats.TOTAL_TP
 
         this.STRENGTH = ScoringClass.solvePoly(POLY_STRENGTH, entityStats.STRENGTH) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "STRENGTH")) * powerFactorStrength
 

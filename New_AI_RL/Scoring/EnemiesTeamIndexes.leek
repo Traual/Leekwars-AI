@@ -34,7 +34,11 @@ class EnemiesTeamIndexes {
         }
     }
 
-    static getWithCache(State, EntityStats) { //TODO : ADD CACHE
-        return new EnemiesTeamIndexes(State, EntityStats)
+    static getWithCache(State, EntityStats) {
+        var Hash = EntityStats.SIDE
+        if (Hash in TEAM_INDEXES_CACHE) return TEAM_INDEXES_CACHE[Hash]
+        var TeamIndexes = new EnemiesTeamIndexes(State, EntityStats)
+        TEAM_INDEXES_CACHE[Hash] = TeamIndexes
+        return TeamIndexes
     }
 }
