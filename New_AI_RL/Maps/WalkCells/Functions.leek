@@ -20,8 +20,8 @@ function CellToPos(cell) { //Used Only In Init
 }
 
 function RowColToCell(row, col) {
-	var couple = floor(row / 2)
-	return couple * 35 + (row % 2 == 1 ? 18 : 0) + col
+    var couple = floor(row / 2)
+    return couple * 35 + (row % 2 == 1 ? 18 : 0) + col
 }
 
 //Map To SetupAcc (To avoid doing if (0) ... if (1) ...)
@@ -367,6 +367,7 @@ function InitLeekCells(LeekCells) { //on met sur la bitmap d'obstacles les posit
 		obstacleFunctions[MAP_CELL_TO_LINE[x]](MAP_CELL_TO_POS[x])
 	}
 }
+
 
 function InitAccesMp() { //On Reset/Build ACCESMP (la bitmap --> binary: mp)
 	ACCESMPZero = [: ]
@@ -27240,47 +27241,852 @@ function UpdateAccTJFromTmpTJ() { //Pour update ACCTJ depuis TMPTJ (équivalent 
 	ACCTJThirtyFour = TMPTJThirtyFour
 }
 
-function DecodeBlock(ACCES_MP_LIST, _final) {
-	for (var i = 0; i < 35; i++) {
-		var start = (17 * i) + (i + 1)\ 2
-		var currentACCESMP = ACCES_MP_LIST[i]
-		if (i % 2 == 1) { // Halved block
-			for (var bin: var mp in currentACCESMP) {
-				Decode6Bits(bin & 63, start, mp, _final)
-				Decode6Bits((bin & 4032) >> 6, start + 6, mp, _final)
-				Decode5Bits(bin >> 12, start + 12, mp, _final)
-			}
-		} else {
-			for (var bin: var mp in currentACCESMP) {
-				Decode6Bits(bin & 63, start, mp, _final)
-				Decode6Bits((bin & 4032) >> 6, start + 6, mp, _final)
-				Decode6Bits(bin >> 12, start + 12, mp, _final)
-			}
+function getAccess() { //Pour chaque ligne, on coupe le nombre binaire en 3 parties de 6 bits, puis on décode a l'aide des tables les 6 bits --> un tableau des cellules. Et ensuite on les ajoute a _final pour le bon nombre de mp
+	var _final = [: ]
+	for (var bin: var mp in ACCESMPZero) {
+		for (var c in BINARY_TO_CELL_ZERO_ZERO[(bin & 63)] + BINARY_TO_CELL_ZERO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_ZERO_TWO[bin >> 12]) {
+			_final[c] = mp
 		}
 	}
-}
 
-function getAccess() {
-	var _final = [: ]
-	DecodeBlock([ACCESMPZero, ACCESMPOne, ACCESMPTwo, ACCESMPThree, ACCESMPFour, ACCESMPFive, ACCESMPSix, ACCESMPSeven, ACCESMPEight, ACCESMPNine, ACCESMPTen, ACCESMPEleven, ACCESMPTwelve, ACCESMPThirteen, ACCESMPFourteen, ACCESMPFifteen, ACCESMPSixteen, ACCESMPSeventeen, ACCESMPEighteen, ACCESMPNineteen, ACCESMPTwenty, ACCESMPTwentyOne, ACCESMPTwentyTwo, ACCESMPTwentyThree, ACCESMPTwentyFour, ACCESMPTwentyFive, ACCESMPTwentySix, ACCESMPTwentySeven, ACCESMPTwentyEight, ACCESMPTwentyNine, ACCESMPThirty, ACCESMPThirtyOne, ACCESMPThirtyTwo, ACCESMPThirtyThree, ACCESMPThirtyFour], _final)
+	for (var bin: var mp in ACCESMPOne) {
+		for (var c in BINARY_TO_CELL_ONE_ZERO[(bin & 63)] + BINARY_TO_CELL_ONE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_ONE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTwo) {
+		for (var c in BINARY_TO_CELL_TWO_ZERO[(bin & 63)] + BINARY_TO_CELL_TWO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPThree) {
+		for (var c in BINARY_TO_CELL_THREE_ZERO[(bin & 63)] + BINARY_TO_CELL_THREE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THREE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPFour) {
+		for (var c in BINARY_TO_CELL_FOUR_ZERO[(bin & 63)] + BINARY_TO_CELL_FOUR_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FOUR_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPFive) {
+		for (var c in BINARY_TO_CELL_FIVE_ZERO[(bin & 63)] + BINARY_TO_CELL_FIVE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FIVE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPSix) {
+		for (var c in BINARY_TO_CELL_SIX_ZERO[(bin & 63)] + BINARY_TO_CELL_SIX_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SIX_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPSeven) {
+		for (var c in BINARY_TO_CELL_SEVEN_ZERO[(bin & 63)] + BINARY_TO_CELL_SEVEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SEVEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPEight) {
+		for (var c in BINARY_TO_CELL_EIGHT_ZERO[(bin & 63)] + BINARY_TO_CELL_EIGHT_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_EIGHT_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPNine) {
+		for (var c in BINARY_TO_CELL_NINE_ZERO[(bin & 63)] + BINARY_TO_CELL_NINE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_NINE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTen) {
+		for (var c in BINARY_TO_CELL_TEN_ZERO[(bin & 63)] + BINARY_TO_CELL_TEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPEleven) {
+		for (var c in BINARY_TO_CELL_ELEVEN_ZERO[(bin & 63)] + BINARY_TO_CELL_ELEVEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_ELEVEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTwelve) {
+		for (var c in BINARY_TO_CELL_TWELVE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWELVE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWELVE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+	for (var bin: var mp in ACCESMPThirteen) {
+		for (var c in BINARY_TO_CELL_THIRTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPFourteen) {
+		for (var c in BINARY_TO_CELL_FOURTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_FOURTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FOURTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPFifteen) {
+		for (var c in BINARY_TO_CELL_FIFTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_FIFTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FIFTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPSixteen) {
+		for (var c in BINARY_TO_CELL_SIXTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_SIXTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SIXTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPSeventeen) {
+		for (var c in BINARY_TO_CELL_SEVENTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_SEVENTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SEVENTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPEighteen) {
+		for (var c in BINARY_TO_CELL_EIGHTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_EIGHTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_EIGHTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPNineteen) {
+		for (var c in BINARY_TO_CELL_NINETEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_NINETEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_NINETEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTwenty) {
+		for (var c in BINARY_TO_CELL_TWENTY_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTY_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTY_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTwentyOne) {
+		for (var c in BINARY_TO_CELL_TWENTYONE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYONE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYONE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTwentyTwo) {
+		for (var c in BINARY_TO_CELL_TWENTYTWO_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYTWO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYTWO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTwentyThree) {
+		for (var c in BINARY_TO_CELL_TWENTYTHREE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYTHREE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYTHREE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTwentyFour) {
+		for (var c in BINARY_TO_CELL_TWENTYFOUR_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYFOUR_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYFOUR_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTwentyFive) {
+		for (var c in BINARY_TO_CELL_TWENTYFIVE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYFIVE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYFIVE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTwentySix) {
+		for (var c in BINARY_TO_CELL_TWENTYSIX_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYSIX_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYSIX_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTwentySeven) {
+		for (var c in BINARY_TO_CELL_TWENTYSEVEN_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYSEVEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYSEVEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTwentyEight) {
+		for (var c in BINARY_TO_CELL_TWENTYEIGHT_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYEIGHT_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYEIGHT_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+	for (var bin: var mp in ACCESMPTwentyNine) {
+		for (var c in BINARY_TO_CELL_TWENTYNINE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYNINE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYNINE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPThirty) {
+		for (var c in BINARY_TO_CELL_THIRTY_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTY_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTY_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPThirtyOne) {
+		for (var c in BINARY_TO_CELL_THIRTYONE_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYONE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYONE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPThirtyTwo) {
+		for (var c in BINARY_TO_CELL_THIRTYTWO_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYTWO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYTWO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPThirtyThree) {
+		for (var c in BINARY_TO_CELL_THIRTYTHREE_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYTHREE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYTHREE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPThirtyFour) {
+		for (var c in BINARY_TO_CELL_THIRTYFOUR_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYFOUR_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYFOUR_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
 	return _final
 }
 
-function getAccessJ() {
+function getAccessJ() { //Pour chaque ligne, on coupe le nombre binaire en 3 parties de 6 bits, puis on décode a l'aide des tables les 6 bits --> un tableau des cellules. Et ensuite on les ajoute a _final pour le bon nombre de mp
 	var _final = [: ]
-	DecodeBlock([ACCESMPJZero, ACCESMPJOne, ACCESMPJTwo, ACCESMPJThree, ACCESMPJFour, ACCESMPJFive, ACCESMPTJSix, ACCESMPJSeven, ACCESMPJEight, ACCESMPJNine, ACCESMPJTen, ACCESMPJEleven, ACCESMPJTwelve, ACCESMPJThirteen, ACCESMPJFourteen, ACCESMPJFifteen, ACCESMPTJSixteen, ACCESMPJSeventeen, ACCESMPJEighteen, ACCESMPTJNineteen, ACCESMPJTwenty, ACCESMPJTwentyOne, ACCESMPJTwentyTwo, ACCESMPJTwentyThree, ACCESMPJTwentyFour, ACCESMPJTwentyFive, ACCESMPJTwentySix, ACCESMPJTwentySeven, ACCESMPJTwentyEight, ACCESMPJTwentyNine, ACCESMPJThirty, ACCESMPJThirtyOne, ACCESMPJThirtyTwo, ACCESMPJThirtyThree, ACCESMPJThirtyFour], _final)
+	for (var bin: var mp in ACCESMPJZero) {
+		for (var c in BINARY_TO_CELL_ZERO_ZERO[(bin & 63)] + BINARY_TO_CELL_ZERO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_ZERO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJOne) {
+		for (var c in BINARY_TO_CELL_ONE_ZERO[(bin & 63)] + BINARY_TO_CELL_ONE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_ONE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJTwo) {
+		for (var c in BINARY_TO_CELL_TWO_ZERO[(bin & 63)] + BINARY_TO_CELL_TWO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJThree) {
+		for (var c in BINARY_TO_CELL_THREE_ZERO[(bin & 63)] + BINARY_TO_CELL_THREE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THREE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJFour) {
+		for (var c in BINARY_TO_CELL_FOUR_ZERO[(bin & 63)] + BINARY_TO_CELL_FOUR_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FOUR_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJFive) {
+		for (var c in BINARY_TO_CELL_FIVE_ZERO[(bin & 63)] + BINARY_TO_CELL_FIVE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FIVE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJSix) {
+		for (var c in BINARY_TO_CELL_SIX_ZERO[(bin & 63)] + BINARY_TO_CELL_SIX_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SIX_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJSeven) {
+		for (var c in BINARY_TO_CELL_SEVEN_ZERO[(bin & 63)] + BINARY_TO_CELL_SEVEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SEVEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJEight) {
+		for (var c in BINARY_TO_CELL_EIGHT_ZERO[(bin & 63)] + BINARY_TO_CELL_EIGHT_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_EIGHT_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJNine) {
+		for (var c in BINARY_TO_CELL_NINE_ZERO[(bin & 63)] + BINARY_TO_CELL_NINE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_NINE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJTen) {
+		for (var c in BINARY_TO_CELL_TEN_ZERO[(bin & 63)] + BINARY_TO_CELL_TEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJEleven) {
+		for (var c in BINARY_TO_CELL_ELEVEN_ZERO[(bin & 63)] + BINARY_TO_CELL_ELEVEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_ELEVEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJTwelve) {
+		for (var c in BINARY_TO_CELL_TWELVE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWELVE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWELVE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+	for (var bin: var mp in ACCESMPJThirteen) {
+		for (var c in BINARY_TO_CELL_THIRTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJFourteen) {
+		for (var c in BINARY_TO_CELL_FOURTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_FOURTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FOURTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJFifteen) {
+		for (var c in BINARY_TO_CELL_FIFTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_FIFTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FIFTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJSixteen) {
+		for (var c in BINARY_TO_CELL_SIXTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_SIXTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SIXTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJSeventeen) {
+		for (var c in BINARY_TO_CELL_SEVENTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_SEVENTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SEVENTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJEighteen) {
+		for (var c in BINARY_TO_CELL_EIGHTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_EIGHTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_EIGHTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJNineteen) {
+		for (var c in BINARY_TO_CELL_NINETEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_NINETEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_NINETEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJTwenty) {
+		for (var c in BINARY_TO_CELL_TWENTY_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTY_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTY_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJTwentyOne) {
+		for (var c in BINARY_TO_CELL_TWENTYONE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYONE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYONE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJTwentyTwo) {
+		for (var c in BINARY_TO_CELL_TWENTYTWO_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYTWO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYTWO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJTwentyThree) {
+		for (var c in BINARY_TO_CELL_TWENTYTHREE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYTHREE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYTHREE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJTwentyFour) {
+		for (var c in BINARY_TO_CELL_TWENTYFOUR_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYFOUR_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYFOUR_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJTwentyFive) {
+		for (var c in BINARY_TO_CELL_TWENTYFIVE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYFIVE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYFIVE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJTwentySix) {
+		for (var c in BINARY_TO_CELL_TWENTYSIX_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYSIX_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYSIX_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJTwentySeven) {
+		for (var c in BINARY_TO_CELL_TWENTYSEVEN_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYSEVEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYSEVEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJTwentyEight) {
+		for (var c in BINARY_TO_CELL_TWENTYEIGHT_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYEIGHT_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYEIGHT_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+	for (var bin: var mp in ACCESMPJTwentyNine) {
+		for (var c in BINARY_TO_CELL_TWENTYNINE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYNINE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYNINE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJThirty) {
+		for (var c in BINARY_TO_CELL_THIRTY_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTY_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTY_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJThirtyOne) {
+		for (var c in BINARY_TO_CELL_THIRTYONE_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYONE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYONE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJThirtyTwo) {
+		for (var c in BINARY_TO_CELL_THIRTYTWO_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYTWO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYTWO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJThirtyThree) {
+		for (var c in BINARY_TO_CELL_THIRTYTHREE_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYTHREE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYTHREE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPJThirtyFour) {
+		for (var c in BINARY_TO_CELL_THIRTYFOUR_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYFOUR_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYFOUR_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
 	return _final
 }
 
-function getAccessT() {
+function getAccessT() { //Pour chaque ligne, on coupe le nombre binaire en 3 parties de 6 bits, puis on décode a l'aide des tables les 6 bits --> un tableau des cellules. Et ensuite on les ajoute a _final pour le bon nombre de mp
 	var _final = [: ]
-	DecodeBlock([ACCESMPTZero, ACCESMPTOne, ACCESMPTTwo, ACCESMPTThree, ACCESMPTFour, ACCESMPTFive, ACCESMPTSix, ACCESMPTSeven, ACCESMPTEight, ACCESMPTNine, ACCESMPTTen, ACCESMPTEleven, ACCESMPTTwelve, ACCESMPTThirteen, ACCESMPTFourteen, ACCESMPTFifteen, ACCESMPTSixteen, ACCESMPTSeventeen, ACCESMPTEighteen, ACCESMPTNineteen, ACCESMPTTwenty, ACCESMPTTwentyOne, ACCESMPTTwentyTwo, ACCESMPTTwentyThree, ACCESMPTTwentyFour, ACCESMPTTwentyFive, ACCESMPTTwentySix, ACCESMPTTwentySeven, ACCESMPTTwentyEight, ACCESMPTTwentyNine, ACCESMPTThirty, ACCESMPTThirtyOne, ACCESMPTThirtyTwo, ACCESMPTThirtyThree, ACCESMPTThirtyFour], _final)
+	for (var bin: var mp in ACCESMPTZero) {
+		for (var c in BINARY_TO_CELL_ZERO_ZERO[(bin & 63)] + BINARY_TO_CELL_ZERO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_ZERO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTOne) {
+		for (var c in BINARY_TO_CELL_ONE_ZERO[(bin & 63)] + BINARY_TO_CELL_ONE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_ONE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTTwo) {
+		for (var c in BINARY_TO_CELL_TWO_ZERO[(bin & 63)] + BINARY_TO_CELL_TWO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTThree) {
+		for (var c in BINARY_TO_CELL_THREE_ZERO[(bin & 63)] + BINARY_TO_CELL_THREE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THREE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTFour) {
+		for (var c in BINARY_TO_CELL_FOUR_ZERO[(bin & 63)] + BINARY_TO_CELL_FOUR_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FOUR_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTFive) {
+		for (var c in BINARY_TO_CELL_FIVE_ZERO[(bin & 63)] + BINARY_TO_CELL_FIVE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FIVE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTSix) {
+		for (var c in BINARY_TO_CELL_SIX_ZERO[(bin & 63)] + BINARY_TO_CELL_SIX_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SIX_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTSeven) {
+		for (var c in BINARY_TO_CELL_SEVEN_ZERO[(bin & 63)] + BINARY_TO_CELL_SEVEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SEVEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTEight) {
+		for (var c in BINARY_TO_CELL_EIGHT_ZERO[(bin & 63)] + BINARY_TO_CELL_EIGHT_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_EIGHT_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTNine) {
+		for (var c in BINARY_TO_CELL_NINE_ZERO[(bin & 63)] + BINARY_TO_CELL_NINE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_NINE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTTen) {
+		for (var c in BINARY_TO_CELL_TEN_ZERO[(bin & 63)] + BINARY_TO_CELL_TEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTEleven) {
+		for (var c in BINARY_TO_CELL_ELEVEN_ZERO[(bin & 63)] + BINARY_TO_CELL_ELEVEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_ELEVEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTTwelve) {
+		for (var c in BINARY_TO_CELL_TWELVE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWELVE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWELVE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+	for (var bin: var mp in ACCESMPTThirteen) {
+		for (var c in BINARY_TO_CELL_THIRTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTFourteen) {
+		for (var c in BINARY_TO_CELL_FOURTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_FOURTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FOURTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTFifteen) {
+		for (var c in BINARY_TO_CELL_FIFTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_FIFTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FIFTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTSixteen) {
+		for (var c in BINARY_TO_CELL_SIXTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_SIXTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SIXTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTSeventeen) {
+		for (var c in BINARY_TO_CELL_SEVENTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_SEVENTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SEVENTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTEighteen) {
+		for (var c in BINARY_TO_CELL_EIGHTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_EIGHTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_EIGHTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTNineteen) {
+		for (var c in BINARY_TO_CELL_NINETEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_NINETEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_NINETEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTTwenty) {
+		for (var c in BINARY_TO_CELL_TWENTY_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTY_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTY_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTTwentyOne) {
+		for (var c in BINARY_TO_CELL_TWENTYONE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYONE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYONE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTTwentyTwo) {
+		for (var c in BINARY_TO_CELL_TWENTYTWO_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYTWO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYTWO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTTwentyThree) {
+		for (var c in BINARY_TO_CELL_TWENTYTHREE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYTHREE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYTHREE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTTwentyFour) {
+		for (var c in BINARY_TO_CELL_TWENTYFOUR_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYFOUR_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYFOUR_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTTwentyFive) {
+		for (var c in BINARY_TO_CELL_TWENTYFIVE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYFIVE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYFIVE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTTwentySix) {
+		for (var c in BINARY_TO_CELL_TWENTYSIX_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYSIX_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYSIX_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTTwentySeven) {
+		for (var c in BINARY_TO_CELL_TWENTYSEVEN_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYSEVEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYSEVEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTTwentyEight) {
+		for (var c in BINARY_TO_CELL_TWENTYEIGHT_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYEIGHT_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYEIGHT_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+	for (var bin: var mp in ACCESMPTTwentyNine) {
+		for (var c in BINARY_TO_CELL_TWENTYNINE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYNINE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYNINE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTThirty) {
+		for (var c in BINARY_TO_CELL_THIRTY_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTY_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTY_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTThirtyOne) {
+		for (var c in BINARY_TO_CELL_THIRTYONE_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYONE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYONE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTThirtyTwo) {
+		for (var c in BINARY_TO_CELL_THIRTYTWO_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYTWO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYTWO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTThirtyThree) {
+		for (var c in BINARY_TO_CELL_THIRTYTHREE_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYTHREE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYTHREE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTThirtyFour) {
+		for (var c in BINARY_TO_CELL_THIRTYFOUR_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYFOUR_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYFOUR_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
 	return _final
 }
 
-function getAccessTJ() {
+function getAccessTJ() { //Pour chaque ligne, on coupe le nombre binaire en 3 parties de 6 bits, puis on décode a l'aide des tables les 6 bits --> un tableau des cellules. Et ensuite on les ajoute a _final pour le bon nombre de mp
 	var _final = [: ]
-	DecodeBlock([ACCESMPTJZero, ACCESMPTJOne, ACCESMPTJTwo, ACCESMPTJThree, ACCESMPTJFour, ACCESMPTJFive, ACCESMPTJSix, ACCESMPTJSeven, ACCESMPTJEight, ACCESMPTJNine, ACCESMPTJTen, ACCESMPTJEleven, ACCESMPTJTwelve, ACCESMPTJThirteen, ACCESMPTJFourteen, ACCESMPTJFifteen, ACCESMPTJSixteen, ACCESMPTJSeventeen, ACCESMPTJEighteen, ACCESMPTJNineteen, ACCESMPTJTwenty, ACCESMPTJTwentyOne, ACCESMPTJTwentyTwo, ACCESMPTJTwentyThree, ACCESMPTJTwentyFour, ACCESMPTJTwentyFive, ACCESMPTJTwentySix, ACCESMPTJTwentySeven, ACCESMPTJTwentyEight, ACCESMPTJTwentyNine, ACCESMPTJThirty, ACCESMPTJThirtyOne, ACCESMPTJThirtyTwo, ACCESMPTJThirtyThree, ACCESMPTJThirtyFour], _final)
+	for (var bin: var mp in ACCESMPTJZero) {
+		for (var c in BINARY_TO_CELL_ZERO_ZERO[(bin & 63)] + BINARY_TO_CELL_ZERO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_ZERO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJOne) {
+		for (var c in BINARY_TO_CELL_ONE_ZERO[(bin & 63)] + BINARY_TO_CELL_ONE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_ONE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJTwo) {
+		for (var c in BINARY_TO_CELL_TWO_ZERO[(bin & 63)] + BINARY_TO_CELL_TWO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJThree) {
+		for (var c in BINARY_TO_CELL_THREE_ZERO[(bin & 63)] + BINARY_TO_CELL_THREE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THREE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJFour) {
+		for (var c in BINARY_TO_CELL_FOUR_ZERO[(bin & 63)] + BINARY_TO_CELL_FOUR_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FOUR_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJFive) {
+		for (var c in BINARY_TO_CELL_FIVE_ZERO[(bin & 63)] + BINARY_TO_CELL_FIVE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FIVE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJSix) {
+		for (var c in BINARY_TO_CELL_SIX_ZERO[(bin & 63)] + BINARY_TO_CELL_SIX_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SIX_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJSeven) {
+		for (var c in BINARY_TO_CELL_SEVEN_ZERO[(bin & 63)] + BINARY_TO_CELL_SEVEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SEVEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJEight) {
+		for (var c in BINARY_TO_CELL_EIGHT_ZERO[(bin & 63)] + BINARY_TO_CELL_EIGHT_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_EIGHT_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJNine) {
+		for (var c in BINARY_TO_CELL_NINE_ZERO[(bin & 63)] + BINARY_TO_CELL_NINE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_NINE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJTen) {
+		for (var c in BINARY_TO_CELL_TEN_ZERO[(bin & 63)] + BINARY_TO_CELL_TEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJEleven) {
+		for (var c in BINARY_TO_CELL_ELEVEN_ZERO[(bin & 63)] + BINARY_TO_CELL_ELEVEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_ELEVEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJTwelve) {
+		for (var c in BINARY_TO_CELL_TWELVE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWELVE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWELVE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+	for (var bin: var mp in ACCESMPTJThirteen) {
+		for (var c in BINARY_TO_CELL_THIRTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJFourteen) {
+		for (var c in BINARY_TO_CELL_FOURTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_FOURTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FOURTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJFifteen) {
+		for (var c in BINARY_TO_CELL_FIFTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_FIFTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_FIFTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJSixteen) {
+		for (var c in BINARY_TO_CELL_SIXTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_SIXTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SIXTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJSeventeen) {
+		for (var c in BINARY_TO_CELL_SEVENTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_SEVENTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_SEVENTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJEighteen) {
+		for (var c in BINARY_TO_CELL_EIGHTEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_EIGHTEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_EIGHTEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJNineteen) {
+		for (var c in BINARY_TO_CELL_NINETEEN_ZERO[(bin & 63)] + BINARY_TO_CELL_NINETEEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_NINETEEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJTwenty) {
+		for (var c in BINARY_TO_CELL_TWENTY_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTY_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTY_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJTwentyOne) {
+		for (var c in BINARY_TO_CELL_TWENTYONE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYONE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYONE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJTwentyTwo) {
+		for (var c in BINARY_TO_CELL_TWENTYTWO_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYTWO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYTWO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJTwentyThree) {
+		for (var c in BINARY_TO_CELL_TWENTYTHREE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYTHREE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYTHREE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJTwentyFour) {
+		for (var c in BINARY_TO_CELL_TWENTYFOUR_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYFOUR_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYFOUR_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJTwentyFive) {
+		for (var c in BINARY_TO_CELL_TWENTYFIVE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYFIVE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYFIVE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJTwentySix) {
+		for (var c in BINARY_TO_CELL_TWENTYSIX_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYSIX_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYSIX_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJTwentySeven) {
+		for (var c in BINARY_TO_CELL_TWENTYSEVEN_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYSEVEN_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYSEVEN_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJTwentyEight) {
+		for (var c in BINARY_TO_CELL_TWENTYEIGHT_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYEIGHT_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYEIGHT_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+	for (var bin: var mp in ACCESMPTJTwentyNine) {
+		for (var c in BINARY_TO_CELL_TWENTYNINE_ZERO[(bin & 63)] + BINARY_TO_CELL_TWENTYNINE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_TWENTYNINE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJThirty) {
+		for (var c in BINARY_TO_CELL_THIRTY_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTY_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTY_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJThirtyOne) {
+		for (var c in BINARY_TO_CELL_THIRTYONE_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYONE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYONE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJThirtyTwo) {
+		for (var c in BINARY_TO_CELL_THIRTYTWO_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYTWO_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYTWO_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJThirtyThree) {
+		for (var c in BINARY_TO_CELL_THIRTYTHREE_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYTHREE_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYTHREE_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
+
+	for (var bin: var mp in ACCESMPTJThirtyFour) {
+		for (var c in BINARY_TO_CELL_THIRTYFOUR_ZERO[(bin & 63)] + BINARY_TO_CELL_THIRTYFOUR_ONE[(bin & 4032) >> 6] + BINARY_TO_CELL_THIRTYFOUR_TWO[bin >> 12]) {
+			_final[c] = mp
+		}
+	}
 	return _final
 }
 

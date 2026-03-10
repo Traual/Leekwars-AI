@@ -71,11 +71,10 @@ class ScoringClass {
                 var DistanceMultiplier = getDistMultiplier(stat.ID, stat.SIDE, stat.CELL, State, BaseHash)
                 var finalValue = entity_value * SurvivalMultiplier * DistanceMultiplier
 
-                switch (is_ally) {
-                    case true:
-                        _score += finalValue
-                    case false:
-                        _score -= finalValue
+                if (is_ally) {
+                    _score += finalValue
+                } else {
+                    _score -= finalValue
                 }
             }
         }

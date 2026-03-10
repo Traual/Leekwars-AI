@@ -7,293 +7,318 @@ include("../includes.leek")
 
 class ConsequencesClass {
 
+	static ConsMap = [
+		EFFECT_ABSOLUTE_SHIELD: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
+				ConsequencesClass.getEntityAbsoluteShieldConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_ABSOLUTE_VULNERABILITY: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//Can't happen in vulne absolute
+				ConsequencesClass.getEntityAbsoluteVulnerabilityConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_AFTEREFFECT: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
+				ConsequencesClass.getEntityAfterEffectConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_ANTIDOTE: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
+				ConsequencesClass.getEntityAntidoteConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_ATTRACT: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				if (!State[Tar].STATIC) {
+					State[Tar].CELL = To
+				}
+			}
+		},
+		EFFECT_BOOST_MAX_LIFE: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
+				ConsequencesClass.getEntityBoostMaxLifeConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_BUFF_AGILITY: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
+				ConsequencesClass.getEntityBuffAgilityConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_BUFF_MP: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
+				ConsequencesClass.getEntityBuffMpConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_BUFF_RESISTANCE: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
+				ConsequencesClass.getEntityBuffResistanceConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_BUFF_STRENGTH: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
+				ConsequencesClass.getEntityBuffStrengthConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_BUFF_TP: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
+				ConsequencesClass.getEntityBuffTpConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_BUFF_WISDOM: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
+				ConsequencesClass.getEntityBuffWisdomConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_DAMAGE: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//Can't happen in damage
+				ConsequencesClass.getEntityDamageConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster, State)
+			}
+		},
+		EFFECT_DAMAGE_RETURN: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
+				ConsequencesClass.getEntityDamageReturnConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_DEBUFF: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
+				ConsequencesClass.getEntityDebuffConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_HEAL: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])
+				ConsequencesClass.getEntityHealConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_INVERT: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				if (!State[Tar].STATIC) {
+					State[Tar].CELL = From
+					State[Caster].CELL = To //To Uses less ops then taking again cell tar, and there are no aoe yet so this opti works
+				}
+			}
+		},
+		EFFECT_KILL: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.getKillConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster, State, true)
+			}
+		},
+		EFFECT_LIFE_DAMAGE: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//Can't happen in Life damage
+				ConsequencesClass.getEntityLifeDamageConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster, State)
+			}
+		},
+		EFFECT_NOVA_DAMAGE: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//Can't happen in Nova damage
+				ConsequencesClass.getEntityNovaDamageConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_NOVA_VITALITY: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//Can't happen in Nova Vitality
+				ConsequencesClass.getEntityNovaVitalityConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_POISON: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar]) //Need for COVID/Bug on BURNING
+				ConsequencesClass.getEntityPoisonConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_PROPAGATION: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			//Not handeled
+		},
+		EFFECT_PUSH: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				if (!State[Tar].STATIC) {
+					State[Tar].CELL = To
+				}
+			}
+		},
+		EFFECT_RAW_ABSOLUTE_SHIELD: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar]) //Does not exist yet so don't know if need
+				ConsequencesClass.getEntityRawAbsoluteShieldConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_RAW_BUFF_AGILITY: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar]) //Need
+				ConsequencesClass.getEntityRawBuffAgilityConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_RAW_BUFF_MAGIC: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar]) //Need
+				ConsequencesClass.getEntityRawBuffMagicConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_RAW_BUFF_MP: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar]) //Need
+				ConsequencesClass.getEntityRawBuffMpConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_RAW_BUFF_POWER: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar]) //Does not exist yet so don't know if need
+				ConsequencesClass.getEntityRawBuffPowerConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_RAW_BUFF_RESISTANCE: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar]) //Need
+				ConsequencesClass.getEntityRawBuffResistanceConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_RAW_BUFF_SCIENCE: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar]) //Need
+				ConsequencesClass.getEntityRawBuffScienceConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_RAW_BUFF_STRENGTH: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar]) //Need
+				ConsequencesClass.getEntityRawBuffStrengthConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_RAW_BUFF_TP: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar]) //Need
+				ConsequencesClass.getEntityRawBuffTpConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_RAW_BUFF_WISDOM: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar]) //Need
+				ConsequencesClass.getEntityRawBuffWisdomConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_RAW_HEAL: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//Can't happen in Raw Heal (yet)
+				ConsequencesClass.getEntityRawHealConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_RAW_RELATIVE_SHIELD: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//Can't happen in Raw Relatiove Shield
+				ConsequencesClass.getEntityRawRelativeShieldConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_RELATIVE_SHIELD: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar]) //Need
+				ConsequencesClass.getEntityRelativeShieldConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_REMOVE_SHACKLES: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//No need (yet)
+				ConsequencesClass.getEntityRemoveShacklesConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_RESURRECT: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			//Handeled in special chip so no need
+		},
+		EFFECT_SHACKLE_AGILITY: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//No need (yet)
+				ConsequencesClass.getEntityShackleAgilityConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_SHACKLE_MAGIC: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//No need (yet)
+				ConsequencesClass.getEntityShackleMagicConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_SHACKLE_MP: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//No need (yet)
+				ConsequencesClass.getEntityShackleMpConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_SHACKLE_STRENGTH: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//No need (yet)
+				ConsequencesClass.getEntityShackleStrengthConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_SHACKLE_TP: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar]) //No need (yet)
+				ConsequencesClass.getEntityShackleTpConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_SHACKLE_WISDOM: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//No need (yet)
+				ConsequencesClass.getEntityShackleWisdomConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_STEAL_ABSOLUTE_SHIELD: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//No need (yet)
+				ConsequencesClass.getEntityStealAbsoluteShieldConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_STEAL_LIFE: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//No need (yet)
+				ConsequencesClass.getEntityStealLifeConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		},
+		EFFECT_TELEPORT: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				State[Caster].CELL = To
+			}
+		},
+		EFFECT_VULNERABILITY: function(State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+			for (var Tar: var Dist in RealTargets) {
+				//ConsequencesClass.ReplacementChangeStats(Item, Effect, State[Tar])//No need (yet)
+				ConsequencesClass.getEntityVulnerabilityConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
+			}
+		}
+	]
+
 	static getConsequences(State, Item, From, To, Caster, BaseHash) { //Need from for lasers 
 		var Targets = ConsequenceTargets(Item, From, To, State, Caster, BaseHash)
 		var CastStats = State[Caster]
 		for (var Effect in ITEMINFO[Item].EFFECTS) {
 			var EffectType = Effect[0]
-
-			// Cas particuliers (Summon/Resurrect)
-			switch (EffectType) {
-				case EFFECT_SUMMON:
-					var Id = StateClass.getMaxUsedID(State)
-					var EntityStats = new BulbState(Id, SUMMONER_LEVEL_TIMES, Item, To, Caster, CastStats)
-					State[Id] = EntityStats
-					continue
-				case EFFECT_RESURRECT:
-					ResurrectionClass.Update(To, State)
-					continue
+			if (EffectType == EFFECT_SUMMON) {
+				var Id = StateClass.getMaxUsedID(State)
+				var EntityStats = new BulbState(Id, SUMMONER_LEVEL_TIMES, Item, To, Caster, CastStats)
+				State[Id] = EntityStats
+				continue
+			} else if (EffectType == EFFECT_RESURRECT) {
+				ResurrectionClass.Update(To, State)
+				continue
 			}
-
 			var TmpTargets = RealConsequenceTargets(Targets, Effect, State, CastStats, Caster)
 			var Multiplier = (Effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) ? mapSize(TmpTargets) : 1 //Saving Multiplier
 			if (CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) Multiplier *= CRITICAL_FACTOR
-			var RealTargets = (Effect[5] & EFFECT_MODIFIER_ON_CASTER) ? [Caster: 0] : TmpTargets
-
-			// Dispatch via Switch (Dégage la ConsMap)
-			switch (EffectType) {
-				case EFFECT_ABSOLUTE_SHIELD:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityAbsoluteShieldConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_ABSOLUTE_VULNERABILITY:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityAbsoluteVulnerabilityConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_AFTEREFFECT:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityAfterEffectConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_ANTIDOTE:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityAntidoteConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_ATTRACT:
-					for (var Tar: var Dist in RealTargets) {
-						if (!State[Tar].STATIC) State[Tar].CELL = To
-					}
-					break
-				case EFFECT_BOOST_MAX_LIFE:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityBoostMaxLifeConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_BUFF_AGILITY:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityBuffAgilityConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_BUFF_MP:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityBuffMpConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_BUFF_RESISTANCE:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityBuffResistanceConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_BUFF_STRENGTH:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityBuffStrengthConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_BUFF_TP:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityBuffTpConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_BUFF_WISDOM:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityBuffWisdomConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_DAMAGE:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityDamageConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster, State)
-					}
-					break
-				case EFFECT_DAMAGE_RETURN:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityDamageReturnConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_DEBUFF:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityDebuffConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_HEAL:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityHealConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_INVERT:
-					for (var Tar: var Dist in RealTargets) {
-						if (!State[Tar].STATIC) {
-							State[Tar].CELL = From
-							State[Caster].CELL = To
-						}
-					}
-					break
-				case EFFECT_KILL:
-					for (var Tar: var Dist in RealTargets) {
-						getKillConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster, State, true)
-					}
-					break
-				case EFFECT_LIFE_DAMAGE:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityLifeDamageConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster, State)
-					}
-					break
-				case EFFECT_NOVA_DAMAGE:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityNovaDamageConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_NOVA_VITALITY:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityNovaVitalityConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_POISON:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityPoisonConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_PUSH:
-					for (var Tar: var Dist in RealTargets) {
-						if (!State[Tar].STATIC) State[Tar].CELL = To
-					}
-					break
-				case EFFECT_RAW_ABSOLUTE_SHIELD:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityRawAbsoluteShieldConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_RAW_BUFF_AGILITY:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityRawBuffAgilityConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_RAW_BUFF_MAGIC:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityRawBuffMagicConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_RAW_BUFF_MP:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityRawBuffMpConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_RAW_BUFF_POWER:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityRawBuffPowerConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_RAW_BUFF_RESISTANCE:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityRawBuffResistanceConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_RAW_BUFF_SCIENCE:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityRawBuffScienceConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_RAW_BUFF_STRENGTH:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityRawBuffStrengthConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_RAW_BUFF_TP:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityRawBuffTpConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_RAW_BUFF_WISDOM:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityRawBuffWisdomConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_RAW_HEAL:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityRawHealConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_RAW_RELATIVE_SHIELD:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityRawRelativeShieldConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_RELATIVE_SHIELD:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityRelativeShieldConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_REMOVE_SHACKLES:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityRemoveShacklesConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_SHACKLE_AGILITY:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityShackleAgilityConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_SHACKLE_MAGIC:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityShackleMagicConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_SHACKLE_MP:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityShackleMpConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_SHACKLE_STRENGTH:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityShackleStrengthConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_SHACKLE_TP:
-					for (var Tar: var Dist in RealTargets) {
-						ReplacementChangeStats(Item, Effect, State[Tar])
-						getEntityShackleTpConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_SHACKLE_WISDOM:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityShackleWisdomConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_STEAL_ABSOLUTE_SHIELD:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityStealAbsoluteShieldConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_STEAL_LIFE:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityStealLifeConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-				case EFFECT_TELEPORT:
-					for (var Tar: var Dist in RealTargets) {
-						State[Caster].CELL = To
-					}
-					break
-				case EFFECT_VULNERABILITY:
-					for (var Tar: var Dist in RealTargets) {
-						getEntityVulnerabilityConsequences(Dist, Multiplier, Effect, State[Tar], CastStats, Tar == Caster)
-					}
-					break
-			}
+			var RealTargets = Effect[5] & EFFECT_MODIFIER_ON_CASTER ? [Caster: 0] : TmpTargets
+			ConsMap[EffectType](State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) //TODO : CHECK AND ADD NEW EFFECTS LIKE STEAL LIFE
 		}
 	}
 
@@ -317,110 +342,148 @@ class ConsequencesClass {
 		return IS_HITABLE_CACHE[Hash]
 	}
 
+	static EffectsRemove = [
+		EFFECT_ABSOLUTE_SHIELD: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.ABSOLUTE_SHIELD -= ValueOfEffect
+		},
+		EFFECT_ABSOLUTE_VULNERABILITY: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.ABSOLUTE_SHIELD += ValueOfEffect
+		},
+		EFFECT_AFTEREFFECT: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.POISON -= ValueOfEffect
+			StatsTarget.POISON_OVER_TIME -= ValueOfEffect * DurationOfEffect
+		},
+		EFFECT_ALLY_KILLED_TO_AGILITY: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.AGILITY -= ValueOfEffect
+		},
+		EFFECT_BUFF_AGILITY: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.AGILITY -= ValueOfEffect
+		},
+		EFFECT_BUFF_MP: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.MP -= ValueOfEffect
+			StatsTarget.TOTAL_MP -= ValueOfEffect
+		},
+		EFFECT_BUFF_RESISTANCE: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.RESISTANCE -= ValueOfEffect
+		},
+		EFFECT_BUFF_STRENGTH: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.STRENGTH -= ValueOfEffect
+		},
+		EFFECT_BUFF_TP: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.TP -= ValueOfEffect
+			StatsTarget.TOTAL_TP -= ValueOfEffect
+		},
+		EFFECT_BUFF_WISDOM: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.WISDOM -= ValueOfEffect
+		},
+		EFFECT_DAMAGE_RETURN: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.DAMAGE_RETURN -= ValueOfEffect
+		},
+		EFFECT_DAMAGE_TO_ABSOLUTE_SHIELD: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.ABSOLUTE_SHIELD -= ValueOfEffect
+		},
+		EFFECT_DAMAGE_TO_STRENGTH: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.STRENGTH -= ValueOfEffect
+		},
+		EFFECT_HEAL: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.POISON += ValueOfEffect
+			StatsTarget.POISON_OVER_TIME += ValueOfEffect * DurationOfEffect
+		},
+		EFFECT_KILL_TO_TP: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.TP -= ValueOfEffect
+			StatsTarget.TOTAL_TP -= ValueOfEffect
+		},
+		EFFECT_MOVED_TO_MP: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.MP -= ValueOfEffect
+			StatsTarget.TOTAL_MP -= ValueOfEffect
+		},
+		EFFECT_NOVA_DAMAGE_TO_MAGIC: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.MAGIC -= ValueOfEffect
+		},
+		EFFECT_POISON: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.POISON -= ValueOfEffect
+			StatsTarget.POISON_OVER_TIME -= ValueOfEffect * DurationOfEffect
+			StatsTarget.JUST_POISON -= ValueOfEffect
+			StatsTarget.JUST_POISON_OVER_TIME -= ValueOfEffect * DurationOfEffect
+		},
+		EFFECT_POISON_TO_SCIENCE: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.SCIENCE -= ValueOfEffect
+		},
+		EFFECT_RAW_ABSOLUTE_SHIELD: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.ABSOLUTE_SHIELD -= ValueOfEffect
+		},
+		EFFECT_RAW_BUFF_AGILITY: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.AGILITY -= ValueOfEffect
+		},
+		EFFECT_RAW_BUFF_MAGIC: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.MAGIC -= ValueOfEffect
+		},
+		EFFECT_RAW_BUFF_MP: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.MP -= ValueOfEffect
+			StatsTarget.TOTAL_MP -= ValueOfEffect
+		},
+		EFFECT_RAW_BUFF_POWER: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.POWER -= ValueOfEffect
+		},
+		EFFECT_RAW_BUFF_RESISTANCE: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.RESISTANCE -= ValueOfEffect
+		},
+		EFFECT_RAW_BUFF_SCIENCE: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.SCIENCE -= ValueOfEffect
+		},
+		EFFECT_RAW_BUFF_STRENGTH: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.STRENGTH -= ValueOfEffect
+		},
+		EFFECT_RAW_BUFF_TP: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.TP -= ValueOfEffect
+			StatsTarget.TOTAL_TP -= ValueOfEffect
+		},
+		EFFECT_RAW_BUFF_WISDOM: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.WISDOM -= ValueOfEffect
+		},
+		EFFECT_RAW_RELATIVE_SHIELD: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.RELATIVE_SHIELD -= ValueOfEffect
+		},
+		EFFECT_RELATIVE_SHIELD: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.RELATIVE_SHIELD -= ValueOfEffect
+		},
+		EFFECT_SHACKLE_AGILITY: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.AGILITY += ValueOfEffect
+		},
+		EFFECT_SHACKLE_MAGIC: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.MAGIC += ValueOfEffect
+		},
+		EFFECT_SHACKLE_MP: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.MP += ValueOfEffect
+			StatsTarget.TOTAL_MP += ValueOfEffect
+		},
+		EFFECT_SHACKLE_STRENGTH: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.STRENGTH += ValueOfEffect
+		},
+		EFFECT_SHACKLE_TP: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.TP += ValueOfEffect
+			StatsTarget.TOTAL_TP += ValueOfEffect
+		},
+		EFFECT_SHACKLE_WISDOM: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.WISDOM += ValueOfEffect
+		},
+		EFFECT_STEAL_ABSOLUTE_SHIELD: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.ABSOLUTE_SHIELD -= ValueOfEffect
+		},
+		EFFECT_VULNERABILITY: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			StatsTarget.RELATIVE_SHIELD += ValueOfEffect
+		},
+		EFFECT_ADD_STATE: function(StatsTarget, ValueOfEffect, DurationOfEffect) {
+			//What am i supposed TODO
+		}
+	]
+
 	static ReplacementChangeStats(Item, Effect, TarStats) { //Determine wether or not the effect will change something (And make the changes before application of item) (Stackable and already here ? : True. Not Stackable And here : False)
 		if (Effect[5] & EFFECT_MODIFIER_STACKABLE) return; //stackable, then pass
 		//Then search the effect on target : 
 		for (var eff in TarStats.EFFECTS) {
 			if (eff[5] == Item) {
-				// Dispatch via Switch (Dégage EffectsRemove)
-				var type = eff[0]
-				var value = eff[1]
-				var duration = eff[3]
-				switch (type) {
-					case EFFECT_ABSOLUTE_SHIELD:
-					case EFFECT_DAMAGE_TO_ABSOLUTE_SHIELD:
-					case EFFECT_RAW_ABSOLUTE_SHIELD:
-					case EFFECT_STEAL_ABSOLUTE_SHIELD:
-						TarStats.ABSOLUTE_SHIELD -= value;
-						break
-					case EFFECT_ABSOLUTE_VULNERABILITY:
-						TarStats.ABSOLUTE_SHIELD += value;
-						break
-					case EFFECT_AFTEREFFECT:
-					case EFFECT_POISON:
-						TarStats.POISON -= value
-						TarStats.POISON_OVER_TIME -= value * duration
-						if (type == EFFECT_POISON) {
-							TarStats.JUST_POISON -= value
-							TarStats.JUST_POISON_OVER_TIME -= value * duration
-						}
-						break
-					case EFFECT_ALLY_KILLED_TO_AGILITY:
-					case EFFECT_BUFF_AGILITY:
-					case EFFECT_RAW_BUFF_AGILITY:
-						TarStats.AGILITY -= value;
-						break
-					case EFFECT_BUFF_MP:
-					case EFFECT_MOVED_TO_MP:
-					case EFFECT_RAW_BUFF_MP:
-						TarStats.MP -= value
-						TarStats.TOTAL_MP -= value
-						break
-					case EFFECT_BUFF_RESISTANCE:
-					case EFFECT_RAW_BUFF_RESISTANCE:
-						TarStats.RESISTANCE -= value;
-						break
-					case EFFECT_BUFF_STRENGTH:
-					case EFFECT_DAMAGE_TO_STRENGTH:
-					case EFFECT_RAW_BUFF_STRENGTH:
-						TarStats.STRENGTH -= value;
-						break
-					case EFFECT_BUFF_TP:
-					case EFFECT_KILL_TO_TP:
-					case EFFECT_RAW_BUFF_TP:
-						TarStats.TP -= value
-						TarStats.TOTAL_TP -= value
-						break
-					case EFFECT_BUFF_WISDOM:
-					case EFFECT_RAW_BUFF_WISDOM:
-						TarStats.WISDOM -= value;
-						break
-					case EFFECT_DAMAGE_RETURN:
-						TarStats.DAMAGE_RETURN -= value;
-						break
-					case EFFECT_HEAL:
-						TarStats.POISON += value
-						TarStats.POISON_OVER_TIME += value * duration
-						break
-					case EFFECT_NOVA_DAMAGE_TO_MAGIC:
-					case EFFECT_RAW_BUFF_MAGIC:
-						TarStats.MAGIC -= value;
-						break
-					case EFFECT_POISON_TO_SCIENCE:
-					case EFFECT_RAW_BUFF_SCIENCE:
-						TarStats.SCIENCE -= value;
-						break
-					case EFFECT_RAW_BUFF_POWER:
-						TarStats.POWER -= value;
-						break
-					case EFFECT_RAW_RELATIVE_SHIELD:
-					case EFFECT_RELATIVE_SHIELD:
-						TarStats.RELATIVE_SHIELD -= value;
-						break
-					case EFFECT_SHACKLE_AGILITY:
-						TarStats.AGILITY += value;
-						break
-					case EFFECT_SHACKLE_MAGIC:
-						TarStats.MAGIC += value;
-						break
-					case EFFECT_SHACKLE_MP:
-						TarStats.MP += value
-						TarStats.TOTAL_MP += value
-						break
-					case EFFECT_SHACKLE_STRENGTH:
-						TarStats.STRENGTH += value;
-						break
-					case EFFECT_SHACKLE_TP:
-						TarStats.TP += value
-						TarStats.TOTAL_TP += value
-						break
-					case EFFECT_SHACKLE_WISDOM:
-						TarStats.WISDOM += value;
-						break
-					case EFFECT_VULNERABILITY:
-						TarStats.RELATIVE_SHIELD += value;
-						break
-				}
+				EffectsRemove[eff[0]](TarStats, eff[1], eff[3])
 			}
 		}
 	}
@@ -429,105 +492,8 @@ class ConsequencesClass {
 		for (var e: var stat in EveryStats) {
 			for (var eff in stat.EFFECTS) {
 				if (eff[2] == Caster) {
-					// Dispatch via Switch (Dégage EffectsRemove)
-					var type = eff[0]
-					var value = eff[1]
-					var duration = eff[3]
-					switch (type) {
-						case EFFECT_ABSOLUTE_SHIELD:
-						case EFFECT_DAMAGE_TO_ABSOLUTE_SHIELD:
-						case EFFECT_RAW_ABSOLUTE_SHIELD:
-						case EFFECT_STEAL_ABSOLUTE_SHIELD:
-							stat.ABSOLUTE_SHIELD -= value;
-							break
-						case EFFECT_ABSOLUTE_VULNERABILITY:
-							stat.ABSOLUTE_SHIELD += value;
-							break
-						case EFFECT_AFTEREFFECT:
-						case EFFECT_POISON:
-							stat.POISON -= value
-							stat.POISON_OVER_TIME -= value * duration
-							if (type == EFFECT_POISON) {
-								stat.JUST_POISON -= value
-								stat.JUST_POISON_OVER_TIME -= value * duration
-							}
-							break
-						case EFFECT_ALLY_KILLED_TO_AGILITY:
-						case EFFECT_BUFF_AGILITY:
-						case EFFECT_RAW_BUFF_AGILITY:
-							stat.AGILITY -= value;
-							break
-						case EFFECT_BUFF_MP:
-						case EFFECT_MOVED_TO_MP:
-						case EFFECT_RAW_BUFF_MP:
-							stat.MP -= value
-							stat.TOTAL_MP -= value
-							break
-						case EFFECT_BUFF_RESISTANCE:
-						case EFFECT_RAW_BUFF_RESISTANCE:
-							stat.RESISTANCE -= value;
-							break
-						case EFFECT_BUFF_STRENGTH:
-						case EFFECT_DAMAGE_TO_STRENGTH:
-						case EFFECT_RAW_BUFF_STRENGTH:
-							stat.STRENGTH -= value;
-							break
-						case EFFECT_BUFF_TP:
-						case EFFECT_KILL_TO_TP:
-						case EFFECT_RAW_BUFF_TP:
-							stat.TP -= value
-							stat.TOTAL_TP -= value
-							break
-						case EFFECT_BUFF_WISDOM:
-						case EFFECT_RAW_BUFF_WISDOM:
-							stat.WISDOM -= value;
-							break
-						case EFFECT_DAMAGE_RETURN:
-							stat.DAMAGE_RETURN -= value;
-							break
-						case EFFECT_HEAL:
-							stat.POISON += value
-							stat.POISON_OVER_TIME += value * duration
-							break
-						case EFFECT_NOVA_DAMAGE_TO_MAGIC:
-						case EFFECT_RAW_BUFF_MAGIC:
-							stat.MAGIC -= value;
-							break
-						case EFFECT_POISON_TO_SCIENCE:
-						case EFFECT_RAW_BUFF_SCIENCE:
-							stat.SCIENCE -= value;
-							break
-						case EFFECT_RAW_BUFF_POWER:
-							stat.POWER -= value;
-							break
-						case EFFECT_RAW_RELATIVE_SHIELD:
-						case EFFECT_RELATIVE_SHIELD:
-							stat.RELATIVE_SHIELD -= value;
-							break
-						case EFFECT_SHACKLE_AGILITY:
-							stat.AGILITY += value;
-							break
-						case EFFECT_SHACKLE_MAGIC:
-							stat.MAGIC += value;
-							break
-						case EFFECT_SHACKLE_MP:
-							stat.MP += value
-							stat.TOTAL_MP += value
-							break
-						case EFFECT_SHACKLE_STRENGTH:
-							stat.STRENGTH += value;
-							break
-						case EFFECT_SHACKLE_TP:
-							stat.TP += value
-							stat.TOTAL_TP += value
-							break
-						case EFFECT_SHACKLE_WISDOM:
-							stat.WISDOM += value;
-							break
-						case EFFECT_VULNERABILITY:
-							stat.RELATIVE_SHIELD += value;
-							break
-					}
+					//debugW("removing an effect from a kill")
+					EffectsRemove[eff[0]](stat, eff[1], eff[3])
 				}
 			}
 		}
@@ -572,6 +538,24 @@ class ConsequencesClass {
 		"diamond_chest": 100
 	]
 
+	static SpeMapNova = [
+		WEAPON_UNBRIDLED_GAZOR: function(TarStatsTmp, DamageTmp) {
+			TarStatsTmp.MAGIC += DamageTmp * 0.2 // Cuz 10 percent of nova damage
+		}
+	]
+
+	static SpeMap = [
+		WEAPON_REVOKED_M_LASER: function(TarStatsTmp, DamageTmp) {
+			TarStatsTmp.STRENGTH += DamageTmp * 0.05
+		},
+		WEAPON_UNBRIDLED_GAZOR: function(TarStatsTmp, DamageTmp) {
+			TarStatsTmp.MAGIC += DamageTmp * 0.01 // Cuz 10 percent of nova damage so 10 percent of 5 percent
+		},
+		WEAPON_MYSTERIOUS_ELECTRISOR: function(TarStatsTmp, DamageTmp) {
+			TarStatsTmp.ABSOLUTE_SHIELD += DamageTmp * 0.05
+		}
+	]
+
 	static getEntityDamageConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster, EveryStats) {
 		var BaseDamages = getRealEffect(Effect, Dist, Multiplier) * (1 + CastStats.STRENGTH / 100) * (1 + CastStats.POWER / 100)
 		var DamagesWithShield = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
@@ -590,19 +574,8 @@ class ConsequencesClass {
 			//Then Damage Return Erosion
 			CastStats.TOTAL_LIFE -= Damage_Return * EROSION_NO_POISON
 		}
-
-		// Dispatch via Switch (Dégage SpeMap)
-		switch (TarStats.SPECIAL_WEAPON) {
-			case WEAPON_REVOKED_M_LASER:
-				TarStats.STRENGTH += Damage * 0.05;
-				break
-			case WEAPON_UNBRIDLED_GAZOR:
-				TarStats.MAGIC += Damage * 0.01;
-				break
-			case WEAPON_MYSTERIOUS_ELECTRISOR:
-				TarStats.ABSOLUTE_SHIELD += Damage * 0.05;
-				break
-		}
+		var fct = SpeMap[TarStats.SPECIAL_WEAPON]
+		if (fct != null) SpeMap[TarStats.SPECIAL_WEAPON](TarStats, Damage)
 	}
 
 	static getEntityRawBuffTpConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
@@ -742,30 +715,17 @@ class ConsequencesClass {
 			//Then Damage Return Erosion
 			CastStats.TOTAL_LIFE -= Damage_Return * EROSION_NO_POISON
 		}
-		// Dispatch via Switch (Dégage SpeMap)
-		switch (TarStats.SPECIAL_WEAPON) {
-			case WEAPON_REVOKED_M_LASER:
-				TarStats.STRENGTH += Damage * 0.05;
-				break
-			case WEAPON_UNBRIDLED_GAZOR:
-				TarStats.MAGIC += Damage * 0.01;
-				break
-			case WEAPON_MYSTERIOUS_ELECTRISOR:
-				TarStats.ABSOLUTE_SHIELD += Damage * 0.05;
-				break
-		}
+		//Then Special Items
+		var fct = SpeMap[TarStats.SPECIAL_WEAPON]
+		if (fct != null) SpeMap[TarStats.SPECIAL_WEAPON](TarStats, Damage)
 	}
 
 	static getEntityNovaDamageConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
 		var Damage = min(getRealEffect(Effect, Dist, Multiplier) * (1 + CastStats.SCIENCE / 100), TarStats.TOTAL_LIFE - TarStats.LIFE) // No MULTIPLIER (Yet)
 		TarStats.TOTAL_LIFE -= Damage
 		if (!TarIsCaster) {
-			// Dispatch via Switch (Dégage SpeMapNova)
-			switch (TarStats.SPECIAL_WEAPON) {
-				case WEAPON_UNBRIDLED_GAZOR:
-					TarStats.MAGIC += Damage * 0.2;
-					break
-			}
+			var fct = SpeMapNova[TarStats.SPECIAL_WEAPON]
+			if (fct != null) SpeMapNova[TarStats.SPECIAL_WEAPON](TarStats, Damage)
 		}
 	}
 
@@ -938,54 +898,140 @@ class ConsequencesClass {
 		return 1 - (dist * 0.2)
 	}
 
+	static FunctionMapForConsequenceTargets = [
+		AREA_CIRCLE_1: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To) //TODO : Fct all this with MapAoe in Param So its easier to change things
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) { //I can't put MapAoe[stat.CELL] cuz it can be 0 dist so i need != null
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_CIRCLE_2: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_CIRCLE_3: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_FIRST_INLINE: function(_final, Item, From, To, EveryStats, Me) {
+			var MapEntity = [: ]
+			for (var e: var stat in EveryStats) {
+				if (e != Me && stat.LIFE >= 0) MapEntity[stat.CELL] = true
+			}
+			var MapAoe = From == To ? [From: true] : CellClass.getFirstInlineAoe(From, To, ITEMINFO[Item].MINRANGE, ITEMINFO[Item].MAXRANGE, MapEntity)
+			for (var e: var stat in EveryStats) {
+				if (MapAoe[stat.CELL]) _final[e] = 0
+			}
+		},
+		AREA_LASER_LINE: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = From == To ? [From: true] : CellClass.getLaserAoe(From, To, ITEMINFO[Item].MINRANGE, ITEMINFO[Item].MAXRANGE)
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				if (MapAoe[stat.CELL]) _final[e] = 0
+			}
+		}, //NOT +1 CUZ SAME AS CIRCLE 1
+		AREA_PLUS_2: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_PLUS_3: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_POINT: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				if (MapAoe[stat.CELL] != null) _final[e] = 0 //FORCED cuz point
+			}
+		},
+		AREA_SQUARE_1: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_SQUARE_2: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_X_1: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_X_2: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		},
+		AREA_X_3: function(_final, Item, From, To, EveryStats, Me) {
+			var MapAoe = ActionsClass.AoeDistItem(Item, To)
+			var MapFrom = MapAoe[From]
+			if (MapFrom != null) _final[Me] = MapFrom
+			for (var e: var stat in EveryStats) {
+				if (e == Me || stat.LIFE <= 0) continue
+				var Dist = MapAoe[stat.CELL]
+				if (Dist != null) _final[e] = Dist
+			}
+		}
+	]
+
 	static ConsequenceTargets(Item, From, To, EveryStats, Me, BaseHash) {
 		var Hash = ConsequenceTargetsHash(BaseHash, Item, From, To)
 		if (Hash in CONSEQUENCE_TARGET_CACHE) return CONSEQUENCE_TARGET_CACHE[Hash]
-
 		var Tars = [: ]
-		var area = ITEMINFO[Item].AREA
-
-		// Dispatch via Switch (Dégage FunctionMapForConsequenceTargets)
-		switch (area) {
-			case AREA_CIRCLE_1:
-			case AREA_CIRCLE_2:
-			case AREA_CIRCLE_3:
-			case AREA_PLUS_2:
-			case AREA_PLUS_3:
-			case AREA_POINT:
-			case AREA_SQUARE_1:
-			case AREA_SQUARE_2:
-			case AREA_X_1:
-			case AREA_X_2:
-			case AREA_X_3:
-				var MapAoe = ActionsClass.AoeDistItem(Item, To)
-				var MapFrom = MapAoe[From]
-				if (MapFrom != null) Tars[Me] = MapFrom
-				for (var e: var stat in EveryStats) {
-					if (e == Me || stat.LIFE <= 0) continue
-					var Dist = MapAoe[stat.CELL]
-					if (Dist != null) Tars[e] = (area == AREA_POINT ? 0 : Dist)
-				}
-				break
-			case AREA_FIRST_INLINE:
-				var MapEntity = [: ]
-				for (var e: var stat in EveryStats) {
-					if (e != Me && stat.LIFE >= 0) MapEntity[stat.CELL] = true
-				}
-				var MapAoe = From == To ? [From: true] : CellClass.getFirstInlineAoe(From, To, ITEMINFO[Item].MINRANGE, ITEMINFO[Item].MAXRANGE, MapEntity)
-				for (var e: var stat in EveryStats) {
-					if (MapAoe[stat.CELL]) Tars[e] = 0
-				}
-				break
-			case AREA_LASER_LINE:
-				var MapAoe = From == To ? [From: true] : CellClass.getLaserAoe(From, To, ITEMINFO[Item].MINRANGE, ITEMINFO[Item].MAXRANGE)
-				for (var e: var stat in EveryStats) {
-					if (e == Me || stat.LIFE <= 0) continue
-					if (MapAoe[stat.CELL]) Tars[e] = 0
-				}
-				break
-		}
-
+		FunctionMapForConsequenceTargets[ITEMINFO[Item].AREA](Tars, Item, From, To, EveryStats, Me)
 		CONSEQUENCE_TARGET_CACHE[Hash] = Tars
 		return Tars
 	}
@@ -1012,26 +1058,24 @@ class ConsequencesClass {
 
 	static getItemDanger(item, casterstats, targetstats, Distance, Multiplier) {
 		var Info = ITEMINFO[item]
-		if (!isHitable(Info.EFFECTS[0], targetstats, casterstats, false)) return 0
+		if (!isHitable(Info.EFFECTS[0], targetstats, casterstats, false)) return 0 //Ugly for the effect part might redo it clean ?
 		var _final = 0
 		for (var eff in Info.EFFECTS) {
 			if (eff[5] & EFFECT_MODIFIER_ON_CASTER) continue
-
-			// Dispatch via Switch (Dégage TmpMapForItemDanger)
-			var type = eff[0]
-			switch (type) {
-				case EFFECT_DAMAGE:
-					_final += ((eff[2] * ConsequencesClass.DistToAoeNumber(Distance) * Multiplier * (1 + casterstats.POWER / 100)) * (1 + casterstats.STRENGTH / 100) * (1 - targetstats.RELATIVE_SHIELD / 100) - targetstats.ABSOLUTE_SHIELD)
-					break
-				case EFFECT_LIFE_DAMAGE:
-					_final += ((eff[2] * (1 + casterstats.POWER / 100)) * (casterstats.LIFE / 100) * (1 - targetstats.RELATIVE_SHIELD / 100) - targetstats.ABSOLUTE_SHIELD)
-					break
-				case EFFECT_POISON:
-					_final += (eff[2] * (1 + casterstats.POWER / 100)) * ConsequencesClass.DistToAoeNumber(Distance) * (1 + casterstats.MAGIC / 100) * min(eff[3], targetstats.COOLDOWNS[CHIP_ANTIDOTE] + 1)
-					break
-			}
+			if (TmpMapForItemDanger[eff[0]]) _final += TmpMapForItemDanger[eff[0]](casterstats, targetstats, eff, Distance, Multiplier)
 		}
 		return _final
 	}
 
+	static TmpMapForItemDanger = [
+		EFFECT_DAMAGE: function(casterstats, targetstats, Effect, Distance, Multiplier) {
+			return ((Effect[2] * ConsequencesClass.DistToAoeNumber(Distance) * Multiplier * (1 + casterstats.POWER / 100)) * (1 + casterstats.STRENGTH / 100) * (1 - targetstats.RELATIVE_SHIELD / 100) - targetstats.ABSOLUTE_SHIELD)
+		},
+		EFFECT_LIFE_DAMAGE: function(casterstats, targetstats, Effect, Distance, Multiplier) {
+			return ((Effect[2] * (1 + casterstats.POWER / 100)) * (casterstats.LIFE / 100) * (1 - targetstats.RELATIVE_SHIELD / 100) - targetstats.ABSOLUTE_SHIELD)
+		},
+		EFFECT_POISON: function(casterstats, targetstats, Effect, Distance, Multiplier) {
+			return (Effect[2] * (1 + casterstats.POWER / 100)) * ConsequencesClass.DistToAoeNumber(Distance) * (1 + casterstats.MAGIC / 100) * min(Effect[3], targetstats.COOLDOWNS[CHIP_ANTIDOTE] + 1)
+		}
+	]
 }

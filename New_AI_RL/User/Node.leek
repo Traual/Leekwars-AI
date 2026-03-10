@@ -1,6 +1,6 @@
 /**
  * Here we have the Node Class ! Used in action Suite to keep track of EndStats
- **/
+**/
 
 include("../includes.leek")
 
@@ -14,14 +14,14 @@ class NodeClass {
 		this.PARENT
 	}
 
-	/* It is a simplified version with less parameters of ActionToNodeInATree. It is used in Action Suite in Loading Base Nodes
-	 *
-	 * @param Act Action that i want to transform into a node
-	 * @param State Map <Id : Class Stats of Id>
-	 * @param BaseHash Hash of Id:Cell of EveryOne
-	 *
-	 * @return New Node Class
-	 */
+    /* It is a simplified version with less parameters of ActionToNodeInATree. It is used in Action Suite in Loading Base Nodes
+    *
+	* @param Act Action that i want to transform into a node
+	* @param State Map <Id : Class Stats of Id>
+	* @param BaseHash Hash of Id:Cell of EveryOne
+    *
+    * @return New Node Class
+    */
 
 	static ActionToNode(Action, State, BaseHash) {
 		if (Action == null) return;
@@ -35,60 +35,38 @@ class NodeClass {
 		var Cost = Info.IS_WEAPON && MyState.WEAPON != Item ?
 			Info.COST + 1 :
 			Info.COST
-		var moveType = MyWalkCells.TYPES[From]
-		switch (moveType) {
-			case 0:
-				break // WALK
-			case 1:
-				Cost += ITEMINFO[CHIP_JUMP].COST;
-				break
-			case 2:
-				Cost += ITEMINFO[CHIP_TELEPORTATION].COST;
-				break
-			case 3:
-				Cost += ITEMINFO[CHIP_TELEPORTATION].COST + ITEMINFO[CHIP_JUMP].COST;
-				break
-			default:
-				return; // Cell Not Reachable
+		if (!(From in MyWalkCells.WALK)) {//I need to add the item to move to the cost
+			if (From in MyWalkCells.JUMP) {
+				Cost += ITEMINFO[CHIP_JUMP].COST
+			} else if (From in MyWalkCells.TELEPORTATION) {
+				Cost += ITEMINFO[CHIP_TELEPORTATION].COST
+			} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
+				Cost += ITEMINFO[CHIP_TELEPORTATION].COST + ITEMINFO[CHIP_JUMP].COST
+			}
 		}
 		return ActionToNodeInTree(Action, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash)
 	}
 
 	/* It is a complicated version with more parameters of ActionToNode to avoid reloading informations that i already have. It is used in Action Suite in using the best play to expand the existing base nodes
-	 *
-	 * @param Act Action that i want to transform into a node
-	 * @param State Map <Id : Class Stats of Id>
-	 * @param From : Cell From (Act.FROM)
-	 * @param MyWalkCells Class WalkCells of my entity
-	 * @param Cost Total cost of the action including weapon changes, jump etc
-	 * @param Info Class ItemInfo of (Item)
-	 * @param Item : Item to use (Act.ITEM)
-	 * @param To : Cell To (Act.TO)
-	 * @param BaseHash Hash of Id:Cell of EveryOne
-	 *
-	 * @return New Node Class
-	 */
+    *
+	* @param Act Action that i want to transform into a node
+	* @param State Map <Id : Class Stats of Id>
+	* @param From : Cell From (Act.FROM)
+	* @param MyWalkCells Class WalkCells of my entity
+	* @param Cost Total cost of the action including weapon changes, jump etc
+	* @param Info Class ItemInfo of (Item)
+	* @param Item : Item to use (Act.ITEM)
+	* @param To : Cell To (Act.TO)
+	* @param BaseHash Hash of Id:Cell of EveryOne
+    *
+    * @return New Node Class
+    */
 
 	static ActionToNodeInTree(Act, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash) {
 		var Targets = ConsequencesClass.ConsequenceTargets(Item, From, To, State, Me, BaseHash)
 		var ThisActionStats = StateClass.CloneOnlyTargetsAndMe(Targets, State)
 		ThisActionStats[Me].CELL = From
-		var moveType = MyWalkCells.TYPES[From]
-		switch (moveType) {
-			case 0:
-				ThisActionStats[Me].MP -= MyWalkCells.WALK[From];
-				break
-			case 1:
-				ThisActionStats[Me].MP -= MyWalkCells.JUMP[From];
-				break
-			case 2:
-				ThisActionStats[Me].MP -= MyWalkCells.TELEPORTATION[From];
-				break
-			case 3:
-				ThisActionStats[Me].MP -= MyWalkCells.TELEPORTATION_AND_JUMP[From];
-				break
-		}
-		/*if (From in MyWalkCells.WALK) {//Removing Mps
+		if (From in MyWalkCells.WALK) {//Removing Mps
 			ThisActionStats[Me].MP -= MyWalkCells.WALK[From]
 		} else if (From in MyWalkCells.JUMP) {
 			ThisActionStats[Me].MP -= MyWalkCells.JUMP[From]
@@ -96,23 +74,21 @@ class NodeClass {
 			ThisActionStats[Me].MP -= MyWalkCells.TELEPORTATION[From]
 		} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
 			ThisActionStats[Me].MP -= MyWalkCells.TELEPORTATION_AND_JUMP[From]
-		}*/
+		}
 		ThisActionStats[Me].TP -= Cost //We Remove TP
 		if (Info.IS_WEAPON) ThisActionStats[Me].WEAPON = Item //Change Entity Weapon
 		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash) //Changing item consequences
 		ThisActionStats[Me].COOLDOWNS[Item] = Info.COOLDOWN //Adding the cooldown
 		ThisActionStats[Me].USES[Item]++ //Adding the uses
-		switch (moveType) {
-			case 1:
-				ThisActionStats[Me].COOLDOWNS[CHIP_JUMP] = ITEMINFO[CHIP_JUMP].COOLDOWN
-				break
-			case 2:
-				ThisActionStats[Me].COOLDOWNS[CHIP_TELEPORTATION] = ITEMINFO[CHIP_TELEPORTATION].COOLDOWN
-				break
-			case 3:
-				ThisActionStats[Me].COOLDOWNS[CHIP_JUMP] = ITEMINFO[CHIP_JUMP].COOLDOWN
-				ThisActionStats[Me].COOLDOWNS[CHIP_TELEPORTATION] = ITEMINFO[CHIP_TELEPORTATION].COOLDOWN
-				break
+		if (!(From in MyWalkCells.WALK)) {//Adding the moving item cooldown
+			if (From in MyWalkCells.JUMP) {
+				ThisActionStats[Me].COOLDOWNS[CHIP_JUMP] = ITEMINFO[CHIP_JUMP].COOLDOWN //Adding the jump cooldown
+			} else if (From in MyWalkCells.TELEPORTATION) {
+				ThisActionStats[Me].COOLDOWNS[CHIP_TELEPORTATION] = ITEMINFO[CHIP_TELEPORTATION].COOLDOWN //Adding the Teleportation cooldown
+			} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {//Adding both cooldowns
+				ThisActionStats[Me].COOLDOWNS[CHIP_JUMP] = ITEMINFO[CHIP_JUMP].COOLDOWN //Adding the jump cooldown
+				ThisActionStats[Me].COOLDOWNS[CHIP_TELEPORTATION] = ITEMINFO[CHIP_TELEPORTATION].COOLDOWN //Adding the Teleportation cooldown
+			}
 		}
 		return new NodeClass(Act, ThisActionStats) //Creating Node
 	}

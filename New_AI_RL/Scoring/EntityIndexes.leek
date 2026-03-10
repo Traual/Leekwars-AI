@@ -45,54 +45,29 @@ class EntityIndexes {
     }
 
     static isEffectUsefulForStat(ItemEffects, statTypeString) {
-        for (var eff in ItemEffects) {
-            var type = eff[0]
-            switch (statTypeString) {
-                case "STRENGTH":
-                    if (type == EFFECT_DAMAGE) return true
-                    break
-                case "WISDOM":
-                    switch (type) {
-                        case EFFECT_HEAL:
-                        case EFFECT_BOOST_MAX_LIFE:
-                            return true
-                    }
-                    break
-                case "AGILITY":
-                    if (type == EFFECT_DAMAGE_RETURN) return true
-                    break
-                case "RESISTANCE":
-                    switch (type) {
-                        case EFFECT_ABSOLUTE_SHIELD:
-                        case EFFECT_RELATIVE_SHIELD:
-                            return true
-                    }
-                    break
-                case "SCIENCE":
-                    switch (type) {
-                        case EFFECT_BUFF_AGILITY:
-                        case EFFECT_BUFF_MP:
-                        case EFFECT_BUFF_RESISTANCE:
-                        case EFFECT_BUFF_STRENGTH:
-                        case EFFECT_BUFF_TP:
-                        case EFFECT_BUFF_WISDOM:
-                        case EFFECT_NOVA_DAMAGE:
-                        case EFFECT_NOVA_VITALITY:
-                            return true
-                    }
-                    break
-                case "MAGIC":
-                    switch (type) {
-                        case EFFECT_POISON:
-                        case EFFECT_SHACKLE_AGILITY:
-                        case EFFECT_SHACKLE_MAGIC:
-                        case EFFECT_SHACKLE_MP:
-                        case EFFECT_SHACKLE_TP:
-                        case EFFECT_SHACKLE_WISDOM:
-                            return true
-                    }
-                    break
+        var MapFctUsefull = [
+            "STRENGTH": function(effectType) {
+                return effectType == EFFECT_DAMAGE
+            },
+            "WISDOM": function(effectType) {
+                return effectType == EFFECT_HEAL || effectType == EFFECT_BOOST_MAX_LIFE
+            },
+            "AGILITY": function(effectType) {
+                return effectType == EFFECT_DAMAGE_RETURN
+            },
+            "RESISTANCE": function(effectType) {
+                return effectType == EFFECT_ABSOLUTE_SHIELD || effectType == EFFECT_RELATIVE_SHIELD
+            },
+            "SCIENCE": function(effectType) {
+                return effectType == EFFECT_BUFF_AGILITY || effectType == EFFECT_BUFF_MP || effectType == EFFECT_BUFF_RESISTANCE || effectType == EFFECT_BUFF_STRENGTH || effectType == EFFECT_BUFF_TP || effectType == EFFECT_BUFF_WISDOM || effectType == EFFECT_NOVA_DAMAGE || effectType == EFFECT_NOVA_VITALITY
+            },
+            "MAGIC": function(effectType) {
+                return effectType == EFFECT_POISON || effectType == EFFECT_SHACKLE_AGILITY || effectType == EFFECT_SHACKLE_MAGIC || effectType == EFFECT_SHACKLE_MP || effectType == EFFECT_SHACKLE_TP || effectType == EFFECT_SHACKLE_WISDOM
             }
+        ]
+
+        for (var eff in ItemEffects) {
+            if (statTypeString in MapFctUsefull && MapFctUsefull[statTypeString](eff[0])) return true
         }
         return false
     }
