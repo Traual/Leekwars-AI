@@ -82,7 +82,6 @@ global TARGETABLECACHE = [: ]
 
 // Consequences
 
-global IS_HITABLE_CACHE = [: ]
 global CONSEQUENCE_TARGET_CACHE = [: ]
 
 //Stuff for Summons :

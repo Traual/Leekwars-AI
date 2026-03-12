@@ -54,8 +54,6 @@ global POLY_DIST_RELATION_ENEMY = [-0.01, 0.08, 0.4]
 // Transformation du score de cohésion global en multiplicateur final
 global POLY_DIST_FINAL = [0.0, 1.0, 0.0] // Linéaire par défaut (1:1)
 
-//TODO : Add caches
-
 class ScoringClass {
 
     static getStateScore(State, MySide, BaseHash) {
@@ -76,7 +74,6 @@ class ScoringClass {
                 } else {
                     _score -= finalValue
                 }
-
             }
         }
         return _score
@@ -108,7 +105,7 @@ class ScoringClass {
         return result
     }
 
-    static getEntityIntrinsicScore(EntityStats, State) { //TODO : Cache here again ? (Start with Entity Indexes then there)
+    static getEntityIntrinsicScore(EntityStats, State) {
 
         var EIndexes = EntityIndexes.getWithCache(EntityStats)
         var TeamIndexes = EnemiesTeamIndexes.getWithCache(State, EntityStats)

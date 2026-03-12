@@ -1,5 +1,5 @@
 include("includes.leek")
-//LEFT TODO : Decision engine / change from BFS to MonteCarlo / Then do final cell with decision engine functions (like dist poly, getSurvivalMultiplier etc to maximize score)
+//LEFT TODO : change from BFS to MonteCarlo / Then do final cell with decision engine functions (like dist poly, getSurvivalMultiplier etc to maximize score)
 //Then add getBulbCaract into builds summon
 //If i don't have enough opés i can optimize the combo loading feature in danger map (it takes a lot of opés i think with a lot of possibilities now)
 if (getTurn() == 1) Preload.InitEverything()

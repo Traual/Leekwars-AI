@@ -6,6 +6,42 @@ include("../includes.leek")
 
 class ActionSuite {
 
+	/* Calcule un hash unique pour une action (Item, From, To)
+	 * On pack les 3 valeurs dans un seul entier de 64 bits (16 bits chacun)
+	 * puis on applique un mixer pour garantir une bonne dispersion.
+	 *
+	 * @param Act ActionClass
+	 *
+	 * @return Number (64-bit integer hash)
+	 */
+	static getActionHash(Act) {
+		if (Act == null || Act.Item == null) return 0
+		var f = Act.From
+		var t = Act.To
+
+		// Packing : Item (bits 32-47), From (bits 16-31), To (bits 0-15)
+		var actionWord = (Act.Item << 32) | (f << 16) | t
+
+		return addValueToBinHash(OFFSET_BASIS, actionWord)
+	}
+
+	/* Calcule le hash d'un ensemble d'actions (indépendant de l'ordre)
+	 * On utilise XOR sur les hashs individuels des actions.
+	 *
+	 * @param Node NodeClass
+	 *
+	 * @return Number
+	 */
+	static getSetHash(Node) {
+		var setHash = 0
+		var current = Node
+		while (current != null) {
+			setHash ^= getActionHash(current.ACTION)
+			current = current.PARENT
+		}
+		return setHash
+	}
+
 	/* Gives me the best action to do in the State game state
 	 *
 	 * @param State Map of Stats Class (id : stats)
@@ -93,24 +129,29 @@ class ActionSuite {
 	 */
 
 	static getFullBFSTree(Tree_Array, State, BaseHash) {
-		//We start by loading every playable actions
-		var MyStats = State[Me]
-		var BaseActions = getBaseActions(State, BaseHash)
-		//Then we push every playable actions into Tree Array
-		for (var Act in BaseActions) {
-			var ThisNode = NodeClass.ActionToNode(Act, State, BaseHash)
-			push(Tree_Array, ThisNode)
-		}
-		//Trying full tree : 
-		/*for (var Node in Tree_Array) {
+		var visitedHashes = [: ]
+
+		// Initialisation avec le "No Play Node" comme racine
+		var NoPlayAction = new ActionClass(null, null, null)
+		var RootNode = new NodeClass(NoPlayAction, State)
+		push(Tree_Array, RootNode)
+		visitedHashes[0] = true
+
+		// Expansion de l'arbre
+		for (var Node in Tree_Array) {
 			var NodeBaseHash = StateClass.getBaseHash(Node.END_STATS)
 			var TotalPossibleActions = getBaseActions(Node.END_STATS, NodeBaseHash)
 			for (var Act in TotalPossibleActions) {
 				var ChildNode = NodeClass.ActionToNode(Act, Node.END_STATS, NodeBaseHash)
 				ChildNode.PARENT = Node
+
+				var h = getSetHash(ChildNode)
+				if (visitedHashes[h]) continue
+
+				visitedHashes[h] = true
 				push(Tree_Array, ChildNode)
 			}
-		}*/
+		}
 	}
 
 	/* Returns the full list of possible actions for this turn
