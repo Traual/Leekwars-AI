@@ -6,3 +6,5 @@ if (getTurn() == 1) Preload.InitEverything()
 ReloadCacheNewTurn()
 Preload.InitStateClass()
 new Play()
+
+debug("Full opés this turn : " + getOperations() / 1000000 + " m")

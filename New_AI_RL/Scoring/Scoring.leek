@@ -57,23 +57,60 @@ global POLY_DIST_FINAL = [0.0, 1.0, 0.0] // Linéaire par défaut (1:1)
 class ScoringClass {
 
     static getStateScore(State, MySide, BaseHash) {
+        // Pré-calcul des contextes de danger par camp (Side)
+        var allSides = [: ]
+        for (var e: var s in State)
+            if (s.LIFE > 0) allSides[s.SIDE] = true
+
+        var enemyContextsBySide = [: ]
+        for (var side: var _ in allSides) {
+            var h = (OFFSET_BASIS ^ BaseHash)
+            for (var e: var stat in State) {
+                if (stat.LIFE <= 0 || stat.SIDE == side) continue
+                // On inclut STR, MAG, MP, TP, POW (pour Danger)
+                var Hiscombined = (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.MP << 24) | (stat.TP << 12) | stat.POWER
+                h = addValueToBinHash(h, Hiscombined)
+            }
+            enemyContextsBySide[side] = h
+        }
+
         var _score = 0
         for (var e: var stat in State) {
             if (stat.LIFE > 0) {
                 var is_ally = (stat.SIDE == MySide)
+                var enemyContext = enemyContextsBySide[stat.SIDE]
+
+                // --- HASH ULTIME PAR ENTITÉ ---
+                // ID (10b) | CELL (10b) | SIDE (3b) | LIFE (16b) | TP (8b) | MP (8b) | STATIC (1b)
+                var w1 = (stat.ID << 54) | (stat.CELL << 44) | (stat.SIDE << 41) | (stat.LIFE << 25) | (stat.TP << 17) | (stat.MP << 9) | (stat.STATIC ? 1 : 0)
+                // STR (16b) | WIS (16b) | AGI (16b) | RES (16b)
+                var w2 = (stat.STRENGTH << 48) | (stat.WISDOM << 32) | (stat.AGILITY << 16) | stat.RESISTANCE
+                // SCI (16b) | MAG (16b) | POW (16b) | ABS_SHIELD (16b)
+                var w3 = (stat.SCIENCE << 48) | (stat.MAGIC << 32) | (stat.POWER << 16) | stat.ABSOLUTE_SHIELD
+                // REL_SHIELD (16b) | CD_ANTIDOTE (4b) | POISON (12b) | POT (12b)
+                var w4 = (stat.RELATIVE_SHIELD << 28) | (stat.COOLDOWNS[CHIP_ANTIDOTE] << 24) | (stat.POISON << 12) | stat.POISON_OVER_TIME
+
+                var h_final = addValueToBinHash(addValueToBinHash(addValueToBinHash(addValueToBinHash(enemyContext, w1), w2), w3), w4)
+
+                if (h_final in ENTITY_ULTIMATE_SCORE_CACHE) {
+                    var cachedVal = ENTITY_ULTIMATE_SCORE_CACHE[h_final]
+                    _score += is_ally ? cachedVal : -cachedVal
+                    continue
+                }
+
                 var entity_value = getEntityIntrinsicScore(stat, State)
-                var danger = DangerClass.getEntityDanger(stat, State, e, BaseHash)
+                var shieldCombined = (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE]
+                var thisStatsHashForDanger = addValueToBinHash(enemyContext, shieldCombined)
+
+                var danger = DangerClass.getEntityDanger(stat, State, e, BaseHash, thisStatsHashForDanger)
 
                 // On applique les multiplicateurs au score intraseque
                 var SurvivalMultiplier = getSurvivalMultiplier(stat, danger)
                 var DistanceMultiplier = getDistMultiplier(stat.ID, stat.SIDE, stat.CELL, State, BaseHash)
                 var finalValue = entity_value * SurvivalMultiplier * DistanceMultiplier
 
-                if (is_ally) {
-                    _score += finalValue
-                } else {
-                    _score -= finalValue
-                }
+                ENTITY_ULTIMATE_SCORE_CACHE[h_final] = finalValue
+                _score += is_ally ? finalValue : -finalValue
             }
         }
         return _score
@@ -106,6 +143,16 @@ class ScoringClass {
     }
 
     static getEntityIntrinsicScore(EntityStats, State) {
+        // Optimisation : On combine les stats dans 3 mots pour le cache
+        // Word 1 (64 bits) : ID (10b) | Power (12b) | TP (10b) | Strength (16b) | Wisdom (16b)
+        var combined1 = (EntityStats.ID << 54) | (EntityStats.POWER << 42) | (EntityStats.TOTAL_TP << 32) | (EntityStats.STRENGTH << 16) | EntityStats.WISDOM
+        // Word 2 (64 bits) : Agility (16b) | Resistance (16b) | Science (16b) | Magic (16b)
+        var combined2 = (EntityStats.AGILITY << 48) | (EntityStats.RESISTANCE << 32) | (EntityStats.SCIENCE << 16) | EntityStats.MAGIC
+        // Word 3 : MP (10b) | STATIC (1b) | SIDE (4b)
+        var combined3 = (EntityStats.TOTAL_MP << 5) | (EntityStats.STATIC ? 1 : 0) << 4 | EntityStats.SIDE
+
+        var Hash = addValueToBinHash(addValueToBinHash(addValueToBinHash(OFFSET_BASIS, combined1), combined2), combined3)
+        if (Hash in ENTITY_INTRINSIC_SCORE_CACHE) return ENTITY_INTRINSIC_SCORE_CACHE[Hash]
 
         var EIndexes = EntityIndexes.getWithCache(EntityStats)
         var TeamIndexes = EnemiesTeamIndexes.getWithCache(State, EntityStats)
@@ -124,12 +171,12 @@ class ScoringClass {
             EIndexes.SCIENCE * ScienceCoef +
             EIndexes.MAGIC * MagicCoef
 
-        var TOTAL_MP = EntityStats.TOTAL_MP != null ? EntityStats.TOTAL_MP : EntityStats.MP
-        _final *= solvePoly(POLY_BONUS_MP, TOTAL_MP)
+        _final *= solvePoly(POLY_BONUS_MP, EntityStats.TOTAL_MP)
         _final *= solvePoly(POLY_BONUS_CRIT, EntityStats.AGILITY)
 
         if (EntityStats.STATIC) _final /= 100
 
+        ENTITY_INTRINSIC_SCORE_CACHE[Hash] = _final
         return _final
     }
 

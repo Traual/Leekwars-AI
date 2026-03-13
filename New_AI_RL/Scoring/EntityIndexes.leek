@@ -14,17 +14,75 @@ class EntityIndexes {
     MAGIC
 
     constructor(entityStats) {
-        var powerFactorStrength = ScoringClass.solvePoly(POLY_POWER_STRENGTH, entityStats.POWER)
-        var powerFactorMagic = ScoringClass.solvePoly(POLY_POWER_MAGIC, entityStats.POWER)
+        this.STRENGTH = EntityIndexes.getStrengthIndex(entityStats)
+        this.WISDOM = EntityIndexes.getWisdomIndex(entityStats)
+        this.AGILITY = EntityIndexes.getAgilityIndex(entityStats)
+        this.RESISTANCE = EntityIndexes.getResistanceIndex(entityStats)
+        this.SCIENCE = EntityIndexes.getScienceIndex(entityStats)
+        this.MAGIC = EntityIndexes.getMagicIndex(entityStats)
+    }
 
-        var TOTAL_TP = entityStats.TOTAL_TP
+    static getStrengthIndex(e) {
+        // Hash (64b) : ID (10b) | STRENGTH (16b) | POWER (12b) | TOTAL_TP (10b)
+        var h = (e.ID << 38) | (e.STRENGTH << 22) | (e.POWER << 10) | e.TOTAL_TP
+        if (h in ENTITY_STR_INDEX_CACHE) return ENTITY_STR_INDEX_CACHE[h]
 
-        this.STRENGTH = ScoringClass.solvePoly(POLY_STRENGTH, entityStats.STRENGTH) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "STRENGTH")) * powerFactorStrength
-        this.WISDOM = ScoringClass.solvePoly(POLY_WISDOM, entityStats.WISDOM) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "WISDOM"))
-        this.AGILITY = ScoringClass.solvePoly(POLY_AGILITY, entityStats.AGILITY) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "AGILITY"))
-        this.RESISTANCE = ScoringClass.solvePoly(POLY_RESISTANCE, entityStats.RESISTANCE) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "RESISTANCE"))
-        this.SCIENCE = ScoringClass.solvePoly(POLY_SCIENCE, entityStats.SCIENCE) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "SCIENCE"))
-        this.MAGIC = ScoringClass.solvePoly(POLY_MAGIC, entityStats.MAGIC) * min(TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(entityStats, "MAGIC")) * powerFactorMagic
+        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(e, "STRENGTH"))
+        var val = ScoringClass.solvePoly(POLY_STRENGTH, e.STRENGTH) * tpTerm * ScoringClass.solvePoly(POLY_POWER_STRENGTH, e.POWER)
+        ENTITY_STR_INDEX_CACHE[h] = val
+        return val
+    }
+
+    static getWisdomIndex(e) {
+        // Hash (64b) : ID (10b) | WISDOM (16b) | TOTAL_TP (10b)
+        var h = (e.ID << 26) | (e.WISDOM << 10) | e.TOTAL_TP
+        if (h in ENTITY_WIS_INDEX_CACHE) return ENTITY_WIS_INDEX_CACHE[h]
+
+        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(e, "WISDOM"))
+        var val = ScoringClass.solvePoly(POLY_WISDOM, e.WISDOM) * tpTerm
+        ENTITY_WIS_INDEX_CACHE[h] = val
+        return val
+    }
+
+    static getAgilityIndex(e) {
+        var h = (e.ID << 26) | (e.AGILITY << 10) | e.TOTAL_TP
+        if (h in ENTITY_AGI_INDEX_CACHE) return ENTITY_AGI_INDEX_CACHE[h]
+
+        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(e, "AGILITY"))
+        var val = ScoringClass.solvePoly(POLY_AGILITY, e.AGILITY) * tpTerm
+        ENTITY_AGI_INDEX_CACHE[h] = val
+        return val
+    }
+
+    static getResistanceIndex(e) {
+        var h = (e.ID << 26) | (e.RESISTANCE << 10) | e.TOTAL_TP
+        if (h in ENTITY_RES_INDEX_CACHE) return ENTITY_RES_INDEX_CACHE[h]
+
+        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(e, "RESISTANCE"))
+        var val = ScoringClass.solvePoly(POLY_RESISTANCE, e.RESISTANCE) * tpTerm
+        ENTITY_RES_INDEX_CACHE[h] = val
+        return val
+    }
+
+    static getScienceIndex(e) {
+        var h = (e.ID << 26) | (e.SCIENCE << 10) | e.TOTAL_TP
+        if (h in ENTITY_SCI_INDEX_CACHE) return ENTITY_SCI_INDEX_CACHE[h]
+
+        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(e, "SCIENCE"))
+        var val = ScoringClass.solvePoly(POLY_SCIENCE, e.SCIENCE) * tpTerm
+        ENTITY_SCI_INDEX_CACHE[h] = val
+        return val
+    }
+
+    static getMagicIndex(e) {
+        // Hash (64b) : ID (10b) | MAGIC (16b) | POWER (12b) | TOTAL_TP (10b)
+        var h = (e.ID << 38) | (e.MAGIC << 22) | (e.POWER << 10) | e.TOTAL_TP
+        if (h in ENTITY_MAG_INDEX_CACHE) return ENTITY_MAG_INDEX_CACHE[h]
+
+        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(e, "MAGIC"))
+        var val = ScoringClass.solvePoly(POLY_MAGIC, e.MAGIC) * tpTerm * ScoringClass.solvePoly(POLY_POWER_MAGIC, e.POWER)
+        ENTITY_MAG_INDEX_CACHE[h] = val
+        return val
     }
 
     static getWithCache(entityStats) {

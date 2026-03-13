@@ -6,42 +6,6 @@ include("../includes.leek")
 
 class ActionSuite {
 
-	/* Calcule un hash unique pour une action (Item, From, To)
-	 * On pack les 3 valeurs dans un seul entier de 64 bits (16 bits chacun)
-	 * puis on applique un mixer pour garantir une bonne dispersion.
-	 *
-	 * @param Act ActionClass
-	 *
-	 * @return Number (64-bit integer hash)
-	 */
-	static getActionHash(Act) {
-		if (Act == null || Act.Item == null) return 0
-		var f = Act.From
-		var t = Act.To
-
-		// Packing : Item (bits 32-47), From (bits 16-31), To (bits 0-15)
-		var actionWord = (Act.Item << 32) | (f << 16) | t
-
-		return addValueToBinHash(OFFSET_BASIS, actionWord)
-	}
-
-	/* Calcule le hash d'un ensemble d'actions (indépendant de l'ordre)
-	 * On utilise XOR sur les hashs individuels des actions.
-	 *
-	 * @param Node NodeClass
-	 *
-	 * @return Number
-	 */
-	static getSetHash(Node) {
-		var setHash = 0
-		var current = Node
-		while (current != null) {
-			setHash ^= getActionHash(current.ACTION)
-			current = current.PARENT
-		}
-		return setHash
-	}
-
 	/* Gives me the best action to do in the State game state
 	 *
 	 * @param State Map of Stats Class (id : stats)
@@ -56,31 +20,11 @@ class ActionSuite {
 		//Loading The BFS Tree
 		getFullBFSTree(Tree_Array, State, BaseHash)
 
-		//Then We Add The No Play Node (Not Above because we don't want to find plays on it)
-		AddNoPlayNode(Tree_Array, State)
-
-		debug("Number of leafs : " + count(Tree_Array))
-		//debug(Tree_Array)
-
 		//Then We Look at Every Node in the Tree and find the Best One : 
 		var BestScoredNode = getBestScoredNode(Tree_Array)
 
 		//Then we need to find its first ancestor :
 		return BestScoredNode
-	}
-
-	/* Adds the No Play Node Into the Tree Array (to be able to do nothing and go hide myself)
-	 *
-	 * @param Tree_Array Array of nodes <Node, Node ...>
-	 * @param State Map of Stats Class (id : stats)
-	 *
-	 * @return Nothing
-	 */
-
-	static AddNoPlayNode(Tree_Array, State) {
-		var NoPlayAction = new ActionClass(null, null, null)
-		var NoPlayNode = new NodeClass(NoPlayAction, State)
-		push(Tree_Array, NoPlayNode)
 	}
 
 	/* Returns the best scored node in Tree_Array, takes into account node score, node danger, node gravity
@@ -115,7 +59,7 @@ class ActionSuite {
 			}
 			BenchmarkClass.StopOp("Scoring a BFS's Node")
 		}
-		while (BestNode.PARENT != null) BestNode = BestNode.PARENT
+		while (BestNode.PARENT != null && BestNode.PARENT.ACTION.Item != null) BestNode = BestNode.PARENT
 		return BestNode
 	}
 
@@ -152,6 +96,42 @@ class ActionSuite {
 				push(Tree_Array, ChildNode)
 			}
 		}
+	}
+
+	/* Calcule un hash unique pour une action (Item, From, To)
+	 * On pack les 3 valeurs dans un seul entier de 64 bits (16 bits chacun)
+	 * puis on applique un mixer pour garantir une bonne dispersion.
+	 *
+	 * @param Act ActionClass
+	 *
+	 * @return Number (64-bit integer hash)
+	 */
+	static getActionHash(Act) {
+		if (Act == null || Act.Item == null) return 0
+		var f = Act.From
+		var t = Act.To
+
+		// Packing : Item (bits 32-47), From (bits 16-31), To (bits 0-15)
+		var actionWord = (Act.Item << 32) | (f << 16) | t
+
+		return addValueToBinHash(OFFSET_BASIS, actionWord)
+	}
+
+	/* Calcule le hash d'un ensemble d'actions (indépendant de l'ordre)
+	 * On utilise XOR sur les hashs individuels des actions.
+	 *
+	 * @param Node NodeClass
+	 *
+	 * @return Number
+	 */
+	static getSetHash(Node) {
+		var setHash = 0
+		var current = Node
+		while (current != null) {
+			setHash ^= getActionHash(current.ACTION)
+			current = current.PARENT
+		}
+		return setHash
 	}
 
 	/* Returns the full list of possible actions for this turn
