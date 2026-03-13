@@ -27,7 +27,7 @@ class EntityIndexes {
         var h = (e.ID << 38) | (e.STRENGTH << 22) | (e.POWER << 10) | e.TOTAL_TP
         if (h in ENTITY_STR_INDEX_CACHE) return ENTITY_STR_INDEX_CACHE[h]
 
-        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(e, "STRENGTH"))
+        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForStrength(e))
         var val = ScoringClass.solvePoly(POLY_STRENGTH, e.STRENGTH) * tpTerm * ScoringClass.solvePoly(POLY_POWER_STRENGTH, e.POWER)
         ENTITY_STR_INDEX_CACHE[h] = val
         return val
@@ -38,7 +38,7 @@ class EntityIndexes {
         var h = (e.ID << 26) | (e.WISDOM << 10) | e.TOTAL_TP
         if (h in ENTITY_WIS_INDEX_CACHE) return ENTITY_WIS_INDEX_CACHE[h]
 
-        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(e, "WISDOM"))
+        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForWisdom(e))
         var val = ScoringClass.solvePoly(POLY_WISDOM, e.WISDOM) * tpTerm
         ENTITY_WIS_INDEX_CACHE[h] = val
         return val
@@ -48,7 +48,7 @@ class EntityIndexes {
         var h = (e.ID << 26) | (e.AGILITY << 10) | e.TOTAL_TP
         if (h in ENTITY_AGI_INDEX_CACHE) return ENTITY_AGI_INDEX_CACHE[h]
 
-        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(e, "AGILITY"))
+        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForAgility(e))
         var val = ScoringClass.solvePoly(POLY_AGILITY, e.AGILITY) * tpTerm
         ENTITY_AGI_INDEX_CACHE[h] = val
         return val
@@ -58,7 +58,7 @@ class EntityIndexes {
         var h = (e.ID << 26) | (e.RESISTANCE << 10) | e.TOTAL_TP
         if (h in ENTITY_RES_INDEX_CACHE) return ENTITY_RES_INDEX_CACHE[h]
 
-        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(e, "RESISTANCE"))
+        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForResistance(e))
         var val = ScoringClass.solvePoly(POLY_RESISTANCE, e.RESISTANCE) * tpTerm
         ENTITY_RES_INDEX_CACHE[h] = val
         return val
@@ -68,7 +68,7 @@ class EntityIndexes {
         var h = (e.ID << 26) | (e.SCIENCE << 10) | e.TOTAL_TP
         if (h in ENTITY_SCI_INDEX_CACHE) return ENTITY_SCI_INDEX_CACHE[h]
 
-        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(e, "SCIENCE"))
+        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForScience(e))
         var val = ScoringClass.solvePoly(POLY_SCIENCE, e.SCIENCE) * tpTerm
         ENTITY_SCI_INDEX_CACHE[h] = val
         return val
@@ -79,7 +79,7 @@ class EntityIndexes {
         var h = (e.ID << 38) | (e.MAGIC << 22) | (e.POWER << 10) | e.TOTAL_TP
         if (h in ENTITY_MAG_INDEX_CACHE) return ENTITY_MAG_INDEX_CACHE[h]
 
-        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForStat(e, "MAGIC"))
+        var tpTerm = min(e.TOTAL_TP, EntityIndexes.getMaxTPUsableForMagic(e))
         var val = ScoringClass.solvePoly(POLY_MAGIC, e.MAGIC) * tpTerm * ScoringClass.solvePoly(POLY_POWER_MAGIC, e.POWER)
         ENTITY_MAG_INDEX_CACHE[h] = val
         return val
@@ -102,83 +102,168 @@ class EntityIndexes {
         return indexes
     }
 
-    static isEffectUsefulForStat(ItemEffects, statTypeString) {
-        switch (statTypeString) {
-            case "STRENGTH":
-                for (var eff in ItemEffects) switch (eff[0]) {
-                    case EFFECT_DAMAGE:
-                        return true
-                }
-                break
-            case "WISDOM":
-                for (var eff in ItemEffects) switch (eff[0]) {
-                    case EFFECT_HEAL:
-                    case EFFECT_BOOST_MAX_LIFE:
-                        return true
-                }
-                break
-            case "AGILITY":
-                for (var eff in ItemEffects) switch (eff[0]) {
-                    case EFFECT_DAMAGE_RETURN:
-                        return true
-                }
-                break
-            case "RESISTANCE":
-                for (var eff in ItemEffects) switch (eff[0]) {
-                    case EFFECT_ABSOLUTE_SHIELD:
-                    case EFFECT_RELATIVE_SHIELD:
-                        return true
-                }
-                break
-            case "SCIENCE":
-                for (var eff in ItemEffects) switch (eff[0]) {
-                    case EFFECT_BUFF_AGILITY:
-                    case EFFECT_BUFF_MP:
-                    case EFFECT_BUFF_RESISTANCE:
-                    case EFFECT_BUFF_STRENGTH:
-                    case EFFECT_BUFF_TP:
-                    case EFFECT_BUFF_WISDOM:
-                    case EFFECT_NOVA_DAMAGE:
-                    case EFFECT_NOVA_VITALITY:
-                        return true
-                }
-                break
-            case "MAGIC":
-                for (var eff in ItemEffects) switch (eff[0]) {
-                    case EFFECT_POISON:
-                    case EFFECT_SHACKLE_AGILITY:
-                    case EFFECT_SHACKLE_MAGIC:
-                    case EFFECT_SHACKLE_MP:
-                    case EFFECT_SHACKLE_TP:
-                    case EFFECT_SHACKLE_WISDOM:
-                        return true
-                }
-                break
+    static isStrengthUseful(effs) {
+        for (var eff in effs) switch (eff[0]) {
+            case EFFECT_DAMAGE:
+                return true
+        }
+        return false
+    }
+    static isWisdomUseful(effs) {
+        for (var eff in effs) switch (eff[0]) {
+            case EFFECT_HEAL:
+            case EFFECT_BOOST_MAX_LIFE:
+                return true
+        }
+        return false
+    }
+    static isAgilityUseful(effs) {
+        for (var eff in effs) switch (eff[0]) {
+            case EFFECT_DAMAGE_RETURN:
+                return true
+        }
+        return false
+    }
+    static isResistanceUseful(effs) {
+        for (var eff in effs) switch (eff[0]) {
+            case EFFECT_ABSOLUTE_SHIELD:
+            case EFFECT_RELATIVE_SHIELD:
+                return true
+        }
+        return false
+    }
+    static isScienceUseful(effs) {
+        for (var eff in effs) switch (eff[0]) {
+            case EFFECT_BUFF_AGILITY:
+            case EFFECT_BUFF_MP:
+            case EFFECT_BUFF_RESISTANCE:
+            case EFFECT_BUFF_STRENGTH:
+            case EFFECT_BUFF_TP:
+            case EFFECT_BUFF_WISDOM:
+            case EFFECT_NOVA_DAMAGE:
+            case EFFECT_NOVA_VITALITY:
+                return true
+        }
+        return false
+    }
+    static isMagicUseful(effs) {
+        for (var eff in effs) switch (eff[0]) {
+            case EFFECT_POISON:
+            case EFFECT_SHACKLE_AGILITY:
+            case EFFECT_SHACKLE_MAGIC:
+            case EFFECT_SHACKLE_MP:
+            case EFFECT_SHACKLE_TP:
+            case EFFECT_SHACKLE_WISDOM:
+                return true
         }
         return false
     }
 
-    static getMaxTPUsableForStat(entityStats, statTypeString) {
-        var Hash = entityStats.NAME + statTypeString + entityStats.ID
-        if (Hash in MAX_TP_USABLE_FOR_STAT_CACHE) return MAX_TP_USABLE_FOR_STAT_CACHE[Hash]
+    static getMaxTPUsableForStrength(e) {
+        var Hash = e.NAME + e.ID
+        if (Hash in MAX_TP_STR_CACHE) return MAX_TP_STR_CACHE[Hash]
         var tpUsable = 0
-
-        for (var itemId: var cd in entityStats.COOLDOWNS) {
+        for (var itemId: var cd in e.COOLDOWNS) {
             if (cd > 0) continue
             var Infos = ITEMINFO[itemId]
             if (Infos == null) continue
-
-            var isUseful = EntityIndexes.isEffectUsefulForStat(Infos.EFFECTS, statTypeString)
-            if (!isUseful) continue
-
-            var Cost = Infos.COST
-            if (Infos.COOLDOWN == 0) {
-                Cost *= Infos.MAX_USES
+            if (EntityIndexes.isStrengthUseful(Infos.EFFECTS)) {
+                var Cost = Infos.COST
+                if (Infos.COOLDOWN == 0) Cost *= Infos.MAX_USES
+                tpUsable += Cost
             }
-
-            tpUsable += Cost
         }
-        MAX_TP_USABLE_FOR_STAT_CACHE[Hash] = tpUsable
+        MAX_TP_STR_CACHE[Hash] = tpUsable
+        return tpUsable
+    }
+
+    static getMaxTPUsableForWisdom(e) {
+        var Hash = e.NAME + e.ID
+        if (Hash in MAX_TP_WIS_CACHE) return MAX_TP_WIS_CACHE[Hash]
+        var tpUsable = 0
+        for (var itemId: var cd in e.COOLDOWNS) {
+            if (cd > 0) continue
+            var Infos = ITEMINFO[itemId]
+            if (Infos == null) continue
+            if (EntityIndexes.isWisdomUseful(Infos.EFFECTS)) {
+                var Cost = Infos.COST
+                if (Infos.COOLDOWN == 0) Cost *= Infos.MAX_USES
+                tpUsable += Cost
+            }
+        }
+        MAX_TP_WIS_CACHE[Hash] = tpUsable
+        return tpUsable
+    }
+
+    static getMaxTPUsableForAgility(e) {
+        var Hash = e.NAME + e.ID
+        if (Hash in MAX_TP_AGI_CACHE) return MAX_TP_AGI_CACHE[Hash]
+        var tpUsable = 0
+        for (var itemId: var cd in e.COOLDOWNS) {
+            if (cd > 0) continue
+            var Infos = ITEMINFO[itemId]
+            if (Infos == null) continue
+            if (EntityIndexes.isAgilityUseful(Infos.EFFECTS)) {
+                var Cost = Infos.COST
+                if (Infos.COOLDOWN == 0) Cost *= Infos.MAX_USES
+                tpUsable += Cost
+            }
+        }
+        MAX_TP_AGI_CACHE[Hash] = tpUsable
+        return tpUsable
+    }
+
+    static getMaxTPUsableForResistance(e) {
+        var Hash = e.NAME + e.ID
+        if (Hash in MAX_TP_RES_CACHE) return MAX_TP_RES_CACHE[Hash]
+        var tpUsable = 0
+        for (var itemId: var cd in e.COOLDOWNS) {
+            if (cd > 0) continue
+            var Infos = ITEMINFO[itemId]
+            if (Infos == null) continue
+            if (EntityIndexes.isResistanceUseful(Infos.EFFECTS)) {
+                var Cost = Infos.COST
+                if (Infos.COOLDOWN == 0) Cost *= Infos.MAX_USES
+                tpUsable += Cost
+            }
+        }
+        MAX_TP_RES_CACHE[Hash] = tpUsable
+        return tpUsable
+    }
+
+    static getMaxTPUsableForScience(e) {
+        var Hash = e.NAME + e.ID
+        if (Hash in MAX_TP_SCI_CACHE) return MAX_TP_SCI_CACHE[Hash]
+        var tpUsable = 0
+        for (var itemId: var cd in e.COOLDOWNS) {
+            if (cd > 0) continue
+            var Infos = ITEMINFO[itemId]
+            if (Infos == null) continue
+            if (EntityIndexes.isScienceUseful(Infos.EFFECTS)) {
+                var Cost = Infos.COST
+                if (Infos.COOLDOWN == 0) Cost *= Infos.MAX_USES
+                tpUsable += Cost
+            }
+        }
+        MAX_TP_SCI_CACHE[Hash] = tpUsable
+        return tpUsable
+    }
+
+    static getMaxTPUsableForMagic(e) {
+        var Hash = e.NAME + e.ID
+        if (Hash in MAX_TP_MAG_CACHE) return MAX_TP_MAG_CACHE[Hash]
+        var tpUsable = 0
+        for (var itemId: var cd in e.COOLDOWNS) {
+            if (cd > 0) continue
+            var Infos = ITEMINFO[itemId]
+            if (Infos == null) continue
+            if (EntityIndexes.isMagicUseful(Infos.EFFECTS)) {
+                var Cost = Infos.COST
+                if (Infos.COOLDOWN == 0) Cost *= Infos.MAX_USES
+                tpUsable += Cost
+            }
+        }
+        MAX_TP_MAG_CACHE[Hash] = tpUsable
         return tpUsable
     }
 }

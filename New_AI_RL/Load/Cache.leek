@@ -15,7 +15,6 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     ENTITY_DANGER_CACHE_FOR_ME = [: ]
     AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
-    MAX_TP_USABLE_FOR_STAT_CACHE = [: ]
     TEAM_INDEXES_CACHE = [: ]
     DIST_MULTIPLIER_CACHE = [: ]
     SURVIVAL_MULTIPLIER_CACHE = [: ]
@@ -29,6 +28,15 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     ENTITY_RES_INDEX_CACHE = [: ]
     ENTITY_SCI_INDEX_CACHE = [: ]
     ENTITY_MAG_INDEX_CACHE = [: ]
+
+    // Max TP usable caches
+    MAX_TP_STR_CACHE = [: ]
+    MAX_TP_WIS_CACHE = [: ]
+    MAX_TP_AGI_CACHE = [: ]
+    MAX_TP_RES_CACHE = [: ]
+    MAX_TP_SCI_CACHE = [: ]
+    MAX_TP_MAG_CACHE = [: ]
+
     ENTITY_ACTIONS_CACHE = [: ]
     ACTIONS_ON_ME_CACHE = [: ]
     ACTIONS_SUMMON_CACHE = [: ]
@@ -137,7 +145,6 @@ global HASHED_MAP_ITEM_CACHE = [: ]
 
 global AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
 global AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
-global MAX_TP_USABLE_FOR_STAT_CACHE = [: ]
 global TEAM_INDEXES_CACHE = [: ]
 global DIST_MULTIPLIER_CACHE = [: ]
 global SURVIVAL_MULTIPLIER_CACHE = [: ]
@@ -151,6 +158,12 @@ global ENTITY_AGI_INDEX_CACHE = [: ]
 global ENTITY_RES_INDEX_CACHE = [: ]
 global ENTITY_SCI_INDEX_CACHE = [: ]
 global ENTITY_MAG_INDEX_CACHE = [: ]
+global MAX_TP_STR_CACHE = [: ]
+global MAX_TP_WIS_CACHE = [: ]
+global MAX_TP_AGI_CACHE = [: ]
+global MAX_TP_RES_CACHE = [: ]
+global MAX_TP_SCI_CACHE = [: ]
+global MAX_TP_MAG_CACHE = [: ]
 
 //For WalkCells : 
 
