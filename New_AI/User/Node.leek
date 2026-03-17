@@ -69,6 +69,17 @@ class NodeClass {
 	static ActionToNodeInTree(Act, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash) {
 		var Targets = ConsequencesClass.ConsequenceTargets(Item, From, To, State, Me, BaseHash)
 		var ThisActionStats = StateClass.CloneOnlyTargetsAndMe(Targets, State)
+
+		// FIX RESURRECTION : Les entités mortes alliées doivent être clonées 
+		// car ResurrectionClass.Update va modifier leurs stats (LIFE, CELL, etc.)
+		if (Item == CHIP_RESURRECTION) {
+			for (var e: var stat in State) {
+				if (stat.LIFE <= 0 && stat.SIDE == State[Me].SIDE && !(e in Targets)) {
+					ThisActionStats[e] = clone(stat, 2)
+				}
+			}
+		}
+
 		ThisActionStats[Me].CELL = From
 		if (From in MyWalkCells.WALK) { //Removing Mps
 			ThisActionStats[Me].MP -= MyWalkCells.WALK[From]

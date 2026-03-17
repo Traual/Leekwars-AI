@@ -1,78 +1,95 @@
 /**
- * Here we are creating a random action
+ * FinalCell: Find the best cell to end the turn on.
+ * Uses the exact same polynomial formulas as Scoring.leek
+ * so that tuning polynomials in Scoring.leek also tunes FinalCell behavior.
  **/
 
 include("../includes.leek")
 
 class FinalCell {
-	//Finding the cell to end my turn :
-    //Relatively simple : (closest cell to ennemi with OK danger or lowest danger cell)
-    //I sort cells by average enemy dist (or path could be better with binaries walkcells ?)
-    //Then i check each cell's danger 
-    //If a cell has danger < life * min map danger / 10
-    //Break and return this cell
-    //Else if danger < BestDanger, save this cell for return and update BestDanger
+    /* Finds the best cell to end the turn by maximizing a position score.
+     * Score = myValue * SurvivalMultiplier * DistMultiplier
+     * (Same formula as getStateScore for Me's entity)
+     * 
+     * @param State Map Id : Entity State
+     * @param BaseHash Hash of all other entities positions
+     * @return Best cell ID
+     */
     static get(State, BaseHash) {
-        //We start by initializing vars
         var MyState = State[Me]
-        var walk_cells_map = new WalkCellsClass(State, Me, true, true, true, true, BaseHash).MAX
-        var array_cells_sorted_by_ennemi_dist = getSortedCellsByDistToEnnemies(State, walk_cells_map)
-        //Loading Stats Hash For Basic Danger Cache and this function's cache
+        var MySide = MyState.SIDE
+        var myId = MyState.ID
+
+        // Get all reachable cells with remaining MP
+        var WalkCells = new WalkCellsClass(State, Me, true, true, true, true, BaseHash)
+        var possibleCells = WalkCells.MAX
+
+        // Pre-compute entity values once (they don't change with my position)
+        var entityInfos = []
+        for (var e: var stat in State) {
+            if (stat.LIFE > 0 && stat.ID != myId) {
+                var value = ScoringClass.getEntityIntrinsicScore(stat, State)
+                push(entityInfos, [stat.CELL, stat.SIDE, value])
+            }
+        }
+
+        // My intrinsic value (constant, doesn't depend on position)
+        var myValue = ScoringClass.getEntityIntrinsicScore(MyState, State)
+
+        // Pre-load danger context
         var thisStatsHashForDanger = DangerClass.getStatsHashForDanger(MyState, State, BaseHash)
-        //Loading entity to skip map
         var thisToSkipMap = DangerClass.EntitiesToSkip(MyState, State, BaseHash)
-        //Loading entity's enemies walk cells
         var thisEnemiesWalkableCellsMap = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, thisToSkipMap, BaseHash)
-        //Then we create the return var
-        var min_danger = MAX_VALUE
-        var min_danger_cell
-        //After this we can loop in cells
-        for (var cell in array_cells_sorted_by_ennemi_dist) {
-            var this_cell_danger = DangerClass.get(cell, State, MyState, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger)
-            var this_cell_min_danger = ScoringClass.getMinMapDanger(State, cell) * MyState.LIFE
-            if (this_cell_danger > this_cell_min_danger) {
-                if (this_cell_danger < min_danger) {
-                    min_danger = this_cell_danger
-                    min_danger_cell = cell
+
+        var bestScore = -MAX_VALUE
+        var bestCell = MyState.CELL
+
+        debugC("--- Finding Best Final Cell ---", COLOR_BLUE)
+
+        for (var cell: var mp in possibleCells) {
+            // === 1. DistMultiplier (miroir exact de ScoringClass.getDistMultiplier) ===
+            var allyRelSum = 0
+            var allyWeight = 0
+            var enemyRelSum = 0
+            var enemyWeight = 0
+
+            for (var info in entityInfos) {
+                var dist = CellClass.getDist(cell, info[0])
+                var isAlly = (info[1] == MySide)
+                var value = info[2]
+
+                if (isAlly) {
+                    allyRelSum += value * ScoringClass.solvePoly(POLY_DIST_RELATION_ALLY, dist)
+                    allyWeight += value
+                } else {
+                    enemyRelSum += value * ScoringClass.solvePoly(POLY_DIST_RELATION_ENEMY, dist)
+                    enemyWeight += value
                 }
-            } else {
-                return cell
+            }
+
+            var allyScore = (allyWeight > 0) ? (allyRelSum / allyWeight) : 1.0
+            var enemyScore = (enemyWeight > 0) ? (enemyRelSum / enemyWeight) : 1.0
+            var avgRelation = (allyScore + enemyScore) / 2.0
+            var distMultiplier = max(0.1, ScoringClass.solvePoly(POLY_DIST_FINAL, avgRelation))
+
+            // === 2. SurvivalMultiplier (miroir exact de ScoringClass.getSurvivalMultiplier) ===
+            var danger = DangerClass.get(cell, State, MyState, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger)
+            var totalThreat = ScoringClass.solvePoly(POLY_THREAT_DANGER, danger) +
+                ScoringClass.solvePoly(POLY_THREAT_POISON, MyState.POISON) +
+                ScoringClass.solvePoly(POLY_THREAT_POT, MyState.POISON_OVER_TIME)
+            var survivalRatio = (MyState.LIFE - totalThreat) / MyState.TOTAL_LIFE
+            var survivalMultiplier = max(0, ScoringClass.solvePoly(POLY_SURVIVAL, survivalRatio))
+
+            // === 3. Score Final (même formule que getStateScore pour une entité) ===
+            var score = myValue * survivalMultiplier * distMultiplier
+
+            if (score > bestScore) {
+                bestScore = score
+                bestCell = cell
             }
         }
-        return min_danger_cell
-    }
 
-    static MapToGetCloseTo = [
-        "puny_bulb" : 1,
-        "rocky_bulb" : 1,
-        "iced_bulb" : 2,
-        "healer_bulb" : 4,
-        "fire_bulb" : 2,
-        "wizard_bulb" : 2,
-        "metallic_bulb" : 3,
-        "savant_bulb" : 5,
-        "tactician_bulb" : 3,
-        "lightning_bulb" : 3
-    ]
-
-    static getSortedCellsByDistToEnnemies(State, WalkCellsMap) {
-        //First we innit the variables
-        var my_side = State[Me].SIDE
-        var scoring_map = [: ]
-        //Then we score the map
-        for (var entity_state in State) {
-            if (entity_state.SIDE == my_side) continue //Avoid wanting to go near allies
-            var entity_name = entity_state.NAME
-            var raw_score = entity_name in MapToGetCloseTo ? MapToGetCloseTo[entity_name] : 10
-            var entity_cell = entity_state.CELL
-            for (var cell:var mp in WalkCellsMap) {
-                scoring_map[cell] -= CellClass.getDist(cell, entity_cell) 
-            }
-        }
-        //Then we sort the map to return it
-        var _final = mapKeys(scoring_map)
-        return arraySort(_final, function(a,b) {
-            return scoring_map[b] - scoring_map[a]
-        })
+        debug("Best final cell: " + bestCell + " (Score: " + bestScore + ")")
+        return bestCell
     }
 }

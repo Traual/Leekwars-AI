@@ -11,7 +11,7 @@ include("../includes.leek")
 class ActionsClass {
 	//TODO add Shoot allies for lazers to go through
 	//TODO : Summons Actions / Actions On Me / Actions on Nobody
-	
+
 	static ToSkipItems = [
 		CHIP_TELEPORTATION: true,
 		CHIP_JUMP: true
@@ -31,7 +31,7 @@ class ActionsClass {
 		CHIP_LIGHTNING_BULB: true
 	]
 
-	static getEveryActionsInAState(State, WalkCells, MyCell,BaseHash) { //If i remove my mps from actions on everyone i could cache with BaseHash and MyCell
+	static getEveryActionsInAState(State, WalkCells, MyCell, BaseHash) { //If i remove my mps from actions on everyone i could cache with BaseHash and MyCell
 		var _final = []
 		var LeekCells = StateClass.getEntityCellsMap(State)
 		//Adding Actions on Me :
@@ -47,7 +47,7 @@ class ActionsClass {
 		//Returning
 		return _final
 	}
-	
+
 	static getInventoryOnMe(Inventory, EntityState) {
 		var _final = []
 		for (var item in Inventory) {
@@ -77,7 +77,7 @@ class ActionsClass {
 		var MinDistCell
 		if (NeedLos) {
 			var Circle = LaunchWithLos[LaunchType](MyCell, MinRange, MaxRange)
-			for (var to:var dist in AoeDistItem(item, MyCell)) {
+			for (var to: var dist in AoeDistItem(item, MyCell)) {
 				if (Circle[to] && CellClass.getLosWithBaseHash(MyCell, to, State, BaseHash) && dist < MinDist) {
 					MinDist = dist
 					MinDistCell = to
@@ -85,7 +85,7 @@ class ActionsClass {
 			}
 		} else {
 			var Circle = LaunchWithoutLos[LaunchType](MyCell, MinRange, MaxRange)
-			for (var to:var dist in AoeDistItem(item, MyCell)) {
+			for (var to: var dist in AoeDistItem(item, MyCell)) {
 				if (Circle[to] && dist < MinDist) {
 					MinDist = dist
 					MinDistCell = to
@@ -106,13 +106,13 @@ class ActionsClass {
 		}
 		return _final
 	}
-	
+
 	static getEverySummonActions(MyCell, Inventory, State, LeekCells, BaseHash) {
 		var TmpHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), MyCell)
 		if (TmpHash in ACTIONS_SUMMON_CACHE) return ACTIONS_SUMMON_CACHE[TmpHash]
 		var _final = []
 		for (var item in Inventory) {
-			if (IsSummonable(item, State)) {//TODO : Check if resu isn't a bulb, or i already have 8 bulbs on the map
+			if (IsSummonable(item, State)) { //TODO : Check if resu isn't a bulb, or i already have 8 bulbs on the map
 				var Infos = ITEMINFO[item]
 				var Act = getSummonAction(Infos.LAUNCHTYPE, MyCell, Infos.MINRANGE, Infos.MAXRANGE, LeekCells, item, State, BaseHash)
 				if (Act) push(_final, Act)
@@ -123,14 +123,15 @@ class ActionsClass {
 	}
 
 	static getSummonAction(LaunchType, basefrom, MinRange, MaxRange, LeekCells, item, State, base_hash) { //TODO : Debug and Cache
-		
+
 		var CellsUsables = []
 		var CellToSummon
 		var BestScore = MAX_VALUE
 		var entity_side = State[Me].SIDE
 		if (item in MeanBulbs) { //Mean Bulb
 			for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
-				if (!LeekCells[c] && CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) {
+				if (c in LeekCells) continue
+				if (CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) {
 					var ScoreOfTestedCell = StateClass.getAverageDistFromEnnemies(entity_side, State, c, 1000, base_hash) //Id is set to 1000 cuz i don't need to skip anyone cuz bulbstats not yet in State and i don't want to break the cache with -1
 					if (ScoreOfTestedCell < BestScore) {
 						BestScore = ScoreOfTestedCell
@@ -140,7 +141,8 @@ class ActionsClass {
 			}
 		} else { //Gentle Bulb or Resu
 			for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
-				if (!LeekCells[c] && CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) {
+				if (c in LeekCells) continue
+				if (CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) {
 					var ScoreOfTestedCell = StateClass.getAverageDistFromAllies(entity_side, State, c, 1000, base_hash) //Id is set to 1000 cuz i don't need to skip anyone cuz bulbstats not yet in State and i don't want to break the cache with -1
 					if (ScoreOfTestedCell < BestScore) {
 						BestScore = ScoreOfTestedCell
@@ -149,7 +151,7 @@ class ActionsClass {
 				}
 			}
 		}
-		
+
 		if (CellToSummon != null) return new ActionClass(item, basefrom, CellToSummon)
 	}
 
@@ -190,7 +192,7 @@ class ActionsClass {
 
 		for (var from in SortedWalkCells) {
 			if (from in HashedMapAoe) {
-				for (var to:var toHash in HashedMapAoe[from]) {
+				for (var to: var toHash in HashedMapAoe[from]) {
 					if (toHash in DoneHashs) continue
 					if (CellClass.getLosWithBaseHash(from, to, State, BaseHash)) {
 						push(_final, new ActionClass(Item, from, to))
@@ -210,7 +212,7 @@ class ActionsClass {
 		var OccupiedCellsArray = WalkCellsClass.LoadIgnoreCells(State, Me, BaseHash)
 
 		if (isAttract(Infos)) {
-			for (var e:var stat in State) {
+			for (var e: var stat in State) {
 				if (e == Me) continue
 				var EntityCell = stat.CELL
 				var HittableCellsAreaEntity = LaunchWithLos[LaunchType](EntityCell, MinRange, MaxRange)
@@ -224,7 +226,7 @@ class ActionsClass {
 				}
 			}
 		} else {
-			for (var e:var stat in State) {
+			for (var e: var stat in State) {
 				if (e == Me) continue
 				var EntityCell = stat.CELL
 				var HittableCellsAreaEntity = LaunchWithLos[LaunchType](EntityCell, MinRange, MaxRange)
@@ -251,7 +253,7 @@ class ActionsClass {
 		var MaxDist = CellClass.getDist(from, EntityCell)
 		var MaxDistCell
 		var PossiblesCellsToPush = CellClass.getLaserAoe(from, EntityCell, MinRange, MaxRange)
-		for (var c:var bool2 in PossiblesCellsToPush) {
+		for (var c: var bool2 in PossiblesCellsToPush) {
 			if (c in ArrayCellsOccupied) continue
 			var ThisDist = CellClass.getDist(c, from)
 			if (MaxDist < ThisDist) {
@@ -266,7 +268,7 @@ class ActionsClass {
 		var MinDist = CellClass.getDist(from, EntityCell)
 		var MinDistCell
 		var PossiblesCellsToAttract = CellClass.getLaserAoe(from, EntityCell, MinRange, MaxRange)
-		for (var c:var bool2 in PossiblesCellsToAttract) {
+		for (var c: var bool2 in PossiblesCellsToAttract) {
 			if (c in ArrayCellsOccupied) continue
 			var ThisDist = CellClass.getDist(c, from)
 			if (MinDist > ThisDist) {
@@ -293,9 +295,9 @@ class ActionsClass {
 		var CastState = State[Me]
 		for (var entity: var EntityState in State) {
 			if (entity == Me || !Target.Targetable(Item, EntityState, CastState) || EntityState.LIFE <= 0) continue
-			for (var from:var MapToHash in LoadMapFromAoeForAnEntity(Item, EntityState.CELL, Infos, LaunchFct)) {
+			for (var from: var MapToHash in LoadMapFromAoeForAnEntity(Item, EntityState.CELL, Infos, LaunchFct)) {
 				var Tmp = from in _final ? _final[from] : _final[from] = [: ] //Used to optimize acces costs to _final[from]
-				for (var to:var TmpHash in MapToHash) {
+				for (var to: var TmpHash in MapToHash) {
 					if (to in Tmp) {
 						Tmp[to] = addValueToBinHash(Tmp[to], (TmpHash << MAX_AOE_DIST_BINARY) | entity)
 					} else {
@@ -305,12 +307,12 @@ class ActionsClass {
 			}
 		}
 		//Adding MySelf To Hash :
-		if (Target.Targetable(Item, CastState, CastState) && Infos.MINRANGE <= Infos.AREA_MAX && Infos.AREA_MAX > 0) {//Avoid Adding MySelf for Lightning
-			for (var from:var MapToHash in _final) {
+		if (Target.Targetable(Item, CastState, CastState) && Infos.MINRANGE <= Infos.AREA_MAX && Infos.AREA_MAX > 0) { //Avoid Adding MySelf for Lightning
+			for (var from: var MapToHash in _final) {
 				var Tmp = _final[from] //from is in final (set above)
 				var MapAoeCellsOfFrom = AoeDistItem(Item, from)
-				for (var to:var TmpHash in MapToHash) {
-					if (to in MapAoeCellsOfFrom) {//If i'm in the area, i add myself to hash :
+				for (var to: var TmpHash in MapToHash) {
+					if (to in MapAoeCellsOfFrom) { //If i'm in the area, i add myself to hash :
 						Tmp[to] = addValueToBinHash(Tmp[to], (MapAoeCellsOfFrom[to] << MAX_AOE_DIST_BINARY) | Me)
 					}
 				}
@@ -326,8 +328,8 @@ class ActionsClass {
 		var MinRange = Infos.MINRANGE
 		var MaxRange = Infos.MAXRANGE
 		var _final = [: ]
-		for (var to:var dist in AoeDistItem(Item, EntityCell)) {
-			for (var from:var bool in LaunchFunction(to, MinRange, MaxRange)) {
+		for (var to: var dist in AoeDistItem(Item, EntityCell)) {
+			for (var from: var bool in LaunchFunction(to, MinRange, MaxRange)) {
 				if (!(from in _final)) _final[from] = [: ]
 				_final[from][to] = dist
 			}
@@ -346,14 +348,14 @@ class ActionsClass {
 		}
 		return _final
 	}
-	
+
 	static getEveryActionsInVoid(MyCell, Inventory, State, LeekCells, BaseHash) {
 		var TmpHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), MyCell)
 		if (TmpHash in ACTIONS_ON_VOID_CACHE) return ACTIONS_ON_VOID_CACHE[TmpHash]
 		var _final = []
 		for (var item in Inventory) {
 			var Infos = ITEMINFO[item]
-			var Act = getActionInVoid(MyCell, Infos.LAUNCHTYPE , Infos.MINRANGE, Infos.MAXRANGE, LeekCells, item, State, BaseHash)
+			var Act = getActionInVoid(MyCell, Infos.LAUNCHTYPE, Infos.MINRANGE, Infos.MAXRANGE, LeekCells, item, State, BaseHash)
 			if (Act) push(_final, Act)
 		}
 		ACTIONS_ON_VOID_CACHE[TmpHash] = _final
@@ -439,7 +441,7 @@ class ActionsClass {
 			return ALLCELLINFO[to].X_THREE_DIST
 		}
 	]
-	
+
 	static LaunchWithLos = [
 		LAUNCH_TYPE_CIRCLE: function(to, MinRange, MaxRange) {
 			return CellClass.getDiscWithLos(to, MinRange, MaxRange)
@@ -463,7 +465,7 @@ class ActionsClass {
 			return CellClass.getInvertedStarWithLos(to, MinRange, MaxRange)
 		}
 	]
-	
+
 	static LaunchWithoutLos = [
 		LAUNCH_TYPE_CIRCLE: function(to, MinRange, MaxRange) {
 			return CellClass.getDisc(to, MinRange, MaxRange)

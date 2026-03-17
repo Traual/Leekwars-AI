@@ -35,9 +35,10 @@ class ActionSuite {
 			var n1 = NodeClass.ActionToNode(item.Action, State, RootBaseHash)
 			n1.PARENT = VirtualRoot
 			n1.SCORE = ScoringClass.getStateScore(n1.END_STATS, MySide, StateClass.getBaseHash(n1.END_STATS))
+			if (VirtualRoot.SCORE >= n1.SCORE) continue
 
 			// HASH de la branche (action XOR parent)
-			var actHash = (item.Action.Item ^ item.Action.From ^ item.Action.To)
+			var actHash = (item.Action.Item << 32 | item.Action.From << 16 | item.Action.To)
 			n1.SET_HASH = VirtualRoot.SET_HASH ^ actHash
 
 			// On l'enregistre et on check si record global
@@ -92,7 +93,6 @@ class ActionSuite {
 			var pHash = StateClass.getBaseHash(pState)
 
 			// 1. ELAGAGE UPPER BOUND
-			// On ajoute une marge de 1.1 pour laisser respirer les combos
 			if (current.SCORE + (pState[Me].TP * maxEfficiency) <= Context.bestScore) {
 				debug("élagage Upper Bound")
 				break
