@@ -1,0 +1,95 @@
+/**
+ * Simplified Action Selection (Greedy item by item)
+ * Modified to use Efficiency Scoring (Score Delta / TP Cost)
+ **/
+include("../includes.leek")
+class ActionSuite {
+	/**
+	 * Returns the best immediate action to perform, based on efficiency.
+	 */
+	static getBestActionTreeInState(State) {
+		var scoredActions = getSortedScoredActions(State)
+
+		// S'il n'y a pas d'action ou si la meilleure action a un score négatif/nul
+		// par rapport à ne rien faire (delta <= 0), on renvoie un node vide.
+		if (count(scoredActions) == 0 || scoredActions[0].Score <= 0) {
+			return new NodeClass(new ActionClass(null, null, null), State)
+		}
+		// On renvoie le noeud de la meilleure action triée
+		return scoredActions[0].Node
+	}
+	/**
+	 * Lists all playable actions from a state, scored by (ScoreDelta / Cost).
+	 * Output: Array of {Action: ActionClass, Score: Number, Node: NodeClass}
+	 * Sorted by Score descending.
+	 */
+	static getSortedScoredActions(State) {
+		var BaseHash = StateClass.getBaseHash(State)
+		var MySide = State[Me].SIDE
+		var initialScore = ScoringClass.getStateScore(State, MySide, BaseHash)
+		var initialTP = State[Me].TP
+
+		var actions = getBaseActions(State, BaseHash)
+		var _final = []
+		for (var act in actions) {
+			var node = NodeClass.ActionToNode(act, State, BaseHash)
+			var nodeBaseHash = StateClass.getBaseHash(node.END_STATS)
+			var nodeScore = ScoringClass.getStateScore(node.END_STATS, MySide, nodeBaseHash)
+
+			// Coût réel de l'action en TP (incluant déplacements Jump/TP)
+			var cost = initialTP - node.END_STATS[Me].TP
+			if (cost <= 0) cost = 1 // Sécurité division par zéro
+
+			// Calcul du Delta et de l'efficience
+			var scoreDelta = nodeScore - initialScore
+			var efficiency = scoreDelta / cost
+			push(_final, {
+				Action: act,
+				Score: efficiency,
+				Node: node
+			})
+		}
+		// Tri par score décroissant (la meilleure efficience en premier)
+		return arraySort(_final, function(a, b) {
+			return b.Score - a.Score
+		})
+	}
+	/**
+	 * Returns the list of valid actions for the given state.
+	 * Filters for TP, MP, Cooldowns and Uses.
+	 */
+	static getBaseActions(State, BaseHash) {
+		var _final = []
+		var MyStats = State[Me]
+		var MyWalkCells = new WalkCellsClass(State, Me, true, true, true, true, BaseHash)
+
+		var Acts = ActionsClass.getEveryActionsInAState(State, MyWalkCells, MyStats.CELL, BaseHash)
+
+		var JumpCost = ITEMINFO[CHIP_JUMP].COST
+		var TpCost = ITEMINFO[CHIP_TELEPORTATION].COST
+		var MyWeapon = MyStats.WEAPON
+		var MyCooldowns = MyStats.COOLDOWNS
+		var MyTp = MyStats.TP
+		var MyUses = MyStats.USES
+
+		for (var Action in Acts) {
+			var Item = Action.Item
+			var From = Action.From
+			var Info = ITEMINFO[Item]
+
+			var Cost = (Info.IS_WEAPON && MyWeapon != Item) ? Info.COST + 1 : Info.COST
+
+			if (!(From in MyWalkCells.WALK)) {
+				if (From in MyWalkCells.JUMP) Cost += JumpCost
+				else if (From in MyWalkCells.TELEPORTATION) Cost += TpCost
+				else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) Cost += TpCost + JumpCost
+				else continue
+			}
+
+			if (Cost <= MyTp && MyCooldowns[Item] == 0 && MyUses[Item] < Info.MAX_USES) {
+				push(_final, Action)
+			}
+		}
+		return _final
+	}
+}
