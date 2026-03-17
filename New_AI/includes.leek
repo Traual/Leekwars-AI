@@ -29,7 +29,6 @@ include("Scoring/EntityIndexes.leek")
 include("Scoring/EnemiesTeamIndexes.leek")
 
 include("User/Node.leek")
-include("User/VisitedState.leek")
 include("User/BFS.leek")
 include("User/FinalCell.leek")
 include("User/Play.leek")

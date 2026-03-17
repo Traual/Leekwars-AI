@@ -1,27 +1,152 @@
 /**
- * Simplified Action Selection (Greedy item by item)
- * Modified to use Efficiency Scoring (Score Delta / TP Cost)
+ * Greedy Tree Generator
+ * Builds a tree in a global array.
+ * Depth 1 creates initial branches, Depth N expands them using initial actions.
  **/
+
 include("../includes.leek")
+
 class ActionSuite {
+
 	/**
-	 * Returns the best immediate action to perform, based on efficiency.
+	 * Main entry point: Generates the tree and returns the best immediate action.
 	 */
 	static getBestActionTreeInState(State) {
-		var scoredActions = getSortedScoredActions(State)
+		var MySide = State[Me].SIDE
+		var RootBaseHash = StateClass.getBaseHash(State)
 
-		// S'il n'y a pas d'action ou si la meilleure action a un score négatif/nul
-		// par rapport à ne rien faire (delta <= 0), on renvoie un node vide.
-		if (count(scoredActions) == 0 || scoredActions[0].Score <= 0) {
-			return new NodeClass(new ActionClass(null, null, null), State)
+		// 1. Actions candidates calculées à la racine (Intentions de départ)
+		var rootActions = getSortedScoredActions(State)
+		debugC("--- Starting Tree Generation ---", COLOR_BLUE)
+		debug("Initial Actions found: " + count(rootActions))
+
+		var Tree = [] // Le "tableau global" qui servira d'arbre
+		var VirtualRoot = new NodeClass(new ActionClass(null, null, null), State)
+		VirtualRoot.SCORE = ScoringClass.getStateScore(State, MySide, RootBaseHash)
+		push(Tree, VirtualRoot)
+
+		// --- PROFONDEUR 1 ---
+		// On crée les premiers nœuds de l'arbre à partir de la racine
+		var depth1Nodes = []
+		for (var item in rootActions) {
+			var n1 = NodeClass.ActionToNode(item.Action, State, RootBaseHash)
+			n1.PARENT = VirtualRoot
+			n1.SCORE = ScoringClass.getStateScore(n1.END_STATS, MySide, StateClass.getBaseHash(n1.END_STATS))
+
+			push(Tree, n1)
+			push(depth1Nodes, n1)
 		}
-		// On renvoie le noeud de la meilleure action triée
-		return scoredActions[0].Node
+
+		// --- PROFONDEUR N (Exploration des branches) ---
+		// Pour chaque nœud de profondeur 1, on va chercher à épuiser les AP
+		// en réutilisant les actions initiales (ou en rafraîchissant si tu le souhaites plus tard)
+		for (var n1 in depth1Nodes) {
+
+			// Si tu veux refresh les actions au niveau 1, c'est ici :
+			// var localActions = getSortedScoredActions(n1.END_STATS) 
+			var localActions = rootActions
+
+			debugC("Expanding Depth 1 Branch: " + ITEMINFO[n1.ACTION.Item].NAME, COLOR_GREEN)
+			expandNodeGreedy(n1, localActions, Tree, MySide)
+		}
+
+		// Trouver la meilleure feuille dans tout l'arbre généré
+		var BestNode = VirtualRoot
+		for (var node in Tree) {
+			if (node.SCORE > BestNode.SCORE) {
+				BestNode = node
+			}
+		}
+
+		debugC("--- Best Branch Found ---", COLOR_RED)
+		debug("Best Score: " + BestNode.SCORE)
+
+		// Remonter à l'action immédiate pour Play.leek
+		var current = BestNode
+		var path = []
+		while (current.PARENT != null && current.PARENT.PARENT != null) {
+			if (current.ACTION.Item != null) push(path, ITEMINFO[current.ACTION.Item].NAME)
+			current = current.PARENT
+		}
+		if (current.ACTION.Item != null) push(path, ITEMINFO[current.ACTION.Item].NAME)
+
+		debug("Path: from last play to first " + path)
+
+		return current
 	}
+
 	/**
-	 * Lists all playable actions from a state, scored by (ScoreDelta / Cost).
-	 * Output: Array of {Action: ActionClass, Score: Number, Node: NodeClass}
-	 * Sorted by Score descending.
+	 * Expands a node by following the best possible sequence of actions 
+	 * among the candidates. (Greedy Path / Depth N)
+	 */
+	static expandNodeGreedy(ParentNode, CandidateActions, Tree, MySide) {
+		var current = ParentNode
+		while (true) {
+			var pState = current.END_STATS
+			var pHash = StateClass.getBaseHash(pState)
+			var bestNext = null
+			var bestScore = -MAX_VALUE
+			var bestEfficiency = -MAX_VALUE
+			// On parcourt les actions initiales par ordre d'efficience
+			for (var Candidate in CandidateActions) {
+				if (bestEfficiency > Candidate.Score) break // Le candidat aura forcément moins d'efficience que le meilleur donc on peut skip
+				// 1. Check rapide (TP/MP/CD)
+				if (isActionPlayable(Candidate.Action, pState, pHash)) {
+
+					// 2. Calcul du score REEL (pour éviter les soins inutiles, etc.)
+					var child = NodeClass.ActionToNode(Candidate.Action, pState, pHash)
+					var score = ScoringClass.getStateScore(child.END_STATS, MySide, StateClass.getBaseHash(child.END_STATS))
+					// 3. Si l'action apporte un vrai gain par rapport à l'état actuel de la branche
+					var delta = score - current.SCORE
+					var cost = pState[Me].TP - child.END_STATS[Me].TP
+					if (cost <= 0) cost = 1
+					var efficiency = delta / cost
+					// Mise à jour du meilleur coup trouvé dans cette itération
+					if (efficiency > bestEfficiency) {
+						bestNext = child
+						bestEfficiency = efficiency
+						bestNext.SCORE = score // On garde le score absolu pour le tour suivant
+					}
+				}
+			}
+			// Si aucune action n'améliore le score ou n'est jouable, on arrête l'exploration de cette branche
+			if (bestNext == null) break
+			bestNext.PARENT = current
+			push(Tree, bestNext)
+			debug("  + Added Greedy Step: " + ITEMINFO[bestNext.ACTION.Item].NAME + " (New Score: " + bestNext.SCORE + ")")
+			current = bestNext
+		}
+	}
+
+	/**
+	 * Checks if a specific action is still valid in the current state.
+	 */
+	static isActionPlayable(Action, State, BaseHash) {
+		var MyStats = State[Me]
+		var Item = Action.Item
+		if (Item == null) return false
+		var Info = ITEMINFO[Item]
+
+		if (MyStats.COOLDOWNS[Item] > 0 || MyStats.USES[Item] >= Info.MAX_USES) return false
+
+		var MyWalkCells = new WalkCellsClass(State, Me, true, true, true, true, BaseHash)
+		var From = Action.From
+		var moveCost = 0
+
+		if (!(From in MyWalkCells.WALK)) {
+			if (From in MyWalkCells.JUMP) moveCost = ITEMINFO[CHIP_JUMP].COST
+			else if (From in MyWalkCells.TELEPORTATION) moveCost = ITEMINFO[CHIP_TELEPORTATION].COST
+			else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
+				moveCost = ITEMINFO[CHIP_JUMP].COST + ITEMINFO[CHIP_TELEPORTATION].COST
+			} else return false
+		}
+
+		var itemCost = (Info.IS_WEAPON && MyStats.WEAPON != Item) ? Info.COST + 1 : Info.COST
+		return (moveCost + itemCost <= MyStats.TP)
+	}
+
+	/**
+	 * Lists and scores actions by efficiency (Delta / Cost).
 	 */
 	static getSortedScoredActions(State) {
 		var BaseHash = StateClass.getBaseHash(State)
@@ -31,64 +156,51 @@ class ActionSuite {
 
 		var actions = getBaseActions(State, BaseHash)
 		var _final = []
+
 		for (var act in actions) {
 			var node = NodeClass.ActionToNode(act, State, BaseHash)
 			var nodeBaseHash = StateClass.getBaseHash(node.END_STATS)
 			var nodeScore = ScoringClass.getStateScore(node.END_STATS, MySide, nodeBaseHash)
 
-			// Coût réel de l'action en TP (incluant déplacements Jump/TP)
 			var cost = initialTP - node.END_STATS[Me].TP
-			if (cost <= 0) cost = 1 // Sécurité division par zéro
+			if (cost <= 0) cost = 1
 
-			// Calcul du Delta et de l'efficience
 			var scoreDelta = nodeScore - initialScore
 			var efficiency = scoreDelta / cost
+
 			push(_final, {
 				Action: act,
-				Score: efficiency,
-				Node: node
+				Score: efficiency
 			})
 		}
-		// Tri par score décroissant (la meilleure efficience en premier)
+
 		return arraySort(_final, function(a, b) {
 			return b.Score - a.Score
 		})
 	}
-	/**
-	 * Returns the list of valid actions for the given state.
-	 * Filters for TP, MP, Cooldowns and Uses.
-	 */
+
 	static getBaseActions(State, BaseHash) {
 		var _final = []
 		var MyStats = State[Me]
 		var MyWalkCells = new WalkCellsClass(State, Me, true, true, true, true, BaseHash)
-
 		var Acts = ActionsClass.getEveryActionsInAState(State, MyWalkCells, MyStats.CELL, BaseHash)
-
-		var JumpCost = ITEMINFO[CHIP_JUMP].COST
-		var TpCost = ITEMINFO[CHIP_TELEPORTATION].COST
-		var MyWeapon = MyStats.WEAPON
-		var MyCooldowns = MyStats.COOLDOWNS
-		var MyTp = MyStats.TP
-		var MyUses = MyStats.USES
 
 		for (var Action in Acts) {
 			var Item = Action.Item
+			if (MyStats.COOLDOWNS[Item] > 0 || MyStats.USES[Item] >= ITEMINFO[Item].MAX_USES) continue
+
 			var From = Action.From
 			var Info = ITEMINFO[Item]
-
-			var Cost = (Info.IS_WEAPON && MyWeapon != Item) ? Info.COST + 1 : Info.COST
+			var Cost = (Info.IS_WEAPON && MyStats.WEAPON != Item) ? Info.COST + 1 : Info.COST
 
 			if (!(From in MyWalkCells.WALK)) {
-				if (From in MyWalkCells.JUMP) Cost += JumpCost
-				else if (From in MyWalkCells.TELEPORTATION) Cost += TpCost
-				else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) Cost += TpCost + JumpCost
+				if (From in MyWalkCells.JUMP) Cost += ITEMINFO[CHIP_JUMP].COST
+				else if (From in MyWalkCells.TELEPORTATION) Cost += ITEMINFO[CHIP_TELEPORTATION].COST
+				else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) Cost += ITEMINFO[CHIP_JUMP].COST + ITEMINFO[CHIP_TELEPORTATION].COST
 				else continue
 			}
 
-			if (Cost <= MyTp && MyCooldowns[Item] == 0 && MyUses[Item] < Info.MAX_USES) {
-				push(_final, Action)
-			}
+			if (Cost <= MyStats.TP) push(_final, Action)
 		}
 		return _final
 	}

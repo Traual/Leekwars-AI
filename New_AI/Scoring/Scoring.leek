@@ -13,7 +13,7 @@ global MeanBulbs = [
     CHIP_TACTICIAN_BULB,
     CHIP_LIGHTNING_BULB
 ]
-
+//TODO : Add Shields and Damage Return in the score (to Shield before danger ?)
 //POLYNOMES POUR LE CALCUL DE ENTITY INTRINSIC SCORE
 
 // Polynômes de réglage (Degré 2 : [a, b, c] pour ax^2 + bx + c)
