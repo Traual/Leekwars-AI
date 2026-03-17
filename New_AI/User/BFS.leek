@@ -23,31 +23,34 @@ class ActionSuite {
 		var Tree = [] // Le "tableau global" qui servira d'arbre
 		var VirtualRoot = new NodeClass(new ActionClass(null, null, null), State)
 		VirtualRoot.SCORE = ScoringClass.getStateScore(State, MySide, RootBaseHash)
+		VirtualRoot.SET_HASH = 0
 		push(Tree, VirtualRoot)
 
+		var Context = new GenerationContextClass(VirtualRoot.SCORE)
+
 		// --- PROFONDEUR 1 ---
-		// On crée les premiers nœuds de l'arbre à partir de la racine
 		var depth1Nodes = []
+
 		for (var item in rootActions) {
 			var n1 = NodeClass.ActionToNode(item.Action, State, RootBaseHash)
 			n1.PARENT = VirtualRoot
 			n1.SCORE = ScoringClass.getStateScore(n1.END_STATS, MySide, StateClass.getBaseHash(n1.END_STATS))
+
+			// HASH de la branche (action XOR parent)
+			var actHash = (item.Action.Item ^ item.Action.From ^ item.Action.To)
+			n1.SET_HASH = VirtualRoot.SET_HASH ^ actHash
+
+			// On l'enregistre et on check si record global
+			Context.recordState(n1.SET_HASH, n1.SCORE, n1.END_STATS[Me].TP, n1.END_STATS[Me].MP)
 
 			push(Tree, n1)
 			push(depth1Nodes, n1)
 		}
 
 		// --- PROFONDEUR N (Exploration des branches) ---
-		// Pour chaque nœud de profondeur 1, on va chercher à épuiser les AP
-		// en réutilisant les actions initiales (ou en rafraîchissant si tu le souhaites plus tard)
 		for (var n1 in depth1Nodes) {
-
-			// Si tu veux refresh les actions au niveau 1, c'est ici :
-			// var localActions = getSortedScoredActions(n1.END_STATS) 
-			var localActions = rootActions
-
 			debugC("Expanding Depth 1 Branch: " + ITEMINFO[n1.ACTION.Item].NAME, COLOR_GREEN)
-			expandNodeGreedy(n1, localActions, Tree, MySide)
+			expandNodeGreedy(n1, rootActions, Tree, MySide, Context)
 		}
 
 		// Trouver la meilleure feuille dans tout l'arbre généré
@@ -79,38 +82,62 @@ class ActionSuite {
 	 * Expands a node by following the best possible sequence of actions 
 	 * among the candidates. (Greedy Path / Depth N)
 	 */
-	static expandNodeGreedy(ParentNode, CandidateActions, Tree, MySide) {
+	static expandNodeGreedy(ParentNode, CandidateActions, Tree, MySide, Context) {
 		var current = ParentNode
+		var maxEfficiency = (count(CandidateActions) > 0) ? CandidateActions[0].Score : 0
+		if (maxEfficiency < 0) maxEfficiency = 0 // On ne parie pas sur un gain futur si tout est négatif
+
 		while (true) {
 			var pState = current.END_STATS
 			var pHash = StateClass.getBaseHash(pState)
-			var bestNext = null
-			var bestScore = -MAX_VALUE
-			var bestEfficiency = -MAX_VALUE
-			// On parcourt les actions initiales par ordre d'efficience
-			for (var Candidate in CandidateActions) {
-				if (bestEfficiency > Candidate.Score) break // Le candidat aura forcément moins d'efficience que le meilleur donc on peut skip
-				// 1. Check rapide (TP/MP/CD)
-				if (isActionPlayable(Candidate.Action, pState, pHash)) {
 
-					// 2. Calcul du score REEL (pour éviter les soins inutiles, etc.)
-					var child = NodeClass.ActionToNode(Candidate.Action, pState, pHash)
-					var score = ScoringClass.getStateScore(child.END_STATS, MySide, StateClass.getBaseHash(child.END_STATS))
-					// 3. Si l'action apporte un vrai gain par rapport à l'état actuel de la branche
+			// 1. ELAGAGE UPPER BOUND
+			// On ajoute une marge de 1.1 pour laisser respirer les combos
+			if (current.SCORE + (pState[Me].TP * maxEfficiency) <= Context.bestScore) {
+				debug("élagage Upper Bound")
+				break
+			}
+
+			var bestNext = null
+			var bestEfficiency = 0
+
+			for (var item in CandidateActions) {
+				if (bestEfficiency > item.Score) break
+
+				if (isActionPlayable(item.Action, pState, pHash)) {
+					var child = NodeClass.ActionToNode(item.Action, pState, pHash)
+					var stats = child.END_STATS
+					var score = ScoringClass.getStateScore(stats, MySide, StateClass.getBaseHash(stats))
+
+					var actHash = (item.Action.Item ^ item.Action.From ^ item.Action.To)
+					var newNodeHash = current.SET_HASH ^ actHash
+
 					var delta = score - current.SCORE
-					var cost = pState[Me].TP - child.END_STATS[Me].TP
+					var cost = pState[Me].TP - stats[Me].TP
 					if (cost <= 0) cost = 1
 					var efficiency = delta / cost
-					// Mise à jour du meilleur coup trouvé dans cette itération
+
 					if (efficiency > bestEfficiency) {
 						bestNext = child
 						bestEfficiency = efficiency
-						bestNext.SCORE = score // On garde le score absolu pour le tour suivant
+						bestNext.SCORE = score
+						bestNext.SET_HASH = newNodeHash
 					}
 				}
 			}
-			// Si aucune action n'améliore le score ou n'est jouable, on arrête l'exploration de cette branche
+
 			if (bestNext == null) break
+
+			// 2. ELAGAGE PAR DOMINANCE (Sur le meilleur choix trouvé)
+			// Si notre meilleur coup est déjà dominé par un autre chemin, on arrête la branche
+			if (Context.isStateDominated(bestNext.SET_HASH, bestNext.SCORE, bestNext.END_STATS[Me].TP, bestNext.END_STATS[Me].MP)) {
+				debug("élagage state dominated")
+				break
+			}
+
+			// On enregistre pour les prochains
+			Context.recordState(bestNext.SET_HASH, bestNext.SCORE, bestNext.END_STATS[Me].TP, bestNext.END_STATS[Me].MP)
+
 			bestNext.PARENT = current
 			push(Tree, bestNext)
 			debug("  + Added Greedy Step: " + ITEMINFO[bestNext.ACTION.Item].NAME + " (New Score: " + bestNext.SCORE + ")")

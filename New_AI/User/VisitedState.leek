@@ -1,0 +1,24 @@
+/**
+ * Visited state representation to handle dominance pruning
+ **/
+
+include("../includes.leek")
+
+class VisitedStateClass {
+	SCORE
+	TP
+	MP
+
+	constructor(score, tp, mp) {
+		this.SCORE = score
+		this.TP = tp
+		this.MP = mp
+	}
+
+	/* Check if THIS state dominates ANOTHER state
+	 * Dominance: Score >=, TP >=, MP >= 
+	 */
+	static isDominating(Src, Tar) {
+		return Src.SCORE >= Tar.SCORE && Src.TP >= Tar.TP && Src.MP >= Tar.MP
+	}
+}
