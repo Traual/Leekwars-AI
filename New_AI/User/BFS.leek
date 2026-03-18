@@ -35,7 +35,6 @@ class ActionSuite {
 			var n1 = NodeClass.ActionToNode(item.Action, State, RootBaseHash)
 			n1.PARENT = VirtualRoot
 			n1.SCORE = ScoringClass.getStateScore(n1.END_STATS, MySide, StateClass.getBaseHash(n1.END_STATS))
-			if (VirtualRoot.SCORE >= n1.SCORE) continue
 
 			// HASH de la branche (action XOR parent)
 			var actHash = (item.Action.Item << 32 | item.Action.From << 16 | item.Action.To)
@@ -44,13 +43,14 @@ class ActionSuite {
 			// On l'enregistre et on check si record global
 			Context.recordState(n1.SET_HASH, n1.SCORE, n1.END_STATS[Me].TP, n1.END_STATS[Me].MP)
 
+			debug("Item: " + ITEMINFO[n1.ACTION.Item].NAME + " | From: " + n1.ACTION.From + " | To: " + n1.ACTION.To + " | Score Delta: " + (n1.SCORE - VirtualRoot.SCORE))
+
 			push(Tree, n1)
 			push(depth1Nodes, n1)
 		}
 
 		// --- PROFONDEUR N (Exploration des branches) ---
 		for (var n1 in depth1Nodes) {
-			debugC("Expanding Depth 1 Branch: " + ITEMINFO[n1.ACTION.Item].NAME, COLOR_GREEN)
 			expandNodeGreedy(n1, rootActions, Tree, MySide, Context)
 		}
 
@@ -94,7 +94,6 @@ class ActionSuite {
 
 			// 1. ELAGAGE UPPER BOUND
 			if (current.SCORE + (pState[Me].TP * maxEfficiency) <= Context.bestScore) {
-				debug("élagage Upper Bound")
 				break
 			}
 
@@ -131,7 +130,6 @@ class ActionSuite {
 			// 2. ELAGAGE PAR DOMINANCE (Sur le meilleur choix trouvé)
 			// Si notre meilleur coup est déjà dominé par un autre chemin, on arrête la branche
 			if (Context.isStateDominated(bestNext.SET_HASH, bestNext.SCORE, bestNext.END_STATS[Me].TP, bestNext.END_STATS[Me].MP)) {
-				debug("élagage state dominated")
 				break
 			}
 
@@ -140,7 +138,6 @@ class ActionSuite {
 
 			bestNext.PARENT = current
 			push(Tree, bestNext)
-			debug("  + Added Greedy Step: " + ITEMINFO[bestNext.ACTION.Item].NAME + " (New Score: " + bestNext.SCORE + ")")
 			current = bestNext
 		}
 	}
@@ -193,6 +190,7 @@ class ActionSuite {
 			if (cost <= 0) cost = 1
 
 			var scoreDelta = nodeScore - initialScore
+			if (scoreDelta <= 0) continue
 			var efficiency = scoreDelta / cost
 
 			push(_final, {

@@ -13,7 +13,12 @@ global MeanBulbs = [
     CHIP_TACTICIAN_BULB,
     CHIP_LIGHTNING_BULB
 ]
-//TODO : Add Shields and Damage Return in the score (to Shield before danger ?)
+// Polynômes pour les bonus de base des shields (Input: Shield, Output: Multiplicateur bonus à ajouter à 1.0)
+global POLY_ABS_SHIELD_BASE = [0.0, 0.0002, 0.0]
+global POLY_REL_SHIELD_BASE = [0.0, 0.001, 0.0]
+
+// Polynôme pour le Damage Return (Input: DamageReturn * danger / 1000, Output: Multiplicateur bonus)
+global POLY_DAMAGE_RETURN = [0.02, 0.5, 0.0]
 //POLYNOMES POUR LE CALCUL DE ENTITY INTRINSIC SCORE
 
 // Polynômes de réglage (Degré 2 : [a, b, c] pour ax^2 + bx + c)
@@ -54,6 +59,16 @@ global POLY_DIST_RELATION_ENEMY = [-0.0026, 0.08, 0.4]
 // Transformation du score de cohésion global en multiplicateur final
 global POLY_DIST_FINAL = [0.0, 1.0, 0.0] // Linéaire par défaut (1:1)
 
+// --- CONSTANTES DE SCORING ---
+global SCORE_DEFAULT_MULTIPLIER = 1.0
+global SCORE_SHIELD_DR_BASE = 1.0
+global SCORE_STATIC_DIVISOR = 100.0
+global SCORE_DIST_MIN_VALUE = 0.1
+global SCORE_COEF_WISDOM = 1.0
+global SCORE_COEF_SCIENCE = 1.0
+global SCORE_COEF_MAGIC = 1.0
+global SCORE_SURVIVAL_MIN_VALUE = 0.0
+
 class ScoringClass {
 
     static getStateScore(State, MySide, BaseHash) {
@@ -87,8 +102,8 @@ class ScoringClass {
                 var w2 = (stat.STRENGTH << 48) | (stat.WISDOM << 32) | (stat.AGILITY << 16) | stat.RESISTANCE
                 // SCI (16b) | MAG (16b) | POW (16b) | ABS_SHIELD (16b)
                 var w3 = (stat.SCIENCE << 48) | (stat.MAGIC << 32) | (stat.POWER << 16) | stat.ABSOLUTE_SHIELD
-                // REL_SHIELD (16b) | CD_ANTIDOTE (4b) | POISON (12b) | POT (12b)
-                var w4 = (stat.RELATIVE_SHIELD << 28) | (stat.COOLDOWNS[CHIP_ANTIDOTE] << 24) | (stat.POISON << 12) | stat.POISON_OVER_TIME
+                // DR (10b) | REL_SHIELD (16b) | CD_ANTIDOTE (4b) | POISON (12b) | POT (12b)
+                var w4 = (stat.DAMAGE_RETURN << 44) | (stat.RELATIVE_SHIELD << 28) | (stat.COOLDOWNS[CHIP_ANTIDOTE] << 24) | (stat.POISON << 12) | stat.POISON_OVER_TIME
 
                 var h_final = addValueToBinHash(addValueToBinHash(addValueToBinHash(addValueToBinHash(enemyContext, w1), w2), w3), w4)
 
@@ -106,14 +121,26 @@ class ScoringClass {
 
                 // On applique les multiplicateurs au score intraseque
                 var SurvivalMultiplier = getSurvivalMultiplier(stat, danger)
-                var DistanceMultiplier = getDistMultiplier(stat.ID, stat.SIDE, stat.CELL, State, BaseHash)
-                var finalValue = entity_value * SurvivalMultiplier * DistanceMultiplier
+                var DistanceMultiplier = e == Me ? SCORE_DEFAULT_MULTIPLIER : getDistMultiplier(stat.ID, stat.SIDE, stat.CELL, State, BaseHash)
+                var ShieldAndDRMultiplier = getShieldAndDRMultiplier(stat, danger)
+
+                var finalValue = entity_value * SurvivalMultiplier * DistanceMultiplier * ShieldAndDRMultiplier
 
                 ENTITY_ULTIMATE_SCORE_CACHE[h_final] = finalValue
                 _score += is_ally ? finalValue : -finalValue
             }
         }
         return _score
+    }
+
+    static getShieldAndDRMultiplier(stat, danger) {
+        var absBonus = solvePoly(POLY_ABS_SHIELD_BASE, stat.ABSOLUTE_SHIELD)
+        var relBonus = solvePoly(POLY_REL_SHIELD_BASE, stat.RELATIVE_SHIELD)
+        var drBonus = 0
+        if (danger > 0) {
+            drBonus = solvePoly(POLY_DAMAGE_RETURN, stat.DAMAGE_RETURN * danger)
+        }
+        return SCORE_SHIELD_DR_BASE + absBonus + relBonus + drBonus
     }
 
     static getResurrectionScore(entity_state, State) {
@@ -158,11 +185,11 @@ class ScoringClass {
         var TeamIndexes = EnemiesTeamIndexes.getWithCache(State, EntityStats)
 
         var StrengthCoef = solvePoly(POLY_COEF_STR, TeamIndexes.RESISTANCE)
-        var WisdomCoef = 1
+        var WisdomCoef = SCORE_COEF_WISDOM
         var AgilityCoef = solvePoly(POLY_COEF_AGI, TeamIndexes.STRENGTH)
         var ResistanceCoef = solvePoly(POLY_COEF_RES, TeamIndexes.STRENGTH)
-        var ScienceCoef = 1
-        var MagicCoef = 1
+        var ScienceCoef = SCORE_COEF_SCIENCE
+        var MagicCoef = SCORE_COEF_MAGIC
 
         var _final = EIndexes.STRENGTH * StrengthCoef +
             EIndexes.WISDOM * WisdomCoef +
@@ -174,7 +201,7 @@ class ScoringClass {
         _final *= solvePoly(POLY_BONUS_MP, EntityStats.TOTAL_MP)
         _final *= solvePoly(POLY_BONUS_CRIT, EntityStats.AGILITY)
 
-        if (EntityStats.STATIC) _final /= 100
+        if (EntityStats.STATIC) _final /= SCORE_STATIC_DIVISOR
 
         ENTITY_INTRINSIC_SCORE_CACHE[Hash] = _final
         return _final
@@ -201,7 +228,7 @@ class ScoringClass {
         var survivalRatio = (stat.LIFE - totalThreat) / stat.TOTAL_LIFE
 
         // 3. Application du polynôme de survie
-        var result = max(0, solvePoly(POLY_SURVIVAL, survivalRatio)) //to Avoid having a negative ratio
+        var result = max(SCORE_SURVIVAL_MIN_VALUE, solvePoly(POLY_SURVIVAL, survivalRatio)) //to Avoid having a negative ratio
 
         SURVIVAL_MULTIPLIER_CACHE[ThisHash] = result
         return result
@@ -217,7 +244,7 @@ class ScoringClass {
             enemyWeight = 0
 
         for (var e: var other in State) {
-            if (other.LIFE > 0 && other.ID != id) {
+            if (other.LIFE > 0 && other.ID != id && e != Me) {
                 var dist = CellClass.getDist(cell, other.CELL)
                 var otherValue = getEntityIntrinsicScore(other, State)
 
@@ -241,7 +268,7 @@ class ScoringClass {
         // Ici, l'importance des alliés vs ennemis est ÉQUILIBRÉE peu importe leur nombre
         var avgRelation = (allyScore + enemyScore) / 2.0
 
-        var result = max(0.1, solvePoly(POLY_DIST_FINAL, avgRelation))
+        var result = max(SCORE_DIST_MIN_VALUE, solvePoly(POLY_DIST_FINAL, avgRelation))
         DIST_MULTIPLIER_CACHE[ThisHash] = result
         return result
     }

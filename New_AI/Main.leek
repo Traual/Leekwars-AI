@@ -1,5 +1,4 @@
 include("includes.leek")
-//TODO : Check scoring with item per item actions and scoring : seems off with using libe on a 0 effects ally or just not wanting to play  
 //If i don't have enough opés i can optimize the combo loading feature in danger map (it takes a lot of opés i think with a lot of possibilities now)
 if (getTurn() == 1) Preload.InitEverything()
 ReloadCacheNewTurn()
