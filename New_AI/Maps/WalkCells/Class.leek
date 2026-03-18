@@ -300,12 +300,13 @@ class WalkCellsClass {
 	}
 
 	static LoadIgnoreCells(EveryStats, EntityToBeIgnored, BaseHash) {
-		if (BaseHash in IGNORE_CELLLS_CACHE) return IGNORE_CELLLS_CACHE[BaseHash]
+		var Hash = addValueToBinHash(OFFSET_BASIS ^ BaseHash, EntityToBeIgnored)
+		if (Hash in IGNORE_CELLLS_CACHE) return IGNORE_CELLLS_CACHE[Hash]
 		var _final = []
 		for (var e: var stat in EveryStats) {
 			if (stat.LIFE > 0 && e != EntityToBeIgnored) push(_final, stat.CELL)
 		}
-		IGNORE_CELLLS_CACHE[BaseHash] = _final
+		IGNORE_CELLLS_CACHE[Hash] = _final
 		return _final
 	}
 }

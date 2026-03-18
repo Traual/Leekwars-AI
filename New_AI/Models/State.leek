@@ -14,33 +14,33 @@ class StateClass {
 	}
 
 	/* Returns an array of entities sorted by turn order
-    *
-	* @param State Map Id : Entity State
-    *
-    * @return Array <EntityId>
-    */
+	 *
+	 * @param State Map Id : Entity State
+	 *
+	 * @return Array<EntityId>
+	 */
 
 	static getSortedEntityByTurnOrder(State) {
 		var Hash = getHashedEntities(State)
 		if (Hash in ENTITY_SORTED_BY_TURN_ORDER_CACHE) return ENTITY_SORTED_BY_TURN_ORDER_CACHE[Hash]
 		var tmp = []
-		for (var e:var stat in State) {
+		for (var e: var stat in State) {
 			push(tmp, e)
 		}
 		var _final = arraySort(tmp, function(a, b) {
-    		return State[a].TURN_ORDER - State[b].TURN_ORDER
+			return State[a].TURN_ORDER - State[b].TURN_ORDER
 		})
 		ENTITY_SORTED_BY_TURN_ORDER_CACHE[Hash] = _final
 		return _final
 	}
 
 	/* Returns an array of entities sorted by turn order after the play of entity
-    *
-	* @param State Map Id : Entity State
-	* @param entity (id of entity)
-    *
-    * @return Array <EntityId>
-    */
+	 *
+	 * @param State Map Id : Entity State
+	 * @param entity (id of entity)
+	 *
+	 * @return Array<EntityId>
+	 */
 
 	static getEntitiesInTurnOrderAfterEntity(State, entity) {
 		var _toPush = []
@@ -59,64 +59,64 @@ class StateClass {
 	}
 
 	/* Hash every ids of State
-    *
-	* @param State map <Id: Stats>
-    *
-    * @return Hash
-    */
+	 *
+	 * @param State map <Id: Stats>
+	 *
+	 * @return Hash
+	 */
 
 	static getHashedEntities(State) {
 
 		var hash_value = (OFFSET_BASIS)
 
-		for (var e:var stat in State) {
+		for (var e: var stat in State) {
 			hash_value = addValueToBinHash(hash_value, e)
 		}
-		
+
 		return hash_value
 	}
 
 	/* Hash Function for having an Hash of every Entities positions in Game (Very used)
-    *
-	* @param State Map <Id : Class Stats of Id>
-    *
-    * @return Hash id:Entity Cell of alive entities
-    */
+	 *
+	 * @param State Map <Id : Class Stats of Id>
+	 *
+	 * @return Hash id:Entity Cell of alive entities
+	 */
 
 	static getBaseHash(State) { //This is the BaseHash
 		var hash_value = OFFSET_BASIS
 		for (var id: var stat in State) {
 			if (id == Me || stat.LIFE <= 0) continue
 			// combining id (32 bits haut) and CELL (32 bits bas) in a 64 bits word to then put the word to the hash
-       		var combined = (id << 32) | stat.CELL
+			var combined = (id << 32) | stat.CELL
 			hash_value = addValueToBinHash(hash_value, combined)
 		}
 		return hash_value
 	}
 
 	/* Hash Function for having an Hash of every Enemy Entities positions in Game (Used in cell Danger)
-    *
-	* @param State Map <Id : Class Stats of Id>
-    *
-    * @return Hash id:Entity Cell of alive enemies
-    */
-/*
-	static getEnemiesBaseHash(State, BaseHash) { //This is the Enemies BaseHash (For enemies walkcells in Final Cell Loading)
-		if (BaseHash in ENEMIES_BASE_HASH_CACHE) return ENEMIES_BASE_HASH_CACHE[BaseHash] //Its an optimisation of a hash function (weird but working)
+	 *
+	 * @param State Map <Id : Class Stats of Id>
+	 *
+	 * @return Hash id:Entity Cell of alive enemies
+	 */
+	/*
+		static getEnemiesBaseHash(State, BaseHash) { //This is the Enemies BaseHash (For enemies walkcells in Final Cell Loading)
+			if (BaseHash in ENEMIES_BASE_HASH_CACHE) return ENEMIES_BASE_HASH_CACHE[BaseHash] //Its an optimisation of a hash function (weird but working)
 
-		var hash_value = OFFSET_BASIS
+			var hash_value = OFFSET_BASIS
 
-		for (var id: var stat in State) {
-			if (stat.ALLY || stat.LIFE <= 0) continue
-			// combining id (32 bits haut) and CELL (32 bits bas) in a 64 bits word to then put the word to the hash
-       		var combined = (id << 32) | stat.CELL
-			hash_value = addValueToBinHash(hash_value, combined)
-		}
+			for (var id: var stat in State) {
+				if (stat.ALLY || stat.LIFE <= 0) continue
+				// combining id (32 bits haut) and CELL (32 bits bas) in a 64 bits word to then put the word to the hash
+	       		var combined = (id << 32) | stat.CELL
+				hash_value = addValueToBinHash(hash_value, combined)
+			}
 
-		ENEMIES_BASE_HASH_CACHE[BaseHash] = hash_value
+			ENEMIES_BASE_HASH_CACHE[BaseHash] = hash_value
 
-		return hash_value
-	}*/
+			return hash_value
+		}*/
 
 	static getEntityCellsMap(State) {
 		var _final = [: ]
@@ -125,78 +125,78 @@ class StateClass {
 		}
 		return _final
 	}
-	
+
 	static getMaxUsedID(State) {
 		var _final = 0
-		for (var e:var EntityState in State) {
+		for (var e: var EntityState in State) {
 			if (e > _final) _final = e
 		}
 		return _final
 	}
-	
+
 	static CloneOnlyTargetsAndMe(Targets, EveryStats) {
 		var _final = [: ]
-		for (var tar:var dist in Targets+[Me: 0]) {
+		for (var tar: var dist in Targets + [Me: 0]) {
 			_final[tar] = clone(EveryStats[tar], 2)
 		}
-		for (var tar:var stats in EveryStats) { //No need to clone them
+		for (var tar: var stats in EveryStats) { //No need to clone them
 			if (!(tar in _final)) _final[tar] = stats
 		}
 		return _final
 	}
 
 	/* Gives me the average distance of an entity from its own allies (0 if no allies) (its not weighted, every ally is valued the same : from a puny bulb to a leek)
-    *
-    * @param entity_side getSide of entity
-	* @param state Map <Id : Class state of Id>
-    * @param entity_state State Class of ID
-    * @param base_hash : Hash <id : cell> of every alive entities
-    *
-    * @return average dist to allies of entity
-    */
+	 *
+	 * @param entity_side getSide of entity
+	 * @param state Map <Id : Class state of Id>
+	 * @param entity_state State Class of ID
+	 * @param base_hash : Hash <id : cell> of every alive entities
+	 *
+	 * @return average dist to allies of entity
+	 */
 
-    static getAverageDistFromAllies(entity_side, state, entity_cell, entity_id, base_hash) {
-        var ThisHash = addValueToBinHash((OFFSET_BASIS ^ base_hash), (entity_cell << 32) | entity_id)
-        if (ThisHash in AVERAGE_DISTANCE_FROM_ALLIES_CACHE) return AVERAGE_DISTANCE_FROM_ALLIES_CACHE[ThisHash]
+	static getAverageDistFromAllies(entity_side, state, entity_cell, entity_id, base_hash) {
+		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ base_hash), (entity_cell << 32) | entity_id)
+		if (ThisHash in AVERAGE_DISTANCE_FROM_ALLIES_CACHE) return AVERAGE_DISTANCE_FROM_ALLIES_CACHE[ThisHash]
 		var Total = 0
 		var Divide = 0
-		for (var entity:var thisState in state) {
+		for (var entity: var thisState in state) {
 			if (entity_side == thisState.SIDE) {
-                if (entity == entity_id || entity == Me) continue //Don't want to count myself in it cuz i will move before the end of the turn
+				if (entity == entity_id || entity == Me) continue //Don't want to count myself in it cuz i will move before the end of the turn
 				Total += CellClass.getDist(thisState.CELL, entity_cell)
 				Divide++
 			}
 		}
-        var _final = Divide == 0 ? 0 : (Total / Divide)
-        AVERAGE_DISTANCE_FROM_ALLIES_CACHE[ThisHash] = _final
+		var _final = Divide == 0 ? 0 : (Total / Divide)
+		AVERAGE_DISTANCE_FROM_ALLIES_CACHE[ThisHash] = _final
 		return _final
 	}
 
 	/* Gives me the average distance of an entity from its own ennemies (0 if no ennemies) (its not weighted, every ally is valued the same : from a puny bulb to a leek)
-    *
-    * @param entity_side getSide of entity
-	* @param state Map <Id : Class state of Id>
-    * @param entity_cell Cell of Entity ID
-	* @param entity_id Tested entity's ID
-    * @param base_hash : Hash <id : cell> of every alive entities
-    *
-    * @return average dist to ennemies of entity
-    */
+	 *
+	 * @param entity_side getSide of entity
+	 * @param state Map <Id : Class state of Id>
+	 * @param entity_cell Cell of Entity ID
+	 * @param entity_id Tested entity's ID
+	 * @param base_hash : Hash <id : cell> of every alive entities
+	 *
+	 * @return average dist to ennemies of entity
+	 */
 
-    static getAverageDistFromEnnemies(entity_side, state, entity_cell, entity_id, base_hash) {
-        var ThisHash = addValueToBinHash((OFFSET_BASIS ^ base_hash), (entity_cell << 32) | entity_id)
-        if (ThisHash in AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE) return AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE[ThisHash]
+	static getAverageDistFromEnnemies(entity_side, state, entity_cell, entity_id, base_hash) {
+		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ base_hash), (entity_cell << 32) | entity_id)
+		if (ThisHash in AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE) return AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE[ThisHash]
 		var Total = 0
 		var Divide = 0
-		for (var entity:var thisState in state) {
+		for (var entity: var thisState in state) {
 			if (entity_side != thisState.SIDE) {
-                if (entity == Me) continue //Don't want to count myself in it cuz i will move before the end of the turn
+				if (entity == Me) continue //Don't want to count myself in it cuz i will move before the end of the turn
 				Total += CellClass.getDist(thisState.CELL, entity_cell)
 				Divide++
 			}
 		}
-        var _final = Divide == 0 ? 0 : (Total / Divide)
-        AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE[ThisHash] = _final
+		var _final = Divide == 0 ? 0 : (Total / Divide)
+		AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE[ThisHash] = _final
 		return _final
 	}
 }
