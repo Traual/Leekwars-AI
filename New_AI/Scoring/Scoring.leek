@@ -41,15 +41,15 @@ class ScoringClass {
                 var is_ally = (stat.SIDE == MySide)
                 var enemyContext = enemyContextsBySide[stat.SIDE]
 
-                // --- HASH ULTIME PAR ENTITÉ ---
-                // ID (10b) | CELL (10b) | SIDE (3b) | LIFE (16b) | TP (8b) | MP (8b) | STATIC (1b)
-                var w1 = (stat.ID << 54) | (stat.CELL << 44) | (stat.SIDE << 41) | (stat.LIFE << 25) | (stat.TP << 17) | (stat.MP << 9) | (stat.STATIC ? 1 : 0)
-                // STR (16b) | WIS (16b) | AGI (16b) | RES (16b)
-                var w2 = (stat.STRENGTH << 48) | (stat.WISDOM << 32) | (stat.AGILITY << 16) | stat.RESISTANCE
-                // SCI (16b) | MAG (16b) | POW (16b) | ABS_SHIELD (16b)
-                var w3 = (stat.SCIENCE << 48) | (stat.MAGIC << 32) | (stat.POWER << 16) | stat.ABSOLUTE_SHIELD
-                // DR (10b) | REL_SHIELD (16b) | CD_ANTIDOTE (4b) | POISON (12b) | POT (12b)
-                var w4 = (stat.DAMAGE_RETURN << 44) | (stat.RELATIVE_SHIELD << 28) | (stat.COOLDOWNS[CHIP_ANTIDOTE] << 24) | (stat.POISON << 12) | stat.POISON_OVER_TIME
+                // --- ULTIMATE HASH PER ENTITY ---
+                // ID (10b) | CELL (10b) | SIDE (3b) | LIFE (15b) | TP (8b) | MP (8b) | STATIC (1b)
+                var w1 = (stat.ID << 55) | (stat.CELL << 45) | (stat.SIDE << 42) | (stat.LIFE << 27) | (stat.TP << 19) | (stat.MP << 11) | (stat.STATIC ? 1 : 0)
+                // STR (12b) | WIS (12b) | AGI (12b) | RES (12b) | SCI (12b)
+                var w2 = (stat.STRENGTH << 52) | (stat.WISDOM << 40) | (stat.AGILITY << 28) | (stat.RESISTANCE << 16) | stat.SCIENCE
+                // MAG (12b) | POW (12b) | ABS_SHIELD (16b) | REL_SHIELD (16b)
+                var w3 = (stat.MAGIC << 44) | (stat.POWER << 32) | (stat.ABSOLUTE_SHIELD << 16) | stat.RELATIVE_SHIELD
+                // TOTAL_LIFE (15b) | DR (10b) | CD_ANTIDOTE (4b) | POISON (16b) | POT (16b)
+                var w4 = (stat.TOTAL_LIFE << 46) | (stat.DAMAGE_RETURN << 36) | (stat.COOLDOWNS[CHIP_ANTIDOTE] << 32) | (stat.POISON << 16) | stat.POISON_OVER_TIME
 
                 var h_final = addValueToBinHash(addValueToBinHash(addValueToBinHash(addValueToBinHash(enemyContext, w1), w2), w3), w4)
 
@@ -116,11 +116,10 @@ class ScoringClass {
     }
 
     static getEntityIntrinsicScore(EntityStats, State) {
-        // Optimisation : On combine les stats dans 3 mots pour le cache
-        // Word 1 (64 bits) : ID (10b) | Power (12b) | TP (10b) | Strength (16b) | Wisdom (16b)
-        var combined1 = (EntityStats.ID << 54) | (EntityStats.POWER << 42) | (EntityStats.TOTAL_TP << 32) | (EntityStats.STRENGTH << 16) | EntityStats.WISDOM
-        // Word 2 (64 bits) : Agility (16b) | Resistance (16b) | Science (16b) | Magic (16b)
-        var combined2 = (EntityStats.AGILITY << 48) | (EntityStats.RESISTANCE << 32) | (EntityStats.SCIENCE << 16) | EntityStats.MAGIC
+        // Word 1 (58 bits) : ID (10b) | Power (12b) | TotalTP (10b) | Strength (12b) | Wisdom (12b)
+        var combined1 = (EntityStats.ID << 46) | (EntityStats.POWER << 34) | (EntityStats.TOTAL_TP << 24) | (EntityStats.STRENGTH << 12) | EntityStats.WISDOM
+        // Word 2 (63 bits) : Agility (12b) | Resistance (12b) | Science (12b) | Magic (12b) | TotalLife (15b)
+        var combined2 = (EntityStats.AGILITY << 51) | (EntityStats.RESISTANCE << 39) | (EntityStats.SCIENCE << 27) | (EntityStats.MAGIC << 15) | EntityStats.TOTAL_LIFE
         // Word 3 : MP (10b) | STATIC (1b) | SIDE (4b)
         var combined3 = (EntityStats.TOTAL_MP << 5) | (EntityStats.STATIC ? 1 : 0) << 4 | EntityStats.SIDE
 
@@ -146,6 +145,7 @@ class ScoringClass {
 
         _final *= solvePoly(POLY_BONUS_MP, EntityStats.TOTAL_MP)
         _final *= solvePoly(POLY_BONUS_CRIT, EntityStats.AGILITY)
+        _final *= solvePoly(POLY_BONUS_LIFE, EntityStats.TOTAL_LIFE)
 
         if (EntityStats.STATIC) _final /= SCORE_STATIC_DIVISOR
 

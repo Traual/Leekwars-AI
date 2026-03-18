@@ -34,6 +34,7 @@ global POLY_COEF_MAG = [0.0, 0.0, 1.0]
 // Polynomials for final bonuses (MP, Agility/Crit)
 global POLY_BONUS_MP = [0.0, 0.033, 1.0]   // Default: 1 + (MP / 30)
 global POLY_BONUS_CRIT = [0.0, 0.0014, 1.0] // Default: 1 + (AGI * 0.0014)
+global POLY_BONUS_LIFE = [0.0, 0.0001, 1.0] // Default: 1 + (TOTAL_LIFE / 10000)
 
 // Polynomials for threat (Threat)
 global POLY_THREAT_DANGER = [0.0, 0.45, 0.0]

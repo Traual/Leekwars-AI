@@ -51,6 +51,7 @@ class ActionSuite {
 
 		// --- PROFONDEUR N (Exploration des branches) ---
 		for (var n1 in depth1Nodes) {
+			if (getOperations() > MAX_OPS_BFS_EXPAND) break
 			expandNodeGreedy(n1, rootActions, Tree, MySide, Context)
 		}
 

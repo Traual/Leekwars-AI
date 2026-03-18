@@ -4,6 +4,8 @@
 
 include("../includes.leek")
 
+global MAX_OPS_BFS_EXPAND = (getCores() * 1000000) * 0.75
+
 global EVERYONE
 EVERYONE = getAllies() + getEnemies()
 global ALLIES
