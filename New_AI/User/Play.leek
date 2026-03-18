@@ -5,9 +5,6 @@
 include("../includes.leek")
 
 class Play {
-	//TODO CHANGE VAR NAMES HERE
-	//TODO : Check if there are still enemies (if not then i have won i can dance or dunno what to do) after loading everystats
-	//TODO : Re Do play clean its ugly AF
 
 	/* Playing function, seeks the best action to do until there are none, then go hide itself to minimize danger
 	 *

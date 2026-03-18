@@ -1,0 +1,61 @@
+/**
+ * Scoring Weights and Coefficients
+ * These parameters are intended to be tuned or trained.
+ **/
+
+// Polynomials for base shield bonuses (Input: Shield, Output: Multiplier bonus to add to 1.0)
+global POLY_ABS_SHIELD_BASE = [0.0, 0.0002, 0.0]
+global POLY_REL_SHIELD_BASE = [0.0, 0.001, 0.0]
+
+// Polynomial for Damage Return (Input: DamageReturn * danger / 1000, Output: Multiplier bonus)
+global POLY_DAMAGE_RETURN = [0.02, 0.5, 0.0]
+
+// POLYNOMES FOR ENTITY INTRINSIC SCORE CALCULATION
+// Tuning Polynomials (Degree 2: [a, b, c] for ax^2 + bx + c)
+global POLY_STRENGTH = [0.0, 1.0, 0.0]
+global POLY_WISDOM = [0.0, 1.0, 0.0]
+global POLY_AGILITY = [0.0, 1.0, 0.0]
+global POLY_RESISTANCE = [0.0, 1.0, 0.0]
+global POLY_SCIENCE = [0.0, 1.0, 0.0]
+global POLY_MAGIC = [0.0, 1.0, 0.0]
+
+// Polynomials for POWER
+global POLY_POWER_STRENGTH = [0.0, 0.01, 1.0] // Default: 1 + (POWER / 100)
+global POLY_POWER_MAGIC = [0.0, 0.0066, 1.0]  // Default: 1 + (POWER / 150)
+
+// Polynomials for Adjustment Coefficients (ex: StrengthCoef = solvePoly(POLY_COEF_STR, EnemyResIndex))
+global POLY_COEF_STR = [0.0, 0.00025, 0.0]
+global POLY_COEF_WIS = [0.0, 0.0, 1.0]
+global POLY_COEF_AGI = [0.0, 0.0001, 1.0]
+global POLY_COEF_RES = [0.0, 0.0001, 0.0]
+global POLY_COEF_SCI = [0.0, 0.0, 1.0]
+global POLY_COEF_MAG = [0.0, 0.0, 1.0]
+
+// Polynomials for final bonuses (MP, Agility/Crit)
+global POLY_BONUS_MP = [0.0, 0.033, 1.0]   // Default: 1 + (MP / 30)
+global POLY_BONUS_CRIT = [0.0, 0.0014, 1.0] // Default: 1 + (AGI * 0.0014)
+
+// Polynomials for threat (Threat)
+global POLY_THREAT_DANGER = [0.0, 0.45, 0.0]
+global POLY_THREAT_POISON = [0.0, 0.8, 0.0]
+global POLY_THREAT_POT = [0.0, 0.3, 0.0]
+
+// Final survival polynomial (Input: Survival ratio, Output: Score multiplier)
+global POLY_SURVIVAL = [0.0, 0.7, 0.3]
+
+// Distance relation polynomial between two entities (depends on distance d)
+global POLY_DIST_RELATION_ALLY = [-0.0052, 0.16, 0.8]
+global POLY_DIST_RELATION_ENEMY = [-0.0026, 0.08, 0.4]
+
+// Transformation of global cohesion score to final multiplier
+global POLY_DIST_FINAL = [0.0, 1.0, 0.0] // Linear by default (1:1)
+
+// --- SCORING CONSTANTS ---
+global SCORE_DEFAULT_MULTIPLIER = 1.0
+global SCORE_SHIELD_DR_BASE = 1.0
+global SCORE_STATIC_DIVISOR = 100.0
+global SCORE_DIST_MIN_VALUE = 0.1
+global SCORE_COEF_WISDOM = 1.0
+global SCORE_COEF_SCIENCE = 1.0
+global SCORE_COEF_MAGIC = 1.0
+global SCORE_SURVIVAL_MIN_VALUE = 0.0
