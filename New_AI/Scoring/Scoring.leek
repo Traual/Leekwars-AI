@@ -14,7 +14,6 @@ global MeanBulbs = [
     CHIP_LIGHTNING_BULB
 ]
 
-
 class ScoringClass {
 
     static getStateScore(State, MySide, BaseHash) {
@@ -68,7 +67,7 @@ class ScoringClass {
                 // On applique les multiplicateurs au score intraseque
                 var SurvivalMultiplier = getSurvivalMultiplier(stat, danger)
                 var DistanceMultiplier = e == Me ? SCORE_DEFAULT_MULTIPLIER : getDistMultiplier(stat.ID, stat.SIDE, stat.CELL, State, BaseHash)
-                var ShieldAndDRMultiplier = getShieldAndDRMultiplier(stat, danger)
+                var ShieldAndDRMultiplier = getShieldAndDRMultiplier(stat, danger, SurvivalMultiplier)
 
                 var finalValue = entity_value * SurvivalMultiplier * DistanceMultiplier * ShieldAndDRMultiplier
 
@@ -79,14 +78,22 @@ class ScoringClass {
         return _score
     }
 
-    static getShieldAndDRMultiplier(stat, danger) {
+    static getShieldAndDRMultiplier(stat, danger, SurvivalMultiplier) {
         var absBonus = solvePoly(POLY_ABS_SHIELD_BASE, stat.ABSOLUTE_SHIELD)
         var relBonus = solvePoly(POLY_REL_SHIELD_BASE, stat.RELATIVE_SHIELD)
-        var drBonus = 0
-        if (danger > 0) {
-            drBonus = solvePoly(POLY_DAMAGE_RETURN, stat.DAMAGE_RETURN * danger)
-        }
-        return SCORE_SHIELD_DR_BASE + absBonus + relBonus + drBonus
+        
+        // 1. Dissuasion pure (la simple présence de la stat)
+        var baseDRBonus = solvePoly(POLY_DAMAGE_RETURN, stat.DAMAGE_RETURN)
+        
+        // 2. Dégâts concrets renvoyés (sur le danger brut, sans limite de vie car l'overkill est infligé à l'attaquant)
+        var activeDR = danger * (stat.DAMAGE_RETURN / 100)
+        var activeDRBonus = solvePoly(POLY_DAMAGE_RETURN_ACTIVE, activeDR)
+        
+        // 3. Facteur de désespoir (Plus la mort est proche, plus le renvoi est inestimable comme bouclier dissuasif absolu)
+        var despairFactor = 1.0 - SurvivalMultiplier
+        var despairDRBonus = solvePoly(POLY_DAMAGE_RETURN_DESPAIR, activeDR * despairFactor)
+        
+        return SCORE_SHIELD_DR_BASE + absBonus + relBonus + baseDRBonus + activeDRBonus + despairDRBonus
     }
 
     static getResurrectionScore(entity_state, State) {

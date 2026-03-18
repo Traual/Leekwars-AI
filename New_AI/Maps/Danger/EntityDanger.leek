@@ -4,7 +4,7 @@
 
 /**
  * Here we calculate the best item for CellDanger Class
-**/
+ **/
 
 include("../../includes.leek")
 
@@ -49,7 +49,7 @@ class EntityDangerClass { //TODO : Remove Libe From It To Avoid Losing Opés
 		var Hash = EntityStats.ID
 		if (Hash in DANGER_ENTITY_INVENTORY) return DANGER_ENTITY_INVENTORY[Hash]
 		var _final = []
-		for (var i:var cd in EntityStats.COOLDOWNS) {
+		for (var i: var cd in EntityStats.COOLDOWNS) {
 			if (cd > 1) continue
 			if (IsToCheck(ITEMINFO[i])) {
 				push(_final, i)
@@ -58,20 +58,20 @@ class EntityDangerClass { //TODO : Remove Libe From It To Avoid Losing Opés
 		DANGER_ENTITY_INVENTORY[Hash] = _final
 		return _final
 	}
-	
+
 	static IsToCheck(Infos) {
 		for (var eff in Infos.EFFECTS) {
 			if (DangerClass.MapHittables[eff[0]]) return true
 		}
 		return false
 	}
-	
+
 	static SortTmp(ActualTmp) {
 		return arraySort(ActualTmp, function(a, b) {
 			return b.DamagesPerTp - a.DamagesPerTp
 		})
 	}
-	
+
 	static MapHash(EntityStats, MyStats) {
 		// If Every Enemies : Mp/Tp/Str/Magic doesn't move, its the same hash 
 		// (if my absolute, Relative and HashGravity is the same)
@@ -89,7 +89,7 @@ class EntityDangerClass { //TODO : Remove Libe From It To Avoid Losing Opés
 
 		return hash_value
 	}
-	
+
 	static MapDistPossibles = [
 		AREA_CIRCLE_1: 1,
 		AREA_CIRCLE_2: 2,
