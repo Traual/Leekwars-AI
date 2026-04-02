@@ -13,21 +13,16 @@ class Play {
 
 	constructor() {
 		ReloadCacheNewTurn()
-		while (true) { //While i have something to play :
-			//I Start By Refreshing and loading the best action in the actual scenario
-			var State = StateClass.Virtualize() //I reload the stats
-			var Node = ActionSuite.getBestActionTreeInState(State) //I get the best action to play
-			if (Node.ACTION.Item == null) break //if there are no better actions then no play node, i can break
-			//I declare some variables to optimize
-			var Action = Node.ACTION
+		while (true) {
+			var State = StateClass.Virtualize()
+			var Action = ActionSuite.getBestAction(State)
+			if (Action == null) break
 			var From = Action.From
 			var Item = Action.Item
 			var To = Action.To
 			var TmpBaseHash = StateClass.getBaseHash(State)
 			debug("Using : " + ITEMINFO[Item].NAME + " from : " + From + " to : " + To)
-			//Then i execute the action : 
-			WalkCellsClass.MoveTo(From, State, TmpBaseHash) //I Start by moving to the action's from cell
-			//Then i use item
+			WalkCellsClass.MoveTo(From, State, TmpBaseHash)
 			executeAction(Item, To, State)
 		}
 		//Then i reload stats and find the final cell to go with theses stats :

@@ -44,7 +44,7 @@ global POLY_THREAT_POISON = [0.0, 0.8, 0.0]
 global POLY_THREAT_POT = [0.0, 0.3, 0.0]
 
 // Final survival polynomial (Input: Survival ratio, Output: Score multiplier)
-global POLY_SURVIVAL = [0.0, 0.7, 0.3]
+global POLY_SURVIVAL = [0.001, 1, 0.5]
 
 // Distance relation polynomial between two entities (depends on distance d)
 global POLY_DIST_RELATION_ALLY = [-0.0052, 0.16, 0.8]

@@ -1,7 +1,7 @@
 /**
- * Greedy Tree Generator
- * Builds a tree in a global array.
- * Depth 1 creates initial branches, Depth N expands them using initial actions.
+ * Greedy Depth-1 Action Selector
+ * At each step, evaluates all possible actions in the current state
+ * and returns the one with the best score improvement.
  **/
 
 include("../includes.leek")
@@ -9,200 +9,37 @@ include("../includes.leek")
 class ActionSuite {
 
 	/**
-	 * Main entry point: Generates the tree and returns the best immediate action.
+	 * Returns the best single action to play in the given state.
+	 * Evaluates every playable action, scores the resulting state,
+	 * and returns the Action with the highest score (or null if nothing improves).
 	 */
-	static getBestActionTreeInState(State) {
+	static getBestAction(State) {
 		var MySide = State[Me].SIDE
-		var RootBaseHash = StateClass.getBaseHash(State)
-
-		// 1. Actions candidates calculées à la racine (Intentions de départ)
-		var rootActions = getSortedScoredActions(State)
-		debugC("--- Starting Tree Generation ---", COLOR_BLUE)
-		debug("Initial Actions found: " + count(rootActions))
-
-		var Tree = [] // Le "tableau global" qui servira d'arbre
-		var VirtualRoot = new NodeClass(new ActionClass(null, null, null), State)
-		VirtualRoot.SCORE = ScoringClass.getStateScore(State, MySide, RootBaseHash)
-		VirtualRoot.SET_HASH = 0
-		push(Tree, VirtualRoot)
-
-		var Context = new GenerationContextClass(VirtualRoot.SCORE)
-
-		// --- PROFONDEUR 1 ---
-		var depth1Nodes = []
-
-		for (var item in rootActions) {
-			var n1 = NodeClass.ActionToNode(item.Action, State, RootBaseHash)
-			n1.PARENT = VirtualRoot
-			n1.SCORE = ScoringClass.getStateScore(n1.END_STATS, MySide, StateClass.getBaseHash(n1.END_STATS))
-
-			// HASH de la branche (action XOR parent)
-			var actHash = (item.Action.Item << 32 | item.Action.From << 16 | item.Action.To)
-			n1.SET_HASH = VirtualRoot.SET_HASH ^ actHash
-
-			// On l'enregistre et on check si record global
-			Context.recordState(n1.SET_HASH, n1.SCORE, n1.END_STATS[Me].TP, n1.END_STATS[Me].MP)
-
-			debug("Item: " + ITEMINFO[n1.ACTION.Item].NAME + " | From: " + n1.ACTION.From + " | To: " + n1.ACTION.To + " | Score Delta: " + (n1.SCORE - VirtualRoot.SCORE))
-
-			push(Tree, n1)
-			push(depth1Nodes, n1)
-		}
-
-		// --- PROFONDEUR N (Exploration des branches) ---
-		for (var n1 in depth1Nodes) {
-			if (getOperations() > MAX_OPS_BFS_EXPAND) break
-			expandNodeGreedy(n1, rootActions, Tree, MySide, Context)
-		}
-
-		// Trouver la meilleure feuille dans tout l'arbre généré
-		var BestNode = VirtualRoot
-		for (var node in Tree) {
-			if (node.SCORE > BestNode.SCORE) {
-				BestNode = node
-			}
-		}
-
-		debugC("--- Best Branch Found ---", COLOR_RED)
-		debug("Best Score: " + BestNode.SCORE)
-
-		// Remonter à l'action immédiate pour Play.leek
-		var current = BestNode
-		var path = []
-		while (current.PARENT != null && current.PARENT.PARENT != null) {
-			if (current.ACTION.Item != null) push(path, ITEMINFO[current.ACTION.Item].NAME)
-			current = current.PARENT
-		}
-		if (current.ACTION.Item != null) push(path, ITEMINFO[current.ACTION.Item].NAME)
-
-		debug("Path: from last play to first " + path)
-
-		return current
-	}
-
-	/**
-	 * Expands a node by following the best possible sequence of actions 
-	 * among the candidates. (Greedy Path / Depth N)
-	 */
-	static expandNodeGreedy(ParentNode, CandidateActions, Tree, MySide, Context) {
-		var current = ParentNode
-		var maxEfficiency = (count(CandidateActions) > 0) ? CandidateActions[0].Score : 0
-		if (maxEfficiency < 0) maxEfficiency = 0 // On ne parie pas sur un gain futur si tout est négatif
-
-		while (true) {
-			var pState = current.END_STATS
-			var pHash = StateClass.getBaseHash(pState)
-
-			// 1. ELAGAGE UPPER BOUND
-			if (current.SCORE + (pState[Me].TP * maxEfficiency) <= Context.bestScore) {
-				break
-			}
-
-			var bestNext = null
-			var bestEfficiency = 0
-
-			for (var item in CandidateActions) {
-				if (bestEfficiency > item.Score) break
-
-				if (isActionPlayable(item.Action, pState, pHash)) {
-					var child = NodeClass.ActionToNode(item.Action, pState, pHash)
-					var stats = child.END_STATS
-					var score = ScoringClass.getStateScore(stats, MySide, StateClass.getBaseHash(stats))
-
-					var actHash = (item.Action.Item ^ item.Action.From ^ item.Action.To)
-					var newNodeHash = current.SET_HASH ^ actHash
-
-					var delta = score - current.SCORE
-					var cost = pState[Me].TP - stats[Me].TP
-					if (cost <= 0) cost = 1
-					var efficiency = delta / cost
-
-					if (efficiency > bestEfficiency) {
-						bestNext = child
-						bestEfficiency = efficiency
-						bestNext.SCORE = score
-						bestNext.SET_HASH = newNodeHash
-					}
-				}
-			}
-
-			if (bestNext == null) break
-
-			// 2. ELAGAGE PAR DOMINANCE (Sur le meilleur choix trouvé)
-			// Si notre meilleur coup est déjà dominé par un autre chemin, on arrête la branche
-			if (Context.isStateDominated(bestNext.SET_HASH, bestNext.SCORE, bestNext.END_STATS[Me].TP, bestNext.END_STATS[Me].MP)) {
-				break
-			}
-
-			// On enregistre pour les prochains
-			Context.recordState(bestNext.SET_HASH, bestNext.SCORE, bestNext.END_STATS[Me].TP, bestNext.END_STATS[Me].MP)
-
-			bestNext.PARENT = current
-			push(Tree, bestNext)
-			current = bestNext
-		}
-	}
-
-	/**
-	 * Checks if a specific action is still valid in the current state.
-	 */
-	static isActionPlayable(Action, State, BaseHash) {
-		var MyStats = State[Me]
-		var Item = Action.Item
-		if (Item == null) return false
-		var Info = ITEMINFO[Item]
-
-		if (MyStats.COOLDOWNS[Item] > 0 || MyStats.USES[Item] >= Info.MAX_USES) return false
-
-		var MyWalkCells = new WalkCellsClass(State, Me, true, true, true, true, BaseHash)
-		var From = Action.From
-		var moveCost = 0
-
-		if (!(From in MyWalkCells.WALK)) {
-			if (From in MyWalkCells.JUMP) moveCost = ITEMINFO[CHIP_JUMP].COST
-			else if (From in MyWalkCells.TELEPORTATION) moveCost = ITEMINFO[CHIP_TELEPORTATION].COST
-			else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
-				moveCost = ITEMINFO[CHIP_JUMP].COST + ITEMINFO[CHIP_TELEPORTATION].COST
-			} else return false
-		}
-
-		var itemCost = (Info.IS_WEAPON && MyStats.WEAPON != Item) ? Info.COST + 1 : Info.COST
-		return (moveCost + itemCost <= MyStats.TP)
-	}
-
-	/**
-	 * Lists and scores actions by efficiency (Delta / Cost).
-	 */
-	static getSortedScoredActions(State) {
 		var BaseHash = StateClass.getBaseHash(State)
-		var MySide = State[Me].SIDE
 		var initialScore = ScoringClass.getStateScore(State, MySide, BaseHash)
-		var initialTP = State[Me].TP
 
 		var actions = getBaseActions(State, BaseHash)
-		var _final = []
+		debugC("--- Evaluating " + count(actions) + " actions ---", COLOR_BLUE)
+
+		var bestAction = null
+		var bestScore = initialScore
 
 		for (var act in actions) {
 			var node = NodeClass.ActionToNode(act, State, BaseHash)
 			var nodeBaseHash = StateClass.getBaseHash(node.END_STATS)
 			var nodeScore = ScoringClass.getStateScore(node.END_STATS, MySide, nodeBaseHash)
 
-			var cost = initialTP - node.END_STATS[Me].TP
-			if (cost <= 0) cost = 1
-
-			var scoreDelta = nodeScore - initialScore
-			if (scoreDelta <= 0) continue
-			var efficiency = scoreDelta / cost
-
-			push(_final, {
-				Action: act,
-				Score: efficiency
-			})
+			if (nodeScore > bestScore) {
+				bestScore = nodeScore
+				bestAction = act
+			}
 		}
 
-		return arraySort(_final, function(a, b) {
-			return b.Score - a.Score
-		})
+		if (bestAction != null) {
+			debug("Best: " + ITEMINFO[bestAction.Item].NAME + " | From: " + bestAction.From + " | To: " + bestAction.To + " | Delta: " + (bestScore - initialScore))
+		}
+
+		return bestAction
 	}
 
 	static getBaseActions(State, BaseHash) {

@@ -7,15 +7,9 @@ include("../includes.leek")
 class NodeClass {
 	ACTION
 	END_STATS
-	PARENT
-	SCORE
-	SET_HASH
 	constructor(Act, StatsAfterAction) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction
-		this.PARENT
-		this.SCORE = 0
-		this.SET_HASH = 0
 	}
 
 	/* It is a simplified version with less parameters of ActionToNodeInATree. It is used in Action Suite in Loading Base Nodes
