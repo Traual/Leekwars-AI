@@ -1,8 +1,10 @@
 include("includes.leek")
+//TODO : Cooldown value system
+//TODO : Covid propagation in final cell ?
+//TODO : Fix Enhanced Lightninger firing on allies
 //If i don't have enough opés i can optimize the combo loading feature in danger map (it takes a lot of opés i think with a lot of possibilities now)
 if (getTurn() == 1) Preload.InitEverything()
 ReloadCacheNewTurn()
 Preload.InitStateClass()
 new Play()
-
-debug("Full opés this turn : " + getOperations() / 1000000 + " m")
+debug("Full opés this turn : " + getOperations() / 1000000 + " m") // ops debug is now inside Play.leek
