@@ -1,4 +1,5 @@
 include("includes.leek")
+//TODO : Add : Scoring of the probable ending of my play (if i get buffed i may have more impact during the rest of my play (and near ennemies), otherwise it may not be as useful)
 //TODO : Cooldown value system
 //TODO : Covid propagation in final cell ?
 //TODO : Fix Enhanced Lightninger firing on allies
