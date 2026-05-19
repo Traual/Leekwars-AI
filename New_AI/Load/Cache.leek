@@ -168,8 +168,11 @@ global MAX_TP_MAG_CACHE = [: ]
 //For WalkCells :
 
 global OBSTACLES_ARRAY = getObstacles()
-global MAP_CELL_TO_LINE = [: ]
-global MAP_CELL_TO_POS = [: ]
+// MAP_CELL_TO_COUPLE[cell]  : couple index (0..17) where the cell lives
+// MAP_CELL_TO_BITMASK[cell] : 1 << bit_position within that couple int
+// (bit position = pos for even line cells, 24 + pos for odd line cells)
+global MAP_CELL_TO_COUPLE  = []
+global MAP_CELL_TO_BITMASK = []
 
 global MAP_OBSTACLES_LOADED
 

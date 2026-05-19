@@ -25,9 +25,13 @@ class Preload {
 			CELL_Y[c] = getCellY(c)
 			CELL_X[c] = getCellX(c)
 		}
+		// Pre-compute (couple, bitmask) for every cell so InitObstacles/InitLeekCells/
+		// InitBuildAcc* can do a single bitwise op per cell instead of recomputing.
 		for (var c = 0; c < 613; c++) {
-			MAP_CELL_TO_LINE[c] = CellToLine(c) //In Binary Walkcells Functions
-			MAP_CELL_TO_POS[c] = CellToPos(c) //In Binary Walkcells Functions
+			var line = CellToLine(c)
+			var pos = CellToPos(c)
+			push(MAP_CELL_TO_COUPLE, line >> 1)
+			push(MAP_CELL_TO_BITMASK, 1 << ((line & 1) == 0 ? pos : (24 + pos)))
 		}
 		for (var c = 0; c < 613; c++) {
 			var cInfo = new CellClass(c)
