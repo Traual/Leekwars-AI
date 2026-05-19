@@ -23,20 +23,40 @@ function AddToBaseArray(NumberAdded, BaseMapTmp) {
 	return _final
 }
 
-// Build per-line lookup tables in a loop instead of 105 named globals.
-// For line L: base offset = (L >> 1) * 35 + (L & 1) * 18.
-//   - even lines (18 cells, 6+6+6): all 3 parts use BaseMapOfConvertion
-//   - odd lines (17 cells, 6+6+5): part 2 uses HalvedMapOfConvertion (only 5 bits valid)
-global BINARY_TO_CELL_BY_LINE = function() {
+// Couple-indexed lookup tables for 35-bit packed bitmap decoding.
+// Layout of the 35-bit couple bitmap:
+//   bits 0-5   : chunk 0 — even cells 0-5    → BTC[c][0]
+//   bits 6-11  : chunk 1 — even cells 6-11   → BTC[c][1]
+//   bits 12-17 : chunk 2 — even cells 12-17  → BTC[c][2]
+//   bits 18-23 : gap (always 0)
+//   bits 24-29 : chunk 3 — odd cells 0-5     → BTC[c][3]
+//   bits 30-35 : chunk 4 — odd cells 6-11    → BTC[c][4]
+//   bits 36-40 : chunk 5 — odd cells 12-16   → BTC[c][5] (HalvedMap, only 5 bits valid)
+// For the last couple (c=17, only even line 34 exists), odd chunks use empty
+// arrays so they're no-ops during decode.
+global BINARY_TO_CELL_BY_COUPLE = function() {
 	var t = []
-	for (var line = 0; line < 35; line++) {
-		var base = (line >> 1) * 35 + (line & 1) * 18
-		var lastPart = (line & 1) == 1 ? HalvedMapOfConvertion : BaseMapOfConvertion
-		push(t, [
-			AddToBaseArray(base, BaseMapOfConvertion),
-			AddToBaseArray(base + 6, BaseMapOfConvertion),
-			AddToBaseArray(base + 12, lastPart)
-		])
+	// Empty chunk used for couple 17's missing odd half: every key maps to []
+	var empty = [: ]
+	for (var i = 0; i < 64; i++) empty[i] = []
+	for (var couple = 0; couple < 18; couple++) {
+		var lineE = couple << 1
+		var lineO = lineE | 1
+		var baseE = couple * 35
+		var baseO = baseE + 18
+		var chunks = [
+			AddToBaseArray(baseE, BaseMapOfConvertion),     // even chunk 0
+			AddToBaseArray(baseE + 6, BaseMapOfConvertion), // even chunk 1
+			AddToBaseArray(baseE + 12, BaseMapOfConvertion) // even chunk 2
+		]
+		if (couple < 17) {
+			push(chunks, AddToBaseArray(baseO, BaseMapOfConvertion))       // odd chunk 0
+			push(chunks, AddToBaseArray(baseO + 6, BaseMapOfConvertion))   // odd chunk 1
+			push(chunks, AddToBaseArray(baseO + 12, HalvedMapOfConvertion)) // odd chunk 2 (5 bits)
+		} else {
+			push(chunks, empty); push(chunks, empty); push(chunks, empty)
+		}
+		push(t, chunks)
 	}
 	return t
 }()

@@ -58,10 +58,10 @@ function InitLeekCells(LeekCells) { //on met sur la bitmap d'obstacles les posit
 	}
 }
 
-function InitAccesMp()   { for (var i = 0; i < 35; i++) ACCESMP[i] = [: ] }
-function InitAccesMpJ()  { for (var i = 0; i < 35; i++) ACCESMPJ[i] = [: ] }
-function InitAccesMpT()  { for (var i = 0; i < 35; i++) ACCESMPT[i] = [: ] }
-function InitAccesMpTJ() { for (var i = 0; i < 35; i++) ACCESMPTJ[i] = [: ] }
+function InitAccesMp()   { for (var i = 0; i < 18; i++) ACCESMP[i] = [: ] }
+function InitAccesMpJ()  { for (var i = 0; i < 18; i++) ACCESMPJ[i] = [: ] }
+function InitAccesMpT()  { for (var i = 0; i < 18; i++) ACCESMPT[i] = [: ] }
+function InitAccesMpTJ() { for (var i = 0; i < 18; i++) ACCESMPTJ[i] = [: ] }
 
 function InitBuildAcc(cell) {
 	for (var c = 0; c < 18; c++) ACC[c] = 0
@@ -86,13 +86,7 @@ function InitBuildAccTJ(cell) {
 function SaveBaseAccessibles() {
 	for (var c = 0; c < 18; c++) {
 		var v = ACC[c]
-		var e = v & 262143
-		var c2 = c << 1
-		if (e) ACCESMP[c2][e] = 0
-		if (c < 17) {
-			var o = v >> 24
-			if (o) ACCESMP[c2 | 1][o] = 0
-		}
+		if (v) ACCESMP[c][v] = 0
 	}
 }
 
@@ -348,62 +342,33 @@ function OnlyMaxTeleportationToTMPTJFromACCJ()  { _OnlyMaxTeleport(ACCJ, ACCTJ, 
 // ACCESMP* are indexed by LINE (35 entries). For a couple c, the diff between TMP[c]
 // and ACC[c] is split back into even (line 2c) and odd (line 2c+1) halves.
 
-// Save the diff (TMP ^ ACC) split into even (bits 0-17) and odd (bits 24-40 → 0-16) halves.
-// Skip whole couples whose diff is 0 (= no new accessible cells in this couple this step).
+// Save the full couple diff (35-bit packed) in one map write per non-empty couple.
 
 function SaveAccesMpFromTmp(m) {
 	for (var c = 0; c < 18; c++) {
 		var d = TMP[c] ^ ACC[c]
-		if (d == 0) continue
-		var dE = d & 262143
-		var c2 = c << 1
-		if (dE) ACCESMP[c2][dE] = m
-		if (c < 17) {
-			var dO = d >> 24
-			if (dO) ACCESMP[c2 | 1][dO] = m
-		}
+		if (d) ACCESMP[c][d] = m
 	}
 }
 
 function SaveAccesMpJFromTmpJ(m) {
 	for (var c = 0; c < 18; c++) {
 		var d = TMPJ[c] ^ ACCJ[c]
-		if (d == 0) continue
-		var dE = d & 262143
-		var c2 = c << 1
-		if (dE) ACCESMPJ[c2][dE] = m
-		if (c < 17) {
-			var dO = d >> 24
-			if (dO) ACCESMPJ[c2 | 1][dO] = m
-		}
+		if (d) ACCESMPJ[c][d] = m
 	}
 }
 
 function SaveAccesMpTFromTmpT(m) {
 	for (var c = 0; c < 18; c++) {
 		var d = TMPT[c] ^ ACCT[c]
-		if (d == 0) continue
-		var dE = d & 262143
-		var c2 = c << 1
-		if (dE) ACCESMPT[c2][dE] = m
-		if (c < 17) {
-			var dO = d >> 24
-			if (dO) ACCESMPT[c2 | 1][dO] = m
-		}
+		if (d) ACCESMPT[c][d] = m
 	}
 }
 
 function SaveAccesMpTJFromTmpTJ(m) {
 	for (var c = 0; c < 18; c++) {
 		var d = TMPTJ[c] ^ ACCTJ[c]
-		if (d == 0) continue
-		var dE = d & 262143
-		var c2 = c << 1
-		if (dE) ACCESMPTJ[c2][dE] = m
-		if (c < 17) {
-			var dO = d >> 24
-			if (dO) ACCESMPTJ[c2 | 1][dO] = m
-		}
+		if (d) ACCESMPTJ[c][d] = m
 	}
 }
 
@@ -412,17 +377,22 @@ function UpdateAccJFromTmpJ()   { for (var c = 0; c < 18; c++) ACCJ[c]  = TMPJ[c
 function UpdateAccTFromTmpT()   { for (var c = 0; c < 18; c++) ACCT[c]  = TMPT[c]  }
 function UpdateAccTJFromTmpTJ() { for (var c = 0; c < 18; c++) ACCTJ[c] = TMPTJ[c] }
 
-// BINARY_TO_CELL_BY_LINE[line][part] is defined in Load/Binary_To_Cells.leek
-
+// Decode the 35-bit couple bitmap directly using 6 chunk lookups (3 even + 3 odd).
+// BINARY_TO_CELL_BY_COUPLE[couple] = [even0, even1, even2, odd0, odd1, odd2]
+// For couple 17 (no odd line), the odd chunks are empty so they're no-ops.
 function _ConvertAccesMpToCells(accesMp, _final) {
-	for (var line = 0; line < 35; line++) {
-		var parts = BINARY_TO_CELL_BY_LINE[line]
-		var p0 = parts[0]
-		var p1 = parts[1]
-		var p2 = parts[2]
-		for (var bin: var mp in accesMp[line]) {
-			for (var c in p0[bin & 63] + p1[(bin & 4032) >> 6] + p2[bin >> 12]) {
-				_final[c] = mp
+	for (var c = 0; c < 18; c++) {
+		var t = BINARY_TO_CELL_BY_COUPLE[c]
+		var p0 = t[0]; var p1 = t[1]; var p2 = t[2]
+		var p3 = t[3]; var p4 = t[4]; var p5 = t[5]
+		for (var bin: var mp in accesMp[c]) {
+			for (var cell in p0[bin & 63]
+				+ p1[(bin >> 6) & 63]
+				+ p2[(bin >> 12) & 63]
+				+ p3[(bin >> 24) & 63]
+				+ p4[(bin >> 30) & 63]
+				+ p5[(bin >> 36) & 31]) {
+				_final[cell] = mp
 			}
 		}
 	}
