@@ -1,14 +1,90 @@
 /**
- * Benchmark (to test operations)
+ * Benchmark utilities
+ *
+ * BenchOps : accumulating per-category ops profiler.
+ *   Usage:
+ *     BenchOps.Start("WalkCells")
+ *     ... code to measure ...
+ *     BenchOps.Stop("WalkCells")
+ *
+ *   The same category can be started/stopped multiple times in a turn; the
+ *   totals and call counts accumulate. Call BenchOps.Dump() at end of turn to
+ *   print the breakdown sorted by total ops. BenchOps.Reset() clears all
+ *   counters (call at start of each turn before re-instrumenting).
+ *
+ *   Nesting: each Start("X") must be paired with a Stop("X"). Different
+ *   categories can be interleaved freely (e.g. start A, start B, stop B,
+ *   stop A) — the timing reported for the outer category will include the
+ *   inner, like a flame graph self+children. If you want EXCLUSIVE timing,
+ *   stop the outer before starting the inner.
+ *
+ * BenchmarkClass, BenchmarkRamClass : legacy single-shot timers (kept for
+ *   backwards compatibility).
 **/
 
+class BenchOps {
+	static STARTS = [: ]
+	static TOTALS = [: ]
+	static CALLS  = [: ]
+
+	static Start(name) {
+		STARTS[name] = getOperations()
+	}
+
+	static Stop(name) {
+		var elapsed = getOperations() - STARTS[name]
+		if (name in TOTALS) {
+			TOTALS[name] += elapsed
+			CALLS[name]++
+		} else {
+			TOTALS[name] = elapsed
+			CALLS[name] = 1
+		}
+	}
+
+	static Reset() {
+		STARTS = [: ]
+		TOTALS = [: ]
+		CALLS  = [: ]
+	}
+
+	static Dump() {
+		var entries = []
+		var total = 0
+		for (var name: var ops in TOTALS) {
+			push(entries, [ops, name])
+			total += ops
+		}
+		// Sort descending by ops (arraySort returns the sorted array)
+		entries = arraySort(entries, function(a, b) { return b[0] - a[0] })
+
+		var fullTurn = getOperations()
+		debugC("=== Operations breakdown (turn " + getTurn() + ") ===", COLOR_YELLOW)
+		for (var e in entries) {
+			var n = e[1]
+			var ops = e[0]
+			var calls = CALLS[n]
+			var pct = floor((ops * 1000) / fullTurn) / 10  // pct of full turn (1 decimal)
+			var avg = floor(ops / calls)
+			debug("  " + n + " : " + floor(ops / 1000) + "k ops"
+				+ " | " + calls + " calls"
+				+ " | avg " + floor(avg / 1000) + "k/call"
+				+ " | " + pct + "% of turn")
+		}
+		debug("  ----")
+		debug("  Tracked sum : " + floor(total / 1000) + "k ops (note: overlapping when nested)")
+		debug("  Full turn : " + floor(fullTurn / 1000) + "k ops")
+	}
+}
+
+// === Legacy single-shot timer (unchanged API) ===
 class BenchmarkClass {
 	static DEBUGOP
 	static StartOp() {
 		DEBUGOP = getOperations()
 	}
 	static StopOp(name) {
-		debug(name+" opés "+((getOperations()-DEBUGOP-17)/1000)+" k")
+		debug(name + " opés " + ((getOperations() - DEBUGOP - 17) / 1000) + " k")
 	}
 }
 
@@ -18,6 +94,6 @@ class BenchmarkRamClass {
 		RAM = getUsedRAM()
 	}
 	static Stop(name) {
-		debug(name+" Ram : "+(((getUsedRAM()-RAM)/getMaxRAM())*100)+" %");
+		debug(name + " Ram : " + (((getUsedRAM() - RAM) / getMaxRAM()) * 100) + " %")
 	}
 }

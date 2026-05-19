@@ -23,6 +23,7 @@ class NodeClass {
 
 	static ActionToNode(Action, State, BaseHash) {
 		if (Action == null) return;
+		BenchOps.Start("Node")
 		var MyState = State[Me]
 		var MyCell = MyState.CELL
 		var MyWalkCells = new WalkCellsClass(State, Me, true, true, true, true, BaseHash)
@@ -42,7 +43,9 @@ class NodeClass {
 				Cost += ITEMINFO[CHIP_TELEPORTATION].COST + ITEMINFO[CHIP_JUMP].COST
 			}
 		}
-		return ActionToNodeInTree(Action, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash)
+		var result = ActionToNodeInTree(Action, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash)
+		BenchOps.Stop("Node")
+		return result
 	}
 
 	/* It is a complicated version with more parameters of ActionToNode to avoid reloading informations that i already have. It is used in Action Suite in using the best play to expand the existing base nodes

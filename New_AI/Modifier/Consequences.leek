@@ -348,7 +348,8 @@ class ConsequencesClass {
 		}
 	}
 
-	static getConsequences(State, Item, From, To, Caster, BaseHash) { //Need from for lasers 
+	static getConsequences(State, Item, From, To, Caster, BaseHash) { //Need from for lasers
+		BenchOps.Start("Consequences")
 		var Targets = ConsequenceTargets(Item, From, To, State, Caster, BaseHash)
 		var CastStats = State[Caster]
 		for (var Effect in ITEMINFO[Item].EFFECTS) {
@@ -369,6 +370,7 @@ class ConsequencesClass {
 			var RealTargets = Effect[5] & EFFECT_MODIFIER_ON_CASTER ? [Caster: 0] : TmpTargets
 			applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats)
 		}
+		BenchOps.Stop("Consequences")
 	}
 
 	static isHitable(Effect, TarStats, CastStats, TarIsCaster) {

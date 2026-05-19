@@ -17,6 +17,7 @@ global MeanBulbs = [
 class ScoringClass {
 
     static getStateScore(State, MySide, BaseHash) {
+        BenchOps.Start("Scoring")
         // Pré-calcul des contextes de danger par camp (Side)
         var allSides = [: ]
         for (var e: var s in State)
@@ -75,6 +76,7 @@ class ScoringClass {
                 _score += is_ally ? finalValue : -finalValue
             }
         }
+        BenchOps.Stop("Scoring")
         return _score
     }
 

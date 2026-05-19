@@ -14,6 +14,7 @@ class ActionSuite {
 	 * and returns the Action with the highest score (or null if nothing improves).
 	 */
 	static getBestAction(State) {
+		BenchOps.Start("BFS")
 		var MySide = State[Me].SIDE
 		var BaseHash = StateClass.getBaseHash(State)
 		var initialScore = ScoringClass.getStateScore(State, MySide, BaseHash)
@@ -38,7 +39,7 @@ class ActionSuite {
 		if (bestAction != null) {
 			debug("Best: " + ITEMINFO[bestAction.Item].NAME + " | From: " + bestAction.From + " | To: " + bestAction.To + " | Delta: " + (bestScore - initialScore))
 		}
-
+		BenchOps.Stop("BFS")
 		return bestAction
 	}
 

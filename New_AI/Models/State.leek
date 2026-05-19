@@ -6,10 +6,12 @@ include("../includes.leek")
 
 class StateClass {
 	static Virtualize() {
+		BenchOps.Start("StateVirtualize")
 		var _final = [: ]
 		for (var e in getAllies() + getEnemies()) {
 			_final[e] = new EntityStateClass(e)
 		}
+		BenchOps.Stop("StateVirtualize")
 		return _final
 	}
 

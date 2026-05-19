@@ -16,6 +16,7 @@ class FinalCell {
      * @return Best cell ID
      */
     static get(State, BaseHash) {
+        BenchOps.Start("FinalCell")
         var MyState = State[Me]
         var MySide = MyState.SIDE
         var myId = MyState.ID
@@ -90,6 +91,7 @@ class FinalCell {
         }
 
         debug("Best final cell: " + bestCell + " (Score: " + bestScore + ")")
+        BenchOps.Stop("FinalCell")
         return bestCell
     }
 }

@@ -27,25 +27,30 @@ class DangerClass {
 	 */
 
 	static getEntityDanger(entity_state, state, entity_id, base_hash, thisStatsHashForDanger) {
+		BenchOps.Start("Danger")
 		if (entity_id == Me) {
 			//Then loading walkcells hash from current situation
 			var thisWalkcellsHash = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(entity_state)
 			//loading the hash for my danger
 			var Hash = addValueToBinHash(OFFSET_BASIS ^ thisStatsHashForDanger, thisWalkcellsHash)
-			if (Hash in ENTITY_DANGER_CACHE_FOR_ME) return ENTITY_DANGER_CACHE_FOR_ME[Hash]
+			if (Hash in ENTITY_DANGER_CACHE_FOR_ME) {
+				BenchOps.Stop("Danger")
+				return ENTITY_DANGER_CACHE_FOR_ME[Hash]
+			}
 			//Finding the lowest danger cell possible in my walkcells
 			var thisToSkipMap = EntitiesToSkip(entity_state, state, base_hash)
 			//Loading entity's enemies walk cells
 			var thisEnemiesWalkableCellsMap = LoadEnemiesWalkableCellsMap(state, entity_id, thisToSkipMap, base_hash)
-			//Loading My WalkCells at this instant : 
+			//Loading My WalkCells at this instant :
 			var MyFullWalkCells = new WalkCellsClass(state, entity_id, true, true, true, true, base_hash).MAX
-			//Finding lowest danger cell in my WalkCells : 
+			//Finding lowest danger cell in my WalkCells :
 			var minDanger = MAX_VALUE
 			for (var cell: var mp in MyFullWalkCells) {
 				var thisCellDanger = get(cell, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger)
 				if (thisCellDanger < minDanger) {
 					if (thisCellDanger == 0) { //Found a safe cell
 						ENTITY_DANGER_CACHE_FOR_ME[Hash] = 0
+						BenchOps.Stop("Danger")
 						return 0
 					}
 					minDanger = thisCellDanger
@@ -53,11 +58,15 @@ class DangerClass {
 			}
 			//Returning min danger found in my walkcells
 			ENTITY_DANGER_CACHE_FOR_ME[Hash] = minDanger
+			BenchOps.Stop("Danger")
 			return minDanger
 		} else {
 			//loading the hash for entity's danger
 			var Hash = addValueToBinHash(OFFSET_BASIS ^ thisStatsHashForDanger, entity_state.CELL)
-			if (Hash in ENTITY_DANGER_CACHE_FOR_OTHERS) return ENTITY_DANGER_CACHE_FOR_OTHERS[Hash]
+			if (Hash in ENTITY_DANGER_CACHE_FOR_OTHERS) {
+				BenchOps.Stop("Danger")
+				return ENTITY_DANGER_CACHE_FOR_OTHERS[Hash]
+			}
 			//Returning the actual entity's danger with Me in toSkipMap
 			var thisToSkipMap = clone(DangerClass.EntitiesToSkip(entity_state, state, base_hash))
 			//Adding MySelf in To Skip Map (to avoid lowering danger when i play)
@@ -67,6 +76,7 @@ class DangerClass {
 			//Then Loading the Danger of its position in this state
 			var tmp = DangerClass.get(entity_state.CELL, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger)
 			ENTITY_DANGER_CACHE_FOR_OTHERS[Hash] = tmp
+			BenchOps.Stop("Danger")
 			return tmp
 		}
 	}

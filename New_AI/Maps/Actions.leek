@@ -32,19 +32,20 @@ class ActionsClass {
 	]
 
 	static getEveryActionsInAState(State, WalkCells, MyCell, BaseHash) { //If i remove my mps from actions on everyone i could cache with BaseHash and MyCell
+		BenchOps.Start("Actions")
 		var _final = []
 		var LeekCells = StateClass.getEntityCellsMap(State)
 		//Adding Actions on Me :
 		pushAll(_final, getEveryActionsOnMe(MyCell, MY_INVENTORY_ON_ME, State, BaseHash))
-		//Adding Action On Void : 
+		//Adding Action On Void :
 		pushAll(_final, getEveryActionsInVoid(MyCell, MY_INVENTORY_ON_VOID, State, LeekCells, BaseHash))
-		//Adding Summon Actions : 
+		//Adding Summon Actions :
 		pushAll(_final, getEverySummonActions(MyCell, MY_INVENTORY_SUMMON, State, LeekCells, BaseHash))
 		var MyState = State[Me]
 		var MaxDist = CHIP_JUMP in MyState.COOLDOWNS && MyState.COOLDOWNS[CHIP_JUMP] == 0 ? MyState.MP + ITEMINFO[CHIP_JUMP].MAXRANGE : MyState.MP
 		//Adding Actions on EveryOne Else
 		pushAll(_final, getEveryActionsOnEveryOne(MyState.CELL, MY_INVENTORY_ON_EVERYONE, State, MaxDist, WalkCells, BaseHash))
-		//Returning
+		BenchOps.Stop("Actions")
 		return _final
 	}
 

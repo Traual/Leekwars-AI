@@ -11,6 +11,7 @@ class WalkCellsClass {
 	TELEPORTATION_AND_JUMP
 	MAX
 	constructor(EveryStats, Entity, DoWalk, DoJump, DoTeleportation, DoTeleportationAndJump, BaseHash) {
+		BenchOps.Start("WalkCells")
 		var EntityStats = EveryStats[Entity]
 		var EntityCell = EntityStats.CELL
 		var EntityCooldowns = EntityStats.COOLDOWNS
@@ -48,6 +49,7 @@ class WalkCellsClass {
 		} else {
 			this.TELEPORTATION_AND_JUMP = [: ]
 		}
+		BenchOps.Stop("WalkCells")
 	}
 
 	LoadWalkCells(EntityCell, LeekCells, Mp, HashWalk) {
