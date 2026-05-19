@@ -133,9 +133,7 @@ function _WalkOne(src, tmp) {
 }
 
 // TotalJump: chebyshev ≤ 3 from src. Source couples within Δcouple = -2..+2.
-// Since the dc=0 same-parity case excludes Δpos=0 (= the source cell itself),
-// but the base/walkable layers already contain that bit via `w & 262143`,
-// re-including it via sumE is idempotent. We can therefore skip the dc != 0 check.
+// Optimisation: skip empty source couples (early game has ACC with 1 cell set).
 function _TotalJump(src, base, walkable, tmp) {
 	for (var c = 0; c < 18; c++) {
 		var sumE = 0
@@ -144,31 +142,25 @@ function _TotalJump(src, base, walkable, tmp) {
 			var sc = c + dc
 			if (sc < 0 || sc > 17) continue
 			var v = src[sc]
+			if (v == 0) continue
 			var e = v & 262143
 			var o = v >> 24
 
-			// Same parity (Δline even, dc in -1..+1): Δpos -1..+1
 			if (dc >= -1 && dc <= 1) {
 				sumE |= e | (e << 1) | (e >> 1)
 				sumO |= o | (o << 1) | (o >> 1)
 			}
-			// Diff parity, o → sumE (Δpos -2..+1 → shifts +2,+1,0,-1), valid dc -2..+1
 			if (dc <= 1) {
 				sumE |= (o << 2) | (o << 1) | o | (o >> 1)
 			}
-			// Diff parity, e → sumO (Δpos -1..+2 → shifts +1,0,-1,-2), valid dc -1..+2
 			if (dc >= -1) {
 				sumO |= (e << 1) | e | (e >> 1) | (e >> 2)
 			}
 		}
 
 		var obst = MAP_OBSTACLES[c]
-		var b = base[c]
-		var w = walkable[c]
-		var oObst = obst >> 24
-		var newE = (b & 262143) | (w & 262143) | (sumE & obst)
-		var newO = (b >> 24) | (w >> 24) | (sumO & oObst)
-		tmp[c] = newE | (newO << 24)
+		var bw = base[c] | walkable[c]
+		tmp[c] = ((bw & 262143) | (sumE & obst)) | (((bw >> 24) | (sumO & (obst >> 24))) << 24)
 	}
 }
 
@@ -184,39 +176,37 @@ function _OnlyMaxJump(src, base, tmp) {
 		var sumE = 0
 		var sumO = 0
 
-		// sumE edges Δline = ±3 (full odd→even dp range)
-		if (c >= 2) {
-			var o = src[c - 2] >> 24
-			sumE |= (o << 2) | (o << 1) | o | (o >> 1)
-		}
-		if (c <= 16) {
-			var o = src[c + 1] >> 24
-			sumE |= (o << 2) | (o << 1) | o | (o >> 1)
-		}
-		// sumE non-edge Δline = ±1 (corners only)
-		if (c >= 1) {
-			var o = src[c - 1] >> 24
-			sumE |= (o << 2) | (o >> 1)
-		}
-		var oSelf = src[c] >> 24
+		// Cache src[c], src[c-1], src[c+1] reads to avoid double-reading.
+		var vSelf = src[c]
+		var oSelf = vSelf >> 24
 		sumE |= (oSelf << 2) | (oSelf >> 1)
 
+		if (c >= 2) {
+			var o = src[c - 2] >> 24
+			if (o) sumE |= (o << 2) | (o << 1) | o | (o >> 1)
+		}
+		if (c <= 16) {
+			var vN = src[c + 1]
+			var oN = vN >> 24
+			if (oN) sumE |= (oN << 2) | (oN << 1) | oN | (oN >> 1)
+			var eN = vN & 262143
+			if (eN) sumO |= (eN << 1) | (eN >> 2)
+		}
+		if (c >= 1) {
+			var vP = src[c - 1]
+			var oP = vP >> 24
+			if (oP) sumE |= (oP << 2) | (oP >> 1)
+			if (c < 17) {
+				var eP = vP & 262143
+				if (eP) sumO |= (eP << 1) | eP | (eP >> 1) | (eP >> 2)
+			}
+		}
 		if (c < 17) {
-			// sumO edges Δline = ±3 (full even→odd dp range)
-			if (c >= 1) {
-				var e = src[c - 1] & 262143
-				sumO |= (e << 1) | e | (e >> 1) | (e >> 2)
-			}
-			if (c <= 15) {
-				var e = src[c + 2] & 262143
-				sumO |= (e << 1) | e | (e >> 1) | (e >> 2)
-			}
-			// sumO non-edge Δline = ±1 (corners only)
-			var eSelf = src[c] & 262143
+			var eSelf = vSelf & 262143
 			sumO |= (eSelf << 1) | (eSelf >> 2)
-			if (c <= 16) {
-				var e = src[c + 1] & 262143
-				sumO |= (e << 1) | (e >> 2)
+			if (c <= 15) {
+				var e2 = src[c + 2] & 262143
+				if (e2) sumO |= (e2 << 1) | e2 | (e2 >> 1) | (e2 >> 2)
 			}
 		}
 
@@ -245,22 +235,22 @@ function _TotalTeleport(src, base, walkable, tmp) {
 			var sc = c + dc
 			if (sc < 0 || sc > 17) continue
 			var v = src[sc]
+			if (v == 0) continue   // skip empty source: huge win when ACC is sparse
 			var e = v & 262143
 			var o = v >> 24
 
 			// Parallel expansion: ye = OR of e shifted -5..+5 (sym range incl 0)
-			var ye = e | (e << 1) | (e >> 1)        // spread ±1
-			ye = ye | (ye << 2) | (ye >> 2)          // spread ±3
-			ye = ye | (ye << 2) | (ye >> 2)          // spread ±5
-			var diff_e = ye | (e >> 6)               // OR of e shifted -6..+5 (= diff parity e→sumO)
-			var same_e = diff_e | (e << 6)           // OR of e shifted -6..+6 (= same parity e→sumE)
+			var ye = e | (e << 1) | (e >> 1)
+			ye = ye | (ye << 2) | (ye >> 2)
+			ye = ye | (ye << 2) | (ye >> 2)
+			var diff_e = ye | (e >> 6)
+			var same_e = diff_e | (e << 6)
 
-			// Same trick for o
 			var yo = o | (o << 1) | (o >> 1)
 			yo = yo | (yo << 2) | (yo >> 2)
 			yo = yo | (yo << 2) | (yo >> 2)
-			var diff_o = yo | (o << 6)               // OR of o shifted -5..+6 (= diff parity o→sumE)
-			var same_o = diff_o | (o >> 6)           // OR of o shifted -6..+6 (= same parity o→sumO)
+			var diff_o = yo | (o << 6)
+			var same_o = diff_o | (o >> 6)
 
 			sumE |= same_e
 			if (dc <= 5) sumE |= diff_o
@@ -269,62 +259,65 @@ function _TotalTeleport(src, base, walkable, tmp) {
 		}
 
 		var obst = MAP_OBSTACLES[c]
-		var b = base[c]
-		var w = walkable[c]
-		var oObst = obst >> 24
-		var newE = (b & 262143) | (w & 262143) | (sumE & obst)
-		var newO = (b >> 24) | (w >> 24) | (sumO & oObst)
-		tmp[c] = newE | (newO << 24)
+		var bw = base[c] | walkable[c]
+		tmp[c] = ((bw & 262143) | (sumE & obst)) | (((bw >> 24) | (sumO & (obst >> 24))) << 24)
 	}
 }
 
 // OnlyMaxTeleport: chebyshev = 12 exactly. R=12 even → only same parity contributes.
 //   - Edge Δline = ±12 (dc = ±6): full Δpos -6..+6 (incl. 0) → parallel expansion
 //   - Non-edge Δline (dc ∈ -5..+5): corners only (Δpos = ±6) → 2 shifts each
+// Skip empty sources to avoid wasted expansion work.
 function _OnlyMaxTeleport(src, base, tmp) {
 	for (var c = 0; c < 18; c++) {
 		var sumE = 0
 		var sumO = 0
 
-		// Edge dc = -6: full ±6 expansion via parallel trick
 		if (c >= 6) {
 			var v = src[c - 6]
-			var e = v & 262143
-			var o = v >> 24
-			var ye = e | (e << 1) | (e >> 1)
-			ye = ye | (ye << 2) | (ye >> 2)
-			ye = ye | (ye << 3) | (ye >> 3)
-			sumE |= ye
-			var yo = o | (o << 1) | (o >> 1)
-			yo = yo | (yo << 2) | (yo >> 2)
-			yo = yo | (yo << 3) | (yo >> 3)
-			sumO |= yo
+			if (v) {
+				var e = v & 262143
+				var o = v >> 24
+				var ye = e | (e << 1) | (e >> 1)
+				ye = ye | (ye << 2) | (ye >> 2)
+				ye = ye | (ye << 3) | (ye >> 3)
+				sumE |= ye
+				var yo = o | (o << 1) | (o >> 1)
+				yo = yo | (yo << 2) | (yo >> 2)
+				yo = yo | (yo << 3) | (yo >> 3)
+				sumO |= yo
+			}
 		}
-		// Edge dc = +6
 		if (c <= 11) {
 			var v = src[c + 6]
-			var e = v & 262143
-			var o = v >> 24
-			var ye = e | (e << 1) | (e >> 1)
-			ye = ye | (ye << 2) | (ye >> 2)
-			ye = ye | (ye << 3) | (ye >> 3)
-			sumE |= ye
-			var yo = o | (o << 1) | (o >> 1)
-			yo = yo | (yo << 2) | (yo >> 2)
-			yo = yo | (yo << 3) | (yo >> 3)
-			sumO |= yo
+			if (v) {
+				var e = v & 262143
+				var o = v >> 24
+				var ye = e | (e << 1) | (e >> 1)
+				ye = ye | (ye << 2) | (ye >> 2)
+				ye = ye | (ye << 3) | (ye >> 3)
+				sumE |= ye
+				var yo = o | (o << 1) | (o >> 1)
+				yo = yo | (yo << 2) | (yo >> 2)
+				yo = yo | (yo << 3) | (yo >> 3)
+				sumO |= yo
+			}
 		}
 
-		// Non-edge dc -5..+5: corners only (Δpos = ±6)
+		// OR all non-edge sources together first, then shift once: algebraically
+		// (e1 << 6) | (e2 << 6) = (e1 | e2) << 6, so this is equivalent but cheaper.
+		var combE = 0
+		var combO = 0
 		for (var dc = -5; dc <= 5; dc++) {
 			var sc = c + dc
 			if (sc < 0 || sc > 17) continue
 			var v = src[sc]
-			var e = v & 262143
-			var o = v >> 24
-			sumE |= (e << 6) | (e >> 6)
-			sumO |= (o << 6) | (o >> 6)
+			if (v == 0) continue
+			combE |= v & 262143
+			combO |= v >> 24
 		}
+		sumE |= (combE << 6) | (combE >> 6)
+		sumO |= (combO << 6) | (combO >> 6)
 
 		var obst = MAP_OBSTACLES[c]
 		var b = base[c]
@@ -356,12 +349,12 @@ function OnlyMaxTeleportationToTMPTJFromACCJ()  { _OnlyMaxTeleport(ACCJ, ACCTJ, 
 // and ACC[c] is split back into even (line 2c) and odd (line 2c+1) halves.
 
 // Save the diff (TMP ^ ACC) split into even (bits 0-17) and odd (bits 24-40 → 0-16) halves.
-// `c << 1` instead of `2 * c` (1 op vs 2). `(c << 1) | 1` instead of `2*c + 1`.
-// `(d >> 24)` already has only bits 0-16 since TMP/ACC have no bits >40, so `& 131071` is redundant.
+// Skip whole couples whose diff is 0 (= no new accessible cells in this couple this step).
 
 function SaveAccesMpFromTmp(m) {
 	for (var c = 0; c < 18; c++) {
 		var d = TMP[c] ^ ACC[c]
+		if (d == 0) continue
 		var dE = d & 262143
 		var c2 = c << 1
 		if (dE) ACCESMP[c2][dE] = m
@@ -375,6 +368,7 @@ function SaveAccesMpFromTmp(m) {
 function SaveAccesMpJFromTmpJ(m) {
 	for (var c = 0; c < 18; c++) {
 		var d = TMPJ[c] ^ ACCJ[c]
+		if (d == 0) continue
 		var dE = d & 262143
 		var c2 = c << 1
 		if (dE) ACCESMPJ[c2][dE] = m
@@ -388,6 +382,7 @@ function SaveAccesMpJFromTmpJ(m) {
 function SaveAccesMpTFromTmpT(m) {
 	for (var c = 0; c < 18; c++) {
 		var d = TMPT[c] ^ ACCT[c]
+		if (d == 0) continue
 		var dE = d & 262143
 		var c2 = c << 1
 		if (dE) ACCESMPT[c2][dE] = m
@@ -401,6 +396,7 @@ function SaveAccesMpTFromTmpT(m) {
 function SaveAccesMpTJFromTmpTJ(m) {
 	for (var c = 0; c < 18; c++) {
 		var d = TMPTJ[c] ^ ACCTJ[c]
+		if (d == 0) continue
 		var dE = d & 262143
 		var c2 = c << 1
 		if (dE) ACCESMPTJ[c2][dE] = m
