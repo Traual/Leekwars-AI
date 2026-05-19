@@ -520,8 +520,14 @@ function getAccesibleTJ(mp) {
 	TotalJumpToTMPJFromACC()
 	UpdateAccJFromTmpJ()
 	UpdateAccTFromTmpT()
-	TotalTeleportationToTMPTJFromACCJ()
-	TotalJumpToTMPTJFromACCT()
+	// IMPORTANT : les deux fonctions ci-dessous écrivent toutes deux dans TMPTJ avec
+	// `tmp[c] = base[c] | walkable[c] | (...)`. Sans Save+Update entre les deux,
+	// la deuxième écrase la première (jump-then-tele perdu si l'intermédiaire de
+	// tele-then-jump est obstacle, et vice versa).
+	TotalTeleportationToTMPTJFromACCJ()      // jump puis tele
+	SaveAccesMpTJFromTmpTJ(0)
+	UpdateAccTJFromTmpTJ()                    // ACCTJ contient maintenant ces cellules
+	TotalJumpToTMPTJFromACCT()                // tele puis jump (base = ACCTJ préservé)
 	SaveAccesMpTJFromTmpTJ(0)
 	UpdateAccTJFromTmpTJ()
 	for (var m = 1; m <= mp; m++) {
@@ -536,7 +542,10 @@ function getAccesibleTJ(mp) {
 		UpdateAccTJFromTmpTJ()
 		OnlyMaxTeleportationToTMPTFromACC()
 		OnlyMaxJumpToTMPJFromACC()
+		// Même pattern qu'au step 0 : Save+Update entre les deux écritures TMPTJ.
 		OnlyMaxTeleportationToTMPTJFromACCJ()
+		SaveAccesMpTJFromTmpTJ(m)
+		UpdateAccTJFromTmpTJ()
 		OnlyMaxJumpToTMPTJFromACCT()
 		SaveAccesMpTJFromTmpTJ(m)
 		UpdateAccTFromTmpT()
