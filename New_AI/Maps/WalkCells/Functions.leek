@@ -1,5 +1,20 @@
 /**
  * Walkable cells binary functions file
+ *
+ * Bitmap representation: 1 int per COUPLE of lines (18 couples total).
+ *   bits 0-17  : even line 2c   (18 cells)
+ *   bits 18-23 : gap (always 0)
+ *   bits 24-40 : odd line 2c+1  (17 cells)
+ *   bits 41-63 : unused
+ *
+ * Constants used inline (literals cost 0 ops):
+ *   262143 = 0x3FFFF       (even-line mask, bits 0-17)
+ *   131071 = 0x1FFFF       (odd-line mask after extracting to bits 0-16)
+ *   24                     (shift amount to place odd at bits 24-40)
+ *
+ * Couple 17 holds only the even line 34 (line 35 doesn't exist), so its odd
+ * half is always 0 and MAP_OBSTACLES[17] has no odd bits, naturally masking
+ * out any odd contribution.
  **/
 
 include("../../includes.leek")
@@ -24,20 +39,30 @@ function RowColToCell(row, col) {
 
 function InitObstacles(Obstacles) { //Pour initialiser la bitmap Obstacles
 	if (MAP_OBSTACLES_LOADED) {
-		for (var i = 0; i < 35; i++) MAP_OBSTACLES[i] = MAP_OBSTACLES_CACHE[i]
+		for (var c = 0; c < 18; c++) MAP_OBSTACLES[c] = MAP_OBSTACLES_CACHE[c]
 	} else {
-		for (var i = 0; i < 35; i++) MAP_OBSTACLES[i] = (i % 2 == 0) ? 262143 : 131071
+		// Base: even line valid (262143 = bits 0-17), odd line valid for c < 17 (131071 << 24)
+		for (var c = 0; c < 17; c++) MAP_OBSTACLES[c] = 262143 | (131071 << 24)
+		MAP_OBSTACLES[17] = 262143
 		for (var x in Obstacles) {
-			MAP_OBSTACLES[MAP_CELL_TO_LINE[x]] -= 1 << MAP_CELL_TO_POS[x]
+			var line = MAP_CELL_TO_LINE[x]
+			var pos = MAP_CELL_TO_POS[x]
+			var couple = line >> 1
+			var bit = (line % 2 == 0) ? pos : (24 + pos)
+			MAP_OBSTACLES[couple] -= 1 << bit
 		}
 		MAP_OBSTACLES_LOADED = true
-		for (var i = 0; i < 35; i++) MAP_OBSTACLES_CACHE[i] = MAP_OBSTACLES[i]
+		for (var c = 0; c < 18; c++) MAP_OBSTACLES_CACHE[c] = MAP_OBSTACLES[c]
 	}
 }
 
 function InitLeekCells(LeekCells) { //on met sur la bitmap d'obstacles les positions des entitées
 	for (var x in LeekCells) {
-		MAP_OBSTACLES[MAP_CELL_TO_LINE[x]] -= 1 << MAP_CELL_TO_POS[x]
+		var line = MAP_CELL_TO_LINE[x]
+		var pos = MAP_CELL_TO_POS[x]
+		var couple = line >> 1
+		var bit = (line % 2 == 0) ? pos : (24 + pos)
+		MAP_OBSTACLES[couple] -= 1 << bit
 	}
 }
 
@@ -47,154 +72,293 @@ function InitAccesMpT()  { for (var i = 0; i < 35; i++) ACCESMPT[i] = [: ] }
 function InitAccesMpTJ() { for (var i = 0; i < 35; i++) ACCESMPTJ[i] = [: ] }
 
 function InitBuildAcc(cell) {
-	for (var i = 0; i < 35; i++) ACC[i] = 0
-	ACC[MAP_CELL_TO_LINE[cell]] = 1 << MAP_CELL_TO_POS[cell]
+	for (var c = 0; c < 18; c++) ACC[c] = 0
+	var line = MAP_CELL_TO_LINE[cell]
+	var pos = MAP_CELL_TO_POS[cell]
+	var couple = line >> 1
+	var bit = (line % 2 == 0) ? pos : (24 + pos)
+	ACC[couple] = 1 << bit
 }
 
 function InitBuildAccJ(cell) {
-	for (var i = 0; i < 35; i++) { ACC[i] = 0; ACCJ[i] = 0 }
-	ACC[MAP_CELL_TO_LINE[cell]] = 1 << MAP_CELL_TO_POS[cell]
+	for (var c = 0; c < 18; c++) { ACC[c] = 0; ACCJ[c] = 0 }
+	var line = MAP_CELL_TO_LINE[cell]
+	var pos = MAP_CELL_TO_POS[cell]
+	var couple = line >> 1
+	var bit = (line % 2 == 0) ? pos : (24 + pos)
+	ACC[couple] = 1 << bit
 }
 
 function InitBuildAccT(cell) {
-	for (var i = 0; i < 35; i++) { ACC[i] = 0; ACCT[i] = 0 }
-	ACC[MAP_CELL_TO_LINE[cell]] = 1 << MAP_CELL_TO_POS[cell]
+	for (var c = 0; c < 18; c++) { ACC[c] = 0; ACCT[c] = 0 }
+	var line = MAP_CELL_TO_LINE[cell]
+	var pos = MAP_CELL_TO_POS[cell]
+	var couple = line >> 1
+	var bit = (line % 2 == 0) ? pos : (24 + pos)
+	ACC[couple] = 1 << bit
 }
 
 function InitBuildAccTJ(cell) {
-	for (var i = 0; i < 35; i++) { ACC[i] = 0; ACCJ[i] = 0; ACCT[i] = 0; ACCTJ[i] = 0 }
-	ACC[MAP_CELL_TO_LINE[cell]] = 1 << MAP_CELL_TO_POS[cell]
+	for (var c = 0; c < 18; c++) { ACC[c] = 0; ACCJ[c] = 0; ACCT[c] = 0; ACCTJ[c] = 0 }
+	var line = MAP_CELL_TO_LINE[cell]
+	var pos = MAP_CELL_TO_POS[cell]
+	var couple = line >> 1
+	var bit = (line % 2 == 0) ? pos : (24 + pos)
+	ACC[couple] = 1 << bit
 }
 
 function SaveBaseAccessibles() {
-	for (var i = 0; i < 35; i++) if (ACC[i]) ACCESMP[i][ACC[i]] = 0
-}
-
-// ============================================================================
-// Templates: 1 template per action type. Each loops over x = 0..34 (target line).
-// Bitmap shifts are inline. Parity of x controls direction (even -> source odd
-// needs <<1; odd -> source even needs >>1).
-// ============================================================================
-
-// WalkOne: chebyshev = 1. Only |Δline|=1 (different parity) contributes.
-function _WalkOne(src, tmp) {
-	for (var x = 0; x < 35; x++) {
-		var sum = 0
-		var isEven = (x % 2 == 0)
-		if (x > 0) {
-			var v = src[x - 1]
-			sum |= isEven ? (v | (v << 1)) : (v | (v >> 1))
+	for (var c = 0; c < 18; c++) {
+		var v = ACC[c]
+		var e = v & 262143
+		if (e) ACCESMP[2 * c][e] = 0
+		if (c < 17) {
+			var o = (v >> 24) & 131071
+			if (o) ACCESMP[2 * c + 1][o] = 0
 		}
-		if (x < 34) {
-			var v = src[x + 1]
-			sum |= isEven ? (v | (v << 1)) : (v | (v >> 1))
-		}
-		tmp[x] = src[x] | (sum & MAP_OBSTACLES[x])
 	}
 }
 
-// TotalJump: chebyshev ≤ 3 from src. base = already-accessible in target layer (J or TJ),
-// walkable = current walkable layer (ACC or ACCT). Result merges all three.
+// ============================================================================
+// Templates: 1 per action type. Loop over couples (18 iterations).
+// Each iteration processes both the even and odd line of the couple.
+// Shifts are inline. Parity is implicit (even half = bits 0-17, odd = 24-40).
+// ============================================================================
+
+// WalkOne: chebyshev = 1, only |Δline|=1 (diff parity).
+//   Target even (line 2c) ← odd sources: shifts +1, 0 (left)  → Δpos in {-1, 0}
+//   Target odd (line 2c+1) ← even sources: shifts 0, -1 (right) → Δpos in {0, +1}
+function _WalkOne(src, tmp) {
+	for (var c = 0; c < 18; c++) {
+		var v = src[c]
+		var e = v & 262143
+		var o = (v >> 24) & 131071
+
+		// Target even gets odd-source contributions:
+		//   - same couple's odd half (line 2c+1)
+		//   - prev couple's odd half (line 2c-1)
+		var sumE = o | (o << 1)
+		if (c > 0) {
+			var pO = (src[c - 1] >> 24) & 131071
+			sumE |= pO | (pO << 1)
+		}
+
+		// Target odd gets even-source contributions:
+		//   - same couple's even half (line 2c)
+		//   - next couple's even half (line 2c+2)
+		var sumO = e | (e >> 1)
+		if (c < 17) {
+			var nE = src[c + 1] & 262143
+			sumO |= nE | (nE >> 1)
+		}
+
+		var obst = MAP_OBSTACLES[c]
+		var newE = e | (sumE & obst & 262143)
+		var newO = o | (sumO & ((obst >> 24) & 131071))
+		tmp[c] = newE | (newO << 24)
+	}
+}
+
+// TotalJump: chebyshev ≤ 3 from src. Source couples within Δcouple = -2..+2.
+//   For each source couple sc, extract e_src and o_src once, then:
+//     - same parity (Δline = 2dc, |dc| ≤ 1): e_src → sumE, o_src → sumO, dp -1..+1
+//     - diff parity: o_src → sumE (Δline = 2dc+1, dc in -2..+1; odd→even dp -2..+1, shifts +2,+1,0,-1)
+//     - diff parity: e_src → sumO (Δline = 2dc-1, dc in -1..+2; even→odd dp -1..+2, shifts +1,0,-1,-2)
 function _TotalJump(src, base, walkable, tmp) {
-	for (var x = 0; x < 35; x++) {
-		var sum = 0
-		var isEven = (x % 2 == 0)
-		// Same parity (Δline even = -2, 0, +2): Δpos in -1..+1; skip (s==x, dp=0)
-		for (var dl = -2; dl <= 2; dl += 2) {
-			var s = x + dl
-			if (s < 0 || s > 34) continue
-			var v = src[s]
-			if (s == x) sum |= (v << 1) | (v >> 1)
-			else sum |= (v << 1) | v | (v >> 1)
+	for (var c = 0; c < 18; c++) {
+		var sumE = 0
+		var sumO = 0
+		for (var dc = -2; dc <= 2; dc++) {
+			var sc = c + dc
+			if (sc < 0 || sc > 17) continue
+			var v = src[sc]
+			var e = v & 262143
+			var o = (v >> 24) & 131071
+
+			// Same parity (Δline even)
+			if (dc >= -1 && dc <= 1) {
+				var fE = (e << 1) | (e >> 1)
+				var fO = (o << 1) | (o >> 1)
+				if (dc != 0) {
+					sumE |= fE | e
+					sumO |= fO | o
+				} else {
+					sumE |= fE
+					sumO |= fO
+				}
+			}
+			// Diff parity, o_src → sumE
+			if (dc <= 1) {
+				sumE |= (o << 2) | (o << 1) | o | (o >> 1)
+			}
+			// Diff parity, e_src → sumO
+			if (dc >= -1) {
+				sumO |= (e << 1) | e | (e >> 1) | (e >> 2)
+			}
 		}
-		// Diff parity (Δline odd = -3, -1, +1, +3): Δpos depends on x parity
-		for (var dl = -3; dl <= 3; dl += 2) {
-			var s = x + dl
-			if (s < 0 || s > 34) continue
-			var v = src[s]
-			if (isEven) sum |= (v << 2) | (v << 1) | v | (v >> 1)
-			else sum |= (v << 1) | v | (v >> 1) | (v >> 2)
-		}
-		tmp[x] = base[x] | walkable[x] | (sum & MAP_OBSTACLES[x])
+
+		var obst = MAP_OBSTACLES[c]
+		var b = base[c]
+		var w = walkable[c]
+		var newE = (b & 262143) | (w & 262143) | (sumE & obst & 262143)
+		var oObst = (obst >> 24) & 131071
+		var newO = ((b >> 24) & 131071) | ((w >> 24) & 131071) | (sumO & oObst)
+		tmp[c] = newE | (newO << 24)
 	}
 }
 
 // OnlyMaxJump: chebyshev = 3 exactly. R=3 odd → only diff parity contributes.
+//   For target even, source odd:
+//     - Δline = ±3 (edge, dc = -2 or +1): full Δpos -2..+1
+//     - Δline = ±1 (dc = -1 or 0): corners only at Δpos = -2 and +1 (shifts +2 and -1)
+//   For target odd, source even (only c < 17):
+//     - Δline = ±3 (dc = -1 or +2): full Δpos -1..+2
+//     - Δline = ±1 (dc = 0 or +1): corners only at Δpos = -1 and +2 (shifts +1 and -2)
 function _OnlyMaxJump(src, base, tmp) {
-	for (var x = 0; x < 35; x++) {
-		var sum = 0
-		var isEven = (x % 2 == 0)
-		// Edge Δline = ±3: full diff-parity dp set
-		for (var dl = -3; dl <= 3; dl += 6) {
-			var s = x + dl
-			if (s < 0 || s > 34) continue
-			var v = src[s]
-			if (isEven) sum |= (v << 2) | (v << 1) | v | (v >> 1)
-			else sum |= (v << 1) | v | (v >> 1) | (v >> 2)
+	for (var c = 0; c < 18; c++) {
+		var sumE = 0
+		var sumO = 0
+
+		// Edges Δline = ±3, source for sumE = odd half of couple c-2 / c+1
+		if (c >= 2) {
+			var o = (src[c - 2] >> 24) & 131071
+			sumE |= (o << 2) | (o << 1) | o | (o >> 1)
 		}
-		// Not edge Δline = ±1: corners only (|Δx|=R=3)
-		for (var dl = -1; dl <= 1; dl += 2) {
-			var s = x + dl
-			if (s < 0 || s > 34) continue
-			var v = src[s]
-			if (isEven) sum |= (v << 2) | (v >> 1)
-			else sum |= (v << 1) | (v >> 2)
+		if (c <= 16) {
+			var o = (src[c + 1] >> 24) & 131071
+			sumE |= (o << 2) | (o << 1) | o | (o >> 1)
 		}
-		tmp[x] = base[x] | (sum & MAP_OBSTACLES[x])
+		// Non-edge Δline = ±1, corners for sumE
+		if (c >= 1) {
+			var o = (src[c - 1] >> 24) & 131071
+			sumE |= (o << 2) | (o >> 1)
+		}
+		var oSelf = (src[c] >> 24) & 131071
+		sumE |= (oSelf << 2) | (oSelf >> 1)
+
+		if (c < 17) {
+			// Edges Δline = ±3 for sumO
+			if (c >= 1) {
+				var e = src[c - 1] & 262143
+				sumO |= (e << 1) | e | (e >> 1) | (e >> 2)
+			}
+			if (c <= 15) {
+				var e = src[c + 2] & 262143
+				sumO |= (e << 1) | e | (e >> 1) | (e >> 2)
+			}
+			// Non-edge Δline = ±1 corners for sumO
+			var eSelf = src[c] & 262143
+			sumO |= (eSelf << 1) | (eSelf >> 2)
+			if (c <= 16) {
+				var e = src[c + 1] & 262143
+				sumO |= (e << 1) | (e >> 2)
+			}
+		}
+
+		var obst = MAP_OBSTACLES[c]
+		var b = base[c]
+		var newE = (b & 262143) | (sumE & obst & 262143)
+		var oObst = (obst >> 24) & 131071
+		var newO = ((b >> 24) & 131071) | (sumO & oObst)
+		tmp[c] = newE | (newO << 24)
 	}
 }
 
-// TotalTeleport: chebyshev ≤ 12 from src.
+// TotalTeleport: chebyshev ≤ 12 from src. Source couples within Δcouple = -6..+6.
 function _TotalTeleport(src, base, walkable, tmp) {
-	for (var x = 0; x < 35; x++) {
-		var sum = 0
-		var isEven = (x % 2 == 0)
-		// Same parity (Δline even = -12..+12): Δpos -6..+6; skip (s==x, dp=0)
-		for (var dl = -12; dl <= 12; dl += 2) {
-			var s = x + dl
-			if (s < 0 || s > 34) continue
-			var v = src[s]
-			var f = (v << 6) | (v << 5) | (v << 4) | (v << 3) | (v << 2) | (v << 1) |
-				(v >> 1) | (v >> 2) | (v >> 3) | (v >> 4) | (v >> 5) | (v >> 6)
-			sum |= (s == x) ? f : (f | v)
-		}
-		// Diff parity (Δline odd = -11..+11): Δpos -6..+5 (even target) or -5..+6 (odd target)
-		for (var dl = -11; dl <= 11; dl += 2) {
-			var s = x + dl
-			if (s < 0 || s > 34) continue
-			var v = src[s]
-			if (isEven) {
-				sum |= (v << 6) | (v << 5) | (v << 4) | (v << 3) | (v << 2) | (v << 1) | v |
-					(v >> 1) | (v >> 2) | (v >> 3) | (v >> 4) | (v >> 5)
+	for (var c = 0; c < 18; c++) {
+		var sumE = 0
+		var sumO = 0
+		for (var dc = -6; dc <= 6; dc++) {
+			var sc = c + dc
+			if (sc < 0 || sc > 17) continue
+			var v = src[sc]
+			var e = v & 262143
+			var o = (v >> 24) & 131071
+
+			// Same parity: full Δpos -6..+6 (skip dp=0 if dc=0)
+			var fE = (e << 6) | (e << 5) | (e << 4) | (e << 3) | (e << 2) | (e << 1) |
+				(e >> 1) | (e >> 2) | (e >> 3) | (e >> 4) | (e >> 5) | (e >> 6)
+			var fO = (o << 6) | (o << 5) | (o << 4) | (o << 3) | (o << 2) | (o << 1) |
+				(o >> 1) | (o >> 2) | (o >> 3) | (o >> 4) | (o >> 5) | (o >> 6)
+			if (dc != 0) {
+				sumE |= fE | e
+				sumO |= fO | o
 			} else {
-				sum |= (v << 5) | (v << 4) | (v << 3) | (v << 2) | (v << 1) | v |
-					(v >> 1) | (v >> 2) | (v >> 3) | (v >> 4) | (v >> 5) | (v >> 6)
+				sumE |= fE
+				sumO |= fO
+			}
+
+			// Diff parity: o_src → sumE (Δline = 2dc+1, |Δline|≤12 → dc ∈ [-6, 5])
+			// odd→even: Δpos -6..+5 → shifts +6..-5
+			if (dc <= 5) {
+				sumE |= (o << 6) | (o << 5) | (o << 4) | (o << 3) | (o << 2) | (o << 1) | o |
+					(o >> 1) | (o >> 2) | (o >> 3) | (o >> 4) | (o >> 5)
+			}
+			// Diff parity: e_src → sumO (Δline = 2dc-1, |Δline|≤12 → dc ∈ [-5, 6])
+			// even→odd: Δpos -5..+6 → shifts +5..-6
+			if (dc >= -5) {
+				sumO |= (e << 5) | (e << 4) | (e << 3) | (e << 2) | (e << 1) | e |
+					(e >> 1) | (e >> 2) | (e >> 3) | (e >> 4) | (e >> 5) | (e >> 6)
 			}
 		}
-		tmp[x] = base[x] | walkable[x] | (sum & MAP_OBSTACLES[x])
+
+		var obst = MAP_OBSTACLES[c]
+		var b = base[c]
+		var w = walkable[c]
+		var newE = (b & 262143) | (w & 262143) | (sumE & obst & 262143)
+		var oObst = (obst >> 24) & 131071
+		var newO = ((b >> 24) & 131071) | ((w >> 24) & 131071) | (sumO & oObst)
+		tmp[c] = newE | (newO << 24)
 	}
 }
 
 // OnlyMaxTeleport: chebyshev = 12 exactly. R=12 even → only same parity contributes.
+//   - Edge Δline = ±12 (dc = ±6): full Δpos -6..+6 (incl. 0)
+//   - Non-edge Δline (dc ∈ -5..+5): corners only (Δpos = ±6)
 function _OnlyMaxTeleport(src, base, tmp) {
-	for (var x = 0; x < 35; x++) {
-		var sum = 0
-		// Edge Δline = ±12: full same-parity dp -6..+6
-		for (var dl = -12; dl <= 12; dl += 24) {
-			var s = x + dl
-			if (s < 0 || s > 34) continue
-			var v = src[s]
-			sum |= (v << 6) | (v << 5) | (v << 4) | (v << 3) | (v << 2) | (v << 1) | v |
-				(v >> 1) | (v >> 2) | (v >> 3) | (v >> 4) | (v >> 5) | (v >> 6)
+	for (var c = 0; c < 18; c++) {
+		var sumE = 0
+		var sumO = 0
+
+		// Edge dc = -6
+		if (c >= 6) {
+			var v = src[c - 6]
+			var e = v & 262143
+			var o = (v >> 24) & 131071
+			sumE |= e | (e << 6) | (e << 5) | (e << 4) | (e << 3) | (e << 2) | (e << 1) |
+				(e >> 1) | (e >> 2) | (e >> 3) | (e >> 4) | (e >> 5) | (e >> 6)
+			sumO |= o | (o << 6) | (o << 5) | (o << 4) | (o << 3) | (o << 2) | (o << 1) |
+				(o >> 1) | (o >> 2) | (o >> 3) | (o >> 4) | (o >> 5) | (o >> 6)
 		}
-		// Not edge Δline = -10..+10 step 2 (same parity): corners only (dp = ±6)
-		for (var dl = -10; dl <= 10; dl += 2) {
-			var s = x + dl
-			if (s < 0 || s > 34) continue
-			var v = src[s]
-			sum |= (v << 6) | (v >> 6)
+		// Edge dc = +6
+		if (c <= 11) {
+			var v = src[c + 6]
+			var e = v & 262143
+			var o = (v >> 24) & 131071
+			sumE |= e | (e << 6) | (e << 5) | (e << 4) | (e << 3) | (e << 2) | (e << 1) |
+				(e >> 1) | (e >> 2) | (e >> 3) | (e >> 4) | (e >> 5) | (e >> 6)
+			sumO |= o | (o << 6) | (o << 5) | (o << 4) | (o << 3) | (o << 2) | (o << 1) |
+				(o >> 1) | (o >> 2) | (o >> 3) | (o >> 4) | (o >> 5) | (o >> 6)
 		}
-		tmp[x] = base[x] | (sum & MAP_OBSTACLES[x])
+
+		// Non-edge dc -5..+5: corners only
+		for (var dc = -5; dc <= 5; dc++) {
+			var sc = c + dc
+			if (sc < 0 || sc > 17) continue
+			var v = src[sc]
+			var e = v & 262143
+			var o = (v >> 24) & 131071
+			sumE |= (e << 6) | (e >> 6)
+			sumO |= (o << 6) | (o >> 6)
+		}
+
+		var obst = MAP_OBSTACLES[c]
+		var b = base[c]
+		var newE = (b & 262143) | (sumE & obst & 262143)
+		var oObst = (obst >> 24) & 131071
+		var newO = ((b >> 24) & 131071) | (sumO & oObst)
+		tmp[c] = newE | (newO << 24)
 	}
 }
 
@@ -215,18 +379,64 @@ function OnlyMaxTeleportationToTMPTFromACC()    { _OnlyMaxTeleport(ACC,  ACCT,  
 function TotalTeleportationToTMPTJFromACCJ()    { _TotalTeleport(ACCJ, ACCTJ, ACCJ, TMPTJ) }
 function OnlyMaxTeleportationToTMPTJFromACCJ()  { _OnlyMaxTeleport(ACCJ, ACCTJ, TMPTJ) }
 
-// === Save / Update (loops) ===
-function SaveAccesMpFromTmp(m)     { for (var i = 0; i < 35; i++) { var d = TMP[i]   ^ ACC[i];   if (d) ACCESMP[i][d]   = m } }
-function SaveAccesMpJFromTmpJ(m)   { for (var i = 0; i < 35; i++) { var d = TMPJ[i]  ^ ACCJ[i];  if (d) ACCESMPJ[i][d]  = m } }
-function SaveAccesMpTFromTmpT(m)   { for (var i = 0; i < 35; i++) { var d = TMPT[i]  ^ ACCT[i];  if (d) ACCESMPT[i][d]  = m } }
-function SaveAccesMpTJFromTmpTJ(m) { for (var i = 0; i < 35; i++) { var d = TMPTJ[i] ^ ACCTJ[i]; if (d) ACCESMPTJ[i][d] = m } }
+// === Save / Update ===
+// ACCESMP* are indexed by LINE (35 entries). For a couple c, the diff between TMP[c]
+// and ACC[c] is split back into even (line 2c) and odd (line 2c+1) halves.
 
-function UpdateAccFromTmp()     { for (var i = 0; i < 35; i++) ACC[i]   = TMP[i]   }
-function UpdateAccJFromTmpJ()   { for (var i = 0; i < 35; i++) ACCJ[i]  = TMPJ[i]  }
-function UpdateAccTFromTmpT()   { for (var i = 0; i < 35; i++) ACCT[i]  = TMPT[i]  }
-function UpdateAccTJFromTmpTJ() { for (var i = 0; i < 35; i++) ACCTJ[i] = TMPTJ[i] }
+function SaveAccesMpFromTmp(m) {
+	for (var c = 0; c < 18; c++) {
+		var d = TMP[c] ^ ACC[c]
+		var dE = d & 262143
+		if (dE) ACCESMP[2 * c][dE] = m
+		if (c < 17) {
+			var dO = (d >> 24) & 131071
+			if (dO) ACCESMP[2 * c + 1][dO] = m
+		}
+	}
+}
 
-// === BINARY_TO_CELL_BY_LINE ===
+function SaveAccesMpJFromTmpJ(m) {
+	for (var c = 0; c < 18; c++) {
+		var d = TMPJ[c] ^ ACCJ[c]
+		var dE = d & 262143
+		if (dE) ACCESMPJ[2 * c][dE] = m
+		if (c < 17) {
+			var dO = (d >> 24) & 131071
+			if (dO) ACCESMPJ[2 * c + 1][dO] = m
+		}
+	}
+}
+
+function SaveAccesMpTFromTmpT(m) {
+	for (var c = 0; c < 18; c++) {
+		var d = TMPT[c] ^ ACCT[c]
+		var dE = d & 262143
+		if (dE) ACCESMPT[2 * c][dE] = m
+		if (c < 17) {
+			var dO = (d >> 24) & 131071
+			if (dO) ACCESMPT[2 * c + 1][dO] = m
+		}
+	}
+}
+
+function SaveAccesMpTJFromTmpTJ(m) {
+	for (var c = 0; c < 18; c++) {
+		var d = TMPTJ[c] ^ ACCTJ[c]
+		var dE = d & 262143
+		if (dE) ACCESMPTJ[2 * c][dE] = m
+		if (c < 17) {
+			var dO = (d >> 24) & 131071
+			if (dO) ACCESMPTJ[2 * c + 1][dO] = m
+		}
+	}
+}
+
+function UpdateAccFromTmp()     { for (var c = 0; c < 18; c++) ACC[c]   = TMP[c]   }
+function UpdateAccJFromTmpJ()   { for (var c = 0; c < 18; c++) ACCJ[c]  = TMPJ[c]  }
+function UpdateAccTFromTmpT()   { for (var c = 0; c < 18; c++) ACCT[c]  = TMPT[c]  }
+function UpdateAccTJFromTmpTJ() { for (var c = 0; c < 18; c++) ACCTJ[c] = TMPTJ[c] }
+
+// === BINARY_TO_CELL_BY_LINE: per-line decoding (still 35 entries, indexed by line) ===
 global BINARY_TO_CELL_BY_LINE = [
 	[BINARY_TO_CELL_ZERO_ZERO, BINARY_TO_CELL_ZERO_ONE, BINARY_TO_CELL_ZERO_TWO],
 	[BINARY_TO_CELL_ONE_ZERO, BINARY_TO_CELL_ONE_ONE, BINARY_TO_CELL_ONE_TWO],

@@ -173,26 +173,31 @@ global MAP_CELL_TO_POS = [: ]
 
 global MAP_OBSTACLES_LOADED
 
-// Helpers to pre-allocate 35-element arrays (LeekScript can't assign to out-of-bounds index).
-function _Make35Int()  { var a = []; for (var i = 0; i < 35; i++) push(a, 0);    return a }
+// Helpers to pre-allocate fixed-size arrays (LeekScript can't assign to out-of-bounds index).
+function _Make18Int()  { var a = []; for (var i = 0; i < 18; i++) push(a, 0);    return a }
 function _Make35Map()  { var a = []; for (var i = 0; i < 35; i++) push(a, [: ]); return a }
 
-// Arrays of 35 lines for the walk-cells bitmaps (replaces per-line scalar globals)
-global MAP_OBSTACLES       = _Make35Int()
-global MAP_OBSTACLES_CACHE = _Make35Int()
+// Bitmaps are packed as 1 int per COUPLE (2 lines), 18 couples total:
+//   bits 0-17  : even line 2c   (18 cells)
+//   bits 18-23 : gap (always 0) - allows shifts up to ±6 without contaminating other half
+//   bits 24-40 : odd line 2c+1  (17 cells)
+//   bits 41-63 : unused
+// Couple 17 holds only even line 34 (line 35 doesn't exist).
+global MAP_OBSTACLES       = _Make18Int()
+global MAP_OBSTACLES_CACHE = _Make18Int()
 
-global ACC     = _Make35Int()
-global TMP     = _Make35Int()
-global ACCESMP = _Make35Map()
+global ACC     = _Make18Int()
+global TMP     = _Make18Int()
+global ACCJ    = _Make18Int()
+global TMPJ    = _Make18Int()
+global ACCT    = _Make18Int()
+global TMPT    = _Make18Int()
+global ACCTJ   = _Make18Int()
+global TMPTJ   = _Make18Int()
 
-global ACCJ     = _Make35Int()
-global TMPJ     = _Make35Int()
-global ACCESMPJ = _Make35Map()
-
-global ACCT     = _Make35Int()
-global TMPT     = _Make35Int()
-global ACCESMPT = _Make35Map()
-
-global ACCTJ     = _Make35Int()
-global TMPTJ     = _Make35Int()
+// ACCESMP* stay indexed by line (35 entries) because the binary->cell decoding
+// is per line. Saving from a couple writes to ACCESMP[2c] (even) and ACCESMP[2c+1] (odd).
+global ACCESMP   = _Make35Map()
+global ACCESMPJ  = _Make35Map()
+global ACCESMPT  = _Make35Map()
 global ACCESMPTJ = _Make35Map()
