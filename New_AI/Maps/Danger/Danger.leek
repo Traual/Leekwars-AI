@@ -43,10 +43,12 @@ class DangerClass {
 			var thisEnemiesWalkableCellsMap = LoadEnemiesWalkableCellsMap(state, entity_id, thisToSkipMap, base_hash)
 			//Loading My WalkCells at this instant :
 			var MyFullWalkCells = new WalkCellsClass(state, entity_id, true, true, true, true, base_hash).MAX
+			//Pre-compute caster iteration order (constant across cell loop)
+			var thisCastersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(state, entity_state.ID)
 			//Finding lowest danger cell in my WalkCells :
 			var minDanger = MAX_VALUE
 			for (var cell: var mp in MyFullWalkCells) {
-				var thisCellDanger = get(cell, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger)
+				var thisCellDanger = get(cell, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
 				if (thisCellDanger < minDanger) {
 					if (thisCellDanger == 0) { //Found a safe cell
 						ENTITY_DANGER_CACHE_FOR_ME[Hash] = 0
@@ -73,8 +75,10 @@ class DangerClass {
 			thisToSkipMap[Me] = true
 			//Loading entity's enemies walk cells
 			var thisEnemiesWalkableCellsMap = LoadEnemiesWalkableCellsMap(state, entity_id, thisToSkipMap, base_hash)
+			//Pre-compute caster iteration order (single get() call but keeps the API uniform)
+			var thisCastersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(state, entity_state.ID)
 			//Then Loading the Danger of its position in this state
-			var tmp = DangerClass.get(entity_state.CELL, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger)
+			var tmp = DangerClass.get(entity_state.CELL, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
 			ENTITY_DANGER_CACHE_FOR_OTHERS[Hash] = tmp
 			BenchOps.Stop("Danger")
 			return tmp
@@ -114,12 +118,12 @@ class DangerClass {
 	 * @return Int : Damages i may take
 	 */
 
-	static get(Cell, State, TargetStats, EnemyWalkCells, ToSkipMap, StatsHashForDanger) {
-		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), Cell) //TODO : ADD ENTITY ID IN IT
+	static get(Cell, State, TargetStats, EnemyWalkCells, ToSkipMap, StatsHashForDanger, CastersInOrder) {
+		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), Cell)
 		if (ThisHash in CELL_DANGER_GET_CACHE) return CELL_DANGER_GET_CACHE[ThisHash]
 		var _final = 0
 		var TargetStatsCloned = clone(TargetStats, 3)
-		for (var Caster in StateClass.getEntitiesInTurnOrderAfterEntity(State, TargetStats.ID)) {
+		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
 			var CasterStats = State[Caster]
 			var MapCellItemAoe = getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster])

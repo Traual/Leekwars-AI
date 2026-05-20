@@ -41,6 +41,8 @@ class FinalCell {
         var thisStatsHashForDanger = DangerClass.getStatsHashForDanger(MyState, State, BaseHash)
         var thisToSkipMap = DangerClass.EntitiesToSkip(MyState, State, BaseHash)
         var thisEnemiesWalkableCellsMap = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, thisToSkipMap, BaseHash)
+        // Pre-compute caster iteration order (constant across cell loop)
+        var thisCastersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, myId)
 
         var bestScore = -MAX_VALUE
         var bestCell = MyState.CELL
@@ -74,7 +76,7 @@ class FinalCell {
             var distMultiplier = max(0.1, ScoringClass.solvePoly(POLY_DIST_FINAL, avgRelation))
 
             // === 2. SurvivalMultiplier (miroir exact de ScoringClass.getSurvivalMultiplier) ===
-            var danger = DangerClass.get(cell, State, MyState, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger)
+            var danger = DangerClass.get(cell, State, MyState, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
             var totalThreat = ScoringClass.solvePoly(POLY_THREAT_DANGER, danger) +
                 ScoringClass.solvePoly(POLY_THREAT_POISON, MyState.POISON) +
                 ScoringClass.solvePoly(POLY_THREAT_POT, MyState.POISON_OVER_TIME)
