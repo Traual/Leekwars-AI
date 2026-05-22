@@ -26,7 +26,7 @@ class NodeClass {
 		BenchOps.Start("Node")
 		var MyState = State[Me]
 		var MyCell = MyState.CELL
-		var MyWalkCells = new WalkCellsClass(State, Me, true, true, true, true, BaseHash)
+		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 		var Item = Action.Item
 		var From = Action.From
 		var To = Action.To

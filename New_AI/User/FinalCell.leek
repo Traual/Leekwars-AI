@@ -22,8 +22,7 @@ class FinalCell {
         var myId = MyState.ID
 
         // Get all reachable cells with remaining MP
-        var WalkCells = new WalkCellsClass(State, Me, true, true, true, true, BaseHash)
-        var possibleCells = WalkCells.MAX
+        var possibleCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
 
         // Pre-compute entity values once (they don't change with my position)
         var entityInfos = []

@@ -43,7 +43,7 @@ class DangerClass {
 			//Loading entity's enemies walk cells
 			var thisEnemiesWalkableCellsMap = LoadEnemiesWalkableCellsMap(state, entity_id, thisToSkipMap, base_hash)
 			//Loading My WalkCells at this instant :
-			var MyFullWalkCells = new WalkCellsClass(state, entity_id, true, true, true, true, base_hash).MAX
+			var MyFullWalkCells = WalkCellsClass.getMaxLayer(state, entity_id, base_hash)
 			//Pre-compute caster iteration order (constant across cell loop)
 			var thisCastersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(state, entity_state.ID)
 			BenchOps.Stop("Danger.setup")
@@ -106,7 +106,7 @@ class DangerClass {
 		var EnemiesWalkCells = [: ]
 		for (var e: var stat in state) {
 			if (e in toSkipMap) continue
-			EnemiesWalkCells[e] = new WalkCellsClass(state, e, true, true, false, false, base_hash).MAX //Avoid loading TP and TP/JUMP
+			EnemiesWalkCells[e] = WalkCellsClass.getMaxWalkOrJump(state, e, base_hash) //Walk+Jump only; teleport not modelled for enemies
 		}
 		EVERY_ENEMIES_WALKABLES[ThisHash] = EnemiesWalkCells
 		return EnemiesWalkCells

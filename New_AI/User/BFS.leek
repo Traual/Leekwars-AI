@@ -46,7 +46,7 @@ class ActionSuite {
 	static getBaseActions(State, BaseHash) {
 		var _final = []
 		var MyStats = State[Me]
-		var MyWalkCells = new WalkCellsClass(State, Me, true, true, true, true, BaseHash)
+		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 		var Acts = ActionsClass.getEveryActionsInAState(State, MyWalkCells, MyStats.CELL, BaseHash)
 
 		for (var Action in Acts) {
