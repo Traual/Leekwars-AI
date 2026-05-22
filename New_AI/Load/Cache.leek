@@ -41,6 +41,14 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     ACTIONS_ON_ME_CACHE = [: ]
     ACTIONS_SUMMON_CACHE = [: ]
     ACTIONS_ON_VOID_CACHE = [: ]
+
+    // Must be reset each turn: cache key is (base_hash, entity_id) but the
+    // stored map's contents depend on `toSkipMap`, which can change across
+    // turns even for the same key (e.g. HaveAnHittableItem flips when an
+    // enemy's cooldowns tick down). Cross-turn re-use of a stale map then
+    // leaves `EnemyWalkCells[Caster]` null for casters that were skipped
+    // previously but are live now -> crash in getMapCellItemAoe.
+    EVERY_ENEMIES_WALKABLES = [: ]
 }
 
 // STATE
