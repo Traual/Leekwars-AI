@@ -37,6 +37,7 @@ class DangerClass {
 				BenchOps.Stop("Danger")
 				return ENTITY_DANGER_CACHE_FOR_ME[Hash]
 			}
+			BenchOps.Start("Danger.setup")
 			//Finding the lowest danger cell possible in my walkcells
 			var thisToSkipMap = EntitiesToSkip(entity_state, state, base_hash)
 			//Loading entity's enemies walk cells
@@ -45,12 +46,15 @@ class DangerClass {
 			var MyFullWalkCells = new WalkCellsClass(state, entity_id, true, true, true, true, base_hash).MAX
 			//Pre-compute caster iteration order (constant across cell loop)
 			var thisCastersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(state, entity_state.ID)
+			BenchOps.Stop("Danger.setup")
 			//Finding lowest danger cell in my WalkCells :
+			BenchOps.Start("Danger.cellLoop")
 			var minDanger = MAX_VALUE
 			for (var cell: var mp in MyFullWalkCells) {
 				var thisCellDanger = get(cell, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
 				if (thisCellDanger < minDanger) {
 					if (thisCellDanger == 0) { //Found a safe cell
+						BenchOps.Stop("Danger.cellLoop")
 						ENTITY_DANGER_CACHE_FOR_ME[Hash] = 0
 						BenchOps.Stop("Danger")
 						return 0
@@ -58,6 +62,7 @@ class DangerClass {
 					minDanger = thisCellDanger
 				}
 			}
+			BenchOps.Stop("Danger.cellLoop")
 			//Returning min danger found in my walkcells
 			ENTITY_DANGER_CACHE_FOR_ME[Hash] = minDanger
 			BenchOps.Stop("Danger")
@@ -121,16 +126,22 @@ class DangerClass {
 	static get(Cell, State, TargetStats, EnemyWalkCells, ToSkipMap, StatsHashForDanger, CastersInOrder) {
 		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), Cell)
 		if (ThisHash in CELL_DANGER_GET_CACHE) return CELL_DANGER_GET_CACHE[ThisHash]
+		BenchOps.Start("Danger.cellGet")
 		var _final = 0
 		var TargetStatsCloned = clone(TargetStats, 3)
 		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
 			var CasterStats = State[Caster]
+			BenchOps.Start("Danger.mapItemAoe")
 			var MapCellItemAoe = getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster])
 			var MapThisCellItemAoe = Cell in MapCellItemAoe ? MapCellItemAoe[Cell] : [: ]
+			BenchOps.Stop("Danger.mapItemAoe")
+			BenchOps.Start("Danger.combo")
 			_final += getComboFromItemAoe(MapThisCellItemAoe, CasterStats, TargetStatsCloned)
+			BenchOps.Stop("Danger.combo")
 		}
 		CELL_DANGER_GET_CACHE[ThisHash] = _final
+		BenchOps.Stop("Danger.cellGet")
 		return _final
 	}
 
@@ -151,9 +162,13 @@ class DangerClass {
 			TargetStats = COMBO_FROM_ITEM_AOE_CACHE[HashWithShield][1]
 			return COMBO_FROM_ITEM_AOE_CACHE[HashWithShield][0]
 		}
+		BenchOps.Start("Danger.comboCompute")
 		var BaseTp = CasterStats.TP
 		var BaseUses = CasterStats.USES
+		BenchOps.Start("Danger.comboBFS")
 		var _final = getBFSComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, BaseTp, clone(BaseUses))
+		BenchOps.Stop("Danger.comboBFS")
+		BenchOps.Start("Danger.comboVulne")
 		var ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
 		while ((ComboWithVulne instanceof DangerClass) && (ComboWithVulne.EndValueDamage > _final)) {
 			_final = ComboWithVulne.EndValueDamage
@@ -162,7 +177,9 @@ class DangerClass {
 			BaseTp = ComboWithVulne.EndTp
 			ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
 		}
+		BenchOps.Stop("Danger.comboVulne")
 		COMBO_FROM_ITEM_AOE_CACHE[HashWithShield] = [_final, TargetStats]
+		BenchOps.Stop("Danger.comboCompute")
 		return _final
 	}
 
@@ -384,8 +401,9 @@ class DangerClass {
 
 	static getMapCellItemAoe(EntityStats, EntityWalkCells) {
 		var EntityStartCell = EntityStats.CELL
-		var TmpHash = (mapSize(EntityWalkCells) * MAX_CELL) + (EntityStartCell) //Same Start Cell and Same number of walkcells --> very likely to not have any entities that have moved arround 
+		var TmpHash = (mapSize(EntityWalkCells) * MAX_CELL) + (EntityStartCell) //Same Start Cell and Same number of walkcells --> very likely to not have any entities that have moved arround
 		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
+		BenchOps.Start("Danger.mapItemAoeCompute")
 		var _final = [: ]
 		for (var Item in EntityDangerClass.getItemsList(EntityStats)) {
 			for (var Cell: var MinAoeDist in getMapAoeForItem(Item, ITEMINFO[Item], EntityWalkCells, EntityStartCell)) {
@@ -398,6 +416,7 @@ class DangerClass {
 			}
 		}
 		MAP_CELL_ITEM_AOE_CACHE[TmpHash] = _final
+		BenchOps.Stop("Danger.mapItemAoeCompute")
 		return _final
 	}
 
