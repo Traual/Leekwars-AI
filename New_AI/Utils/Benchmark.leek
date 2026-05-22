@@ -59,7 +59,7 @@ class BenchOps {
 		entries = arraySort(entries, function(a, b) { return b[0] - a[0] })
 
 		var fullTurn = getOperations()
-		debugC("=== Operations breakdown (turn " + getTurn() + ") ===", COLOR_YELLOW)
+		debugC("=== Operations breakdown (turn " + getTurn() + ") ===", COLOR_RED)
 		for (var e in entries) {
 			var n = e[1]
 			var ops = e[0]
