@@ -131,11 +131,9 @@ class DangerClass {
 		var TargetStatsCloned = clone(TargetStats, 3)
 		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
-			var CasterWalkCells = EnemyWalkCells[Caster]
-			if (CasterWalkCells == null) continue //Defensive: rare race where Caster slipped past ToSkipMap but LoadEnemies didn't index it (suspected cache/state inconsistency around summons). Skipping = treat caster as non-threat for this cell.
 			var CasterStats = State[Caster]
 			BenchOps.Start("Danger.mapItemAoe")
-			var MapCellItemAoe = getMapCellItemAoe(CasterStats, CasterWalkCells)
+			var MapCellItemAoe = getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster])
 			var MapThisCellItemAoe = Cell in MapCellItemAoe ? MapCellItemAoe[Cell] : [: ]
 			BenchOps.Stop("Danger.mapItemAoe")
 			BenchOps.Start("Danger.combo")
