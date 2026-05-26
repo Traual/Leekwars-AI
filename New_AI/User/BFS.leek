@@ -1,7 +1,23 @@
 /**
- * Greedy Depth-1 Action Selector
- * At each step, evaluates all possible actions in the current state
- * and returns the one with the best score improvement.
+ * Tree Search Action Selector (port from Old_AI's ActionSuite/Tree.leek)
+ *
+ * Builds a tree of possible play sequences:
+ *  - Depth-1 : every playable action is cloned+applied+state-scored.
+ *  - Sorted by Δscore-vs-initial (descending).
+ *  - Each base action is then greedy-expanded by repeatedly picking the best
+ *    next playable action from the *same* sorted list (re-scored in the
+ *    current derived state for verification; early-exit when the sorted
+ *    bound can't beat the running best).
+ *  - All nodes (every depth) are pushed into Tree_Array.
+ *  - A no-play node (score = initial) acts as a floor.
+ *  - The best-scored node wins; we return its first ancestor's action.
+ *
+ * Danger is already included inside `ScoringClass.getStateScore`, so this
+ * file doesn't need a separate danger pass.
+ *
+ * Note: actions that relocate entities (Inversion / Boxing glove / Grapple)
+ * are *not* filtered out — they cost more ops during expansion (cache
+ * invalidation on position change) but the search remains correct.
  **/
 
 include("../includes.leek")
@@ -10,8 +26,8 @@ class ActionSuite {
 
 	/**
 	 * Returns the best single action to play in the given state.
-	 * Evaluates every playable action, scores the resulting state,
-	 * and returns the Action with the highest score (or null if nothing improves).
+	 * Builds a tree, finds the highest-scoring leaf, walks back to the root,
+	 * returns the action of the first move in that branch.
 	 */
 	static getBestAction(State) {
 		BenchOps.Start("BFS")
@@ -19,30 +35,133 @@ class ActionSuite {
 		var BaseHash = StateClass.getBaseHash(State)
 		var initialScore = ScoringClass.getStateScore(State, MySide, BaseHash)
 
-		var actions = getBaseActions(State, BaseHash)
-		debugC("--- Evaluating " + count(actions) + " actions ---", COLOR_BLUE)
+		// === Step 1 : enumerate, clone+apply+score every playable base action ===
+		// Each entry: [Action, initialDelta, baseNode] — initialDelta = nodeScore - initialScore.
+		// The sorted initialDelta also serves as the early-exit bound during expansion.
+		var baseActions = getBaseActions(State, BaseHash)
+		debugC("--- Evaluating " + count(baseActions) + " actions ---", COLOR_BLUE)
 
-		var bestAction = null
-		var bestScore = initialScore
-
-		for (var act in actions) {
-			var node = NodeClass.ActionToNode(act, State, BaseHash)
+		var ScoredEntries = []
+		for (var act in baseActions) {
+			var node = NodeClass.ActionToNode(act, State, BaseHash, null)
+			if (node == null) continue
 			var nodeBaseHash = StateClass.getBaseHash(node.END_STATS)
 			var nodeScore = ScoringClass.getStateScore(node.END_STATS, MySide, nodeBaseHash)
+			node.SCORE = nodeScore
+			push(ScoredEntries, [act, nodeScore - initialScore, node])
+		}
+		arraySort(ScoredEntries, function(a, b) { return b[1] - a[1] })
 
-			if (nodeScore > bestScore) {
-				bestScore = nodeScore
-				bestAction = act
+		// === Step 2 : build Tree_Array (base nodes + greedy expansions) ===
+		var Tree_Array = []
+		for (var entry in ScoredEntries) {
+			var baseNode = entry[2]
+			push(Tree_Array, baseNode)
+			if (entry[1] <= 0) continue   // negative-delta bases can't lead anywhere positive
+			// Greedy expand from this base node, chaining best-next plays
+			var current = baseNode
+			while (true) {
+				var next = findBestNextNode(current, ScoredEntries, MySide)
+				if (next == null) break
+				push(Tree_Array, next)
+				current = next
 			}
 		}
 
-		if (bestAction != null) {
-			debug("Best: " + ITEMINFO[bestAction.Item].NAME + " | From: " + bestAction.From + " | To: " + bestAction.To + " | Delta: " + (bestScore - initialScore))
+		// === Step 3 : no-play floor (hide, no action) ===
+		var noPlay = new NodeClass(null, State, null)
+		noPlay.SCORE = initialScore
+		push(Tree_Array, noPlay)
+
+		// === Step 4 : find best by absolute SCORE ===
+		var best = noPlay
+		for (var nod in Tree_Array) {
+			if (nod.SCORE > best.SCORE) best = nod
 		}
 		BenchOps.Stop("BFS")
-		return bestAction
+
+		if (best.ACTION == null) return null
+		// Walk back to the first move of the winning branch
+		var ancestor = best
+		while (ancestor.PARENT != null) ancestor = ancestor.PARENT
+		debug("Best: " + ITEMINFO[ancestor.ACTION.Item].NAME + " | From: " + ancestor.ACTION.From + " | To: " + ancestor.ACTION.To + " | Delta: " + (best.SCORE - initialScore))
+		return ancestor.ACTION
 	}
 
+	/**
+	 * From a parent node, finds the best next action to play in its END_STATS.
+	 * Iterates the pre-sorted ScoredEntries (descending by initialDelta);
+	 * for each playable candidate, re-scores in the derived state and tracks
+	 * the best Δ-from-parent. Early-exits when the sorted bound can no longer
+	 * beat the running best.
+	 *
+	 * @return new child NodeClass (with .PARENT = Parent, .SCORE = absolute
+	 *         derived-state score), or null if no improving move exists.
+	 */
+	static findBestNextNode(Parent, ScoredEntries, MySide) {
+		var State = Parent.END_STATS
+		var MyStats = State[Me]
+		var MyTp = MyStats.TP
+		if (MyTp < MINIMUM_COST_ITEM) return null
+
+		var BaseHash = StateClass.getBaseHash(State)
+		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
+		var MyOnlyWalk = MyWalkCells.WALK
+		var MyMax = MyWalkCells.MAX
+		var MyCooldowns = MyStats.COOLDOWNS
+		var MyUses = MyStats.USES
+		var MyWeapon = MyStats.WEAPON
+		var ParentScore = Parent.SCORE
+		var JumpCost = ITEMINFO[CHIP_JUMP].COST
+		var TeleCost = ITEMINFO[CHIP_TELEPORTATION].COST
+
+		var BestDeltaFromParent = 0   // only accept improving moves
+		var BestNode = null
+
+		for (var entry in ScoredEntries) {
+			var initialDelta = entry[1]
+			if (initialDelta <= 0) break                       // sorted: no positive moves left
+			if (BestDeltaFromParent >= initialDelta) break     // sorted bound can't beat current best
+
+			var act = entry[0]
+			var item = act.Item
+
+			// Playability checks in the derived state
+			if (MyCooldowns[item] > 0) continue
+			var Info = ITEMINFO[item]
+			if (MyUses[item] >= Info.MAX_USES) continue
+			var from = act.From
+			if (!(from in MyMax)) continue                      // not reachable from current cell
+
+			var cost = (Info.IS_WEAPON && MyWeapon != item) ? Info.COST + 1 : Info.COST
+			if (!(from in MyOnlyWalk)) {
+				if (from in MyWalkCells.JUMP)                          cost += JumpCost
+				else if (from in MyWalkCells.TELEPORTATION)            cost += TeleCost
+				else if (from in MyWalkCells.TELEPORTATION_AND_JUMP)   cost += JumpCost + TeleCost
+			}
+			if (cost > MyTp) continue
+
+			// Apply and score in derived state
+			var candidate = NodeClass.ActionToNode(act, State, BaseHash, Parent)
+			if (candidate == null) continue
+			var candidateBaseHash = StateClass.getBaseHash(candidate.END_STATS)
+			var candidateScore = ScoringClass.getStateScore(candidate.END_STATS, MySide, candidateBaseHash)
+			var deltaFromParent = candidateScore - ParentScore
+
+			if (deltaFromParent > BestDeltaFromParent) {
+				BestDeltaFromParent = deltaFromParent
+				BestNode = candidate
+				BestNode.SCORE = candidateScore
+			}
+		}
+
+		return BestNode
+	}
+
+	/**
+	 * Lists every playable action from the current state (no scoring here).
+	 * Filtering: cooldown, MAX_USES, TP cost (incl. weapon-swap and move-item cost).
+	 */
 	static getBaseActions(State, BaseHash) {
 		var _final = []
 		var MyStats = State[Me]

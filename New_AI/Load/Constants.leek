@@ -20,6 +20,9 @@ global MY_INVENTORY_ON_VOID// = Actions.getInventoryOnVoid(BASE_INVENTORY)
 global MY_INVENTORY_SUMMON// = Actions.getInventorySummon(BASE_INVENTORY)
 global MY_INVENTORY_ON_EVERYONE// = Actions.getInventoryOnEveryOne(BASE_INVENTORY)
 
+// Cheapest item TP cost across my inventory (used to short-circuit expansion when TP is too low).
+global MINIMUM_COST_ITEM
+
 global MAP_TO_TENSOR
 // Dimensions de la map LeekWars
 global MAP_ROWS = 18

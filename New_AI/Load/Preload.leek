@@ -79,5 +79,13 @@ class Preload {
 		MY_INVENTORY_ON_VOID = ActionsClass.getInventoryOnVoid(BASE_INVENTORY)
 		MY_INVENTORY_SUMMON = ActionsClass.getInventorySummon(BASE_INVENTORY)
 		MY_INVENTORY_ON_EVERYONE = ActionsClass.getInventoryOnEveryOne(BASE_INVENTORY)
+		// Cheapest item TP cost — used by ActionSuite.findBestNextNode to bail out early
+		// when remaining TP is below any usable item's cost.
+		var cheapest = 100
+		for (var i in BASE_INVENTORY) {
+			var c = isChip(i) ? getChipCost(i) : getWeaponCost(i)
+			if (c < cheapest) cheapest = c
+		}
+		MINIMUM_COST_ITEM = cheapest
 	}
 }

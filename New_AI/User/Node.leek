@@ -7,9 +7,12 @@ include("../includes.leek")
 class NodeClass {
 	ACTION
 	END_STATS
-	constructor(Act, StatsAfterAction) {
+	PARENT      // Node we came from (null for root / base / no-play)
+	SCORE       // Absolute state score of END_STATS (cached, filled by BFS)
+	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction
+		this.PARENT = Parent
 	}
 
 	/* It is a simplified version with less parameters of ActionToNodeInATree. It is used in Action Suite in Loading Base Nodes
@@ -21,7 +24,7 @@ class NodeClass {
 	 * @return New Node Class
 	 */
 
-	static ActionToNode(Action, State, BaseHash) {
+	static ActionToNode(Action, State, BaseHash, Parent) {
 		if (Action == null) return;
 		BenchOps.Start("Node")
 		var MyState = State[Me]
@@ -43,7 +46,7 @@ class NodeClass {
 				Cost += ITEMINFO[CHIP_TELEPORTATION].COST + ITEMINFO[CHIP_JUMP].COST
 			}
 		}
-		var result = ActionToNodeInTree(Action, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash)
+		var result = ActionToNodeInTree(Action, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent)
 		BenchOps.Stop("Node")
 		return result
 	}
@@ -63,7 +66,7 @@ class NodeClass {
 	 * @return New Node Class
 	 */
 
-	static ActionToNodeInTree(Act, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash) {
+	static ActionToNodeInTree(Act, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent) {
 		var Targets = ConsequencesClass.ConsequenceTargets(Item, From, To, State, Me, BaseHash)
 		var ThisActionStats = StateClass.CloneOnlyTargetsAndMe(Targets, State)
 
@@ -102,6 +105,6 @@ class NodeClass {
 				ThisActionStats[Me].COOLDOWNS[CHIP_TELEPORTATION] = ITEMINFO[CHIP_TELEPORTATION].COOLDOWN //Adding the Teleportation cooldown
 			}
 		}
-		return new NodeClass(Act, ThisActionStats) //Creating Node
+		return new NodeClass(Act, ThisActionStats, Parent) //Creating Node
 	}
 }
