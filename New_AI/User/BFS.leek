@@ -177,7 +177,13 @@ class ActionSuite {
 			var nodeScore = ScoringClass.getStateScore(node.END_STATS, MySide, nodeBaseHash)
 			push(Entries, [act, nodeScore - ReferenceScore, node, nodeScore, nodeBaseHash])
 		}
-		arraySort(Entries, function(a, b) { return b[1] - a[1] })
+		// LeekScript arraySort needs a strict -1/0/1 comparator. `b[1] - a[1]`
+		// returns floats and is silently ignored -> sort would not happen.
+		arraySort(Entries, function(a, b) {
+			if (a[1] < b[1]) return 1
+			if (a[1] > b[1]) return -1
+			return 0
+		})
 		return Entries
 	}
 
