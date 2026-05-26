@@ -410,9 +410,10 @@ class DangerClass {
 	 */
 
 	static getMapCellItemAoe(EntityStats, EntityWalkCells) {
+		var EntityStartCell = EntityStats.CELL
 		// With NoEntities walkcells the result is fully determined by the entity's (cell, mp)
 		// — no more mapSize-as-proxy needed. (cell × 1024 | mp, mp fits in 10 bits easily.)
-		var TmpHash = (EntityStats.CELL << 10) | EntityStats.MP
+		var TmpHash = (EntityStartCell << 10) | EntityStats.MP
 		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
 		BenchOps.Start("Danger.mapItemAoeCompute")
 		var _final = [: ]
