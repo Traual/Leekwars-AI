@@ -51,13 +51,17 @@ class ActionSuite {
 			baseNode.SCORE = entry[3]
 			baseNode.BASE_HASH = entry[4]
 			push(Tree_Array, baseNode)
+			debug("[Base] " + ITEMINFO[baseNode.ACTION.Item].NAME + " " + baseNode.ACTION.From + "->" + baseNode.ACTION.To + " | Δ=" + entry[1] + " | Score=" + entry[3])
 			if (entry[1] <= 0) continue   // negative-delta bases : skip expansion
 			var current = baseNode
+			var depth = 1
 			while (true) {
 				var next = findBestNextNode(current, ScoredCache, MySide)
 				if (next == null) break
 				push(Tree_Array, next)
+				debug("  [+" + depth + "] " + ITEMINFO[next.ACTION.Item].NAME + " " + next.ACTION.From + "->" + next.ACTION.To + " | Δ=" + (next.SCORE - current.SCORE) + " | Score=" + next.SCORE)
 				current = next
+				depth++
 			}
 		}
 
