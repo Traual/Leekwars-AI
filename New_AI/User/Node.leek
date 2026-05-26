@@ -7,9 +7,12 @@ include("../includes.leek")
 class NodeClass {
 	ACTION
 	END_STATS
-	PARENT      // Node we came from (null for root / base / no-play)
-	SCORE       // Absolute state score of END_STATS (cached, filled by BFS)
-	BASE_HASH   // BaseHash of END_STATS (filled by BFS)
+	PARENT             // Node we came from (null for root / base / no-play)
+	SCORE              // Absolute state score of END_STATS (cached, filled by BFS)
+	BASE_HASH          // BaseHash of END_STATS (filled by BFS)
+	PARENT_BASE_HASH   // BaseHash that produced the cached raw acts below
+	PARENT_RAW_ACTS    // Unfiltered Actions enumerated in the parent's state (reused if BaseHash unchanged)
+	PARENT_WALKCELLS   // WalkCells layers from the parent's state (reused if BaseHash unchanged)
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction

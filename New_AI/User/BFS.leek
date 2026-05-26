@@ -3,16 +3,13 @@
  *
  * Builds a tree of possible play sequences:
  *  - Depth-1 : every playable action is cloned+applied+state-scored.
- *  - Each base action is then greedy-expanded : after every applied play
- *    we score and pick the best next move in the derived state.
- *  - The raw action enumeration + initial walkcells are computed ONCE
- *    at the start of getBestAction (per real play) and reused across
- *    every greedy step. Each step only refilters by TP/CD/USES and
- *    refreshes the cheap NoEntities walkcells layer for accurate
- *    movement-cost accounting in ActionToNode.
- *  - Trade-off : if a play relocates an entity (Inversion / Grapple /
- *    Boxing-glove) we don't catch new opportunities until the next
- *    real play. Less precise, much cheaper, won't crash.
+ *  - Each base action is then greedy-expanded.
+ *  - Re-enumeration of raw actions is REUSED across steps when the
+ *    derived state's BaseHash matches the parent's (no entity moved
+ *    relative to the parent). Only the cheap TP/CD/USES/reachability
+ *    filter runs each step in that case.
+ *  - When BaseHash changes (walk, relocate, summon), we re-enumerate
+ *    fully to catch new opportunities.
  *  - All nodes (every depth) are pushed into Tree_Array.
  *  - A no-play node (score = initial) acts as a floor.
  *  - The best-scored node wins; we return its first ancestor's action.
@@ -28,7 +25,7 @@ class ActionSuite {
 		var BaseHash = StateClass.getBaseHash(State)
 		var initialScore = ScoringClass.getStateScore(State, MySide, BaseHash)
 
-		// === Single enumeration for the whole BFS (this real play) ===
+		// === Step 1 : enumerate, clone+apply+score every playable base action ===
 		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 		var rawActs = ActionsClass.getEveryActionsInAState(State, MyWalkCells, State[Me].CELL, BaseHash)
 		var baseActions = filterActions(rawActs, State[Me], MyWalkCells)
@@ -41,26 +38,30 @@ class ActionSuite {
 			var baseNodeBaseHash = StateClass.getBaseHash(baseNode.END_STATS)
 			baseNode.BASE_HASH = baseNodeBaseHash
 			baseNode.SCORE = ScoringClass.getStateScore(baseNode.END_STATS, MySide, baseNodeBaseHash)
+			// Cache root BaseHash + raw enumeration for reuse if BaseHash unchanged
+			baseNode.PARENT_BASE_HASH = BaseHash
+			baseNode.PARENT_RAW_ACTS = rawActs
+			baseNode.PARENT_WALKCELLS = MyWalkCells
 			push(Tree_Array, baseNode)
 
 			if (baseNode.SCORE <= initialScore) continue   // negative-delta bases : skip expansion
 
-			// === Greedy expansion : reuse rawActs across all steps ===
+			// === Step 2 : greedy expansion ===
 			var current = baseNode
 			while (true) {
-				var next = findBestNextNode(current, rawActs, MySide)
+				var next = findBestNextNode(current, MySide)
 				if (next == null) break
 				push(Tree_Array, next)
 				current = next
 			}
 		}
 
-		// === No-play floor (hide, no action) ===
+		// === Step 3 : no-play floor (hide, no action) ===
 		var noPlay = new NodeClass(null, State, null)
 		noPlay.SCORE = initialScore
 		push(Tree_Array, noPlay)
 
-		// === Find best by absolute SCORE ===
+		// === Step 4 : find best by absolute SCORE ===
 		var best = noPlay
 		for (var nod in Tree_Array) {
 			if (nod.SCORE > best.SCORE) best = nod
@@ -75,19 +76,27 @@ class ActionSuite {
 	}
 
 	/**
-	 * Finds the best next action from Parent's derived state.
-	 * Reuses the root-level rawActs (no re-enumeration). Recomputes the
-	 * cheap NoEntities walkcells so movement-cost accounting in
-	 * ActionToNode stays correct after the leek has moved.
+	 * Reuses parent's raw enumeration + walkcells if BaseHash unchanged
+	 * (self-buff plays from current cell : Adrenaline, Wizardry, Carapace,
+	 * Covetousness, Antidote, etc.). Otherwise re-enumerates fully.
 	 */
-	static findBestNextNode(Parent, RawActs, MySide) {
+	static findBestNextNode(Parent, MySide) {
 		var State = Parent.END_STATS
 		if (State[Me].TP < MINIMUM_COST_ITEM) return null
 
 		var BaseHash = Parent.BASE_HASH
 		var ParentScore = Parent.SCORE
-		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
-		var actions = filterActions(RawActs, State[Me], MyWalkCells)
+
+		var rawActs
+		var MyWalkCells
+		if (BaseHash == Parent.PARENT_BASE_HASH) {
+			rawActs = Parent.PARENT_RAW_ACTS
+			MyWalkCells = Parent.PARENT_WALKCELLS
+		} else {
+			MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
+			rawActs = ActionsClass.getEveryActionsInAState(State, MyWalkCells, State[Me].CELL, BaseHash)
+		}
+		var actions = filterActions(rawActs, State[Me], MyWalkCells)
 
 		var BestNode = null
 		var BestDeltaFromParent = 0
@@ -108,14 +117,19 @@ class ActionSuite {
 			}
 		}
 
-		if (BestNode != null) BestNode.BASE_HASH = BestBaseHash
+		if (BestNode != null) {
+			BestNode.BASE_HASH = BestBaseHash
+			BestNode.PARENT_BASE_HASH = BaseHash
+			BestNode.PARENT_RAW_ACTS = rawActs
+			BestNode.PARENT_WALKCELLS = MyWalkCells
+		}
+
 		return BestNode
 	}
 
 	/**
 	 * Cheap filter pass over a pre-enumerated raw action list.
 	 * Applies per-state TP / cooldown / uses / reachability filtering.
-	 * No fresh enumeration here.
 	 */
 	static filterActions(Acts, MyStats, MyWalkCells) {
 		var _final = []
