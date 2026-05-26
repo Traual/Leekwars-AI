@@ -33,6 +33,37 @@ class Preload {
 			push(MAP_CELL_TO_COUPLE, line >> 1)
 			push(MAP_CELL_TO_BITMASK, 1 << ((line & 1) == 0 ? pos : (24 + pos)))
 		}
+		// MAP_OBSTACLES_CACHE = obstacle-only baseline (no entities). 18 ints packed-couple.
+		// Per-call BFS clones this and subtracts the live leekcells.
+		for (var i = 0; i < 17; i++) MAP_OBSTACLES_CACHE[i] = 262143 | (131071 << 24)
+		MAP_OBSTACLES_CACHE[17] = 262143
+		for (var x in OBSTACLES_ARRAY) MAP_OBSTACLES_CACHE[MAP_CELL_TO_COUPLE[x]] -= MAP_CELL_TO_BITMASK[x]
+		MAP_OBSTACLES_LOADED = true
+
+		// CELL_BY_LSB[couple][lsb_value] = cell id (single-bit -> cell decode for bit-iteration emit).
+		// 18 + 17 = 35 bits per couple; couple 17 only has the even half.
+		for (var c = 0; c < 18; c++) {
+			var m = [:]
+			var base = c * 35
+			m[1] = base; m[2] = base + 1; m[4] = base + 2; m[8] = base + 3
+			m[16] = base + 4; m[32] = base + 5; m[64] = base + 6; m[128] = base + 7
+			m[256] = base + 8; m[512] = base + 9; m[1024] = base + 10
+			m[2048] = base + 11; m[4096] = base + 12; m[8192] = base + 13
+			m[16384] = base + 14; m[32768] = base + 15; m[65536] = base + 16
+			m[131072] = base + 17
+			if (c < 17) {
+				m[16777216] = base + 18; m[33554432] = base + 19
+				m[67108864] = base + 20; m[134217728] = base + 21
+				m[268435456] = base + 22; m[536870912] = base + 23
+				m[1073741824] = base + 24; m[2147483648] = base + 25
+				m[4294967296] = base + 26; m[8589934592] = base + 27
+				m[17179869184] = base + 28; m[34359738368] = base + 29
+				m[68719476736] = base + 30; m[137438953472] = base + 31
+				m[274877906944] = base + 32; m[549755813888] = base + 33
+				m[1099511627776] = base + 34
+			}
+			push(CELL_BY_LSB, m)
+		}
 		for (var c = 0; c < 613; c++) {
 			var cInfo = new CellClass(c)
 			ALLCELLINFO[c] = cInfo

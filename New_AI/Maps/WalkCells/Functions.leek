@@ -444,6 +444,714 @@ function getAccesibleT(mp) {
 	}
 }
 
+// ============================================================================
+// ==========  FAST PATH  (bench-validated, ~3-4× fewer ops)  =================
+// ============================================================================
+// Drop-in BFS replacements for the 4 reachability queries. Self-contained:
+// clone the obstacle baseline `MAP_OBSTACLES_CACHE` locally, subtract `leekcells`,
+// and run BFS on a local OBS — no global pollution. Caller just needs to ensure
+// MAP_OBSTACLES_CACHE is populated (one-shot via InitObstacles at fight start).
+//
+// Use a local 19-element acc via clone(ACC_TEMPLATE) so legacy globals (ACC, TMP, …)
+// are also untouched.
+//
+// Returns: map { cell_id => mp_required } including the start cell at mp=0.
+// Bench (seed=1, mp=12): 4691 / 16708 / 24641 / 61803 ops.
+
+function _FastWalkableCells(from, leekcells, mp) {
+	var _final = [from : 0]
+	if (mp == 0) return _final
+	var OBS = clone(MAP_OBSTACLES_CACHE, 1)
+	for (var x in leekcells) OBS[MAP_CELL_TO_COUPLE[x]] -= MAP_CELL_TO_BITMASK[x]
+
+	var acc = clone(ACC_TEMPLATE)
+	var startCouple = MAP_CELL_TO_COUPLE[from]
+	acc[startCouple] = MAP_CELL_TO_BITMASK[from]
+
+	var lo = startCouple
+	var hi = startCouple
+
+	for (var m = 1; m <= mp; m++) {
+		if (lo) lo--
+		if (hi != 17) hi++
+		var iterEnd = hi
+		var cur = acc[lo]
+		var oSources = (lo > 0 ? acc[lo - 1] | cur : cur) >> 24
+		hi = lo - 1   // sentinel "no emit yet"
+
+		for (var c = lo; c <= iterEnd; c++) {
+			var next = acc[c + 1]
+			var eSources = cur | next
+			var d = ((oSources | (oSources << 1)) | ((eSources | (eSources >> 1)) << 24)) & OBS[c] & ~cur
+			if (d) {
+				acc[c] = cur | d
+				if (hi < lo) lo = c
+				hi = c
+				var ct = CELL_BY_LSB[c]
+				while (d) { var lsb = d & -d; _final[ct[lsb]] = m; d ^= lsb }
+			}
+			cur = next
+			oSources = eSources >> 24
+		}
+		if (hi < lo) break   // wave saturated
+	}
+	return _final
+}
+
+function _FastWalkableCellsWithJump(from, leekcells, mp) {
+	var _final = [from : 0]
+	var OBS = clone(MAP_OBSTACLES_CACHE, 1)
+	for (var x in leekcells) OBS[MAP_CELL_TO_COUPLE[x]] -= MAP_CELL_TO_BITMASK[x]
+
+	var acc  = clone(ACC_TEMPLATE)
+	var accj = clone(ACC_TEMPLATE)
+	var startCouple = MAP_CELL_TO_COUPLE[from]
+	var startBit = MAP_CELL_TO_BITMASK[from]
+	acc[startCouple]  = startBit
+	accj[startCouple] = startBit
+
+	var srcE = startBit & 262143
+	var srcO = startBit >> 24
+	var lo_j = startCouple > 2 ? startCouple - 2 : 0
+	var hi_j = startCouple < 15 ? startCouple + 2 : 17
+	var srcE_3 = srcE | (srcE << 1) | (srcE >> 1)
+	var srcO_3 = srcO | (srcO << 1) | (srcO >> 1)
+	var srcO_4 = srcO_3 | (srcO << 2)
+	var srcE_4 = srcE_3 | (srcE >> 2)
+	var sumE_mid = srcE_3 | srcO_4
+	var sumO_mid = srcO_3 | srcE_4
+
+	for (var c = lo_j; c <= hi_j; c++) {
+		var dc0 = startCouple - c
+		var sumE = 0
+		var sumO = 0
+		if (dc0 >= -1 && dc0 <= 1) { sumE = sumE_mid; sumO = sumO_mid }
+		else if (dc0 <= 1) sumE = srcO_4
+		else sumO = srcE_4
+		var cur = accj[c]
+		var d = (sumE | (sumO << 24)) & OBS[c] & ~cur
+		if (d) {
+			accj[c] = cur | d
+			var ct = CELL_BY_LSB[c]
+			while (d) { var lsb = d & -d; _final[ct[lsb]] = 0; d ^= lsb }
+		}
+	}
+
+	if (mp == 0) return _final
+
+	var lo_a = startCouple
+	var hi_a = startCouple
+
+	for (var m = 1; m <= mp; m++) {
+		// Step 1: Walk acc, build DELTA
+		if (lo_a) lo_a--
+		if (hi_a != 17) hi_a++
+		var iterEnd_a = hi_a
+		var cur_a = acc[lo_a]
+		var oSources_a = (lo_a > 0 ? acc[lo_a - 1] | cur_a : cur_a) >> 24
+		hi_a = lo_a - 1
+		var DELTA = [:]
+		for (var c = lo_a; c <= iterEnd_a; c++) {
+			var next_a = acc[c + 1]
+			var eSources_a = cur_a | next_a
+			var d_a = ((oSources_a | (oSources_a << 1)) | ((eSources_a | (eSources_a >> 1)) << 24)) & OBS[c] & ~cur_a
+			if (d_a) {
+				acc[c] = cur_a | d_a
+				DELTA[c] = d_a
+				if (hi_a < lo_a) lo_a = c
+				hi_a = c
+			}
+			cur_a = next_a
+			oSources_a = eSources_a >> 24
+		}
+
+		// Step 2: Walk accj + emit
+		if (lo_j) lo_j--
+		if (hi_j != 17) hi_j++
+		var iterEnd_j = hi_j
+		var cur_j = accj[lo_j]
+		var oSources_j = (lo_j > 0 ? accj[lo_j - 1] | cur_j : cur_j) >> 24
+		for (var c = lo_j; c <= iterEnd_j; c++) {
+			var next_j = accj[c + 1]
+			var eSources_j = cur_j | next_j
+			var d_j = ((oSources_j | (oSources_j << 1)) | ((eSources_j | (eSources_j >> 1)) << 24)) & OBS[c] & ~cur_j
+			if (d_j) {
+				accj[c] = cur_j | d_j
+				var ct = CELL_BY_LSB[c]
+				while (d_j) { var lsb = d_j & -d_j; _final[ct[lsb]] = m; d_j ^= lsb }
+			}
+			cur_j = next_j
+			oSources_j = eSources_j >> 24
+		}
+
+		// Step 3: Jump cheb==3 from DELTA
+		for (var sc: var v in DELTA) {
+			var e = v & 262143
+			var o = v >> 24
+			var e_2 = (e << 1) | (e >> 2)
+			var o_2 = (o << 2) | (o >> 1)
+			var e_4 = e_2 | e | (e >> 1)
+			var o_4 = o_2 | (o << 1) | o
+			var ke_2 = e_2 << 24
+			var ke_4 = e_4 << 24
+
+			if (sc >= 2) {
+				var c2 = sc - 2
+				var cur2 = accj[c2]
+				var d2 = ke_4 & OBS[c2] & ~cur2
+				if (d2) {
+					accj[c2] = cur2 | d2
+					var ct = CELL_BY_LSB[c2]
+					while (d2) { var lsb = d2 & -d2; _final[ct[lsb]] = m; d2 ^= lsb }
+				}
+				var c1 = sc - 1
+				var cur1 = accj[c1]
+				var d1 = (o_4 | ke_2) & OBS[c1] & ~cur1
+				if (d1) {
+					accj[c1] = cur1 | d1
+					var ct = CELL_BY_LSB[c1]
+					while (d1) { var lsb = d1 & -d1; _final[ct[lsb]] = m; d1 ^= lsb }
+				}
+			} else if (sc) {
+				var cur1 = accj[0]
+				var d1 = (o_4 | ke_2) & OBS[0] & ~cur1
+				if (d1) {
+					accj[0] = cur1 | d1
+					var ct = CELL_BY_LSB[0]
+					while (d1) { var lsb = d1 & -d1; _final[ct[lsb]] = m; d1 ^= lsb }
+				}
+			}
+
+			var cur_s = accj[sc]
+			var ds = (o_2 | ke_2) & OBS[sc] & ~cur_s
+			if (ds) {
+				accj[sc] = cur_s | ds
+				var ct = CELL_BY_LSB[sc]
+				while (ds) { var lsb = ds & -ds; _final[ct[lsb]] = m; ds ^= lsb }
+			}
+
+			if (sc <= 15) {
+				var c1 = sc + 1
+				var cur1 = accj[c1]
+				var d1 = (o_2 | ke_4) & OBS[c1] & ~cur1
+				if (d1) {
+					accj[c1] = cur1 | d1
+					var ct = CELL_BY_LSB[c1]
+					while (d1) { var lsb = d1 & -d1; _final[ct[lsb]] = m; d1 ^= lsb }
+				}
+				var c2 = sc + 2
+				var cur2 = accj[c2]
+				var d2 = o_4 & OBS[c2] & ~cur2
+				if (d2) {
+					accj[c2] = cur2 | d2
+					var ct = CELL_BY_LSB[c2]
+					while (d2) { var lsb = d2 & -d2; _final[ct[lsb]] = m; d2 ^= lsb }
+				}
+			} else if (sc <= 16) {
+				var cur1 = accj[17]
+				var d1 = (o_2 | ke_4) & OBS[17] & ~cur1
+				if (d1) {
+					accj[17] = cur1 | d1
+					var ct = CELL_BY_LSB[17]
+					while (d1) { var lsb = d1 & -d1; _final[ct[lsb]] = m; d1 ^= lsb }
+				}
+			}
+		}
+	}
+	return _final
+}
+
+function _FastWalkableCellsWithTeleportation(from, leekcells, mp) {
+	var _final = [from : 0]
+	var OBS = clone(MAP_OBSTACLES_CACHE, 1)
+	for (var x in leekcells) OBS[MAP_CELL_TO_COUPLE[x]] -= MAP_CELL_TO_BITMASK[x]
+
+	var acc  = clone(ACC_TEMPLATE)
+	var acct = clone(ACC_TEMPLATE)
+	var startCouple = MAP_CELL_TO_COUPLE[from]
+	var startBit = MAP_CELL_TO_BITMASK[from]
+	acc[startCouple]  = startBit
+	acct[startCouple] = startBit
+
+	var srcE = startBit & 262143
+	var srcO = startBit >> 24
+	var lo_t = startCouple > 6 ? startCouple - 6 : 0
+	var hi_t = startCouple < 11 ? startCouple + 6 : 17
+
+	var srcE_3 = srcE | (srcE << 1) | (srcE >> 1)
+	var srcE_7 = srcE_3 | (srcE_3 << 2) | (srcE_3 >> 2)
+	var srcE_11 = srcE_7 | (srcE_7 << 2) | (srcE_7 >> 2)
+	var diff_eS = srcE_11 | (srcE >> 6)
+	var same_eS = diff_eS | (srcE << 6)
+	var srcO_3 = srcO | (srcO << 1) | (srcO >> 1)
+	var srcO_7 = srcO_3 | (srcO_3 << 2) | (srcO_3 >> 2)
+	var srcO_11 = srcO_7 | (srcO_7 << 2) | (srcO_7 >> 2)
+	var diff_oS = srcO_11 | (srcO << 6)
+	var same_oS = diff_oS | (srcO >> 6)
+
+	for (var c = lo_t; c <= hi_t; c++) {
+		var dc = startCouple - c
+		var sumE = same_eS
+		if (dc <= 5) sumE |= diff_oS
+		var sumO = same_oS
+		if (dc >= -5) sumO |= diff_eS
+		var cur = acct[c]
+		var d = ((sumE | (sumO << 24)) & OBS[c]) & ~cur
+		if (d) {
+			acct[c] = cur | d
+			var t = BINARY_TO_CELL_BY_COUPLE[c]
+			if ((d & 262143) != 0) {
+				var ch = d & 63
+				if (ch != 0) for (var cell in t[0][ch]) _final[cell] = 0
+				ch = (d >> 6) & 63
+				if (ch != 0) for (var cell in t[1][ch]) _final[cell] = 0
+				ch = (d >> 12) & 63
+				if (ch != 0) for (var cell in t[2][ch]) _final[cell] = 0
+			}
+			if ((d >> 24) != 0) {
+				var ch = (d >> 24) & 63
+				if (ch != 0) for (var cell in t[3][ch]) _final[cell] = 0
+				ch = (d >> 30) & 63
+				if (ch != 0) for (var cell in t[4][ch]) _final[cell] = 0
+				ch = (d >> 36) & 31
+				if (ch != 0) for (var cell in t[5][ch]) _final[cell] = 0
+			}
+		}
+	}
+
+	if (mp == 0) return _final
+
+	var lo_a = startCouple
+	var hi_a = startCouple
+	var lo_tw = lo_t
+	var hi_tw = hi_t
+	var TGT = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+	for (var m = 1; m <= mp; m++) {
+		// Step 1: Walk acc, fill DELTA
+		if (lo_a) lo_a--
+		if (hi_a != 17) hi_a++
+		var iterEnd_a = hi_a
+		var cur_a = acc[lo_a]
+		var oSources_a = (lo_a > 0 ? acc[lo_a - 1] | cur_a : cur_a) >> 24
+		hi_a = lo_a - 1
+		var DELTA = [:]
+		for (var c = lo_a; c <= iterEnd_a; c++) {
+			var next_a = acc[c + 1]
+			var eSources_a = cur_a | next_a
+			var d_a = ((oSources_a | (oSources_a << 1)) | ((eSources_a | (eSources_a >> 1)) << 24)) & OBS[c] & ~cur_a
+			if (d_a) {
+				acc[c] = cur_a | d_a
+				DELTA[c] = d_a
+				if (hi_a < lo_a) lo_a = c
+				hi_a = c
+			}
+			cur_a = next_a
+			oSources_a = eSources_a >> 24
+		}
+
+		// Step 2: Walk acct, emit
+		if (lo_tw) lo_tw--
+		if (hi_tw != 17) hi_tw++
+		var iterEnd_t = hi_tw
+		var cur_t = acct[lo_tw]
+		var oSources_t = (lo_tw > 0 ? acct[lo_tw - 1] | cur_t : cur_t) >> 24
+		for (var c = lo_tw; c <= iterEnd_t; c++) {
+			var next_t = acct[c + 1]
+			var eSources_t = cur_t | next_t
+			var d_t = ((oSources_t | (oSources_t << 1)) | ((eSources_t | (eSources_t >> 1)) << 24)) & OBS[c] & ~cur_t
+			if (d_t) {
+				acct[c] = cur_t | d_t
+				var ct = CELL_BY_LSB[c]
+				while (d_t) { var lsb = d_t & -d_t; _final[ct[lsb]] = m; d_t ^= lsb }
+			}
+			cur_t = next_t
+			oSources_t = eSources_t >> 24
+		}
+
+		// Step 3: OnlyMaxTele from DELTA → acct (v-direct TGT accumulator)
+		for (var sc: var v in DELTA) {
+			var v_1 = v | (v << 1) | (v >> 1)
+			var v_3 = v_1 | (v_1 << 2) | (v_1 >> 2)
+			var full_combo = v_3 | (v_3 << 3) | (v_3 >> 3)
+			var shift_combo = (v << 6) | (v >> 6)
+			if (sc >= 6) TGT[sc - 6] |= full_combo
+			if (sc <= 11) TGT[sc + 6] |= full_combo
+			if (sc >= 5 && sc <= 12) {
+				TGT[sc - 5] |= shift_combo; TGT[sc - 4] |= shift_combo
+				TGT[sc - 3] |= shift_combo; TGT[sc - 2] |= shift_combo
+				TGT[sc - 1] |= shift_combo; TGT[sc]     |= shift_combo
+				TGT[sc + 1] |= shift_combo; TGT[sc + 2] |= shift_combo
+				TGT[sc + 3] |= shift_combo; TGT[sc + 4] |= shift_combo
+				TGT[sc + 5] |= shift_combo
+			} else {
+				var tlo_s = sc > 5 ? sc - 5 : 0
+				var thi_s = sc < 12 ? sc + 5 : 17
+				for (var tc = tlo_s; tc <= thi_s; tc++) TGT[tc] |= shift_combo
+			}
+		}
+		for (var c = 0; c <= 17; c++) {
+			var sum = TGT[c]
+			if (sum == 0) continue
+			TGT[c] = 0
+			var cur = acct[c]
+			var d = sum & OBS[c] & ~cur
+			if (d) {
+				acct[c] = cur | d
+				var ct = CELL_BY_LSB[c]
+				while (d) { var lsb = d & -d; _final[ct[lsb]] = m; d ^= lsb }
+				if (c < lo_tw) lo_tw = c
+				if (c > hi_tw) hi_tw = c
+			}
+		}
+	}
+	return _final
+}
+
+function _FastWalkableCellsWithTeleportationAndJump(from, leekcells, mp) {
+	var _final = [from : 0]
+	var OBS = clone(MAP_OBSTACLES_CACHE, 1)
+	for (var x in leekcells) OBS[MAP_CELL_TO_COUPLE[x]] -= MAP_CELL_TO_BITMASK[x]
+
+	var acc   = clone(ACC_TEMPLATE)
+	var accj  = clone(ACC_TEMPLATE)
+	var acct  = clone(ACC_TEMPLATE)
+	var acctj = clone(ACC_TEMPLATE)
+	var startCouple = MAP_CELL_TO_COUPLE[from]
+	var startBit = MAP_CELL_TO_BITMASK[from]
+	acc[startCouple]   = startBit
+	accj[startCouple]  = startBit
+	acct[startCouple]  = startBit
+	acctj[startCouple] = startBit
+
+	var srcE = startBit & 262143
+	var srcO = startBit >> 24
+
+	// Init Step A: TotalJump(start) → accj
+	var srcE_3j = srcE | (srcE << 1) | (srcE >> 1)
+	var srcO_3j = srcO | (srcO << 1) | (srcO >> 1)
+	var srcO_4j = srcO_3j | (srcO << 2)
+	var srcE_4j = srcE_3j | (srcE >> 2)
+	var sumE_midJ = srcE_3j | srcO_4j
+	var sumO_midJ = srcO_3j | srcE_4j
+	var lo_j = startCouple > 2 ? startCouple - 2 : 0
+	var hi_j = startCouple < 15 ? startCouple + 2 : 17
+	for (var c = lo_j; c <= hi_j; c++) {
+		var dc0 = startCouple - c
+		var sumE = 0, sumO = 0
+		if (dc0 >= -1 && dc0 <= 1) { sumE = sumE_midJ; sumO = sumO_midJ }
+		else if (dc0 <= 1) sumE = srcO_4j
+		else sumO = srcE_4j
+		accj[c] |= (sumE | (sumO << 24)) & OBS[c]
+	}
+
+	// Init Step B: TotalTele(start) → acct
+	var srcE_3t = srcE | (srcE << 1) | (srcE >> 1)
+	var srcE_7t = srcE_3t | (srcE_3t << 2) | (srcE_3t >> 2)
+	var srcE_11t = srcE_7t | (srcE_7t << 2) | (srcE_7t >> 2)
+	var diff_eT = srcE_11t | (srcE >> 6)
+	var same_eT = diff_eT | (srcE << 6)
+	var srcO_3t = srcO | (srcO << 1) | (srcO >> 1)
+	var srcO_7t = srcO_3t | (srcO_3t << 2) | (srcO_3t >> 2)
+	var srcO_11t = srcO_7t | (srcO_7t << 2) | (srcO_7t >> 2)
+	var diff_oT = srcO_11t | (srcO << 6)
+	var same_oT = diff_oT | (srcO >> 6)
+	var lo_t = startCouple > 6 ? startCouple - 6 : 0
+	var hi_t = startCouple < 11 ? startCouple + 6 : 17
+	for (var c = lo_t; c <= hi_t; c++) {
+		var dc = startCouple - c
+		var sumE = same_eT
+		if (dc <= 5) sumE |= diff_oT
+		var sumO = same_oT
+		if (dc >= -5) sumO |= diff_eT
+		acct[c] |= (sumE | (sumO << 24)) & OBS[c]
+	}
+
+	var lo_tj = lo_t
+	var hi_tj = hi_t
+	var TGT_INIT = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+	// Init Step C: TotalTele(accj) → TGT_INIT
+	for (var sc = lo_j; sc <= hi_j; sc++) {
+		var v = accj[sc]
+		if (v == 0) continue
+		var e = v & 262143
+		var o = v >> 24
+		var e_3 = e | (e << 1) | (e >> 1)
+		var e_7 = e_3 | (e_3 << 2) | (e_3 >> 2)
+		var e_11 = e_7 | (e_7 << 2) | (e_7 >> 2)
+		var diff_e_s = e_11 | (e >> 6)
+		var same_e_s = diff_e_s | (e << 6)
+		var o_3 = o | (o << 1) | (o >> 1)
+		var o_7 = o_3 | (o_3 << 2) | (o_3 >> 2)
+		var o_11 = o_7 | (o_7 << 2) | (o_7 >> 2)
+		var diff_o_s = o_11 | (o << 6)
+		var same_o_s = diff_o_s | (o >> 6)
+		var combo_mid = (same_e_s | diff_o_s) | ((same_o_s | diff_e_s) << 24)
+		var combo_p6 = same_e_s | ((same_o_s | diff_e_s) << 24)
+		var combo_n6 = (same_e_s | diff_o_s) | (same_o_s << 24)
+		if (sc >= 6) TGT_INIT[sc - 6] |= combo_p6
+		if (sc <= 11) TGT_INIT[sc + 6] |= combo_n6
+		var clo = sc > 5 ? sc - 5 : 0
+		var chi = sc < 12 ? sc + 5 : 17
+		for (var c = clo; c <= chi; c++) TGT_INIT[c] |= combo_mid
+	}
+
+	// Init Step D: TotalJump(acct) → TGT_INIT
+	for (var sc = lo_t; sc <= hi_t; sc++) {
+		var v = acct[sc]
+		if (v == 0) continue
+		var e = v & 262143
+		var o = v >> 24
+		var e_3 = e | (e << 1) | (e >> 1)
+		var o_3 = o | (o << 1) | (o >> 1)
+		var o_4 = o_3 | (o << 2)
+		var e_4 = e_3 | (e >> 2)
+		var combo_mid_j = (e_3 | o_4) | ((o_3 | e_4) << 24)
+		var combo_p2_target = e_4 << 24
+		var combo_n2_target = o_4
+		if (sc >= 2) TGT_INIT[sc - 2] |= combo_p2_target
+		if (sc <= 15) TGT_INIT[sc + 2] |= combo_n2_target
+		var jlo = sc > 0 ? sc - 1 : 0
+		var jhi = sc < 17 ? sc + 1 : 17
+		for (var c = jlo; c <= jhi; c++) TGT_INIT[c] |= combo_mid_j
+	}
+
+	// Sweep TGT_INIT → acctj (emit at mp=0)
+	for (var c = 0; c <= 17; c++) {
+		var sum = TGT_INIT[c]
+		if (sum == 0) continue
+		var d = sum & OBS[c] & ~acctj[c]
+		if (d) {
+			acctj[c] |= d
+			var t = BINARY_TO_CELL_BY_COUPLE[c]
+			if ((d & 262143) != 0) {
+				var ch = d & 63
+				if (ch != 0) for (var cell in t[0][ch]) _final[cell] = 0
+				ch = (d >> 6) & 63
+				if (ch != 0) for (var cell in t[1][ch]) _final[cell] = 0
+				ch = (d >> 12) & 63
+				if (ch != 0) for (var cell in t[2][ch]) _final[cell] = 0
+			}
+			if ((d >> 24) != 0) {
+				var ch = (d >> 24) & 63
+				if (ch != 0) for (var cell in t[3][ch]) _final[cell] = 0
+				ch = (d >> 30) & 63
+				if (ch != 0) for (var cell in t[4][ch]) _final[cell] = 0
+				ch = (d >> 36) & 31
+				if (ch != 0) for (var cell in t[5][ch]) _final[cell] = 0
+			}
+			if (c < lo_tj) lo_tj = c
+			if (c > hi_tj) hi_tj = c
+		}
+	}
+
+	if (mp == 0) return _final
+
+	var lo_a = startCouple, hi_a = startCouple
+	var lo_aj_w = lo_j, hi_aj_w = hi_j
+	var lo_at_w = lo_t, hi_at_w = hi_t
+	var lo_atj_w = lo_tj, hi_atj_w = hi_tj
+	var TGT = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+	for (var m = 1; m <= mp; m++) {
+		// Step 1: Walk acc, capture DELTA_ACC
+		if (lo_a) lo_a--
+		if (hi_a != 17) hi_a++
+		var iterEnd_a = hi_a
+		var cur_a = acc[lo_a]
+		var oSrc_a = (lo_a > 0 ? acc[lo_a - 1] | cur_a : cur_a) >> 24
+		hi_a = lo_a - 1
+		var DELTA_ACC = [:]
+		for (var c = lo_a; c <= iterEnd_a; c++) {
+			var next = acc[c + 1]
+			var eSrc = cur_a | next
+			var d = ((oSrc_a | (oSrc_a << 1)) | ((eSrc | (eSrc >> 1)) << 24)) & OBS[c] & ~cur_a
+			if (d) {
+				acc[c] = cur_a | d
+				DELTA_ACC[c] = d
+				if (hi_a < lo_a) lo_a = c
+				hi_a = c
+			}
+			cur_a = next
+			oSrc_a = eSrc >> 24
+		}
+
+		// Step 2: Walk acct, capture DELTA_ACCT
+		if (lo_at_w) lo_at_w--
+		if (hi_at_w != 17) hi_at_w++
+		var iterEnd_at = hi_at_w
+		var cur_at = acct[lo_at_w]
+		var oSrc_at = (lo_at_w > 0 ? acct[lo_at_w - 1] | cur_at : cur_at) >> 24
+		var DELTA_ACCT = [:]
+		for (var c = lo_at_w; c <= iterEnd_at; c++) {
+			var next = acct[c + 1]
+			var eSrc = cur_at | next
+			var d = ((oSrc_at | (oSrc_at << 1)) | ((eSrc | (eSrc >> 1)) << 24)) & OBS[c] & ~cur_at
+			if (d) {
+				acct[c] = cur_at | d
+				DELTA_ACCT[c] = d
+			}
+			cur_at = next
+			oSrc_at = eSrc >> 24
+		}
+
+		// Step 3: Walk accj, capture DELTA_ACCJ
+		if (lo_aj_w) lo_aj_w--
+		if (hi_aj_w != 17) hi_aj_w++
+		var iterEnd_aj = hi_aj_w
+		var cur_aj = accj[lo_aj_w]
+		var oSrc_aj = (lo_aj_w > 0 ? accj[lo_aj_w - 1] | cur_aj : cur_aj) >> 24
+		var DELTA_ACCJ = [:]
+		for (var c = lo_aj_w; c <= iterEnd_aj; c++) {
+			var next = accj[c + 1]
+			var eSrc = cur_aj | next
+			var d = ((oSrc_aj | (oSrc_aj << 1)) | ((eSrc | (eSrc >> 1)) << 24)) & OBS[c] & ~cur_aj
+			if (d) {
+				accj[c] = cur_aj | d
+				DELTA_ACCJ[c] = d
+			}
+			cur_aj = next
+			oSrc_aj = eSrc >> 24
+		}
+
+		// Step 4: Walk acctj, emit at m
+		if (lo_atj_w) lo_atj_w--
+		if (hi_atj_w != 17) hi_atj_w++
+		var iterEnd_atj = hi_atj_w
+		var cur_atj = acctj[lo_atj_w]
+		var oSrc_atj = (lo_atj_w > 0 ? acctj[lo_atj_w - 1] | cur_atj : cur_atj) >> 24
+		for (var c = lo_atj_w; c <= iterEnd_atj; c++) {
+			var next = acctj[c + 1]
+			var eSrc = cur_atj | next
+			var d = ((oSrc_atj | (oSrc_atj << 1)) | ((eSrc | (eSrc >> 1)) << 24)) & OBS[c] & ~cur_atj
+			if (d) {
+				acctj[c] = cur_atj | d
+				var ct = CELL_BY_LSB[c]
+				while (d) { var lsb = d & -d; _final[ct[lsb]] = m; d ^= lsb }
+			}
+			cur_atj = next
+			oSrc_atj = eSrc >> 24
+		}
+
+		// Step 5+6: tele+jump from DELTA_ACC → acct/accj
+		for (var sc: var v in DELTA_ACC) {
+			var v_1 = v | (v << 1) | (v >> 1)
+			var v_3 = v_1 | (v_1 << 2) | (v_1 >> 2)
+			var full_combo = v_3 | (v_3 << 3) | (v_3 >> 3)
+			var shift_combo = (v << 6) | (v >> 6)
+			if (sc >= 6) TGT[sc - 6] |= full_combo
+			if (sc <= 11) TGT[sc + 6] |= full_combo
+			if (sc >= 5 && sc <= 12) {
+				TGT[sc - 5] |= shift_combo; TGT[sc - 4] |= shift_combo
+				TGT[sc - 3] |= shift_combo; TGT[sc - 2] |= shift_combo
+				TGT[sc - 1] |= shift_combo; TGT[sc]     |= shift_combo
+				TGT[sc + 1] |= shift_combo; TGT[sc + 2] |= shift_combo
+				TGT[sc + 3] |= shift_combo; TGT[sc + 4] |= shift_combo
+				TGT[sc + 5] |= shift_combo
+			} else {
+				var tlo_s = sc > 5 ? sc - 5 : 0
+				var thi_s = sc < 12 ? sc + 5 : 17
+				for (var tc = tlo_s; tc <= thi_s; tc++) TGT[tc] |= shift_combo
+			}
+
+			var e = v & 262143
+			var o = v >> 24
+			var e_2 = (e << 1) | (e >> 2)
+			var o_2 = (o << 2) | (o >> 1)
+			var e_4 = e_2 | e | (e >> 1)
+			var o_4 = o_2 | (o << 1) | o
+			var ke_2 = e_2 << 24
+			var ke_4 = e_4 << 24
+			if (sc >= 2) {
+				accj[sc - 2] |= ke_4 & OBS[sc - 2]
+				accj[sc - 1] |= (o_4 | ke_2) & OBS[sc - 1]
+			} else if (sc) {
+				accj[0] |= (o_4 | ke_2) & OBS[0]
+			}
+			accj[sc] |= (o_2 | ke_2) & OBS[sc]
+			if (sc <= 15) {
+				accj[sc + 1] |= (o_2 | ke_4) & OBS[sc + 1]
+				accj[sc + 2] |= o_4 & OBS[sc + 2]
+			} else if (sc <= 16) {
+				accj[17] |= (o_2 | ke_4) & OBS[17]
+			}
+			if (sc - 2 < lo_aj_w) lo_aj_w = sc - 2 < 0 ? 0 : sc - 2
+			if (sc + 2 > hi_aj_w) hi_aj_w = sc + 2 > 17 ? 17 : sc + 2
+		}
+		for (var c = 0; c <= 17; c++) {
+			var sum = TGT[c]
+			if (sum == 0) continue
+			TGT[c] = 0
+			var d = sum & OBS[c] & ~acct[c]
+			if (d) {
+				acct[c] |= d
+				if (c < lo_at_w) lo_at_w = c
+				if (c > hi_at_w) hi_at_w = c
+			}
+		}
+
+		// Step 7+8: tele(DELTA_ACCJ) + jump(DELTA_ACCT) → acctj
+		for (var sc: var v in DELTA_ACCJ) {
+			var v_1 = v | (v << 1) | (v >> 1)
+			var v_3 = v_1 | (v_1 << 2) | (v_1 >> 2)
+			var full_combo = v_3 | (v_3 << 3) | (v_3 >> 3)
+			var shift_combo = (v << 6) | (v >> 6)
+			if (sc >= 6) TGT[sc - 6] |= full_combo
+			if (sc <= 11) TGT[sc + 6] |= full_combo
+			if (sc >= 5 && sc <= 12) {
+				TGT[sc - 5] |= shift_combo; TGT[sc - 4] |= shift_combo
+				TGT[sc - 3] |= shift_combo; TGT[sc - 2] |= shift_combo
+				TGT[sc - 1] |= shift_combo; TGT[sc]     |= shift_combo
+				TGT[sc + 1] |= shift_combo; TGT[sc + 2] |= shift_combo
+				TGT[sc + 3] |= shift_combo; TGT[sc + 4] |= shift_combo
+				TGT[sc + 5] |= shift_combo
+			} else {
+				var tlo_s = sc > 5 ? sc - 5 : 0
+				var thi_s = sc < 12 ? sc + 5 : 17
+				for (var tc = tlo_s; tc <= thi_s; tc++) TGT[tc] |= shift_combo
+			}
+		}
+		for (var sc: var v in DELTA_ACCT) {
+			var e = v & 262143
+			var o = v >> 24
+			var e_2 = (e << 1) | (e >> 2)
+			var o_2 = (o << 2) | (o >> 1)
+			var e_4 = e_2 | e | (e >> 1)
+			var o_4 = o_2 | (o << 1) | o
+			var ke_2 = e_2 << 24
+			var ke_4 = e_4 << 24
+			if (sc >= 2) {
+				TGT[sc - 2] |= ke_4
+				TGT[sc - 1] |= o_4 | ke_2
+			} else if (sc) {
+				TGT[0] |= o_4 | ke_2
+			}
+			TGT[sc] |= o_2 | ke_2
+			if (sc <= 15) {
+				TGT[sc + 1] |= o_2 | ke_4
+				TGT[sc + 2] |= o_4
+			} else if (sc <= 16) {
+				TGT[17] |= o_2 | ke_4
+			}
+		}
+		for (var c = 0; c <= 17; c++) {
+			var sum = TGT[c]
+			if (sum == 0) continue
+			TGT[c] = 0
+			var d = sum & OBS[c] & ~acctj[c]
+			if (d) {
+				acctj[c] |= d
+				var ct = CELL_BY_LSB[c]
+				while (d) { var lsb = d & -d; _final[ct[lsb]] = m; d ^= lsb }
+				if (c < lo_atj_w) lo_atj_w = c
+				if (c > hi_atj_w) hi_atj_w = c
+			}
+		}
+	}
+	return _final
+}
+
 function getAccesibleTJ(mp) {
 	TotalTeleportationToTMPTFromACC()
 	TotalJumpToTMPJFromACC()

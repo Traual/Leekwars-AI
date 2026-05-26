@@ -186,7 +186,17 @@ global MAP_OBSTACLES_LOADED
 
 // Helpers to pre-allocate fixed-size arrays (LeekScript can't assign to out-of-bounds index).
 function _Make18Int()  { var a = []; for (var i = 0; i < 18; i++) push(a, 0);    return a }
+function _Make19Int()  { var a = []; for (var i = 0; i < 19; i++) push(a, 0);    return a }
 function _Make18Map()  { var a = []; for (var i = 0; i < 18; i++) push(a, [: ]); return a }
+
+// Template for per-call BFS accumulators. 19 = 18 couples + 1 sentinel so the BFS
+// loop can read ACC[c+1] when c == 17 without bound check (sentinel is always 0).
+global ACC_TEMPLATE = _Make19Int()
+
+// Direct precomputed map for bit-iteration emit:
+//   CELL_BY_LSB[couple][lsb_value] = cell id for the single bit `lsb_value` set in that couple.
+// Populated in Preload.InitCellClass.
+global CELL_BY_LSB = []
 
 // Bitmaps are packed as 1 int per COUPLE (2 lines), 18 couples total:
 //   bits 0-17  : even line 2c   (18 cells)
