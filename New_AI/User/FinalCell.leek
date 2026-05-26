@@ -37,7 +37,7 @@ class FinalCell {
         var myValue = ScoringClass.getEntityIntrinsicScore(MyState, State)
 
         // Pre-load danger context
-        var thisStatsHashForDanger = DangerClass.getStatsHashForDanger(MyState, State, BaseHash)
+        var thisStatsHashForDanger = DangerClass.getStatsHashForDanger(MyState, State)
         var thisToSkipMap = DangerClass.EntitiesToSkip(MyState, State, BaseHash)
         var thisEnemiesWalkableCellsMap = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, thisToSkipMap, BaseHash)
         // Pre-compute caster iteration order (constant across cell loop)

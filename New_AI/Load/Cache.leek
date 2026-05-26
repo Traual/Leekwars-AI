@@ -140,6 +140,14 @@ global TELEPORTATION_CACHE = [: ]
 global TELEPORTATION_AND_JUMP_CACHE = [: ]
 global IGNORE_CELLLS_CACHE = [: ]
 
+// "NoEntities" walkcells: ignores all dynamic entities (allies, bulbs, enemies)
+// as obstacles. Only static map obstacles count. Used in danger evaluation,
+// where we accept the approximation in exchange for cache reuse across the
+// entire fight (key = (cell << 32) | mp, no base_hash dependency).
+// These caches are persistent across turns (the map never changes).
+global WALKABLE_CACHE_NOENT = [: ]
+global JUMP_CACHE_NOENT = [: ]
+
 //For Entity Actions :
 
 global ENTITY_ACTIONS_CACHE = [: ] //Actions on Everybody else then me

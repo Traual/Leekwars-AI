@@ -101,6 +101,37 @@ class WalkCellsClass {
 	}
 
 	// ============================================================================
+	// "NoEntities" fetchers — ignore all dynamic entities as obstacles.
+	// Only static map obstacles count. Used by danger evaluation to enable
+	// fight-wide caching keyed only by (cell, mp) — no base_hash dependency.
+	// Tradeoff: imprecision (an ally that plays before won't actually block
+	// the entity's path, so over-modelling reachability is acceptable).
+	// ============================================================================
+
+	static getWalkNoEntities(stats) {
+		var key = (stats.CELL << 32) | stats.MP
+		if (key in WALKABLE_CACHE_NOENT) return WALKABLE_CACHE_NOENT[key]
+		var r = WalkableCells(stats.CELL, [], stats.MP)
+		WALKABLE_CACHE_NOENT[key] = r
+		return r
+	}
+
+	static getJumpNoEntities(stats) {
+		var key = (stats.CELL << 32) | stats.MP
+		if (key in JUMP_CACHE_NOENT) return JUMP_CACHE_NOENT[key]
+		var r = WalkableCellsWithJump(stats.CELL, [], stats.MP)
+		JUMP_CACHE_NOENT[key] = r
+		return r
+	}
+
+	static getMaxWalkOrJumpNoEntities(stats) {
+		BenchOps.Start("WalkCells")
+		var r = canJump(stats) ? getJumpNoEntities(stats) : getWalkNoEntities(stats)
+		BenchOps.Stop("WalkCells")
+		return r
+	}
+
+	// ============================================================================
 	// Composeurs : pick the right fetcher(s) based on capacities.
 	// ============================================================================
 

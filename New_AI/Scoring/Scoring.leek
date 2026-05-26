@@ -25,12 +25,18 @@ class ScoringClass {
 
         var enemyContextsBySide = [: ]
         for (var side: var _ in allSides) {
-            var h = (OFFSET_BASIS ^ BaseHash)
+            // No BaseHash dependency anymore: danger uses NoEntities walkcells so only
+            // opposing-enemies' (stats, cell, mp) matter. Allies / bulbes / target positions
+            // don't influence danger compute → CELL_DANGER_GET_CACHE entries survive across
+            // any move that doesn't touch an opposing enemy.
+            var h = OFFSET_BASIS
             for (var e: var stat in State) {
                 if (stat.LIFE <= 0 || stat.SIDE == side) continue
-                // On inclut STR, MAG, MP, TP, POW (pour Danger)
+                // STR, MAG, MP, TP, POW (combat stats)
                 var Hiscombined = (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.MP << 24) | (stat.TP << 12) | stat.POWER
                 h = addValueToBinHash(h, Hiscombined)
+                // Position (drives walkcells via (cell, mp); mp is already in Hiscombined)
+                h = addValueToBinHash(h, (e << 10) | stat.CELL)
             }
             enemyContextsBySide[side] = h
         }

@@ -106,7 +106,12 @@ class DangerClass {
 		var EnemiesWalkCells = [: ]
 		for (var e: var stat in state) {
 			if (e in toSkipMap) continue
-			EnemiesWalkCells[e] = WalkCellsClass.getMaxWalkOrJump(state, e, base_hash) //Walk+Jump only; teleport not modelled for enemies
+			// Danger uses "NoEntities" walkcells: ignores all dynamic entities as obstacles.
+			// Approximation (an ally playing before won't actually block this enemy), but
+			// each per-enemy walkcells lookup becomes a fight-wide cache hit keyed only by
+			// (cell, mp). The outer EVERY_ENEMIES_WALKABLES cache still narrows by base_hash
+			// because the SET of non-skipped enemies depends on cooldowns/life (state-bound).
+			EnemiesWalkCells[e] = WalkCellsClass.getMaxWalkOrJumpNoEntities(stat)
 		}
 		EVERY_ENEMIES_WALKABLES[ThisHash] = EnemiesWalkCells
 		return EnemiesWalkCells
@@ -237,24 +242,29 @@ class DangerClass {
 	 * @return Hashed Stats
 	 */
 
-	static getStatsHashForDanger(TargetStats, State, TmpHash) {
+	static getStatsHashForDanger(TargetStats, State) {
 
-		// ——— INITIALISATION ———
-		var hash_value = (OFFSET_BASIS ^ TmpHash)
+		// No BaseHash dependency: with NoEntities walkcells, danger depends only on
+		// opposing enemies' (stats, cell, mp) + target's shields/antidote-CD.
+		// Allies / bulbes / target position don't influence the result — moves that
+		// don't touch an opposing enemy keep CELL_DANGER_GET_CACHE entries valid.
+
+		var hash_value = OFFSET_BASIS
 
 		// ——— Shields + Target's antidote Cooldown ———
 
 		var Mycombined = (TargetStats.ABSOLUTE_SHIELD << 30) | (TargetStats.RELATIVE_SHIELD << 15) | TargetStats.COOLDOWNS[CHIP_ANTIDOTE]
 		hash_value = addValueToBinHash(hash_value, Mycombined)
 
-		// ——— Ennemies stats ———
+		// ——— Opposing enemies: stats + position ———
 		var target_side = TargetStats.SIDE
 		for (var e: var stat in State) {
 
-			if (stat.SIDE == target_side) continue
+			if (stat.LIFE <= 0 || stat.SIDE == target_side) continue
 
 			var Hiscombined = (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.MP << 24) | (stat.TP << 12) | stat.POWER
 			hash_value = addValueToBinHash(hash_value, Hiscombined)
+			hash_value = addValueToBinHash(hash_value, (e << 10) | stat.CELL)
 
 		}
 
@@ -400,8 +410,9 @@ class DangerClass {
 	 */
 
 	static getMapCellItemAoe(EntityStats, EntityWalkCells) {
-		var EntityStartCell = EntityStats.CELL
-		var TmpHash = (mapSize(EntityWalkCells) * MAX_CELL) + (EntityStartCell) //Same Start Cell and Same number of walkcells --> very likely to not have any entities that have moved arround
+		// With NoEntities walkcells the result is fully determined by the entity's (cell, mp)
+		// — no more mapSize-as-proxy needed. (cell × 1024 | mp, mp fits in 10 bits easily.)
+		var TmpHash = (EntityStats.CELL << 10) | EntityStats.MP
 		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
 		BenchOps.Start("Danger.mapItemAoeCompute")
 		var _final = [: ]
