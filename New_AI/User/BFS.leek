@@ -52,7 +52,7 @@ class ActionSuite {
 			baseNode.BASE_HASH = entry[4]
 			push(Tree_Array, baseNode)
 			debug("[Base] " + ITEMINFO[baseNode.ACTION.Item].NAME + " " + baseNode.ACTION.From + "->" + baseNode.ACTION.To + " | Δ=" + entry[1] + " | Score=" + entry[3])
-			if (entry[1] <= 0) continue   // negative-delta bases : skip expansion
+			if (entry[1] <= BFS_DELTA_EPSILON) continue   // no-op / negative-delta bases : skip expansion
 			var current = baseNode
 			var depth = 1
 			while (true) {
@@ -125,7 +125,7 @@ class ActionSuite {
 
 		for (var entry in Entries) {
 			var initialDelta = entry[1]
-			if (initialDelta <= 0) break
+			if (initialDelta <= BFS_DELTA_EPSILON) break
 			if (BestDeltaFromParent >= initialDelta) break
 
 			var act = entry[0]

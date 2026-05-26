@@ -77,3 +77,8 @@ global MAX_NUMBER_OF_BULB = 8
 global MAX_USEFUL_RELATIVE_SHIELD = 100
 global MIN_AGILITY_TO_FULLY_CRIT = 950
 global FIGHT_TYPE = getFightType() //Used to compute power in consequences
+
+//BFS :
+// Δ-threshold below which a base action is treated as a no-op (skip greedy expansion + early-exit in chains).
+// Catches floating-point residue from chips like Antidote / Liberation / Remission when no relevant effect applies.
+global BFS_DELTA_EPSILON = 0.01
