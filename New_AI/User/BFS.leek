@@ -179,7 +179,9 @@ class ActionSuite {
 		}
 		// arraySort RETURNS the sorted array (per LS doc) -- must capture.
 		// Comparator returns negative / 0 / positive : here descending by delta.
-		return arraySort(Entries, function(a, b) => b[1] - a[1])
+		return arraySort(Entries, function(a, b) {
+			return b[1] - a[1]
+		})
 	}
 
 	/**
