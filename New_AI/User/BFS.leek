@@ -4,28 +4,21 @@
  * Builds a tree of possible play sequences:
  *  - Depth-1 : every playable action is cloned+applied+state-scored.
  *  - Each base action is then greedy-expanded : after every applied play
- *    we RE-ENUMERATE and RE-SCORE the playable actions in the new derived
- *    state, then pick the one with the highest Δ-from-parent. This catches
- *    opportunities created by the previous play (e.g. attacking an enemy
- *    that just got moved by an Inversion / Grapple / Boxing-glove, or
- *    using an item that became available because a buff applied).
+ *    we score and pick the best next move in the derived state.
+ *  - Re-enumeration of raw actions is REUSED across steps when the
+ *    derived state's BaseHash matches the parent's (no entity moved
+ *    relative to the parent). We only refilter cheaply by TP/cooldowns/uses.
+ *    When BaseHash changes (relocate, walk, summon, etc.), we re-enumerate
+ *    fully — catches new opportunities created by the previous play.
  *  - All nodes (every depth) are pushed into Tree_Array.
  *  - A no-play node (score = initial) acts as a floor.
  *  - The best-scored node wins; we return its first ancestor's action.
- *
- * Danger is already included inside `ScoringClass.getStateScore`, so this
- * file doesn't need a separate danger pass.
  **/
 
 include("../includes.leek")
 
 class ActionSuite {
 
-	/**
-	 * Returns the best single action to play in the given state.
-	 * Builds a tree, finds the highest-scoring leaf, walks back to the root,
-	 * returns the action of the first move in that branch.
-	 */
 	static getBestAction(State) {
 		BenchOps.Start("BFS")
 		var MySide = State[Me].SIDE
@@ -33,7 +26,9 @@ class ActionSuite {
 		var initialScore = ScoringClass.getStateScore(State, MySide, BaseHash)
 
 		// === Step 1 : enumerate, clone+apply+score every playable base action ===
-		var baseActions = getBaseActions(State, BaseHash)
+		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
+		var rawActs = ActionsClass.getEveryActionsInAState(State, MyWalkCells, State[Me].CELL, BaseHash)
+		var baseActions = filterActions(rawActs, State[Me], MyWalkCells)
 		debugC("--- Evaluating " + count(baseActions) + " actions ---", COLOR_BLUE)
 
 		var Tree_Array = []
@@ -41,14 +36,17 @@ class ActionSuite {
 			var baseNode = NodeClass.ActionToNode(act, State, BaseHash, null)
 			if (baseNode == null) continue
 			var baseNodeBaseHash = StateClass.getBaseHash(baseNode.END_STATS)
+			baseNode.BASE_HASH = baseNodeBaseHash
 			baseNode.SCORE = ScoringClass.getStateScore(baseNode.END_STATS, MySide, baseNodeBaseHash)
+			// Cache parent (root) BaseHash + raw enumeration for reuse if unchanged
+			baseNode.PARENT_BASE_HASH = BaseHash
+			baseNode.PARENT_RAW_ACTS = rawActs
+			baseNode.PARENT_WALKCELLS = MyWalkCells
 			push(Tree_Array, baseNode)
 
 			if (baseNode.SCORE <= initialScore) continue   // negative-delta bases : skip expansion
 
-			// === Step 2 : greedy expansion with FULL rebuild after each play ===
-			// Each step re-enumerates and re-scores the playable actions in the new
-			// derived state, catching position changes / new opportunities.
+			// === Step 2 : greedy expansion ===
 			var current = baseNode
 			while (true) {
 				var next = findBestNextNode(current, MySide)
@@ -79,26 +77,33 @@ class ActionSuite {
 	}
 
 	/**
-	 * From a parent node, finds the best next action by RE-enumerating all
-	 * playable actions in the parent's END_STATS and scoring each via full
-	 * state-score in that derived state.
-	 *
-	 * This is the costly-but-precise step : it catches new opportunities
-	 * created by previous plays (relocates, buffs, items unlocked, etc.).
-	 *
-	 * @return new child NodeClass (with .PARENT = Parent, .SCORE = absolute
-	 *         derived-state score), or null if no improving move exists.
+	 * From a parent node, finds the best next action.
+	 * Reuses parent's raw enumeration + walkcells if BaseHash unchanged
+	 * (self-buff plays from current cell : Adrenaline, Wizardry, Carapace,
+	 * Covetousness, Antidote, etc.). Otherwise re-enumerates fully.
 	 */
 	static findBestNextNode(Parent, MySide) {
 		var State = Parent.END_STATS
 		if (State[Me].TP < MINIMUM_COST_ITEM) return null
 
-		var BaseHash = StateClass.getBaseHash(State)
+		var BaseHash = Parent.BASE_HASH
 		var ParentScore = Parent.SCORE
-		var actions = getBaseActions(State, BaseHash)
+
+		var rawActs
+		var MyWalkCells
+		if (BaseHash == Parent.PARENT_BASE_HASH) {
+			// No entity moved : reuse raw enumeration + walkcells from the parent's call
+			rawActs = Parent.PARENT_RAW_ACTS
+			MyWalkCells = Parent.PARENT_WALKCELLS
+		} else {
+			MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
+			rawActs = ActionsClass.getEveryActionsInAState(State, MyWalkCells, State[Me].CELL, BaseHash)
+		}
+		var actions = filterActions(rawActs, State[Me], MyWalkCells)
 
 		var BestNode = null
 		var BestDeltaFromParent = 0   // only accept improving moves
+		var BestBaseHash = null
 
 		for (var act in actions) {
 			var candidate = NodeClass.ActionToNode(act, State, BaseHash, Parent)
@@ -111,22 +116,27 @@ class ActionSuite {
 				BestDeltaFromParent = deltaFromParent
 				BestNode = candidate
 				BestNode.SCORE = candidateScore
+				BestBaseHash = candidateBaseHash
 			}
+		}
+
+		if (BestNode != null) {
+			BestNode.BASE_HASH = BestBaseHash
+			BestNode.PARENT_BASE_HASH = BaseHash
+			BestNode.PARENT_RAW_ACTS = rawActs
+			BestNode.PARENT_WALKCELLS = MyWalkCells
 		}
 
 		return BestNode
 	}
 
 	/**
-	 * Lists every playable action from the current state (no scoring here).
-	 * Filtering: cooldown, MAX_USES, TP cost (incl. weapon-swap and move-item cost).
+	 * Cheap filter pass over a pre-enumerated raw action list.
+	 * Applies per-state TP / cooldown / uses / reachability filtering.
+	 * No fresh enumeration here.
 	 */
-	static getBaseActions(State, BaseHash) {
+	static filterActions(Acts, MyStats, MyWalkCells) {
 		var _final = []
-		var MyStats = State[Me]
-		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
-		var Acts = ActionsClass.getEveryActionsInAState(State, MyWalkCells, MyStats.CELL, BaseHash)
-
 		for (var Action in Acts) {
 			var Item = Action.Item
 			if (MyStats.COOLDOWNS[Item] > 0 || MyStats.USES[Item] >= ITEMINFO[Item].MAX_USES) continue
