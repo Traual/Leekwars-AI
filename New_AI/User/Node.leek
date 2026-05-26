@@ -9,6 +9,7 @@ class NodeClass {
 	END_STATS
 	PARENT      // Node we came from (null for root / base / no-play)
 	SCORE       // Absolute state score of END_STATS (cached, filled by BFS)
+	BASE_HASH   // BaseHash of END_STATS (filled by BFS for cache lookup)
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction
