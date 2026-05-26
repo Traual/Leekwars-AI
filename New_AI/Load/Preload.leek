@@ -25,20 +25,22 @@ class Preload {
 			CELL_Y[c] = getCellY(c)
 			CELL_X[c] = getCellX(c)
 		}
-		// Pre-compute (couple, bitmask) for every cell so InitObstacles/InitLeekCells/
-		// InitBuildAcc* can do a single bitwise op per cell instead of recomputing.
+		// Pre-compute (couple, bitmask) for every cell. Layout:
+		//   couple = floor(cell / 35) ; rem = cell % 35
+		//   rem < 18  -> even line, bit = rem        (bits 0-17)
+		//   rem >= 18 -> odd  line, bit = 24+rem-18  (bits 24-40)
 		for (var c = 0; c < 613; c++) {
-			var line = CellToLine(c)
-			var pos = CellToPos(c)
-			push(MAP_CELL_TO_COUPLE, line >> 1)
-			push(MAP_CELL_TO_BITMASK, 1 << ((line & 1) == 0 ? pos : (24 + pos)))
+			var rem = c % 35
+			var oddLine = rem >= 18 ? 1 : 0
+			var pos = rem - (oddLine * 18)
+			push(MAP_CELL_TO_COUPLE, floor(c / 35))
+			push(MAP_CELL_TO_BITMASK, 1 << (oddLine == 0 ? pos : (24 + pos)))
 		}
 		// MAP_OBSTACLES_CACHE = obstacle-only baseline (no entities). 18 ints packed-couple.
 		// Per-call BFS clones this and subtracts the live leekcells.
 		for (var i = 0; i < 17; i++) MAP_OBSTACLES_CACHE[i] = 262143 | (131071 << 24)
 		MAP_OBSTACLES_CACHE[17] = 262143
 		for (var x in OBSTACLES_ARRAY) MAP_OBSTACLES_CACHE[MAP_CELL_TO_COUPLE[x]] -= MAP_CELL_TO_BITMASK[x]
-		MAP_OBSTACLES_LOADED = true
 
 		// CELL_BY_LSB[couple][lsb_value] = cell id (single-bit -> cell decode for bit-iteration emit).
 		// 18 + 17 = 35 bits per couple; couple 17 only has the even half.

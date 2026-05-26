@@ -173,53 +173,24 @@ global MAX_TP_RES_CACHE = [: ]
 global MAX_TP_SCI_CACHE = [: ]
 global MAX_TP_MAG_CACHE = [: ]
 
-//For WalkCells :
+// ============================================================================
+// WalkCells (packed-couple bitmap BFS — see Maps/WalkCells/Class.leek)
+// ============================================================================
+// Layout: 1 int per COUPLE of lines (18 couples total).
+//   bits 0-17  : even line 2c   (18 cells)
+//   bits 18-23 : gap (always 0) — blocks cross-row contamination for shifts ≤ 6
+//   bits 24-40 : odd line 2c+1  (17 cells)
+// Couple 17 holds only even line 34 (line 35 doesn't exist).
 
 global OBSTACLES_ARRAY = getObstacles()
-// MAP_CELL_TO_COUPLE[cell]  : couple index (0..17) where the cell lives
-// MAP_CELL_TO_BITMASK[cell] : 1 << bit_position within that couple int
-// (bit position = pos for even line cells, 24 + pos for odd line cells)
-global MAP_CELL_TO_COUPLE  = []
-global MAP_CELL_TO_BITMASK = []
 
-global MAP_OBSTACLES_LOADED
-
-// Helpers to pre-allocate fixed-size arrays (LeekScript can't assign to out-of-bounds index).
-function _Make18Int()  { var a = []; for (var i = 0; i < 18; i++) push(a, 0);    return a }
-function _Make19Int()  { var a = []; for (var i = 0; i < 19; i++) push(a, 0);    return a }
-function _Make18Map()  { var a = []; for (var i = 0; i < 18; i++) push(a, [: ]); return a }
-
-// Template for per-call BFS accumulators. 19 = 18 couples + 1 sentinel so the BFS
-// loop can read ACC[c+1] when c == 17 without bound check (sentinel is always 0).
-global ACC_TEMPLATE = _Make19Int()
-
-// Direct precomputed map for bit-iteration emit:
-//   CELL_BY_LSB[couple][lsb_value] = cell id for the single bit `lsb_value` set in that couple.
-// Populated in Preload.InitCellClass.
-global CELL_BY_LSB = []
-
-// Bitmaps are packed as 1 int per COUPLE (2 lines), 18 couples total:
-//   bits 0-17  : even line 2c   (18 cells)
-//   bits 18-23 : gap (always 0) - allows shifts up to ±6 without contaminating other half
-//   bits 24-40 : odd line 2c+1  (17 cells)
-//   bits 41-63 : unused
-// Couple 17 holds only even line 34 (line 35 doesn't exist).
-global MAP_OBSTACLES       = _Make18Int()
-global MAP_OBSTACLES_CACHE = _Make18Int()
-
-global ACC     = _Make18Int()
-global TMP     = _Make18Int()
-global ACCJ    = _Make18Int()
-global TMPJ    = _Make18Int()
-global ACCT    = _Make18Int()
-global TMPT    = _Make18Int()
-global ACCTJ   = _Make18Int()
-global TMPTJ   = _Make18Int()
-
-// ACCESMP*[couple][couple_bitmap] = mp : one map per couple (18 entries).
-// The couple_bitmap is the full 35-bit packed value (bits 0-17 even + bits 24-40 odd).
-// Decode handles both halves via 6 chunk lookups directly.
-global ACCESMP   = _Make18Map()
-global ACCESMPJ  = _Make18Map()
-global ACCESMPT  = _Make18Map()
-global ACCESMPTJ = _Make18Map()
+// MAP_CELL_TO_COUPLE[cell] / MAP_CELL_TO_BITMASK[cell] = couple index + single-bit mask.
+// MAP_OBSTACLES_CACHE       = obstacle-only baseline (no entities), 18 ints.
+// ACC_TEMPLATE              = 19 zeros (18 couples + sentinel for safe acc[c+1] read).
+// CELL_BY_LSB[couple][lsb]  = cell id for the single bit `lsb` set in that couple.
+// All four are populated in Preload.InitCellClass; BFS callers clone what they need.
+global MAP_CELL_TO_COUPLE   = []
+global MAP_CELL_TO_BITMASK  = []
+global MAP_OBSTACLES_CACHE  = []; for (var i = 0; i < 18; i++) push(MAP_OBSTACLES_CACHE, 0)
+global ACC_TEMPLATE         = []; for (var i = 0; i < 19; i++) push(ACC_TEMPLATE, 0)
+global CELL_BY_LSB          = []

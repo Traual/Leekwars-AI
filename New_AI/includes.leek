@@ -13,7 +13,6 @@ include("Models/State.leek")
 
 include("Load/Preload.leek")
 
-include("Maps/WalkCells/Functions.leek")
 include("Maps/WalkCells/Class.leek")
 include("Maps/Actions.leek")
 
