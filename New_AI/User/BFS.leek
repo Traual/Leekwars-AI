@@ -71,9 +71,11 @@ class ActionSuite {
 		push(Tree_Array, noPlay)
 
 		// === Step 4 : find best by absolute SCORE ===
+		// Use BFS_DELTA_EPSILON margin so float residue (e.g. heal on full-HP target
+		// producing Δ≈2.9e-11) doesn't outrank the noPlay floor or other candidates.
 		var best = noPlay
 		for (var nod in Tree_Array) {
-			if (nod.SCORE > best.SCORE) best = nod
+			if (nod.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = nod
 		}
 		BenchOps.Stop("BFS")
 
