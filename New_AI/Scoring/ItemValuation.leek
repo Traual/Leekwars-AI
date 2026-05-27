@@ -135,7 +135,7 @@ class ItemValuation {
 				return V * WIS_M * 0.7
 			case EFFECT_RAW_HEAL:
 				return V * 0.7
-			case EFFECT_VITALITY:
+			case EFFECT_BOOST_MAX_LIFE:
 				return V * WIS_M * 1.1
 			case EFFECT_NOVA_VITALITY:
 				return V * SCI_M * 0.8
@@ -219,7 +219,7 @@ class ItemValuation {
 			// ====== Movement / Special ======
 			case EFFECT_TELEPORT:
 				return 60
-			case EFFECT_PERMUTATION:
+			case EFFECT_INVERT:
 				return 120
 			case EFFECT_ATTRACT:
 			case EFFECT_REPEL:
