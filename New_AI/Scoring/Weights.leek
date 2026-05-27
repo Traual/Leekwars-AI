@@ -3,17 +3,60 @@
  * These parameters are intended to be tuned or trained.
  **/
 
-// Polynomials for base shield bonuses (Input: Shield, Output: Multiplier bonus to add to 1.0)
-global POLY_ABS_SHIELD_BASE = [0.0, 0.0002, 0.0]
-global POLY_REL_SHIELD_BASE = [0.0, 0.001, 0.0]
+// === Importance (per-entity intrinsic value) ===
+// Static coefficients per stat (NOT enemy-team dependent like the old POLY_COEF_*).
+global IMPORTANCE_COEF_STR = 0.00025
+global IMPORTANCE_COEF_WIS = 1.0
+global IMPORTANCE_COEF_AGI = 0.0001
+global IMPORTANCE_COEF_RES = 0.0001
+global IMPORTANCE_COEF_SCI = 1.0
+global IMPORTANCE_COEF_MAG = 1.0
+// Bulbs / summons get a discount per stat point.
+global IMPORTANCE_STATIC_FACTOR = 0.3
 
-// Polynomials for Damage Return bonuses (Input: stat.DAMAGE_RETURN), (Input: danger * stat.DAMAGE_RETURN / 100), (Input: ACTIVE_DR * (1 - SurvivalMultiplier))
-global POLY_DAMAGE_RETURN = [0.0, 0.05, 0.0]
-global POLY_DAMAGE_RETURN_ACTIVE = [0.0, 0.05, 0.0]
-global POLY_DAMAGE_RETURN_DESPAIR = [0.0, 0.5, 0.0]
+// === sit_score (situational survival, 0..1 concave) ===
+// Concave poly (a<0): rapide montée puis plateau. À 0% → 0, à 50% → 0.625, à 100% → 1.0.
+global POLY_SIT_SCORE = [-0.5, 1.5, 0.0]
 
-// POLYNOMES FOR ENTITY INTRINSIC SCORE CALCULATION
-// Tuning Polynomials (Degree 2: [a, b, c] for ax^2 + bx + c)
+// === Shield preemptive bonus (additive, encourages stocking shields) ===
+// Small flat bonus for holding shields even when danger = 0.
+// Reasoning: shielding before engagement saves a future TP spend.
+global POLY_SHIELD_PREEMPTIVE_ABS = [0.0, 0.5, 0.0]
+global POLY_SHIELD_PREEMPTIVE_REL = [0.0, 1.0, 0.0]
+
+// === Positional (team cohesion, computed inline/cached) ===
+// Parabole inverse : optimum vers dist ~15, retombe au-delà.
+global POLY_POS_ALLY = [-0.005, 0.15, 0.5]
+global POLY_POS_ENEMY = [-0.003, 0.08, 0.3]
+
+// === Damage Return (additive, signed) ===
+// Approximation : physical_ratio = STR_team / (STR_team + MAG_team).
+// Cap raisonnable pour éviter du renvoi absurde sur danger × DR très élevé.
+global MAX_DR_RETURN = 5000.0
+
+// === My cooldown score (multi-turn potential) ===
+// poly_cd(0) = 1.0 (item ready = full potential), poly_cd(65) ≈ 0 (item gone for the fight).
+// Linear par défaut, tunable concave.
+global POLY_CD_DECAY = [0.0, -0.01538, 1.0]   // 1.0 à CD=0, 0.0 à CD=65 (linéaire)
+
+// === FinalCell enemy proximity (cherche à finir le tour proche des ennemis) ===
+global POLY_FINAL_ENEMY_PROX = [-0.002, 0.05, 0.2]
+
+// === Threats (réutilisés depuis l'ancien scoring, intacts) ===
+global POLY_THREAT_DANGER = [0.0, 0.45, 0.0]
+global POLY_THREAT_POISON = [0.0, 0.8, 0.0]
+global POLY_THREAT_POT = [0.0, 0.3, 0.0]
+
+// === Bonus globaux multiplicatifs (réutilisés) ===
+global POLY_BONUS_MP = [0.0, 0.033, 1.0]        // 1 + MP/30
+global POLY_BONUS_CRIT = [0.0, 0.0014, 1.0]     // 1 + AGI × 0.0014
+global POLY_BONUS_LIFE = [0.0, 0.0001, 1.0]     // 1 + TOTAL_LIFE / 10000
+
+// === Power factors (réutilisés par EntityIndexes) ===
+global POLY_POWER_STRENGTH = [0.0, 0.01, 1.0]
+global POLY_POWER_MAGIC = [0.0, 0.0066, 1.0]
+
+// === Base stat polys (réutilisés par EntityIndexes) ===
 global POLY_STRENGTH = [0.0, 1.0, 0.0]
 global POLY_WISDOM = [0.0, 1.0, 0.0]
 global POLY_AGILITY = [0.0, 1.0, 0.0]
@@ -21,39 +64,28 @@ global POLY_RESISTANCE = [0.0, 1.0, 0.0]
 global POLY_SCIENCE = [0.0, 1.0, 0.0]
 global POLY_MAGIC = [0.0, 1.0, 0.0]
 
-// Polynomials for POWER
-global POLY_POWER_STRENGTH = [0.0, 0.01, 1.0] // Default: 1 + (POWER / 100)
-global POLY_POWER_MAGIC = [0.0, 0.0066, 1.0] // Default: 1 + (POWER / 150)
-
-// Polynomials for Adjustment Coefficients (ex: StrengthCoef = solvePoly(POLY_COEF_STR, EnemyResIndex))
+// === Legacy (gardés pour le moment, peuvent être supprimés une fois la migration validée) ===
+// Anciens coefs enemy-team-dependent — plus utilisés par le nouveau scoring.
 global POLY_COEF_STR = [0.0, 0.00025, 0.0]
 global POLY_COEF_WIS = [0.0, 0.0, 1.0]
 global POLY_COEF_AGI = [0.0, 0.0001, 1.0]
 global POLY_COEF_RES = [0.0, 0.0001, 0.0]
 global POLY_COEF_SCI = [0.0, 0.0, 1.0]
 global POLY_COEF_MAG = [0.0, 0.0, 1.0]
-
-// Polynomials for final bonuses (MP, Agility/Crit)
-global POLY_BONUS_MP = [0.0, 0.033, 1.0] // Default: 1 + (MP / 30)
-global POLY_BONUS_CRIT = [0.0, 0.0014, 1.0] // Default: 1 + (AGI * 0.0014)
-global POLY_BONUS_LIFE = [0.0, 0.0001, 1.0] // Default: 1 + (TOTAL_LIFE / 10000)
-
-// Polynomials for threat (Threat)
-global POLY_THREAT_DANGER = [0.0, 0.45, 0.0]
-global POLY_THREAT_POISON = [0.0, 0.8, 0.0]
-global POLY_THREAT_POT = [0.0, 0.3, 0.0]
-
-// Final survival polynomial (Input: Survival ratio, Output: Score multiplier)
+// Anciens shield / DR (multiplicatifs) — remplacés par POLY_SHIELD_PREEMPTIVE_* additifs.
+global POLY_ABS_SHIELD_BASE = [0.0, 0.0002, 0.0]
+global POLY_REL_SHIELD_BASE = [0.0, 0.001, 0.0]
+global POLY_DAMAGE_RETURN = [0.0, 0.05, 0.0]
+global POLY_DAMAGE_RETURN_ACTIVE = [0.0, 0.05, 0.0]
+global POLY_DAMAGE_RETURN_DESPAIR = [0.0, 0.5, 0.0]
+// Ancien survival - remplacé par POLY_SIT_SCORE.
 global POLY_SURVIVAL = [0.001, 1, 0.5]
-
-// Distance relation polynomial between two entities (depends on distance d)
+// Anciens dist multipliers - remplacés par POLY_POS_*.
 global POLY_DIST_RELATION_ALLY = [-0.0052, 0.16, 0.8]
 global POLY_DIST_RELATION_ENEMY = [-0.0026, 0.08, 0.4]
+global POLY_DIST_FINAL = [0.0, 1.0, 0.0]
 
-// Transformation of global cohesion score to final multiplier
-global POLY_DIST_FINAL = [0.0, 1.0, 0.0] // Linear by default (1:1)
-
-// --- SCORING CONSTANTS ---
+// === SCORING CONSTANTS (constantes additionnelles) ===
 global SCORE_DEFAULT_MULTIPLIER = 1.0
 global SCORE_SHIELD_DR_BASE = 1.0
 global SCORE_STATIC_DIVISOR = 100.0

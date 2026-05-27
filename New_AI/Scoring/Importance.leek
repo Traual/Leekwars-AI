@@ -1,0 +1,50 @@
+/**
+ * Importance: per-entity invariant value of "what this entity brings to the fight".
+ *
+ * Stats-only computation (level, raw stats, total TP/MP/LIFE, power).
+ * Excludes situational data (CDs, USES, current LIFE, current shields, position) —
+ * those are captured in sit_score / my_cooldown_score / positional / danger.
+ *
+ * Cache key is minimal: (ID, NAME-hash). Importance is computed at most once per
+ * unique entity for the whole fight. New summons get a new ID → fresh compute.
+ * This design is NN-ready: the compute() body can later be swapped for a heavy
+ * MLP without breaking the cache (still called rarely).
+ **/
+
+include("../includes.leek")
+
+class Importance {
+
+    static get(EntityStats) {
+        var key = (EntityStats.ID << 30)
+        if (key in IMPORTANCE_CACHE) return IMPORTANCE_CACHE[key]
+        var v = compute(EntityStats)
+        IMPORTANCE_CACHE[key] = v
+        return v
+    }
+
+    static compute(stats) {
+        // Reuse EntityIndexes for the heavy-lifting (stat × max_TP_for_stat × power).
+        // EntityIndexes are also cached; first hit is computed there, subsequent hits cheap.
+        var EI = EntityIndexes.getWithCache(stats)
+
+        // Static team-independent coefficients (no enemy-team dependency anymore).
+        // Tune via IMPORTANCE_COEF_* in Weights.leek.
+        var _final = EI.STRENGTH   * IMPORTANCE_COEF_STR
+                   + EI.WISDOM     * IMPORTANCE_COEF_WIS
+                   + EI.AGILITY    * IMPORTANCE_COEF_AGI
+                   + EI.RESISTANCE * IMPORTANCE_COEF_RES
+                   + EI.SCIENCE    * IMPORTANCE_COEF_SCI
+                   + EI.MAGIC      * IMPORTANCE_COEF_MAG
+
+        // Global multiplicative bonuses (MP, crit-via-AGI, vitality).
+        _final *= ScoringClass.solvePoly(POLY_BONUS_MP, stats.TOTAL_MP)
+        _final *= ScoringClass.solvePoly(POLY_BONUS_CRIT, stats.AGILITY)
+        _final *= ScoringClass.solvePoly(POLY_BONUS_LIFE, stats.TOTAL_LIFE)
+
+        // Bulbs / summons valued less per stat point.
+        if (stats.STATIC) _final *= IMPORTANCE_STATIC_FACTOR
+
+        return _final
+    }
+}

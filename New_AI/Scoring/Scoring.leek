@@ -1,6 +1,20 @@
 /**
- * Scoring Module: Dynamic Indexed Scoring
- * Calcule dynamiquement l'importance de chaque entité
+ * Scoring v2 — hybrid: heavy precompute + tiny per-state scorer.
+ *
+ * Architecture :
+ *   score(state) =
+ *       Σ alive entities  sign × importance(stats) × sit_score(stat, danger)
+ *     + Σ alive entities  sign × shield_preemptive(stat)
+ *     + Σ alive entities  sign × dr_contribution(stat, danger, team_ratio)
+ *     + positional_others(state, BaseHash)   // cached, excludes me
+ *     + my_cooldown_score(MyStats)           // me only
+ *
+ *  - importance      : cached for the fight (key = ID). NN-ready.
+ *  - sit_score       : concave on effective_HP / TOTAL_LIFE, cached per-state.
+ *  - shield_preempt  : small additive bonus (encourages stocking shields).
+ *  - dr_contribution : approximation via STR/MAG team ratio (no danger split).
+ *  - positional      : cached on BaseHash (which already excludes me).
+ *  - my_cd_score     : penalty for burning high-CD items (multi-turn potential).
  **/
 
 include("../includes.leek")
@@ -18,92 +32,153 @@ class ScoringClass {
 
     static getStateScore(State, MySide, BaseHash) {
         BenchOps.Start("Scoring")
-        // Pré-calcul des contextes de danger par camp (Side)
-        var allSides = [: ]
+
+        // Pré-calcul des contextes ennemi (pour les hashes danger).
+        var enemyContextsBySide = [:]
+        var allSides = [:]
         for (var e: var s in State)
             if (s.LIFE > 0) allSides[s.SIDE] = true
 
-        var enemyContextsBySide = [: ]
         for (var side: var _ in allSides) {
-            // No BaseHash dependency anymore: danger uses NoEntities walkcells so only
-            // opposing-enemies' (stats, cell, mp) matter. Allies / bulbes / target positions
-            // don't influence danger compute → CELL_DANGER_GET_CACHE entries survive across
-            // any move that doesn't touch an opposing enemy.
             var h = OFFSET_BASIS
             for (var e: var stat in State) {
                 if (stat.LIFE <= 0 || stat.SIDE == side) continue
-                // STR, MAG, MP, TP, POW (combat stats)
                 var Hiscombined = (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.MP << 24) | (stat.TP << 12) | stat.POWER
                 h = addValueToBinHash(h, Hiscombined)
-                // Position (drives walkcells via (cell, mp); mp is already in Hiscombined)
                 h = addValueToBinHash(h, (e << 10) | stat.CELL)
             }
             enemyContextsBySide[side] = h
         }
 
         var _score = 0
+
         for (var e: var stat in State) {
-            if (stat.LIFE > 0) {
-                var is_ally = (stat.SIDE == MySide)
-                var enemyContext = enemyContextsBySide[stat.SIDE]
+            if (stat.LIFE <= 0) continue
+            var sign = (stat.SIDE == MySide) ? 1 : -1
+            var enemyContext = enemyContextsBySide[stat.SIDE]
 
-                // --- ULTIMATE HASH PER ENTITY ---
-                // ID (10b) | CELL (10b) | SIDE (3b) | LIFE (15b) | TP (8b) | MP (8b) | STATIC (1b)
-                var w1 = (stat.ID << 55) | (stat.CELL << 45) | (stat.SIDE << 42) | (stat.LIFE << 27) | (stat.TP << 19) | (stat.MP << 11) | (stat.STATIC ? 1 : 0)
-                // STR (12b) | WIS (12b) | AGI (12b) | RES (12b) | SCI (12b)
-                var w2 = (stat.STRENGTH << 52) | (stat.WISDOM << 40) | (stat.AGILITY << 28) | (stat.RESISTANCE << 16) | stat.SCIENCE
-                // MAG (12b) | POW (12b) | ABS_SHIELD (16b) | REL_SHIELD (16b)
-                var w3 = (stat.MAGIC << 44) | (stat.POWER << 32) | (stat.ABSOLUTE_SHIELD << 16) | stat.RELATIVE_SHIELD
-                // TOTAL_LIFE (15b) | DR (10b) | CD_ANTIDOTE (4b) | POISON (16b) | POT (16b)
-                var w4 = (stat.TOTAL_LIFE << 46) | (stat.DAMAGE_RETURN << 36) | (stat.COOLDOWNS[CHIP_ANTIDOTE] << 32) | (stat.POISON << 16) | stat.POISON_OVER_TIME
+            // Danger (scalaire, on l'utilisera × ratio pour le DR)
+            var shieldCombined = (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE]
+            var thisStatsHashForDanger = addValueToBinHash(enemyContext, shieldCombined)
+            var danger = DangerClass.getEntityDanger(stat, State, e, BaseHash, thisStatsHashForDanger)
 
-                var h_final = addValueToBinHash(addValueToBinHash(addValueToBinHash(addValueToBinHash(enemyContext, w1), w2), w3), w4)
+            // 1. Core : importance × sit_score
+            var imp = Importance.get(stat)
+            var sit = getSitScore(stat, danger)
+            _score += sign * imp * sit
 
-                if (h_final in ENTITY_ULTIMATE_SCORE_CACHE) {
-                    var cachedVal = ENTITY_ULTIMATE_SCORE_CACHE[h_final]
-                    _score += is_ally ? cachedVal : -cachedVal
-                    continue
-                }
+            // 2. Shield preemptive (additif, indépendant du danger)
+            _score += sign * getShieldPreemptive(stat)
 
-                var entity_value = getEntityIntrinsicScore(stat, State)
-                var shieldCombined = (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE]
-                var thisStatsHashForDanger = addValueToBinHash(enemyContext, shieldCombined)
-
-                var danger = DangerClass.getEntityDanger(stat, State, e, BaseHash, thisStatsHashForDanger)
-
-                // On applique les multiplicateurs au score intraseque
-                var SurvivalMultiplier = getSurvivalMultiplier(stat, danger)
-                var DistanceMultiplier = e == Me ? SCORE_DEFAULT_MULTIPLIER : getDistMultiplier(stat.ID, stat.SIDE, stat.CELL, State, BaseHash)
-                var ShieldAndDRMultiplier = getShieldAndDRMultiplier(stat, danger, SurvivalMultiplier)
-
-                var finalValue = entity_value * SurvivalMultiplier * DistanceMultiplier * ShieldAndDRMultiplier
-
-                ENTITY_ULTIMATE_SCORE_CACHE[h_final] = finalValue
-                _score += is_ally ? finalValue : -finalValue
+            // 3. DR contribution (approximation via STR/MAG ratio)
+            if (stat.DAMAGE_RETURN > 0) {
+                var team = EnemiesTeamIndexes.getWithCache(State, stat)
+                var sumSM = team.STRENGTH + team.MAGIC
+                var phys_ratio = (sumSM > 0) ? (team.STRENGTH / sumSM) : 1.0
+                var physical_danger = danger * phys_ratio
+                var returned = min(physical_danger * stat.DAMAGE_RETURN / 100, MAX_DR_RETURN)
+                _score += sign * returned
             }
         }
+
+        // 4. Positional (cached on BaseHash)
+        _score += getPositionalOthers(State, MySide, BaseHash)
+
+        // 5. My cooldown score (multi-turn potential, inline)
+        _score += getMyCooldownScore(State[Me])
+
         BenchOps.Stop("Scoring")
         return _score
     }
 
-    static getShieldAndDRMultiplier(stat, danger, SurvivalMultiplier) {
-        var absBonus = solvePoly(POLY_ABS_SHIELD_BASE, stat.ABSOLUTE_SHIELD)
-        var relBonus = solvePoly(POLY_REL_SHIELD_BASE, stat.RELATIVE_SHIELD)
-        
-        // 1. Dissuasion pure (la simple présence de la stat)
-        var baseDRBonus = solvePoly(POLY_DAMAGE_RETURN, stat.DAMAGE_RETURN)
-        
-        // 2. Dégâts concrets renvoyés (sur le danger brut, sans limite de vie car l'overkill est infligé à l'attaquant)
-        var activeDR = danger * (stat.DAMAGE_RETURN / 100)
-        var activeDRBonus = solvePoly(POLY_DAMAGE_RETURN_ACTIVE, activeDR)
-        
-        // 3. Facteur de désespoir (Plus la mort est proche, plus le renvoi est inestimable comme bouclier dissuasif absolu)
-        var despairFactor = 1.0 - SurvivalMultiplier
-        var despairDRBonus = solvePoly(POLY_DAMAGE_RETURN_DESPAIR, activeDR * despairFactor)
-        
-        return SCORE_SHIELD_DR_BASE + absBonus + relBonus + baseDRBonus + activeDRBonus + despairDRBonus
+    /**
+     * sit_score = concave_poly(effective_HP / TOTAL_LIFE).
+     *
+     * effective_HP = LIFE − weighted_threats. No shield absorption modelled here
+     * because shields already reduce `danger` upstream (danger module sees current
+     * shields and computes lower expected damage). The "preemptive shield" bonus is
+     * additive elsewhere.
+     */
+    static getSitScore(stat, danger) {
+        var combined1 = (danger << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE
+        var combined2 = (stat.POISON << 16) | stat.POISON_OVER_TIME
+        var key = addValueToBinHash(addValueToBinHash(OFFSET_BASIS, combined1), combined2)
+
+        if (key in SIT_SCORE_CACHE) return SIT_SCORE_CACHE[key]
+
+        var threat = solvePoly(POLY_THREAT_DANGER, danger)
+                   + solvePoly(POLY_THREAT_POISON, stat.POISON)
+                   + solvePoly(POLY_THREAT_POT, stat.POISON_OVER_TIME)
+
+        var effective_HP = max(0, stat.LIFE - threat)
+        var ratio = effective_HP / stat.TOTAL_LIFE
+        var result = max(0, solvePoly(POLY_SIT_SCORE, ratio))
+
+        SIT_SCORE_CACHE[key] = result
+        return result
     }
 
+    /**
+     * Preemptive shield bonus: small additive value for holding shields,
+     * independent of current danger. Reasoning: shielding before engagement
+     * saves a future TP spend on shielding chips.
+     */
+    static getShieldPreemptive(stat) {
+        return solvePoly(POLY_SHIELD_PREEMPTIVE_ABS, stat.ABSOLUTE_SHIELD)
+             + solvePoly(POLY_SHIELD_PREEMPTIVE_REL, stat.RELATIVE_SHIELD)
+    }
+
+    /**
+     * Positional cohesion (allies among allies, enemies among enemies).
+     * Excludes ME entirely — my position effect on score is captured via danger.
+     * Cache key = BaseHash (which already excludes me) so my movement doesn't
+     * invalidate the cache; only relocations of others do.
+     */
+    static getPositionalOthers(State, MySide, BaseHash) {
+        if (BaseHash in POSITIONAL_CACHE) return POSITIONAL_CACHE[BaseHash]
+
+        var ally_cohesion = 0
+        var enemy_cohesion = 0
+
+        for (var e: var stat in State) {
+            if (stat.LIFE <= 0 || e == Me) continue
+            for (var e2: var stat2 in State) {
+                if (e2 <= e) continue
+                if (stat2.LIFE <= 0 || e2 == Me) continue
+                if (stat.SIDE != stat2.SIDE) continue
+                var dist = CellClass.getDist(stat.CELL, stat2.CELL)
+                if (stat.SIDE == MySide) ally_cohesion += solvePoly(POLY_POS_ALLY, dist)
+                else                     enemy_cohesion += solvePoly(POLY_POS_ENEMY, dist)
+            }
+        }
+
+        var result = ally_cohesion - enemy_cohesion
+        POSITIONAL_CACHE[BaseHash] = result
+        return result
+    }
+
+    /**
+     * Multi-turn potential of my items. High-CD premium items contribute heavily;
+     * playing them drops the score by their item-value. The BFS only chains a
+     * premium item if the immediate gain elsewhere exceeds the lost potential.
+     *
+     * No USES check (USES reset each turn; we measure cross-turn reserves).
+     */
+    static getMyCooldownScore(MyStats) {
+        var score = 0
+        for (var itemId in BASE_INVENTORY) {
+            var cd = MyStats.COOLDOWNS[itemId]
+            var cd_factor = max(0, solvePoly(POLY_CD_DECAY, cd))
+            score += ITEM_VALUE[itemId] * cd_factor
+        }
+        return score
+    }
+
+    /**
+     * Resurrection score : kept for Modifier/Resurrection.leek.
+     * Computes the intrinsic value an entity would have if it were resurrected
+     * (half max life, half life, no buffs, no shields).
+     */
     static getResurrectionScore(entity_state, State) {
         var ThisHash = entity_state.ID
         if (ThisHash in RESURRECTION_SCORE_CACHE) return RESURRECTION_SCORE_CACHE[ThisHash]
@@ -118,120 +193,23 @@ class ScoringClass {
         v_stat.JUST_POISON = 0
         v_stat.POISON = 0
         v_stat.JUST_POISON_OVER_TIME = 0
-
         v_stat.TP = v_stat.TOTAL_TP
         v_stat.MP = v_stat.TOTAL_MP
         v_stat.ABSOLUTE_SHIELD = 0
         v_stat.RELATIVE_SHIELD = 0
         v_stat.DAMAGE_RETURN = 0
 
-        var result = getEntityIntrinsicScore(v_stat, v_State)
+        var result = Importance.compute(v_stat)
         RESURRECTION_SCORE_CACHE[ThisHash] = result
         return result
     }
 
+    /**
+     * Compatibility shim: getEntityIntrinsicScore was used elsewhere (notably FinalCell).
+     * Now redirects to Importance.get for consistency.
+     */
     static getEntityIntrinsicScore(EntityStats, State) {
-        // Word 1 (58 bits) : ID (10b) | Power (12b) | TotalTP (10b) | Strength (12b) | Wisdom (12b)
-        var combined1 = (EntityStats.ID << 46) | (EntityStats.POWER << 34) | (EntityStats.TOTAL_TP << 24) | (EntityStats.STRENGTH << 12) | EntityStats.WISDOM
-        // Word 2 (63 bits) : Agility (12b) | Resistance (12b) | Science (12b) | Magic (12b) | TotalLife (15b)
-        var combined2 = (EntityStats.AGILITY << 51) | (EntityStats.RESISTANCE << 39) | (EntityStats.SCIENCE << 27) | (EntityStats.MAGIC << 15) | EntityStats.TOTAL_LIFE
-        // Word 3 : MP (10b) | STATIC (1b) | SIDE (4b)
-        var combined3 = (EntityStats.TOTAL_MP << 5) | (EntityStats.STATIC ? 1 : 0) << 4 | EntityStats.SIDE
-
-        var Hash = addValueToBinHash(addValueToBinHash(addValueToBinHash(OFFSET_BASIS, combined1), combined2), combined3)
-        if (Hash in ENTITY_INTRINSIC_SCORE_CACHE) return ENTITY_INTRINSIC_SCORE_CACHE[Hash]
-
-        var EIndexes = EntityIndexes.getWithCache(EntityStats)
-        var TeamIndexes = EnemiesTeamIndexes.getWithCache(State, EntityStats)
-
-        var StrengthCoef = solvePoly(POLY_COEF_STR, TeamIndexes.RESISTANCE)
-        var WisdomCoef = SCORE_COEF_WISDOM
-        var AgilityCoef = solvePoly(POLY_COEF_AGI, TeamIndexes.STRENGTH)
-        var ResistanceCoef = solvePoly(POLY_COEF_RES, TeamIndexes.STRENGTH)
-        var ScienceCoef = SCORE_COEF_SCIENCE
-        var MagicCoef = SCORE_COEF_MAGIC
-
-        var _final = EIndexes.STRENGTH * StrengthCoef +
-            EIndexes.WISDOM * WisdomCoef +
-            EIndexes.AGILITY * AgilityCoef +
-            EIndexes.RESISTANCE * ResistanceCoef +
-            EIndexes.SCIENCE * ScienceCoef +
-            EIndexes.MAGIC * MagicCoef
-
-        _final *= solvePoly(POLY_BONUS_MP, EntityStats.TOTAL_MP)
-        _final *= solvePoly(POLY_BONUS_CRIT, EntityStats.AGILITY)
-        _final *= solvePoly(POLY_BONUS_LIFE, EntityStats.TOTAL_LIFE)
-
-        if (EntityStats.STATIC) _final /= SCORE_STATIC_DIVISOR
-
-        ENTITY_INTRINSIC_SCORE_CACHE[Hash] = _final
-        return _final
-    }
-
-    static getSurvivalMultiplier(stat, danger) {
-        // Optimisation : On pack 3 valeurs dans le premier mot (48 bits total)
-        // Danger (16 bits) | Life (16 bits) | TotalLife (16 bits)
-        var combined1 = (danger << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE
-
-        // On pack les poisons dans le second mot (32 bits total)
-        var combined2 = (stat.POISON << 16) | stat.POISON_OVER_TIME
-
-        var ThisHash = addValueToBinHash(addValueToBinHash(OFFSET_BASIS, combined1), combined2)
-
-        if (ThisHash in SURVIVAL_MULTIPLIER_CACHE) return SURVIVAL_MULTIPLIER_CACHE[ThisHash]
-
-        // 1. Calcul de la menace pondérée via polynômes
-        var totalThreat = solvePoly(POLY_THREAT_DANGER, danger) +
-            solvePoly(POLY_THREAT_POISON, stat.POISON) +
-            solvePoly(POLY_THREAT_POT, stat.POISON_OVER_TIME)
-
-        // 2. Calcul du ratio de santé prédictif
-        var survivalRatio = (stat.LIFE - totalThreat) / stat.TOTAL_LIFE
-
-        // 3. Application du polynôme de survie
-        var result = max(SCORE_SURVIVAL_MIN_VALUE, solvePoly(POLY_SURVIVAL, survivalRatio)) //to Avoid having a negative ratio
-
-        SURVIVAL_MULTIPLIER_CACHE[ThisHash] = result
-        return result
-    }
-
-    static getDistMultiplier(id, side, cell, State, BaseHash) {
-        var ThisHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), (cell << 32) | id)
-        if (ThisHash in DIST_MULTIPLIER_CACHE) return DIST_MULTIPLIER_CACHE[ThisHash]
-
-        var allyRelSum = 0,
-            allyWeight = 0
-        var enemyRelSum = 0,
-            enemyWeight = 0
-
-        for (var e: var other in State) {
-            if (other.LIFE > 0 && other.ID != id && e != Me) {
-                var dist = CellClass.getDist(cell, other.CELL)
-                var otherValue = getEntityIntrinsicScore(other, State)
-
-                if (other.SIDE == side) {
-                    // Score de COHÉSION
-                    allyRelSum += otherValue * solvePoly(POLY_DIST_RELATION_ALLY, dist)
-                    allyWeight += otherValue
-                } else {
-                    // Score d'ENGAGEMENT
-                    enemyRelSum += otherValue * solvePoly(POLY_DIST_RELATION_ENEMY, dist)
-                    enemyWeight += otherValue
-                }
-            }
-        }
-        // 1. On calcule les moyennes séparément
-        // Si on est seul (ex: fin de game), on met 1.0 pour ne pas impacter le score
-        var allyScore = (allyWeight > 0) ? (allyRelSum / allyWeight) : 1.0
-        var enemyScore = (enemyWeight > 0) ? (enemyRelSum / enemyWeight) : 1.0
-
-        // 2. On fusionne les deux (50/50 ou avec des coefficients de priorité)
-        // Ici, l'importance des alliés vs ennemis est ÉQUILIBRÉE peu importe leur nombre
-        var avgRelation = (allyScore + enemyScore) / 2.0
-
-        var result = max(SCORE_DIST_MIN_VALUE, solvePoly(POLY_DIST_FINAL, avgRelation))
-        DIST_MULTIPLIER_CACHE[ThisHash] = result
-        return result
+        return Importance.get(EntityStats)
     }
 
     static solvePoly(poly, x) {

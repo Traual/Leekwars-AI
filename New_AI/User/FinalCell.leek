@@ -49,11 +49,23 @@ class FinalCell {
         debugC("--- Finding Best Final Cell ---", COLOR_BLUE)
 
         for (var cell: var mp in possibleCells) {
-            // === 1. DistMultiplier (miroir exact de ScoringClass.getDistMultiplier) ===
-            var allyRelSum = 0
-            var allyWeight = 0
-            var enemyRelSum = 0
-            var enemyWeight = 0
+            // === 1. sit_score equivalent (mirror of ScoringClass.getSitScore) ===
+            var danger = DangerClass.get(cell, State, MyState, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
+            var threat = ScoringClass.solvePoly(POLY_THREAT_DANGER, danger) +
+                ScoringClass.solvePoly(POLY_THREAT_POISON, MyState.POISON) +
+                ScoringClass.solvePoly(POLY_THREAT_POT, MyState.POISON_OVER_TIME)
+            var effective_HP = max(0, MyState.LIFE - threat)
+            var ratio = effective_HP / MyState.TOTAL_LIFE
+            var sit_score = max(0, ScoringClass.solvePoly(POLY_SIT_SCORE, ratio))
+
+            // === 2. Positional cohesion + engagement to enemies ===
+            // FinalCell is where my position MATTERS (turn-end). Unlike state-score
+            // during BFS where my cell is transient, here we balance :
+            //   - sit_score (low danger preferred)
+            //   - cohesion with my allies (POLY_POS_ALLY)
+            //   - proximity to enemies (POLY_FINAL_ENEMY_PROX)
+            var ally_cohesion = 0
+            var enemy_proximity = 0
 
             for (var info in entityInfos) {
                 var dist = CellClass.getDist(cell, info[0])
@@ -61,29 +73,16 @@ class FinalCell {
                 var value = info[2]
 
                 if (isAlly) {
-                    allyRelSum += value * ScoringClass.solvePoly(POLY_DIST_RELATION_ALLY, dist)
-                    allyWeight += value
+                    ally_cohesion += value * ScoringClass.solvePoly(POLY_POS_ALLY, dist)
                 } else {
-                    enemyRelSum += value * ScoringClass.solvePoly(POLY_DIST_RELATION_ENEMY, dist)
-                    enemyWeight += value
+                    enemy_proximity += value * ScoringClass.solvePoly(POLY_FINAL_ENEMY_PROX, dist)
                 }
             }
 
-            var allyScore = (allyWeight > 0) ? (allyRelSum / allyWeight) : 1.0
-            var enemyScore = (enemyWeight > 0) ? (enemyRelSum / enemyWeight) : 1.0
-            var avgRelation = (allyScore + enemyScore) / 2.0
-            var distMultiplier = max(0.1, ScoringClass.solvePoly(POLY_DIST_FINAL, avgRelation))
-
-            // === 2. SurvivalMultiplier (miroir exact de ScoringClass.getSurvivalMultiplier) ===
-            var danger = DangerClass.get(cell, State, MyState, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
-            var totalThreat = ScoringClass.solvePoly(POLY_THREAT_DANGER, danger) +
-                ScoringClass.solvePoly(POLY_THREAT_POISON, MyState.POISON) +
-                ScoringClass.solvePoly(POLY_THREAT_POT, MyState.POISON_OVER_TIME)
-            var survivalRatio = (MyState.LIFE - totalThreat) / MyState.TOTAL_LIFE
-            var survivalMultiplier = max(0, ScoringClass.solvePoly(POLY_SURVIVAL, survivalRatio))
-
-            // === 3. Score Final (même formule que getStateScore pour une entité) ===
-            var score = myValue * survivalMultiplier * distMultiplier
+            // === 3. Score Final ===
+            // myValue × sit_score = core survival/value term
+            // + cohesion + proximity = positional preferences (additive)
+            var score = myValue * sit_score + ally_cohesion + enemy_proximity
 
             if (score > bestScore) {
                 bestScore = score
