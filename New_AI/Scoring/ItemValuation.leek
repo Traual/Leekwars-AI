@@ -93,6 +93,10 @@ class ItemValuation {
 	 * Per-effect intrinsic value in HP-equivalent units.
 	 * Uses MY stats as multipliers (per-leek refs) and ENEMY profile for
 	 * counter-item adaptive scaling.
+	 *
+	 * Organized as a single switch over the effect type. Cases sharing a
+	 * formula are grouped via fallthrough (e.g. all RAW_BUFF_* non-strength
+	 * use the same body).
 	 */
 	static effectIntrinsic(eff, MyStats, profile, Info) {
 		var type = eff[0]
@@ -116,90 +120,118 @@ class ItemValuation {
 		var DMG_REF = ITEM_VAL_SHIELD_DMG_REF_BASE + ITEM_VAL_SHIELD_DMG_REF_PER_STR * profile["max_str"]
 		var DMG_REF_RATIO = DMG_REF / 60.0   // normalized to old default of 60
 
-		// ====== Damage ======
-		if (type == EFFECT_DAMAGE)        return V * STR_M * POW_M * TARG
-		if (type == EFFECT_LIFE_DAMAGE)   return (V / 100) * 2500 * POW_M
-		if (type == EFFECT_NOVA_DAMAGE)   return V * SCI_M * POW_M * TARG * 0.7
+		switch (type) {
+			// ====== Damage ======
+			case EFFECT_DAMAGE:
+				return V * STR_M * POW_M * TARG
+			case EFFECT_LIFE_DAMAGE:
+				return (V / 100) * 2500 * POW_M
+			case EFFECT_NOVA_DAMAGE:
+				return V * SCI_M * POW_M * TARG * 0.7
 
-		// ====== Heal / Vitality ======
-		if (type == EFFECT_HEAL) {
-			if (turns > 0) return V * WIS_M * DUR * 0.6
-			return V * WIS_M * 0.7
+			// ====== Heal / Vitality ======
+			case EFFECT_HEAL:
+				if (turns > 0) return V * WIS_M * DUR * 0.6
+				return V * WIS_M * 0.7
+			case EFFECT_RAW_HEAL:
+				return V * 0.7
+			case EFFECT_VITALITY:
+				return V * WIS_M * 1.1
+			case EFFECT_NOVA_VITALITY:
+				return V * SCI_M * 0.8
+			case EFFECT_RESURRECT:
+				return 1200
+
+			// ====== Shields ======
+			case EFFECT_ABSOLUTE_SHIELD:
+				return V * RES_M * DUR * 0.8 * DMG_REF_RATIO
+			case EFFECT_RAW_ABSOLUTE_SHIELD:
+				return V * DUR * 0.8 * DMG_REF_RATIO
+			case EFFECT_RELATIVE_SHIELD:
+			case EFFECT_RAW_RELATIVE_SHIELD:
+				return (V / 100) * DMG_REF * DUR * 0.7
+			case EFFECT_STEAL_ABSOLUTE_SHIELD:
+				return 60
+
+			// ====== Buffs (scaling SCI) ======
+			case EFFECT_BUFF_STRENGTH:
+			case EFFECT_BUFF_AGILITY:
+				return V * SCI_M * DUR * 0.5
+			case EFFECT_BUFF_MP:
+			case EFFECT_BUFF_TP:
+				return V * SCI_M * DUR * 8
+			case EFFECT_BUFF_RESISTANCE:
+			case EFFECT_BUFF_WISDOM:
+				return V * SCI_M * DUR * 0.4
+
+			// ====== Raw Buffs (no scaling) ======
+			case EFFECT_RAW_BUFF_STRENGTH:
+				return V * DUR * 1.5
+			case EFFECT_RAW_BUFF_POWER:
+				return V * DUR * 4
+			case EFFECT_RAW_BUFF_MAGIC:
+			case EFFECT_RAW_BUFF_SCIENCE:
+			case EFFECT_RAW_BUFF_AGILITY:
+			case EFFECT_RAW_BUFF_RESISTANCE:
+			case EFFECT_RAW_BUFF_WISDOM:
+				return V * DUR * 0.8
+			case EFFECT_RAW_BUFF_MP:
+			case EFFECT_RAW_BUFF_TP:
+				return V * DUR * 12
+
+			// ====== Shackles (anti-stat, scaling MAG) ======
+			case EFFECT_SHACKLE_STRENGTH:
+			case EFFECT_SHACKLE_MAGIC:
+			case EFFECT_SHACKLE_MP:
+			case EFFECT_SHACKLE_TP:
+			case EFFECT_SHACKLE_AGILITY:
+			case EFFECT_SHACKLE_WISDOM:
+				return V * MAG_M * DUR * 0.6
+
+			// ====== Counter-items (scale with enemy profile) ======
+			case EFFECT_DEBUFF:
+				return ITEM_VAL_DEBUFF_BASE
+				     + ITEM_VAL_DEBUFF_PER_SCI * profile["total_sci"]
+				     + ITEM_VAL_DEBUFF_PER_RES * profile["total_res"]
+			case EFFECT_TOTAL_DEBUFF:
+				return ITEM_VAL_TOTAL_DEBUFF_BASE
+				     + ITEM_VAL_TOTAL_DEBUFF_PER_SCI * profile["total_sci"]
+				     + ITEM_VAL_TOTAL_DEBUFF_PER_RES * profile["total_res"]
+			case EFFECT_VULNERABILITY:
+				return V * DUR * (ITEM_VAL_VULN_BASE + ITEM_VAL_VULN_PER_RES * profile["max_res"])
+			case EFFECT_ABSOLUTE_VULNERABILITY:
+				return V * DUR * (ITEM_VAL_ABS_VULN_BASE + ITEM_VAL_ABS_VULN_PER_RES * profile["max_res"])
+			case EFFECT_ANTIDOTE:
+				return ITEM_VAL_ANTIDOTE_BASE + ITEM_VAL_ANTIDOTE_PER_MAG * profile["max_mag"]
+			case EFFECT_REMOVE_SHACKLES:
+				return ITEM_VAL_MANUMISSION_BASE + ITEM_VAL_MANUMISSION_PER_MAG * profile["max_mag"]
+
+			// ====== Damage Return (DR) ======
+			case EFFECT_DAMAGE_RETURN:
+				return V * AGI_M * DUR * 0.3 * DMG_REF_RATIO
+
+			// ====== Poison + Aftereffect ======
+			case EFFECT_POISON:
+				return V * MAG_M * POW_M * DUR * 0.85 * TARG
+			case EFFECT_AFTEREFFECT:
+				return V * SCI_M * 0.9
+
+			// ====== Movement / Special ======
+			case EFFECT_TELEPORT:
+				return 60
+			case EFFECT_PERMUTATION:
+				return 120
+			case EFFECT_ATTRACT:
+			case EFFECT_REPEL:
+			case EFFECT_PUSH:
+				return 25 * V
+			case EFFECT_SUMMON:
+				return 400
+			case EFFECT_KILL:
+				return 1500
+			case EFFECT_ADD_STATE:
+				return 100
 		}
-		if (type == EFFECT_RAW_HEAL)      return V * 0.7
-		if (type == EFFECT_VITALITY)      return V * WIS_M * 1.1
-		if (type == EFFECT_NOVA_VITALITY) return V * SCI_M * 0.8
-		if (type == EFFECT_RESURRECT)     return 1200
-
-		// ====== Shields ======
-		if (type == EFFECT_ABSOLUTE_SHIELD)     return V * RES_M * DUR * 0.8 * DMG_REF_RATIO
-		if (type == EFFECT_RELATIVE_SHIELD)     return (V / 100) * DMG_REF * DUR * 0.7
-		if (type == EFFECT_RAW_ABSOLUTE_SHIELD) return V * DUR * 0.8 * DMG_REF_RATIO
-		if (type == EFFECT_RAW_RELATIVE_SHIELD) return (V / 100) * DMG_REF * DUR * 0.7
-		if (type == EFFECT_STEAL_ABSOLUTE_SHIELD) return 60
-
-		// ====== Buffs (scaling SCI) ======
-		if (type == EFFECT_BUFF_STRENGTH || type == EFFECT_BUFF_AGILITY) return V * SCI_M * DUR * 0.5
-		if (type == EFFECT_BUFF_MP || type == EFFECT_BUFF_TP)            return V * SCI_M * DUR * 8
-		if (type == EFFECT_BUFF_RESISTANCE || type == EFFECT_BUFF_WISDOM) return V * SCI_M * DUR * 0.4
-
-		// ====== Raw Buffs (no scaling) ======
-		if (type == EFFECT_RAW_BUFF_STRENGTH) return V * DUR * 1.5
-		if (type == EFFECT_RAW_BUFF_POWER)    return V * DUR * 4
-		if (type == EFFECT_RAW_BUFF_MAGIC) return V * DUR * 0.8
-		if (type == EFFECT_RAW_BUFF_SCIENCE) return V * DUR * 0.8
-		if (type == EFFECT_RAW_BUFF_AGILITY) return V * DUR * 0.8
-		if (type == EFFECT_RAW_BUFF_RESISTANCE) return V * DUR * 0.8
-		if (type == EFFECT_RAW_BUFF_WISDOM) return V * DUR * 0.8
-		if (type == EFFECT_RAW_BUFF_MP || type == EFFECT_RAW_BUFF_TP) return V * DUR * 12
-
-		// ====== Shackles (anti-stat, scaling MAG) ======
-		if (type == EFFECT_SHACKLE_STRENGTH || type == EFFECT_SHACKLE_MAGIC ||
-		    type == EFFECT_SHACKLE_MP       || type == EFFECT_SHACKLE_TP    ||
-		    type == EFFECT_SHACKLE_AGILITY  || type == EFFECT_SHACKLE_WISDOM) {
-			return V * MAG_M * DUR * 0.6
-		}
-
-		// ====== Counter-items (scale with enemy profile) ======
-		if (type == EFFECT_DEBUFF) {
-			return ITEM_VAL_DEBUFF_BASE
-			     + ITEM_VAL_DEBUFF_PER_SCI * profile["total_sci"]
-			     + ITEM_VAL_DEBUFF_PER_RES * profile["total_res"]
-		}
-		if (type == EFFECT_TOTAL_DEBUFF) {
-			return ITEM_VAL_TOTAL_DEBUFF_BASE
-			     + ITEM_VAL_TOTAL_DEBUFF_PER_SCI * profile["total_sci"]
-			     + ITEM_VAL_TOTAL_DEBUFF_PER_RES * profile["total_res"]
-		}
-		if (type == EFFECT_VULNERABILITY) {
-			return V * DUR * (ITEM_VAL_VULN_BASE + ITEM_VAL_VULN_PER_RES * profile["max_res"])
-		}
-		if (type == EFFECT_ABSOLUTE_VULNERABILITY) {
-			return V * DUR * (ITEM_VAL_ABS_VULN_BASE + ITEM_VAL_ABS_VULN_PER_RES * profile["max_res"])
-		}
-		if (type == EFFECT_ANTIDOTE) {
-			return ITEM_VAL_ANTIDOTE_BASE + ITEM_VAL_ANTIDOTE_PER_MAG * profile["max_mag"]
-		}
-		if (type == EFFECT_REMOVE_SHACKLES) {
-			return ITEM_VAL_MANUMISSION_BASE + ITEM_VAL_MANUMISSION_PER_MAG * profile["max_mag"]
-		}
-
-		// ====== Damage Return (DR) ======
-		if (type == EFFECT_DAMAGE_RETURN) return V * AGI_M * DUR * 0.3 * DMG_REF_RATIO
-
-		// ====== Poison (scaling MAG, multi-turn) ======
-		if (type == EFFECT_POISON)      return V * MAG_M * POW_M * DUR * 0.85 * TARG
-		if (type == EFFECT_AFTEREFFECT) return V * SCI_M * 0.9
-
-		// ====== Movement / Special ======
-		if (type == EFFECT_TELEPORT)    return 60
-		if (type == EFFECT_PERMUTATION) return 120
-		if (type == EFFECT_ATTRACT || type == EFFECT_REPEL || type == EFFECT_PUSH) return 25 * V
-
-		if (type == EFFECT_SUMMON)      return 400
-		if (type == EFFECT_KILL)        return 1500
-		if (type == EFFECT_ADD_STATE)   return 100
-
 		return 0
 	}
 
@@ -209,12 +241,27 @@ class ItemValuation {
 	 * everyone (positioning constraints, LoS, etc.).
 	 */
 	static aoeTargetMultiplier(area) {
-		if (area == AREA_POINT) return 1.0
-		if (area == AREA_CIRCLE_1 || area == AREA_PLUS_1 || area == AREA_X_1) return 1.2
-		if (area == AREA_CIRCLE_2 || area == AREA_PLUS_2 || area == AREA_SQUARE_1) return 1.4
-		if (area == AREA_CIRCLE_3 || area == AREA_PLUS_3 || area == AREA_SQUARE_2 ||
-		    area == AREA_X_2 || area == AREA_X_3) return 1.5
-		if (area == AREA_LASER_LINE || area == AREA_FIRST_INLINE) return 1.3
+		switch (area) {
+			case AREA_POINT:
+				return 1.0
+			case AREA_CIRCLE_1:
+			case AREA_PLUS_1:
+			case AREA_X_1:
+				return 1.2
+			case AREA_CIRCLE_2:
+			case AREA_PLUS_2:
+			case AREA_SQUARE_1:
+				return 1.4
+			case AREA_CIRCLE_3:
+			case AREA_PLUS_3:
+			case AREA_SQUARE_2:
+			case AREA_X_2:
+			case AREA_X_3:
+				return 1.5
+			case AREA_LASER_LINE:
+			case AREA_FIRST_INLINE:
+				return 1.3
+		}
 		return 1.0
 	}
 }
