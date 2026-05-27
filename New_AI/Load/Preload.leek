@@ -7,9 +7,10 @@ include("../includes.leek")
 class Preload {
     static InitEverything() {
         InitItemInfo()
-		InitItemValues()
 		InitCellClass()
 		InitStateClass()
+		// ITEM_VALUE table is filled per turn by ItemValuation.refreshAll() in Main.leek
+		// (per-leek refs + enemy-aware counter-items, requires Me/State to be known).
     }
 
     static InitItemInfo() {
@@ -17,27 +18,6 @@ class Preload {
 			ITEMINFO[i] = [: ]
 			var Iinfo = new ItemClass(i)
 			ITEMINFO[i] = Iinfo
-		}
-	}
-
-	/**
-	 * Precompute ITEM_VALUE[itemId] for every item.
-	 * Used by getMyCooldownScore: "potential stored in this item across turns".
-	 * Heuristic v1 : item_value = COST × 10 × (1 + COOLDOWN / 10).
-	 *   - High-cost items (Régen, Sérum, Foudre) get more weight.
-	 *   - High-CD items get an extra premium (they're "reserves").
-	 * Items without info / 0 cost get 0. Tunable later, replace by per-effect or MLP.
-	 */
-	static InitItemValues() {
-		for (var i = 0; i < 500; i++) {
-			var Info = ITEMINFO[i]
-			if (Info == null || Info.COST == null || Info.COST <= 0) {
-				ITEM_VALUE[i] = 0
-				continue
-			}
-			var baseValue = Info.COST * 10
-			var cdPremium = 1 + Info.COOLDOWN / 10
-			ITEM_VALUE[i] = baseValue * cdPremium
 		}
 	}
 

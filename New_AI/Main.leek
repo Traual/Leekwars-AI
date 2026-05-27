@@ -1,6 +1,4 @@
 include("includes.leek")
-//TODO : Add : Scoring of the probable ending of my play (if i get buffed i may have more impact during the rest of my play (and near ennemies), otherwise it may not be as useful)
-//TODO : Cooldown value system
 //TODO : Covid propagation in final cell ?
 //TODO : Fix Enhanced Lightninger firing on allies
 //TODO (Scoring v2 - future precision): split `danger` into {physical, poison} inside Maps/Danger/.
@@ -9,10 +7,13 @@ include("includes.leek")
 //    EntityDanger / Danger.get / Danger.getEntityDanger / caches.
 //  - Benefit: accurate DR (DR doesn't trigger on poison) + accurate shield clamping if reintroduced.
 //  - Cost: ~11 modifs ciblées, +3-5% ops, aucun cache invalidé. Voir conversation pour le plan détaillé.
-//If i don't have enough opés i can optimize the combo loading feature in danger map (it takes a lot of opés i think with a lot of possibilities now)
 if (getTurn() == 1) Preload.InitEverything()
 ReloadCacheNewTurn()
 Preload.InitStateClass()
+// Refresh ITEM_VALUE table : per-leek refs (my stats) + enemy-aware counter-item boosting.
+// Computed once per turn (enemy roster doesn't change mid-turn).
+var __initState = StateClass.Virtualize()
+ItemValuation.refreshAll(__initState[Me], __initState)
 BenchOps.Reset()
 new Play()
 BenchOps.Dump()

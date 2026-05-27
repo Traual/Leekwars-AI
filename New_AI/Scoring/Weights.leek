@@ -35,9 +35,39 @@ global POLY_POS_ENEMY = [-0.003, 0.08, 0.3]
 global MAX_DR_RETURN = 5000.0
 
 // === My cooldown score (multi-turn potential) ===
-// poly_cd(0) = 1.0 (item ready = full potential), poly_cd(65) ≈ 0 (item gone for the fight).
-// Linear par défaut, tunable concave.
-global POLY_CD_DECAY = [0.0, -0.01538, 1.0]   // 1.0 à CD=0, 0.0 à CD=65 (linéaire)
+// factor(cd) = 1 / max(1, cd) — simple hyperbolic decay :
+//   CD 0,1 → 1.0 (back next turn)
+//   CD 2 → 0.5
+//   CD 5 → 0.20
+//   CD 30+ → 0.03 (item effectively gone)
+// No poly needed, inline in getMyCooldownScore.
+
+// === ItemValuation : enemy-aware counter-item coefs ===
+// Shield damage reference (adaptive to enemy max STR)
+global ITEM_VAL_SHIELD_DMG_REF_BASE = 60         // base ref dmg/turn when no STR threat known
+global ITEM_VAL_SHIELD_DMG_REF_PER_STR = 0.3     // additional dmg-ref per enemy max STR
+
+// Antidote (counters poison — scales with enemy max MAG)
+global ITEM_VAL_ANTIDOTE_BASE = 60
+global ITEM_VAL_ANTIDOTE_PER_MAG = 0.8
+
+// Manumission / Remove Shackles (scales with enemy max MAG)
+global ITEM_VAL_MANUMISSION_BASE = 60
+global ITEM_VAL_MANUMISSION_PER_MAG = 0.8
+
+// Vulnerability / Absolute Vulnerability (scales with enemy max RES — anti-shield)
+global ITEM_VAL_VULN_BASE = 0.5                  // base multiplier on V × DUR
+global ITEM_VAL_VULN_PER_RES = 0.002             // per point of enemy max RES
+global ITEM_VAL_ABS_VULN_BASE = 0.6
+global ITEM_VAL_ABS_VULN_PER_RES = 0.002
+
+// Debuff / Total Debuff (anti-buff-stack : scales with total SCI + RES)
+global ITEM_VAL_DEBUFF_BASE = 30
+global ITEM_VAL_DEBUFF_PER_SCI = 0.0008
+global ITEM_VAL_DEBUFF_PER_RES = 0.0015
+global ITEM_VAL_TOTAL_DEBUFF_BASE = 50
+global ITEM_VAL_TOTAL_DEBUFF_PER_SCI = 0.0012
+global ITEM_VAL_TOTAL_DEBUFF_PER_RES = 0.002
 
 // === FinalCell enemy proximity (cherche à finir le tour proche des ennemis) ===
 global POLY_FINAL_ENEMY_PROX = [-0.002, 0.05, 0.2]

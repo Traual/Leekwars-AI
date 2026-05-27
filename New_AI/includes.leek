@@ -27,6 +27,7 @@ include("Scoring/Weights.leek")
 include("Scoring/EntityIndexes.leek")
 include("Scoring/EnemiesTeamIndexes.leek")
 include("Scoring/Importance.leek")
+include("Scoring/ItemValuation.leek")
 include("Scoring/Scoring.leek")
 
 include("User/Node.leek")
