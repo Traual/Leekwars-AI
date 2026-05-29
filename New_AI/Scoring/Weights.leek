@@ -21,17 +21,21 @@ global IMPORTANCE_COEF_SCI = 0.25   // was 1.0      (utility buffs — secondary
 // Bulbs / summons get a discount per stat point.
 global IMPORTANCE_STATIC_FACTOR = 0.3
 
-// === sit_score (situational survival, 0..1 concave) ===
-// V1 hand-tuned: stronger concavity = focus-fire emphasis.
-// At HP=100% → 1.0, 75% → 0.94, 50% → 0.75, 25% → 0.44, 0% → 0.
-// Marginal damage on a low-HP enemy is much more valuable than on a high-HP one.
-global POLY_SIT_SCORE = [-1.0, 2.0, 0.0]
+// === sit_score (situational survival, 0..1) ===
+// V1.1 hand-tuned: LINEAR (neutral).
+// Previous concave attempt [-1.0, 2.0, 0] PLATEAU'd at high HP (75% → 0.94),
+// so the AI thought taking 25% damage was nearly free → suicidal.
+// Linear: 100%→1.0, 75%→0.75, 50%→0.5, 25%→0.25, 0%→0.
+// No focus-fire bias, no defensive plateau. CMA-ES can later tune to mild
+// concave/convex once we have ladder data.
+global POLY_SIT_SCORE = [0.0, 1.0, 0.0]
 
 // === Shield preemptive bonus (additive, encourages stocking shields) ===
-// Small flat bonus for holding shields even when danger = 0.
-// Reasoning: shielding before engagement saves a future TP spend.
-global POLY_SHIELD_PREEMPTIVE_ABS = [0.0, 0.5, 0.0]
-global POLY_SHIELD_PREEMPTIVE_REL = [0.0, 1.0, 0.0]
+// V1.1 hand-tuned: bumped meaningful magnitude vs importance (~80000).
+// Previous 0.5 coef -> 100 abs shield = 50 bonus (negligible vs 80000) -> AI ignored shielding.
+// New: 100 abs shield = 300 bonus, 30% rel shield = 150 bonus. Still small but measurable.
+global POLY_SHIELD_PREEMPTIVE_ABS = [0.0, 3.0, 0.0]
+global POLY_SHIELD_PREEMPTIVE_REL = [0.0, 5.0, 0.0]
 
 // === Positional (team cohesion, computed inline/cached) ===
 // V1 hand-tuned: tight grouping with allies (optimum at dist ~4).
@@ -85,10 +89,13 @@ global ITEM_VAL_TOTAL_DEBUFF_PER_RES = 0.002
 // Encourages engagement without sticking melee on glass cannons.
 global POLY_FINAL_ENEMY_PROX = [-0.003, 0.06, 0.2]   // peak at dist 10
 
-// === Threats (réutilisés depuis l'ancien scoring, intacts) ===
-global POLY_THREAT_DANGER = [0.0, 0.45, 0.0]
-global POLY_THREAT_POISON = [0.0, 0.8, 0.0]
-global POLY_THREAT_POT = [0.0, 0.3, 0.0]
+// === Threats (raw danger → "effective HP loss" weight) ===
+// V1.1 hand-tuned: bumped to make danger weigh more in sit_score.
+// Previous 0.45 → AI saw 2000 raw danger as ~900 effective HP loss, ignored too easily.
+// New 0.6 → 2000 danger ≈ 1200 effective HP loss (sit_score drops sharper).
+global POLY_THREAT_DANGER = [0.0, 0.6, 0.0]
+global POLY_THREAT_POISON = [0.0, 1.0, 0.0]   // bumped from 0.8 — poison harder to mitigate
+global POLY_THREAT_POT = [0.0, 0.4, 0.0]      // bumped from 0.3 — slow but inevitable
 
 // === Bonus globaux multiplicatifs (réutilisés) ===
 global POLY_BONUS_MP = [0.0, 0.033, 1.0]        // 1 + MP/30
