@@ -62,9 +62,9 @@ class ScoringClass {
             var thisStatsHashForDanger = addValueToBinHash(enemyContext, shieldCombined)
             var danger = DangerClass.getEntityDanger(stat, State, e, BaseHash, thisStatsHashForDanger)
 
-            // 1. Core : importance × sit_score
+            // 1. Core : importance × sit_score (asymmetric : SELF convex, ENEMY concave)
             var imp = Importance.get(stat)
-            var sit = getSitScore(stat, danger)
+            var sit = getSitScore(stat, danger, sign == 1)
             _score += sign * imp * sit
 
             // 2. Shield preemptive (additif, indépendant du danger)
@@ -92,17 +92,25 @@ class ScoringClass {
     }
 
     /**
-     * sit_score = concave_poly(effective_HP / TOTAL_LIFE).
+     * sit_score : poly(effective_HP / TOTAL_LIFE) with ASYMMETRIC curves.
+     *
+     *  - isMySide=true  : POLY_SIT_SCORE_SELF  (convex, steep loss at high HP)
+     *                     → me/allies suffer HARD from any damage taken
+     *  - isMySide=false : POLY_SIT_SCORE_ENEMY (concave, big bonus at the kill)
+     *                     → focus-fire weakened enemies
      *
      * effective_HP = LIFE − weighted_threats. No shield absorption modelled here
      * because shields already reduce `danger` upstream (danger module sees current
-     * shields and computes lower expected damage). The "preemptive shield" bonus is
-     * additive elsewhere.
+     * shields and computes lower expected damage). The "preemptive shield" bonus
+     * is additive elsewhere.
      */
-    static getSitScore(stat, danger) {
+    static getSitScore(stat, danger, isMySide) {
         var combined1 = (danger << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE
         var combined2 = (stat.POISON << 16) | stat.POISON_OVER_TIME
         var key = addValueToBinHash(addValueToBinHash(OFFSET_BASIS, combined1), combined2)
+        // XOR with a magic constant to give different keys for the two shapes,
+        // so the cache stores SELF and ENEMY results separately even for same stat.
+        if (isMySide) key = key ^ 1518500249
 
         if (key in SIT_SCORE_CACHE) return SIT_SCORE_CACHE[key]
 
@@ -112,7 +120,8 @@ class ScoringClass {
 
         var effective_HP = max(0, stat.LIFE - threat)
         var ratio = effective_HP / stat.TOTAL_LIFE
-        var result = max(0, solvePoly(POLY_SIT_SCORE, ratio))
+        var poly = isMySide ? POLY_SIT_SCORE_SELF : POLY_SIT_SCORE_ENEMY
+        var result = max(0, solvePoly(poly, ratio))
 
         SIT_SCORE_CACHE[key] = result
         return result

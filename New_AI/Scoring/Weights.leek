@@ -22,13 +22,25 @@ global IMPORTANCE_COEF_SCI = 0.25   // was 1.0      (utility buffs — secondary
 global IMPORTANCE_STATIC_FACTOR = 0.3
 
 // === sit_score (situational survival, 0..1) ===
-// V1.1 hand-tuned: LINEAR (neutral).
-// Previous concave attempt [-1.0, 2.0, 0] PLATEAU'd at high HP (75% → 0.94),
-// so the AI thought taking 25% damage was nearly free → suicidal.
-// Linear: 100%→1.0, 75%→0.75, 50%→0.5, 25%→0.25, 0%→0.
-// No focus-fire bias, no defensive plateau. CMA-ES can later tune to mild
-// concave/convex once we have ladder data.
-global POLY_SIT_SCORE = [0.0, 1.0, 0.0]
+// V1.2 hand-tuned: ASYMMETRIC SHAPES per side.
+//
+// Structural insight : a single poly can't satisfy both "don't suicide"
+// (need steep loss at high HP for me) AND "focus-fire" (need steeper
+// loss at low HP for enemies). Use two polys.
+//
+// SELF/ALLIES — CONVEX (a > 0) : any HP loss hurts hard.
+//   100%→1.0, 75%→0.66, 50%→0.375, 25%→0.16, 0%→0
+//   Δ 100→75% = -0.34 (big penalty for taking even 25% damage)
+//   → AI refuses to charge into lethal danger.
+//
+// ENEMIES — CONCAVE (a < 0) : low-HP enemies are "almost dead, finish them".
+//   100%→1.0, 75%→0.90, 50%→0.70, 25%→0.41, 0%→0
+//   Δ 75→50% = -0.20, but Δ 25→0% = -0.41 (kill bonus)
+//   → AI focuses fire on weakened enemies (4× reward for finishing).
+global POLY_SIT_SCORE_SELF = [0.5, 0.5, 0.0]
+global POLY_SIT_SCORE_ENEMY = [-0.8, 1.8, 0.0]
+// Legacy alias kept for FinalCell which uses SELF perspective.
+global POLY_SIT_SCORE = [0.5, 0.5, 0.0]
 
 // === Shield preemptive bonus (additive, encourages stocking shields) ===
 // V1.1 hand-tuned: bumped meaningful magnitude vs importance (~80000).
