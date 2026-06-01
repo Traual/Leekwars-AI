@@ -11,14 +11,14 @@
  **/
 
 // === Importance coefs (base stats) — uniform 1.0 ===
-global IMPORTANCE_COEF_STR = 1.0
-global IMPORTANCE_COEF_MAG = 1.0
-global IMPORTANCE_COEF_AGI = 1.0
-global IMPORTANCE_COEF_WIS = 1.0
-global IMPORTANCE_COEF_RES = 1.0
-global IMPORTANCE_COEF_SCI = 1.0
+global IMPORTANCE_COEF_STR = 2.679
+global IMPORTANCE_COEF_MAG = 0.297
+global IMPORTANCE_COEF_AGI = 1.228
+global IMPORTANCE_COEF_WIS = 0.687
+global IMPORTANCE_COEF_RES = 1.98
+global IMPORTANCE_COEF_SCI = 0.141
 // Bulbs slightly discounted — avoid silly summon spam during early training.
-global IMPORTANCE_STATIC_FACTOR = 0.3
+global IMPORTANCE_STATIC_FACTOR = 0.472
 
 // === Base stat polys (used inside stat indexes) — linear identity ===
 global POLY_STRENGTH = [0.0, 1.0, 0.0]
@@ -40,9 +40,9 @@ global POLY_POWER_MAGIC = [0.0, 0.0066, 1.0]   // 1 + POW/150
 global POLY_SIT_SCORE = [0.0, 1.0, 0.0]
 
 // === Threats : 1:1 (1 unit raw → 1 effective HP loss) ===
-global POLY_THREAT_DANGER = [0.0, 1.0, 0.0]
-global POLY_THREAT_POISON = [0.0, 1.0, 0.0]
-global POLY_THREAT_POT = [0.0, 1.0, 0.0]
+global POLY_THREAT_DANGER = [0.0, 0.773, 0.0]
+global POLY_THREAT_POISON = [0.0, 1.483, 0.0]
+global POLY_THREAT_POT = [0.0, 0.729, 0.0]
 
 // === Positional — ZERO except combat nudge ===
 global POLY_POS_ALLY = [0.0, 0.0, 0.0]    // no ally cohesion (CMA-ES learns)
