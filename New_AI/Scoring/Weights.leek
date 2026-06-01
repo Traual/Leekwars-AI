@@ -4,43 +4,27 @@
  **/
 
 // === Importance (per-entity intrinsic value) ===
-// V1 hand-tuned: offensive stats dominate (aggressive bias).
-// Old values (0.00025 STR, 1.0 WIS, ...) assumed enemy-team mult at runtime — broken in new code.
-//
-// Rough magnitude check with realistic top-build (STR=600, WIS=450, max_TP≈50, POW=100):
-//   EI.STRENGTH ≈ 600 × 50 × 2 = 60000   → × 0.4 = 24000
-//   EI.WISDOM   ≈ 450 × 40     = 18000   → × 0.4 = 7200
-//   EI.MAGIC    ≈ MAG × max_TP × 2 (POW)
-// → offensive stats (STR/MAG) contribute ~3× defensive stats per typical leek.
-global IMPORTANCE_COEF_STR = 0.4    // was 0.00025  (×1600 — was assuming enemy_team_RES mult)
-global IMPORTANCE_COEF_MAG = 0.5    // was 1.0      (poison/shackle offensive)
-global IMPORTANCE_COEF_AGI = 0.3    // was 0.0001   (crit + DR potential)
-global IMPORTANCE_COEF_WIS = 0.4    // was 1.0      (heal — useful but not dominant)
-global IMPORTANCE_COEF_RES = 0.15   // was 0.0001   (defensive — minor weight)
-global IMPORTANCE_COEF_SCI = 0.25   // was 1.0      (utility buffs — secondary)
+// V1.3 hand-tuned : per-stat reasoning based on top-build archetypes.
+// Magnitudes verified : top STR build (STR=600) ≈ 24000 STR-contrib + 7200 WIS-contrib + ...
+// Total importance ~70000-100000 per top-tier leek.
+global IMPORTANCE_COEF_STR = 0.4    // primary damage source (chips + weapons)
+global IMPORTANCE_COEF_MAG = 0.5    // poison + shackle, multi-turn bonus
+global IMPORTANCE_COEF_AGI = 0.3    // crit (via POLY_BONUS_CRIT) + DR — indirect
+global IMPORTANCE_COEF_WIS = 0.4    // heal scaling — conditional on wounded allies
+global IMPORTANCE_COEF_RES = 0.25   // V1.3 bump from 0.15 — tanks deserve credit
+global IMPORTANCE_COEF_SCI = 0.25   // utility buffs only — secondary
 // Bulbs / summons get a discount per stat point.
 global IMPORTANCE_STATIC_FACTOR = 0.3
 
 // === sit_score (situational survival, 0..1) ===
-// V1.2 hand-tuned: ASYMMETRIC SHAPES per side.
+// V1.3 : single moderate concave poly (no asymmetry).
+//   100%→1.0, 75%→0.84, 50%→0.625, 25%→0.34, 10%→0.155, 0%→0
+//   Δ 100→75% = -0.16 (lose some value but not catastrophic — vol_de_vie / heals possible)
+//   Δ 25→0%   = -0.34 (kill bonus = 2.1× the high-HP penalty → focus fire)
 //
-// Structural insight : a single poly can't satisfy both "don't suicide"
-// (need steep loss at high HP for me) AND "focus-fire" (need steeper
-// loss at low HP for enemies). Use two polys.
-//
-// SELF/ALLIES — CONVEX (a > 0) : any HP loss hurts hard.
-//   100%→1.0, 75%→0.66, 50%→0.375, 25%→0.16, 0%→0
-//   Δ 100→75% = -0.34 (big penalty for taking even 25% damage)
-//   → AI refuses to charge into lethal danger.
-//
-// ENEMIES — CONCAVE (a < 0) : low-HP enemies are "almost dead, finish them".
-//   100%→1.0, 75%→0.90, 50%→0.70, 25%→0.41, 0%→0
-//   Δ 75→50% = -0.20, but Δ 25→0% = -0.41 (kill bonus)
-//   → AI focuses fire on weakened enemies (4× reward for finishing).
-global POLY_SIT_SCORE_SELF = [0.5, 0.5, 0.0]
-global POLY_SIT_SCORE_ENEMY = [-0.8, 1.8, 0.0]
-// Legacy alias kept for FinalCell which uses SELF perspective.
-global POLY_SIT_SCORE = [0.5, 0.5, 0.0]
+// Anti-suicide comes from POLY_THREAT_DANGER (bumped to 0.7) : danger drops
+// effective_HP fast, and at low ratio the concave curve drops fast too.
+global POLY_SIT_SCORE = [-0.5, 1.5, 0.0]
 
 // === Shield preemptive bonus (additive, encourages stocking shields) ===
 // V1.1 hand-tuned: bumped meaningful magnitude vs importance (~80000).
@@ -50,11 +34,14 @@ global POLY_SHIELD_PREEMPTIVE_ABS = [0.0, 3.0, 0.0]
 global POLY_SHIELD_PREEMPTIVE_REL = [0.0, 5.0, 0.0]
 
 // === Positional (team cohesion, computed inline/cached) ===
-// V1 hand-tuned: tight grouping with allies (optimum at dist ~4).
-// dist=0 → 0.5 (don't stack on top), dist=4 → 0.9 (sweet spot), dist=10 → -0.5 (too far).
-// Enemy cohesion : subtracts from score. Optimum at dist 20+ (we want enemies spread).
-global POLY_POS_ALLY = [-0.025, 0.20, 0.5]   // peak at dist 4
-global POLY_POS_ENEMY = [-0.003, 0.08, 0.3]  // unchanged — we don't fully control enemy positions
+// V1.3 : scaled up to be VISIBLE vs importance ~80000.
+// Old peak value ~0.9 → invisible vs entity scores. New peak ~180 per pair.
+// For a team of 4 (6 pairs grouped at dist 4) → +1080 max ally cohesion ≈ 1.4% importance.
+// Real, measurable but doesn't dominate kill decisions.
+global POLY_POS_ALLY = [-5.0, 40.0, 100.0]   // peak at dist 4 = 180, dist 0 = 100, dist 10 = 0, dist 15 = -125
+// Enemy cohesion : subtracts. We barely control enemy positions, so small magnitude.
+// Mostly a tiebreaker signal, not a decision driver.
+global POLY_POS_ENEMY = [-0.5, 4.0, 10.0]    // peak at dist 4 = 18, dist 0 = 10
 
 // === Damage Return (additive, signed) ===
 // Approximation : physical_ratio = STR_team / (STR_team + MAG_team).
@@ -102,12 +89,13 @@ global ITEM_VAL_TOTAL_DEBUFF_PER_RES = 0.002
 global POLY_FINAL_ENEMY_PROX = [-0.003, 0.06, 0.2]   // peak at dist 10
 
 // === Threats (raw danger → "effective HP loss" weight) ===
-// V1.1 hand-tuned: bumped to make danger weigh more in sit_score.
-// Previous 0.45 → AI saw 2000 raw danger as ~900 effective HP loss, ignored too easily.
-// New 0.6 → 2000 danger ≈ 1200 effective HP loss (sit_score drops sharper).
-global POLY_THREAT_DANGER = [0.0, 0.6, 0.0]
-global POLY_THREAT_POISON = [0.0, 1.0, 0.0]   // bumped from 0.8 — poison harder to mitigate
-global POLY_THREAT_POT = [0.0, 0.4, 0.0]      // bumped from 0.3 — slow but inevitable
+// V1.3 : pumped to 0.7 to make danger feel real even with concave sit_score.
+// At danger=2000 face to me (LIFE 1900) :
+//   threat = 1400, effective = 500, ratio = 0.26
+//   sit (concave) = 0.36 → I lose 64% of my value → AI refuses to engage at this risk.
+global POLY_THREAT_DANGER = [0.0, 0.7, 0.0]
+global POLY_THREAT_POISON = [0.0, 1.0, 0.0]   // poison value face-valued (1 HP per point)
+global POLY_THREAT_POT = [0.0, 0.4, 0.0]      // POT slow but cumulative
 
 // === Bonus globaux multiplicatifs (réutilisés) ===
 global POLY_BONUS_MP = [0.0, 0.033, 1.0]        // 1 + MP/30
