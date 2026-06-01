@@ -73,7 +73,9 @@ class FinalCell {
                 var value = info[2]
 
                 if (isAlly) {
-                    ally_cohesion += value * ScoringClass.solvePoly(POLY_POS_ALLY, dist)
+                    // POLY_FINAL_ALLY is the small value-weighted poly (peak ~0.10).
+                    // POLY_POS_ALLY (peak ~180) is for Scoring's unweighted per-pair use.
+                    ally_cohesion += value * ScoringClass.solvePoly(POLY_FINAL_ALLY, dist)
                 } else {
                     enemy_proximity += value * ScoringClass.solvePoly(POLY_FINAL_ENEMY_PROX, dist)
                 }

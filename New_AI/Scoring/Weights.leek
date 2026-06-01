@@ -83,10 +83,17 @@ global ITEM_VAL_TOTAL_DEBUFF_BASE = 50
 global ITEM_VAL_TOTAL_DEBUFF_PER_SCI = 0.0012
 global ITEM_VAL_TOTAL_DEBUFF_PER_RES = 0.002
 
-// === FinalCell enemy proximity (cherche à finir le tour proche des ennemis) ===
-// V1 hand-tuned: peak at dist ~10 (typical attack range).
-// Encourages engagement without sticking melee on glass cannons.
-global POLY_FINAL_ENEMY_PROX = [-0.003, 0.06, 0.2]   // peak at dist 10
+// === FinalCell positional polys (value-weighted, small magnitudes) ===
+// FinalCell sums `value × poly(dist)` per other entity. With entity values
+// ~80000, polys need to be in the 0.05-0.2 peak range to stay comparable
+// to myValue × sit_score (the main term).
+//
+// POLY_POS_ALLY (Scoring side) is per-pair and NOT value-weighted, so its
+// magnitudes (~180 peak) are way too big for FinalCell's value-weighted
+// use — at peak it gave 14M per pair, overwhelming everything.
+// Use these dedicated FinalCell polys instead.
+global POLY_FINAL_ALLY = [-0.003, 0.024, 0.05]      // peak at dist 4 ≈ 0.10  (value-weighted)
+global POLY_FINAL_ENEMY_PROX = [-0.003, 0.06, 0.2]  // peak at dist 10 ≈ 0.5 (value-weighted)
 
 // === Threats (raw danger → "effective HP loss" weight) ===
 // V1.3 : pumped to 0.7 to make danger feel real even with concave sit_score.
