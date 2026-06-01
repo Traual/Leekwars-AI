@@ -84,7 +84,8 @@ class EntityDangerClass { //TODO : Remove Libe From It To Avoid Losing Opés
 		var combinedMe = (MyStats.ABSOLUTE_SHIELD << 30) | (MyStats.RELATIVE_SHIELD << 15) | MyStats.COOLDOWNS[CHIP_ANTIDOTE]
 		hash_value = addValueToBinHash(hash_value, combinedMe)
 
-		var combinedEnemy = (EntityStats.TP << 45) | (EntityStats.STRENGTH << 30) | (EntityStats.MAGIC << 15) | EntityStats.POWER
+		// TOTAL_TP for cache stability — danger represents max next-turn potential.
+		var combinedEnemy = (EntityStats.TOTAL_TP << 45) | (EntityStats.STRENGTH << 30) | (EntityStats.MAGIC << 15) | EntityStats.POWER
 		hash_value = addValueToBinHash(hash_value, combinedEnemy)
 
 		return hash_value

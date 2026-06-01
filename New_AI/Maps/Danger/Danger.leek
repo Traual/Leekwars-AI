@@ -111,7 +111,7 @@ class DangerClass {
 			// each per-enemy walkcells lookup becomes a fight-wide cache hit keyed only by
 			// (cell, mp). The outer EVERY_ENEMIES_WALKABLES cache still narrows by base_hash
 			// because the SET of non-skipped enemies depends on cooldowns/life (state-bound).
-			EnemiesWalkCells[e] = WalkCellsClass.getMaxWalkOrJumpNoEntities(stat)
+			EnemiesWalkCells[e] = WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(stat)
 		}
 		EVERY_ENEMIES_WALKABLES[ThisHash] = EnemiesWalkCells
 		return EnemiesWalkCells
@@ -168,7 +168,9 @@ class DangerClass {
 			return COMBO_FROM_ITEM_AOE_CACHE[HashWithShield][0]
 		}
 		BenchOps.Start("Danger.comboCompute")
-		var BaseTp = CasterStats.TP
+		// Use TOTAL_TP : danger represents max single-turn damage potential next turn,
+		// not current-turn remaining TP. Stable across BFS steps (no chip-cast invalidation).
+		var BaseTp = CasterStats.TOTAL_TP
 		var BaseUses = CasterStats.USES
 		BenchOps.Start("Danger.comboBFS")
 		var _final = getBFSComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, BaseTp, clone(BaseUses))
@@ -262,7 +264,9 @@ class DangerClass {
 
 			if (stat.LIFE <= 0 || stat.SIDE == target_side) continue
 
-			var Hiscombined = (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.MP << 24) | (stat.TP << 12) | stat.POWER
+			// TOTAL_MP/TOTAL_TP : danger is "max next-turn potential", stable across BFS steps.
+			// Routine MP/TP consumption from my own plays doesn't invalidate this cache.
+			var Hiscombined = (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER
 			hash_value = addValueToBinHash(hash_value, Hiscombined)
 			hash_value = addValueToBinHash(hash_value, (e << 10) | stat.CELL)
 
@@ -292,7 +296,8 @@ class DangerClass {
 
 		// ——— Caster stats ———
 
-		var Hiscombined = (CasterStats.STRENGTH << 45) | (CasterStats.MAGIC << 30) | (CasterStats.TP << 15) | CasterStats.POWER
+		// TOTAL_TP : align with getStatsHashForDanger above — cache stable across BFS steps.
+		var Hiscombined = (CasterStats.STRENGTH << 45) | (CasterStats.MAGIC << 30) | (CasterStats.TOTAL_TP << 15) | CasterStats.POWER
 		hash_value = addValueToBinHash(hash_value, Hiscombined)
 
 		return hash_value
@@ -413,7 +418,8 @@ class DangerClass {
 		var EntityStartCell = EntityStats.CELL
 		// With NoEntities walkcells the result is fully determined by the entity's (cell, mp)
 		// — no more mapSize-as-proxy needed. (cell × 1024 | mp, mp fits in 10 bits easily.)
-		var TmpHash = (EntityStartCell << 10) | EntityStats.MP
+		// TOTAL_MP : same rationale — danger uses max-mobility walkcells which we feed in.
+		var TmpHash = (EntityStartCell << 10) | EntityStats.TOTAL_MP
 		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
 		BenchOps.Start("Danger.mapItemAoeCompute")
 		var _final = [: ]
