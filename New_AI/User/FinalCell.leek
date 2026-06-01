@@ -49,7 +49,7 @@ class FinalCell {
         debugC("--- Finding Best Final Cell ---", COLOR_BLUE)
 
         for (var cell: var mp in possibleCells) {
-            // === 1. sit_score equivalent (mirror of ScoringClass.getSitScore) ===
+            // === 1. sit_score (mirrors Scoring.getSitScore for self) ===
             var danger = DangerClass.get(cell, State, MyState, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
             var threat = ScoringClass.solvePoly(POLY_THREAT_DANGER, danger) +
                 ScoringClass.solvePoly(POLY_THREAT_POISON, MyState.POISON) +
@@ -58,33 +58,11 @@ class FinalCell {
             var ratio = effective_HP / MyState.TOTAL_LIFE
             var sit_score = max(0, ScoringClass.solvePoly(POLY_SIT_SCORE, ratio))
 
-            // === 2. Positional cohesion + engagement to enemies ===
-            // FinalCell is where my position MATTERS (turn-end). Unlike state-score
-            // during BFS where my cell is transient, here we balance :
-            //   - sit_score (low danger preferred)
-            //   - cohesion with my allies (POLY_POS_ALLY)
-            //   - proximity to enemies (POLY_FINAL_ENEMY_PROX)
-            var ally_cohesion = 0
-            var enemy_proximity = 0
+            // === 2. Positional (same polys as Scoring, but include me at this candidate cell) ===
+            var positional = ScoringClass.getPositionalFromCell(State, MySide, BaseHash, cell)
 
-            for (var info in entityInfos) {
-                var dist = CellClass.getDist(cell, info[0])
-                var isAlly = (info[1] == MySide)
-                var value = info[2]
-
-                if (isAlly) {
-                    // POLY_FINAL_ALLY is the small value-weighted poly (peak ~0.10).
-                    // POLY_POS_ALLY (peak ~180) is for Scoring's unweighted per-pair use.
-                    ally_cohesion += value * ScoringClass.solvePoly(POLY_FINAL_ALLY, dist)
-                } else {
-                    enemy_proximity += value * ScoringClass.solvePoly(POLY_FINAL_ENEMY_PROX, dist)
-                }
-            }
-
-            // === 3. Score Final ===
-            // myValue × sit_score = core survival/value term
-            // + cohesion + proximity = positional preferences (additive)
-            var score = myValue * sit_score + ally_cohesion + enemy_proximity
+            // === 3. Final score ===
+            var score = myValue * sit_score + positional
 
             if (score > bestScore) {
                 bestScore = score

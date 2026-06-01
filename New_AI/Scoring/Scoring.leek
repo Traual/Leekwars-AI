@@ -81,8 +81,8 @@ class ScoringClass {
             }
         }
 
-        // 4. Positional (cached on BaseHash)
-        _score += getPositionalOthers(State, MySide, BaseHash)
+        // 4. Positional (cached on BaseHash, excludes me — captures Δ from displacements)
+        _score += getPositional(State, MySide, BaseHash)
 
         // 5. My cooldown score (multi-turn potential, inline)
         _score += getMyCooldownScore(State[Me])
@@ -133,12 +133,15 @@ class ScoringClass {
     }
 
     /**
-     * Positional cohesion (allies among allies, enemies among enemies).
-     * Excludes ME entirely — my position effect on score is captured via danger.
-     * Cache key = BaseHash (which already excludes me) so my movement doesn't
-     * invalidate the cache; only relocations of others do.
+     * Positional cohesion of OTHER entities (excludes me).
+     * Used by Scoring during BFS : captures Δ when I displace others
+     * (Inversion / Grappin / Boxing-glove) ; ignores my own movement.
+     * Pairs of same-side entities (both non-me) :
+     *   - ally-ally  → +POLY_POS_ALLY(dist)
+     *   - enemy-enemy → -POLY_POS_ENEMY(dist)
+     * Cache key = BaseHash (which excludes me) so my walks don't invalidate.
      */
-    static getPositionalOthers(State, MySide, BaseHash) {
+    static getPositional(State, MySide, BaseHash) {
         if (BaseHash in POSITIONAL_CACHE) return POSITIONAL_CACHE[BaseHash]
 
         var ally_cohesion = 0
@@ -147,8 +150,7 @@ class ScoringClass {
         for (var e: var stat in State) {
             if (stat.LIFE <= 0 || e == Me) continue
             for (var e2: var stat2 in State) {
-                if (e2 <= e) continue
-                if (stat2.LIFE <= 0 || e2 == Me) continue
+                if (e2 <= e || stat2.LIFE <= 0 || e2 == Me) continue
                 if (stat.SIDE != stat2.SIDE) continue
                 var dist = CellClass.getDist(stat.CELL, stat2.CELL)
                 if (stat.SIDE == MySide) ally_cohesion += solvePoly(POLY_POS_ALLY, dist)
@@ -159,6 +161,28 @@ class ScoringClass {
         var result = ally_cohesion - enemy_cohesion
         POSITIONAL_CACHE[BaseHash] = result
         return result
+    }
+
+    /**
+     * Positional including me as a virtual entity at `myCell`.
+     * Used by FinalCell : score depends on which cell I end the turn on.
+     * Reuses getPositional (others-only part, cached on BaseHash) and adds
+     * the me-pairs contribution at myCell :
+     *   - me-ally  → +POLY_POS_ALLY(dist)   (cohesion with team)
+     *   - me-enemy → +POLY_POS_ENEMY(dist)  (engagement preference — same poly,
+     *                                        being at "engagement distance" valued)
+     * Same polys as Scoring — no duplicate tuning surface.
+     */
+    static getPositionalFromCell(State, MySide, BaseHash, myCell) {
+        var basePositional = getPositional(State, MySide, BaseHash)
+        var me_contribution = 0
+        for (var e: var stat in State) {
+            if (stat.LIFE <= 0 || e == Me) continue
+            var dist = CellClass.getDist(myCell, stat.CELL)
+            if (stat.SIDE == MySide) me_contribution += solvePoly(POLY_POS_ALLY, dist)
+            else                     me_contribution += solvePoly(POLY_POS_ENEMY, dist)
+        }
+        return basePositional + me_contribution
     }
 
     /**
