@@ -108,34 +108,12 @@ class WalkCellsClass {
 	// the entity's path, so over-modelling reachability is acceptable).
 	// ============================================================================
 
-	static getWalkNoEntities(stats) {
-		var key = (stats.CELL << 32) | stats.MP
-		if (key in WALKABLE_CACHE_NOENT) return WALKABLE_CACHE_NOENT[key]
-		var r = WalkableCells(stats.CELL, [], stats.MP)
-		WALKABLE_CACHE_NOENT[key] = r
-		return r
-	}
-
-	static getJumpNoEntities(stats) {
-		var key = (stats.CELL << 32) | stats.MP
-		if (key in JUMP_CACHE_NOENT) return JUMP_CACHE_NOENT[key]
-		var r = WalkableCellsWithJump(stats.CELL, [], stats.MP)
-		JUMP_CACHE_NOENT[key] = r
-		return r
-	}
-
-	static getMaxWalkOrJumpNoEntities(stats) {
-		BenchOps.Start("WalkCells")
-		var r = canJump(stats) ? getJumpNoEntities(stats) : getWalkNoEntities(stats)
-		BenchOps.Stop("WalkCells")
-		return r
-	}
-
 	// ============================================================================
-	// "Full" variants: use TOTAL_MP instead of current MP.
-	// Used by danger evaluation : enemy danger should reflect the threat the
-	// entity poses at full mobility next turn, not their current depleted MP.
-	// Stable across BFS steps (no MP-driven cache invalidation).
+	// "Full" variants : use TOTAL_MP instead of current MP.
+	// Used by danger evaluation : enemy danger reflects max-mobility next-turn
+	// threat, stable across BFS steps (no MP-driven cache invalidation).
+	// Only callers in the codebase use the *Full variants ; the current-MP
+	// versions were removed (unused after V1.3 danger refactor).
 	// ============================================================================
 
 	static getWalkNoEntitiesFull(stats) {
