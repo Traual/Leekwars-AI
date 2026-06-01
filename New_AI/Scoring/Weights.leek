@@ -1,110 +1,26 @@
 /**
- * Scoring Weights and Coefficients
- * These parameters are intended to be tuned or trained.
+ * Scoring Weights and Coefficients — V0 baseline for CMA-ES
+ *
+ * Everything is set to ZERO or game-mechanical default EXCEPT :
+ *   - Base-stat coefs (STR, MAG, AGI, RES, WIS, SCI) all = 1.0 (uniform)
+ *   - Threat polys (DANGER, POISON, POT) all = linear 1:1
+ *   - Sit_score = linear identity
+ *   - Distance-to-enemy = linear (combat actually happens)
+ *
+ * Every other tunable starts at zero. CMA-ES will discover everything else.
  **/
 
-// === Importance (per-entity intrinsic value) ===
-// V1.3 hand-tuned : per-stat reasoning based on top-build archetypes.
-// Magnitudes verified : top STR build (STR=600) ≈ 24000 STR-contrib + 7200 WIS-contrib + ...
-// Total importance ~70000-100000 per top-tier leek.
-global IMPORTANCE_COEF_STR = 0.4    // primary damage source (chips + weapons)
-global IMPORTANCE_COEF_MAG = 0.5    // poison + shackle, multi-turn bonus
-global IMPORTANCE_COEF_AGI = 0.3    // crit (via POLY_BONUS_CRIT) + DR — indirect
-global IMPORTANCE_COEF_WIS = 0.4    // heal scaling — conditional on wounded allies
-global IMPORTANCE_COEF_RES = 0.25   // V1.3 bump from 0.15 — tanks deserve credit
-global IMPORTANCE_COEF_SCI = 0.25   // utility buffs only — secondary
-// Bulbs / summons get a discount per stat point.
+// === Importance coefs (base stats) — uniform 1.0 ===
+global IMPORTANCE_COEF_STR = 1.0
+global IMPORTANCE_COEF_MAG = 1.0
+global IMPORTANCE_COEF_AGI = 1.0
+global IMPORTANCE_COEF_WIS = 1.0
+global IMPORTANCE_COEF_RES = 1.0
+global IMPORTANCE_COEF_SCI = 1.0
+// Bulbs slightly discounted — avoid silly summon spam during early training.
 global IMPORTANCE_STATIC_FACTOR = 0.3
 
-// === sit_score (situational survival, 0..1) ===
-// V1.3 : single moderate concave poly (no asymmetry).
-//   100%→1.0, 75%→0.84, 50%→0.625, 25%→0.34, 10%→0.155, 0%→0
-//   Δ 100→75% = -0.16 (lose some value but not catastrophic — vol_de_vie / heals possible)
-//   Δ 25→0%   = -0.34 (kill bonus = 2.1× the high-HP penalty → focus fire)
-//
-// Anti-suicide comes from POLY_THREAT_DANGER (bumped to 0.7) : danger drops
-// effective_HP fast, and at low ratio the concave curve drops fast too.
-global POLY_SIT_SCORE = [-0.5, 1.5, 0.0]
-
-// === Shield preemptive bonus (additive, encourages stocking shields) ===
-// V1.1 hand-tuned: bumped meaningful magnitude vs importance (~80000).
-// Previous 0.5 coef -> 100 abs shield = 50 bonus (negligible vs 80000) -> AI ignored shielding.
-// New: 100 abs shield = 300 bonus, 30% rel shield = 150 bonus. Still small but measurable.
-global POLY_SHIELD_PREEMPTIVE_ABS = [0.0, 3.0, 0.0]
-global POLY_SHIELD_PREEMPTIVE_REL = [0.0, 5.0, 0.0]
-
-// === Positional (team cohesion, computed inline/cached) ===
-// V1.3 : scaled up to be VISIBLE vs importance ~80000.
-// Old peak value ~0.9 → invisible vs entity scores. New peak ~180 per pair.
-// For a team of 4 (6 pairs grouped at dist 4) → +1080 max ally cohesion ≈ 1.4% importance.
-// Real, measurable but doesn't dominate kill decisions.
-global POLY_POS_ALLY = [-5.0, 40.0, 100.0]   // peak at dist 4 = 180, dist 0 = 100, dist 10 = 0, dist 15 = -125
-// Enemy cohesion : subtracts. We barely control enemy positions, so small magnitude.
-// Mostly a tiebreaker signal, not a decision driver.
-global POLY_POS_ENEMY = [-0.5, 4.0, 10.0]    // peak at dist 4 = 18, dist 0 = 10
-
-// === Damage Return (additive, signed) ===
-// Approximation : physical_ratio = STR_team / (STR_team + MAG_team).
-// Cap raisonnable pour éviter du renvoi absurde sur danger × DR très élevé.
-global MAX_DR_RETURN = 5000.0
-
-// === My cooldown score (multi-turn potential) ===
-// factor(cd) = 1 / max(1, cd) — simple hyperbolic decay :
-//   CD 0,1 → 1.0 (back next turn)
-//   CD 2 → 0.5
-//   CD 5 → 0.20
-//   CD 30+ → 0.03 (item effectively gone)
-// No poly needed, inline in getMyCooldownScore.
-
-// === ItemValuation : enemy-aware counter-item coefs ===
-// Shield damage reference (adaptive to enemy max STR)
-global ITEM_VAL_SHIELD_DMG_REF_BASE = 60         // base ref dmg/turn when no STR threat known
-global ITEM_VAL_SHIELD_DMG_REF_PER_STR = 0.3     // additional dmg-ref per enemy max STR
-
-// Antidote (counters poison — scales with enemy max MAG)
-global ITEM_VAL_ANTIDOTE_BASE = 60
-global ITEM_VAL_ANTIDOTE_PER_MAG = 0.8
-
-// Manumission / Remove Shackles (scales with enemy max MAG)
-global ITEM_VAL_MANUMISSION_BASE = 60
-global ITEM_VAL_MANUMISSION_PER_MAG = 0.8
-
-// Vulnerability / Absolute Vulnerability (scales with enemy max RES — anti-shield)
-global ITEM_VAL_VULN_BASE = 0.5                  // base multiplier on V × DUR
-global ITEM_VAL_VULN_PER_RES = 0.002             // per point of enemy max RES
-global ITEM_VAL_ABS_VULN_BASE = 0.6
-global ITEM_VAL_ABS_VULN_PER_RES = 0.002
-
-// Debuff / Total Debuff (anti-buff-stack : scales with total SCI + RES)
-global ITEM_VAL_DEBUFF_BASE = 30
-global ITEM_VAL_DEBUFF_PER_SCI = 0.0008
-global ITEM_VAL_DEBUFF_PER_RES = 0.0015
-global ITEM_VAL_TOTAL_DEBUFF_BASE = 50
-global ITEM_VAL_TOTAL_DEBUFF_PER_SCI = 0.0012
-global ITEM_VAL_TOTAL_DEBUFF_PER_RES = 0.002
-
-// FinalCell uses the unified ScoringClass.getPositional — no separate polys needed.
-// POLY_POS_ALLY and POLY_POS_ENEMY above are the single source of truth.
-
-// === Threats (raw danger → "effective HP loss" weight) ===
-// V1.3 : pumped to 0.7 to make danger feel real even with concave sit_score.
-// At danger=2000 face to me (LIFE 1900) :
-//   threat = 1400, effective = 500, ratio = 0.26
-//   sit (concave) = 0.36 → I lose 64% of my value → AI refuses to engage at this risk.
-global POLY_THREAT_DANGER = [0.0, 0.7, 0.0]
-global POLY_THREAT_POISON = [0.0, 1.0, 0.0]   // poison value face-valued (1 HP per point)
-global POLY_THREAT_POT = [0.0, 0.4, 0.0]      // POT slow but cumulative
-
-// === Bonus globaux multiplicatifs (réutilisés) ===
-global POLY_BONUS_MP = [0.0, 0.033, 1.0]        // 1 + MP/30
-global POLY_BONUS_CRIT = [0.0, 0.0014, 1.0]     // 1 + AGI × 0.0014
-global POLY_BONUS_LIFE = [0.0, 0.0001, 1.0]     // 1 + TOTAL_LIFE / 10000
-
-// === Power factors (réutilisés par EntityIndexes) ===
-global POLY_POWER_STRENGTH = [0.0, 0.01, 1.0]
-global POLY_POWER_MAGIC = [0.0, 0.0066, 1.0]
-
-// === Base stat polys (réutilisés par EntityIndexes) ===
+// === Base stat polys (used inside stat indexes) — linear identity ===
 global POLY_STRENGTH = [0.0, 1.0, 0.0]
 global POLY_WISDOM = [0.0, 1.0, 0.0]
 global POLY_AGILITY = [0.0, 1.0, 0.0]
@@ -112,33 +28,74 @@ global POLY_RESISTANCE = [0.0, 1.0, 0.0]
 global POLY_SCIENCE = [0.0, 1.0, 0.0]
 global POLY_MAGIC = [0.0, 1.0, 0.0]
 
-// === Legacy (gardés pour le moment, peuvent être supprimés une fois la migration validée) ===
-// Anciens coefs enemy-team-dependent — plus utilisés par le nouveau scoring.
-global POLY_COEF_STR = [0.0, 0.00025, 0.0]
-global POLY_COEF_WIS = [0.0, 0.0, 1.0]
-global POLY_COEF_AGI = [0.0, 0.0001, 1.0]
-global POLY_COEF_RES = [0.0, 0.0001, 0.0]
-global POLY_COEF_SCI = [0.0, 0.0, 1.0]
-global POLY_COEF_MAG = [0.0, 0.0, 1.0]
-// Anciens shield / DR (multiplicatifs) — remplacés par POLY_SHIELD_PREEMPTIVE_* additifs.
-global POLY_ABS_SHIELD_BASE = [0.0, 0.0002, 0.0]
-global POLY_REL_SHIELD_BASE = [0.0, 0.001, 0.0]
-global POLY_DAMAGE_RETURN = [0.0, 0.05, 0.0]
-global POLY_DAMAGE_RETURN_ACTIVE = [0.0, 0.05, 0.0]
-global POLY_DAMAGE_RETURN_DESPAIR = [0.0, 0.5, 0.0]
-// Ancien survival - remplacé par POLY_SIT_SCORE.
-global POLY_SURVIVAL = [0.001, 1, 0.5]
-// Anciens dist multipliers - remplacés par POLY_POS_*.
-global POLY_DIST_RELATION_ALLY = [-0.0052, 0.16, 0.8]
-global POLY_DIST_RELATION_ENEMY = [-0.0026, 0.08, 0.4]
-global POLY_DIST_FINAL = [0.0, 1.0, 0.0]
+// === Bonus polys (MP/CRIT/LIFE) and POWER scaling — game-mechanical defaults ===
+// These aren't "tunable" so much as "what the game does". Kept at their natural forms.
+global POLY_BONUS_MP = [0.0, 0.0333, 1.0]      // 1 + MP/30
+global POLY_BONUS_CRIT = [0.0, 0.0014, 1.0]    // 1 + AGI × 0.0014
+global POLY_BONUS_LIFE = [0.0, 0.0001, 1.0]    // 1 + LIFE/10000
+global POLY_POWER_STRENGTH = [0.0, 0.01, 1.0]  // 1 + POW/100
+global POLY_POWER_MAGIC = [0.0, 0.0066, 1.0]   // 1 + POW/150
 
-// === SCORING CONSTANTS (constantes additionnelles) ===
+// === sit_score : linear identity (ratio → ratio) ===
+global POLY_SIT_SCORE = [0.0, 1.0, 0.0]
+
+// === Threats : 1:1 (1 unit raw → 1 effective HP loss) ===
+global POLY_THREAT_DANGER = [0.0, 1.0, 0.0]
+global POLY_THREAT_POISON = [0.0, 1.0, 0.0]
+global POLY_THREAT_POT = [0.0, 1.0, 0.0]
+
+// === Positional — ZERO except combat nudge ===
+global POLY_POS_ALLY = [0.0, 0.0, 0.0]    // no ally cohesion (CMA-ES learns)
+global POLY_POS_ENEMY = [0.0, -1.0, 0.0]  // -dist : combat happens (closer to enemy = better)
+
+// === Shield preemptive — DISABLED ===
+global POLY_SHIELD_PREEMPTIVE_ABS = [0.0, 0.0, 0.0]
+global POLY_SHIELD_PREEMPTIVE_REL = [0.0, 0.0, 0.0]
+
+// === DR contribution — DISABLED ===
+global MAX_DR_RETURN = 0.0
+
+// === ItemValuation counter-items — ALL ZERO (CMA-ES will tune) ===
+global ITEM_VAL_SHIELD_DMG_REF_BASE = 0.0
+global ITEM_VAL_SHIELD_DMG_REF_PER_STR = 0.0
+global ITEM_VAL_ANTIDOTE_BASE = 0.0
+global ITEM_VAL_ANTIDOTE_PER_MAG = 0.0
+global ITEM_VAL_MANUMISSION_BASE = 0.0
+global ITEM_VAL_MANUMISSION_PER_MAG = 0.0
+global ITEM_VAL_VULN_BASE = 0.0
+global ITEM_VAL_VULN_PER_RES = 0.0
+global ITEM_VAL_ABS_VULN_BASE = 0.0
+global ITEM_VAL_ABS_VULN_PER_RES = 0.0
+global ITEM_VAL_DEBUFF_BASE = 0.0
+global ITEM_VAL_DEBUFF_PER_SCI = 0.0
+global ITEM_VAL_DEBUFF_PER_RES = 0.0
+global ITEM_VAL_TOTAL_DEBUFF_BASE = 0.0
+global ITEM_VAL_TOTAL_DEBUFF_PER_SCI = 0.0
+global ITEM_VAL_TOTAL_DEBUFF_PER_RES = 0.0
+
+// === Legacy (unused, kept zeroed for backward compat with old refs) ===
+global POLY_COEF_STR = [0.0, 0.0, 0.0]
+global POLY_COEF_WIS = [0.0, 0.0, 0.0]
+global POLY_COEF_AGI = [0.0, 0.0, 0.0]
+global POLY_COEF_RES = [0.0, 0.0, 0.0]
+global POLY_COEF_SCI = [0.0, 0.0, 0.0]
+global POLY_COEF_MAG = [0.0, 0.0, 0.0]
+global POLY_ABS_SHIELD_BASE = [0.0, 0.0, 0.0]
+global POLY_REL_SHIELD_BASE = [0.0, 0.0, 0.0]
+global POLY_DAMAGE_RETURN = [0.0, 0.0, 0.0]
+global POLY_DAMAGE_RETURN_ACTIVE = [0.0, 0.0, 0.0]
+global POLY_DAMAGE_RETURN_DESPAIR = [0.0, 0.0, 0.0]
+global POLY_SURVIVAL = [0.0, 0.0, 0.0]
+global POLY_DIST_RELATION_ALLY = [0.0, 0.0, 0.0]
+global POLY_DIST_RELATION_ENEMY = [0.0, 0.0, 0.0]
+global POLY_DIST_FINAL = [0.0, 0.0, 0.0]
+
+// === SCORING CONSTANTS ===
 global SCORE_DEFAULT_MULTIPLIER = 1.0
-global SCORE_SHIELD_DR_BASE = 1.0
+global SCORE_SHIELD_DR_BASE = 0.0
 global SCORE_STATIC_DIVISOR = 100.0
-global SCORE_DIST_MIN_VALUE = 0.1
-global SCORE_COEF_WISDOM = 1.0
-global SCORE_COEF_SCIENCE = 1.0
-global SCORE_COEF_MAGIC = 1.0
+global SCORE_DIST_MIN_VALUE = 0.0
+global SCORE_COEF_WISDOM = 0.0
+global SCORE_COEF_SCIENCE = 0.0
+global SCORE_COEF_MAGIC = 0.0
 global SCORE_SURVIVAL_MIN_VALUE = 0.0
