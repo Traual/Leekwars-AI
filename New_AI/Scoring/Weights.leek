@@ -29,7 +29,7 @@ global POLY_SCIENCE = [0.0, 1.0, 0.0]
 global POLY_MAGIC = [0.0, 1.0, 0.0]
 
 // === Bonus polys (MP/CRIT/LIFE) and POWER scaling — game-mechanical defaults ===
-// These aren't "tunable" so much as "what the game does". Kept at their natural forms.
+// These aren't really "tunable" — they mirror the engine's natural scaling.
 global POLY_BONUS_MP = [0.0, 0.0333, 1.0]      // 1 + MP/30
 global POLY_BONUS_CRIT = [0.0, 0.0014, 1.0]    // 1 + AGI × 0.0014
 global POLY_BONUS_LIFE = [0.0, 0.0001, 1.0]    // 1 + LIFE/10000
@@ -72,30 +72,3 @@ global ITEM_VAL_DEBUFF_PER_RES = 0.0
 global ITEM_VAL_TOTAL_DEBUFF_BASE = 0.0
 global ITEM_VAL_TOTAL_DEBUFF_PER_SCI = 0.0
 global ITEM_VAL_TOTAL_DEBUFF_PER_RES = 0.0
-
-// === Legacy (unused, kept zeroed for backward compat with old refs) ===
-global POLY_COEF_STR = [0.0, 0.0, 0.0]
-global POLY_COEF_WIS = [0.0, 0.0, 0.0]
-global POLY_COEF_AGI = [0.0, 0.0, 0.0]
-global POLY_COEF_RES = [0.0, 0.0, 0.0]
-global POLY_COEF_SCI = [0.0, 0.0, 0.0]
-global POLY_COEF_MAG = [0.0, 0.0, 0.0]
-global POLY_ABS_SHIELD_BASE = [0.0, 0.0, 0.0]
-global POLY_REL_SHIELD_BASE = [0.0, 0.0, 0.0]
-global POLY_DAMAGE_RETURN = [0.0, 0.0, 0.0]
-global POLY_DAMAGE_RETURN_ACTIVE = [0.0, 0.0, 0.0]
-global POLY_DAMAGE_RETURN_DESPAIR = [0.0, 0.0, 0.0]
-global POLY_SURVIVAL = [0.0, 0.0, 0.0]
-global POLY_DIST_RELATION_ALLY = [0.0, 0.0, 0.0]
-global POLY_DIST_RELATION_ENEMY = [0.0, 0.0, 0.0]
-global POLY_DIST_FINAL = [0.0, 0.0, 0.0]
-
-// === SCORING CONSTANTS ===
-global SCORE_DEFAULT_MULTIPLIER = 1.0
-global SCORE_SHIELD_DR_BASE = 0.0
-global SCORE_STATIC_DIVISOR = 100.0
-global SCORE_DIST_MIN_VALUE = 0.0
-global SCORE_COEF_WISDOM = 0.0
-global SCORE_COEF_SCIENCE = 0.0
-global SCORE_COEF_MAGIC = 0.0
-global SCORE_SURVIVAL_MIN_VALUE = 0.0
