@@ -43,7 +43,10 @@ class ScoringClass {
             var h = OFFSET_BASIS
             for (var e: var stat in State) {
                 if (stat.LIFE <= 0 || stat.SIDE == side) continue
-                var Hiscombined = (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.MP << 24) | (stat.TP << 12) | stat.POWER
+                // TOTAL_MP/TOTAL_TP : align with Danger.leek getStatsHashForDanger — the danger
+                // computation uses max next-turn potential, so keying on current MP/TP only
+                // caused spurious cache invalidations every time an enemy spent TP/MP.
+                var Hiscombined = (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER
                 h = addValueToBinHash(h, Hiscombined)
                 h = addValueToBinHash(h, (e << 10) | stat.CELL)
             }
