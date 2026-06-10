@@ -49,14 +49,11 @@ class FinalCell {
         debugC("--- Finding Best Final Cell ---", COLOR_BLUE)
 
         for (var cell: var mp in possibleCells) {
-            // === 1. sit_score (mirrors Scoring.getSitScore for self) ===
+            // === 1. sit_score — SAME function as Scoring (single tuning surface).
+            // Was a formula-identical inline before : any change to getSitScore's body
+            // silently desynchronised the end-of-turn cell choice from the scorer.
             var danger = DangerClass.get(cell, State, MyState, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
-            var threat = ScoringClass.solvePoly(POLY_THREAT_DANGER, danger) +
-                ScoringClass.solvePoly(POLY_THREAT_POISON, MyState.POISON) +
-                ScoringClass.solvePoly(POLY_THREAT_POT, MyState.POISON_OVER_TIME)
-            var effective_HP = max(0, MyState.LIFE - threat)
-            var ratio = effective_HP / MyState.TOTAL_LIFE
-            var sit_score = max(0, ScoringClass.solvePoly(POLY_SIT_SCORE, ratio))
+            var sit_score = ScoringClass.getSitScore(MyState, danger)
 
             // === 2. Positional (same polys as Scoring, but include me at this candidate cell) ===
             var positional = ScoringClass.getPositionalFromCell(State, MySide, BaseHash, cell)

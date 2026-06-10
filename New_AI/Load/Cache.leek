@@ -53,6 +53,16 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     // leaves `EnemyWalkCells[Caster]` null for casters that were skipped
     // previously but are live now -> crash in getMapCellItemAoe.
     EVERY_ENEMIES_WALKABLES = [: ]
+
+    // Must be reset each turn: getItemsList keys by ID only and filters
+    // cooldown > 1 at compute time — an item on cooldown at first evaluation
+    // would otherwise stay excluded for the WHOLE fight even once available
+    // again (danger underestimated -> walking into lethal range). The sorted
+    // damage lists in DANGER_ENTITY_CACHE are built FROM that items list and
+    // their key (stats + target shields) carries no cooldown info, so both
+    // must be refreshed together for the new list to propagate.
+    DANGER_ENTITY_INVENTORY = [: ]
+    DANGER_ENTITY_CACHE = [: ]
 }
 
 // STATE
