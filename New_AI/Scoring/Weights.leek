@@ -24,6 +24,9 @@ global COEF_POT = 0.2
 // value(e) = eHP(e) − DANGER_WEIGHT·danger_in(e).   NOT clamped. Same weight on both
 // sides. `danger` is a MAX-potential estimate (pessimistic — enemies can't focus
 // everyone at once), so keep it below 1. Set to 0 to disable the layer (back to L2).
-// Applied to enemies too, so my ALLIES' output onto an enemy lowers its value (focus
-// coordination); this can mildly pre-credit kills my allies haven't actually made.
+// On enemies, danger_in is my ALLIES' output onto them — MY own output is excluded
+// from danger (toSkipMap[Me]), it's applied by the search instead. So it acts as a
+// focus-coordination / overkill discount, NOT a kill pre-credit: with weight < 1 an
+// enemy never reads as fully dead from danger alone, so finishing a kill stays
+// positively rewarded (eHP − weight·danger ≥ (1−weight)·eHP > 0).
 global DANGER_WEIGHT = 0.7
