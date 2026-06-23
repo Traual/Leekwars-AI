@@ -20,6 +20,18 @@ global MY_INVENTORY_ON_VOID// = Actions.getInventoryOnVoid(BASE_INVENTORY)
 global MY_INVENTORY_SUMMON// = Actions.getInventorySummon(BASE_INVENTORY)
 global MY_INVENTORY_ON_EVERYONE// = Actions.getInventoryOnEveryOne(BASE_INVENTORY)
 
+// Offensive ("mean") bulbs : summoned NEAR enemies (cell minimizing avg dist to
+// enemies) in Actions.getSummonAction. Any summon NOT in this list (gentle bulbs
+// / resurrect) is placed NEAR allies instead.
+global MeanBulbs = [
+	CHIP_ROCKY_BULB,
+	CHIP_ICED_BULB,
+	CHIP_FIRE_BULB,
+	CHIP_WIZARD_BULB,
+	CHIP_TACTICIAN_BULB,
+	CHIP_LIGHTNING_BULB
+]
+
 // Cheapest item TP cost across my inventory (used to short-circuit expansion when TP is too low).
 global MINIMUM_COST_ITEM
 
