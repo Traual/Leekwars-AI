@@ -2,11 +2,13 @@
  * Scoring v3 — full rewrite. ONE currency: HP. Readable, hand-tunable.
  *
  * The state score is built up LAYER BY LAYER. This file currently implements
- * ONLY layer 1 (sum of life). The remaining layers are the agreed plan, kept
- * here as a roadmap (NOT yet active) :
+ * layers 1–2 (effective life = life minus locked poison). The remaining layers
+ * are the agreed plan, kept here as a roadmap (NOT yet active) :
  *
  *   1. [ACTIVE] material   : Σ sign·LIFE                      (raw life differential)
- *   2. eHP                 : fold shields (LIFE+ABS·h)/(1−REL/100) − POISON − POT
+ *   2. [ACTIVE] eHP        : LIFE − COEF_POISON·POISON − COEF_POT·POISON_OVER_TIME
+ *                            (shields are NOT folded here — they are already inside
+ *                             `danger`; their value enters via layer 3, no double-count)
  *   3. exposure            : − k · danger_in(e)               (separate term, NOT clamped;
  *                                                              my side first to avoid enemy pre-credit)
  *   4. support             : + κ · support(e)                 (heal/shield/buff potential,
@@ -24,7 +26,7 @@ include("../includes.leek")
 class ScoringClass {
 
     /**
-     * Layer 1 — pure life differential : score = Σ sign·LIFE.
+     * Layers 1–2 — signed effective-life differential : score = Σ sign·eHP.
      * `BaseHash` is kept in the signature for BFS compatibility (unused for now,
      * will be needed once danger / positional layers come back).
      */
@@ -34,10 +36,24 @@ class ScoringClass {
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            _score += sign * stat.LIFE
+            _score += sign * eHP(stat)
         }
         BenchOps.Stop("Scoring")
         return _score
+    }
+
+    /**
+     * Effective HP (layer 2). Life minus LOCKED poison — true damage already owed
+     * (it bypasses shields/resistance and will tick regardless of what happens) :
+     *   eHP = LIFE − COEF_POISON·POISON − COEF_POT·POISON_OVER_TIME
+     * Shields (ABS/REL) are deliberately NOT folded in: they are already modelled
+     * inside `danger` (post-shield), so their value enters via layer 3 — folding
+     * them here too would double-count. NOT clamped: an entity whose locked poison
+     * exceeds its life reads as "more than dead", a useful gradient.
+     * COEF_* are tunable in Scoring/Weights.leek.
+     */
+    static eHP(stat) {
+        return stat.LIFE - COEF_POISON * stat.POISON - COEF_POT * stat.POISON_OVER_TIME
     }
 
     /**

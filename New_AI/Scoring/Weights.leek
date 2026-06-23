@@ -1,0 +1,21 @@
+/**
+ * Scoring weights & coefficients (HP-equivalent scoring).
+ *
+ * Every tunable scalar used by getStateScore lives here, so the numbers can be
+ * swept (by hand or CMA-ES later) WITHOUT touching the scoring logic. All values
+ * are in HP-equivalent units, so they are readable / sanity-checkable by hand.
+ **/
+
+include("../includes.leek")
+
+// === Layer 2 — eHP : locked poison (TRUE damage, bypasses shields) ===
+// eHP = LIFE − COEF_POISON·POISON − COEF_POT·POISON_OVER_TIME
+//   POISON            = next-turn poison tick (net of heal), already locked on the entity
+//   POISON_OVER_TIME  = total remaining poison over all future ticks
+// Discounted (< 1) because locked poison may be cured (antidote), the victim may
+// die first, or the fight may end before it all ticks. POT is discounted more than
+// the imminent tick (further in the future / more uncertain).
+// TODO (once cooldowns are modelled): scale these by the victim's ANTIDOTE cooldown —
+// a low antidote CD means the poison is likely cured soon → lower effective coef.
+global COEF_POISON = 0.5
+global COEF_POT = 0.2
