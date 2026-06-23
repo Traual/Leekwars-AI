@@ -9,8 +9,6 @@ class Preload {
         InitItemInfo()
 		InitCellClass()
 		InitStateClass()
-		// ITEM_VALUE table is filled per turn by ItemValuation.refreshAll() in Main.leek
-		// (per-leek refs + enemy-aware counter-items, requires Me/State to be known).
     }
 
     static InitItemInfo() {

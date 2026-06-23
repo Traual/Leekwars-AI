@@ -10,10 +10,6 @@ include("includes.leek")
 if (getTurn() == 1) Preload.InitEverything()
 ReloadCacheNewTurn()
 Preload.InitStateClass()
-// Refresh ITEM_VALUE table : per-leek refs (my stats) + enemy-aware counter-item boosting.
-// Computed once per turn (enemy roster doesn't change mid-turn).
-var __initState = StateClass.Virtualize()
-ItemValuation.refreshAll(__initState[Me], __initState)
 BenchOps.Reset()
 new Play()
 BenchOps.Dump()

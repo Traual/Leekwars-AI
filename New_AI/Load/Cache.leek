@@ -15,32 +15,6 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     ENTITY_DANGER_CACHE_FOR_ME = [: ]
     AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
-    TEAM_INDEXES_CACHE = [: ]
-    DIST_MULTIPLIER_CACHE = [: ]
-    SURVIVAL_MULTIPLIER_CACHE = [: ]
-    RESURRECTION_SCORE_CACHE = [: ]
-    ENTITY_INDEXES_CACHE = [: ]
-    ENTITY_INTRINSIC_SCORE_CACHE = [: ]
-    ENTITY_ULTIMATE_SCORE_CACHE = [: ]
-    // New scoring v2 caches (reset each turn — depend on per-turn state)
-    SIT_SCORE_CACHE = [: ]
-    POSITIONAL_CACHE = [: ]
-    // IMPORTANCE_CACHE NOT reset: invariant per entity for the whole fight
-    ENTITY_STR_INDEX_CACHE = [: ]
-    ENTITY_WIS_INDEX_CACHE = [: ]
-    ENTITY_AGI_INDEX_CACHE = [: ]
-    ENTITY_RES_INDEX_CACHE = [: ]
-    ENTITY_SCI_INDEX_CACHE = [: ]
-    ENTITY_MAG_INDEX_CACHE = [: ]
-
-    // Max TP usable caches
-    MAX_TP_STR_CACHE = [: ]
-    MAX_TP_WIS_CACHE = [: ]
-    MAX_TP_AGI_CACHE = [: ]
-    MAX_TP_RES_CACHE = [: ]
-    MAX_TP_SCI_CACHE = [: ]
-    MAX_TP_MAG_CACHE = [: ]
-
     ENTITY_ACTIONS_CACHE = [: ]
     ACTIONS_ON_ME_CACHE = [: ]
     ACTIONS_SUMMON_CACHE = [: ]
@@ -171,34 +145,10 @@ global ACTIONS_ON_VOID_CACHE = [: ] //Actions on void for positive effects (glai
 global COEFFED_MAP_ENTITY_CACHE = [: ]
 global HASHED_MAP_ITEM_CACHE = [: ]
 
-//For Scoring :
+// For ally/enemy average distance (used by Actions.leek for bulb placement)
 
 global AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
 global AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
-global TEAM_INDEXES_CACHE = [: ]
-global DIST_MULTIPLIER_CACHE = [: ]
-global SURVIVAL_MULTIPLIER_CACHE = [: ]
-global RESURRECTION_SCORE_CACHE = [: ]
-global ENTITY_INDEXES_CACHE = [: ]
-global ENTITY_INTRINSIC_SCORE_CACHE = [: ]
-global ENTITY_ULTIMATE_SCORE_CACHE = [: ]
-// New scoring v2 caches
-global IMPORTANCE_CACHE = [: ]   // persistent across turns (importance is fight-invariant per entity)
-global SIT_SCORE_CACHE = [: ]    // reset each turn (depends on per-turn LIFE/POISON/danger)
-global POSITIONAL_CACHE = [: ]   // reset each turn (depends on BaseHash which is state-bound)
-global ITEM_VALUE = [: ]         // precomputed at Preload, never reset
-global ENTITY_STR_INDEX_CACHE = [: ]
-global ENTITY_WIS_INDEX_CACHE = [: ]
-global ENTITY_AGI_INDEX_CACHE = [: ]
-global ENTITY_RES_INDEX_CACHE = [: ]
-global ENTITY_SCI_INDEX_CACHE = [: ]
-global ENTITY_MAG_INDEX_CACHE = [: ]
-global MAX_TP_STR_CACHE = [: ]
-global MAX_TP_WIS_CACHE = [: ]
-global MAX_TP_AGI_CACHE = [: ]
-global MAX_TP_RES_CACHE = [: ]
-global MAX_TP_SCI_CACHE = [: ]
-global MAX_TP_MAG_CACHE = [: ]
 
 // ============================================================================
 // WalkCells (packed-couple bitmap BFS — see Maps/WalkCells/Class.leek)

@@ -1,250 +1,53 @@
 /**
- * Scoring v2 — hybrid: heavy precompute + tiny per-state scorer.
+ * Scoring v3 — full rewrite. ONE currency: HP. Readable, hand-tunable.
  *
- * Architecture :
- *   score(state) =
- *       Σ alive entities  sign × importance(stats) × sit_score(stat, danger)
- *     + Σ alive entities  sign × shield_preemptive(stat)
- *     + Σ alive entities  sign × dr_contribution(stat, danger, team_ratio)
- *     + positional_others(state, BaseHash)   // cached, excludes me
- *     + my_cooldown_score(MyStats)           // me only
+ * The state score is built up LAYER BY LAYER. This file currently implements
+ * ONLY layer 1 (sum of life). The remaining layers are the agreed plan, kept
+ * here as a roadmap (NOT yet active) :
  *
- *  - importance      : cached for the fight (key = ID). NN-ready.
- *  - sit_score       : concave on effective_HP / TOTAL_LIFE, cached per-state.
- *  - shield_preempt  : small additive bonus (encourages stocking shields).
- *  - dr_contribution : approximation via STR/MAG team ratio (no danger split).
- *  - positional      : cached on BaseHash (which already excludes me).
- *  - my_cd_score     : penalty for burning high-CD items (multi-turn potential).
+ *   1. [ACTIVE] material   : Σ sign·LIFE                      (raw life differential)
+ *   2. eHP                 : fold shields (LIFE+ABS·h)/(1−REL/100) − POISON − POT
+ *   3. exposure            : − k · danger_in(e)               (separate term, NOT clamped;
+ *                                                              my side first to avoid enemy pre-credit)
+ *   4. support             : + κ · support(e)                 (heal/shield/buff potential,
+ *                                                              via the effect→HP valuation)
+ *   5. focus-fire          : concave g() on the per-entity standing
+ *   6. positioning/cover   : reuse already-warmed getLos / getCircleWithLos
+ *   7. tiebreak (turn 64)  : + W64 · (Σ ally LIFE − Σ enemy LIFE)
+ *
+ * sign(e) = +1 my side, −1 enemy. Dead entities (LIFE ≤ 0) contribute 0
+ * (a kill is therefore a free discontinuity: the term simply disappears).
  **/
 
 include("../includes.leek")
 
-global MeanBulbs = [
-    CHIP_ROCKY_BULB,
-    CHIP_ICED_BULB,
-    CHIP_FIRE_BULB,
-    CHIP_WIZARD_BULB,
-    CHIP_TACTICIAN_BULB,
-    CHIP_LIGHTNING_BULB
-]
-
 class ScoringClass {
 
+    /**
+     * Layer 1 — pure life differential : score = Σ sign·LIFE.
+     * `BaseHash` is kept in the signature for BFS compatibility (unused for now,
+     * will be needed once danger / positional layers come back).
+     */
     static getStateScore(State, MySide, BaseHash) {
         BenchOps.Start("Scoring")
-
-        // Pré-calcul des contextes ennemi (pour les hashes danger).
-        var enemyContextsBySide = [:]
-        var allSides = [:]
-        for (var e: var s in State)
-            if (s.LIFE > 0) allSides[s.SIDE] = true
-
-        for (var side: var _ in allSides) {
-            var h = OFFSET_BASIS
-            for (var e: var stat in State) {
-                if (stat.LIFE <= 0 || stat.SIDE == side) continue
-                // TOTAL_MP/TOTAL_TP : align with Danger.leek getStatsHashForDanger — the danger
-                // computation uses max next-turn potential, so keying on current MP/TP only
-                // caused spurious cache invalidations every time an enemy spent TP/MP.
-                var Hiscombined = (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER
-                h = addValueToBinHash(h, Hiscombined)
-                h = addValueToBinHash(h, (e << 10) | stat.CELL)
-            }
-            enemyContextsBySide[side] = h
-        }
-
         var _score = 0
-
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            var enemyContext = enemyContextsBySide[stat.SIDE]
-
-            // Danger (scalaire, on l'utilisera × ratio pour le DR)
-            var shieldCombined = (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE]
-            var thisStatsHashForDanger = addValueToBinHash(enemyContext, shieldCombined)
-            var danger = DangerClass.getEntityDanger(stat, State, e, BaseHash, thisStatsHashForDanger)
-
-            // 1. Core : importance × sit_score (single moderate concave for both sides)
-            var imp = Importance.get(stat)
-            var sit = getSitScore(stat, danger)
-            _score += sign * imp * sit
-
-            // 2. Shield preemptive (additif, indépendant du danger)
-            _score += sign * getShieldPreemptive(stat)
-
-            // 3. DR contribution (approximation via STR/MAG ratio)
-            if (stat.DAMAGE_RETURN > 0) {
-                var team = EnemiesTeamIndexes.getWithCache(State, stat)
-                var sumSM = team.STRENGTH + team.MAGIC
-                var phys_ratio = (sumSM > 0) ? (team.STRENGTH / sumSM) : 1.0
-                var physical_danger = danger * phys_ratio
-                var returned = min(physical_danger * stat.DAMAGE_RETURN / 100, MAX_DR_RETURN)
-                _score += sign * returned
-            }
+            _score += sign * stat.LIFE
         }
-
-        // 4. Positional (cached on BaseHash, excludes me — captures Δ from displacements)
-        _score += getPositional(State, MySide, BaseHash)
-
-        // 5. My cooldown score (multi-turn potential, inline)
-        _score += getMyCooldownScore(State[Me])
-
         BenchOps.Stop("Scoring")
         return _score
     }
 
     /**
-     * sit_score = concave_poly(effective_HP / TOTAL_LIFE).
-     *
-     * effective_HP = LIFE − weighted_threats. No shield absorption modelled here
-     * because shields already reduce `danger` upstream (danger module sees current
-     * shields and computes lower expected damage). The "preemptive shield" bonus is
-     * additive elsewhere.
-     *
-     * Single moderate concave curve [-0.5, 1.5, 0] works for both sides :
-     * gentle penalty at high HP (heal/vol_de_vie recover later), steep at the kill
-     * (focus-fire weakened enemies). Anti-suicide comes from POLY_THREAT_DANGER.
-     */
-    static getSitScore(stat, danger) {
-        var combined1 = (danger << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE
-        var combined2 = (stat.POISON << 16) | stat.POISON_OVER_TIME
-        var key = addValueToBinHash(addValueToBinHash(OFFSET_BASIS, combined1), combined2)
-
-        if (key in SIT_SCORE_CACHE) return SIT_SCORE_CACHE[key]
-
-        var threat = solvePoly(POLY_THREAT_DANGER, danger)
-                   + solvePoly(POLY_THREAT_POISON, stat.POISON)
-                   + solvePoly(POLY_THREAT_POT, stat.POISON_OVER_TIME)
-
-        var effective_HP = max(0, stat.LIFE - threat)
-        var ratio = effective_HP / stat.TOTAL_LIFE
-        var result = max(0, solvePoly(POLY_SIT_SCORE, ratio))
-
-        SIT_SCORE_CACHE[key] = result
-        return result
-    }
-
-    /**
-     * Preemptive shield bonus: small additive value for holding shields,
-     * independent of current danger. Reasoning: shielding before engagement
-     * saves a future TP spend on shielding chips.
-     */
-    static getShieldPreemptive(stat) {
-        return solvePoly(POLY_SHIELD_PREEMPTIVE_ABS, stat.ABSOLUTE_SHIELD)
-             + solvePoly(POLY_SHIELD_PREEMPTIVE_REL, stat.RELATIVE_SHIELD)
-    }
-
-    /**
-     * Positional cohesion of OTHER entities (excludes me).
-     * Used by Scoring during BFS : captures Δ when I displace others
-     * (Inversion / Grappin / Boxing-glove) ; ignores my own movement.
-     * Pairs of same-side entities (both non-me) :
-     *   - ally-ally  → +POLY_POS_ALLY(dist)
-     *   - enemy-enemy → -POLY_POS_ENEMY(dist)
-     * Cache key = BaseHash (which excludes me) so my walks don't invalidate.
-     */
-    static getPositional(State, MySide, BaseHash) {
-        if (BaseHash in POSITIONAL_CACHE) return POSITIONAL_CACHE[BaseHash]
-
-        var ally_cohesion = 0
-        var enemy_cohesion = 0
-
-        for (var e: var stat in State) {
-            if (stat.LIFE <= 0 || e == Me) continue
-            for (var e2: var stat2 in State) {
-                if (e2 <= e || stat2.LIFE <= 0 || e2 == Me) continue
-                if (stat.SIDE != stat2.SIDE) continue
-                var dist = CellClass.getDist(stat.CELL, stat2.CELL)
-                if (stat.SIDE == MySide) ally_cohesion += solvePoly(POLY_POS_ALLY, dist)
-                else                     enemy_cohesion += solvePoly(POLY_POS_ENEMY, dist)
-            }
-        }
-
-        var result = ally_cohesion - enemy_cohesion
-        POSITIONAL_CACHE[BaseHash] = result
-        return result
-    }
-
-    /**
-     * Positional including me as a virtual entity at `myCell`.
-     * Used by FinalCell : score depends on which cell I end the turn on.
-     * Reuses getPositional (others-only part, cached on BaseHash) and adds
-     * the me-pairs contribution at myCell :
-     *   - me-ally  → +POLY_POS_ALLY(dist)   (cohesion with team)
-     *   - me-enemy → +POLY_POS_ENEMY(dist)  (engagement preference — same poly,
-     *                                        being at "engagement distance" valued)
-     * Same polys as Scoring — no duplicate tuning surface.
-     */
-    static getPositionalFromCell(State, MySide, BaseHash, myCell) {
-        var basePositional = getPositional(State, MySide, BaseHash)
-        var me_contribution = 0
-        for (var e: var stat in State) {
-            if (stat.LIFE <= 0 || e == Me) continue
-            var dist = CellClass.getDist(myCell, stat.CELL)
-            if (stat.SIDE == MySide) me_contribution += solvePoly(POLY_POS_ALLY, dist)
-            else                     me_contribution += solvePoly(POLY_POS_ENEMY, dist)
-        }
-        return basePositional + me_contribution
-    }
-
-    /**
-     * Multi-turn potential of my items. High-CD premium items contribute heavily;
-     * playing them drops the score by their item-value. The BFS only chains a
-     * premium item if the immediate gain elsewhere exceeds the lost potential.
-     *
-     * No USES check (USES reset each turn; we measure cross-turn reserves).
-     */
-    static getMyCooldownScore(MyStats) {
-        var score = 0
-        for (var itemId in BASE_INVENTORY) {
-            var cd = MyStats.COOLDOWNS[itemId]
-            // factor = 1 / max(1, cd) : CD 0/1 → 1.0 (back next turn), CD 2 → 0.5, CD 5 → 0.20, CD 65 → 0.015
-            var cd_factor = 1.0 / max(1, cd)
-            score += ITEM_VALUE[itemId] * cd_factor
-        }
-        return score
-    }
-
-    /**
-     * Resurrection score : kept for Modifier/Resurrection.leek.
-     * Computes the intrinsic value an entity would have if it were resurrected
-     * (half max life, half life, no buffs, no shields).
+     * Value used by Modifier/Resurrection.leek to rank WHICH dead ally to revive.
+     * A resurrected entity comes back at TOTAL_LIFE/4 of life (Resurrection.Update
+     * halves TOTAL_LIFE, then sets LIFE to half of that), so the life the team
+     * regains is exactly that. Monotone in TOTAL_LIFE → revive the biggest leek first.
+     * Consistent with the HP-only scoring (the score gains this much life).
      */
     static getResurrectionScore(entity_state, State) {
-        var ThisHash = entity_state.ID
-        if (ThisHash in RESURRECTION_SCORE_CACHE) return RESURRECTION_SCORE_CACHE[ThisHash]
-
-        var v_stat = clone(entity_state, 3)
-        var v_State = clone(State, 4)
-        v_State[v_stat.ID] = v_stat
-
-        v_stat.TOTAL_LIFE /= 2
-        v_stat.LIFE = v_stat.TOTAL_LIFE / 2
-        v_stat.POISON_OVER_TIME = 0
-        v_stat.JUST_POISON = 0
-        v_stat.POISON = 0
-        v_stat.JUST_POISON_OVER_TIME = 0
-        v_stat.TP = v_stat.TOTAL_TP
-        v_stat.MP = v_stat.TOTAL_MP
-        v_stat.ABSOLUTE_SHIELD = 0
-        v_stat.RELATIVE_SHIELD = 0
-        v_stat.DAMAGE_RETURN = 0
-
-        var result = Importance.compute(v_stat)
-        RESURRECTION_SCORE_CACHE[ThisHash] = result
-        return result
-    }
-
-    /**
-     * Compatibility shim: getEntityIntrinsicScore was used elsewhere (notably FinalCell).
-     * Now redirects to Importance.get for consistency.
-     */
-    static getEntityIntrinsicScore(EntityStats, State) {
-        return Importance.get(EntityStats)
-    }
-
-    static solvePoly(poly, x) {
-        return poly[0] * x * x + poly[1] * x + poly[2]
+        return entity_state.TOTAL_LIFE / 4
     }
 }
