@@ -2,15 +2,16 @@
  * Scoring v3 — full rewrite. ONE currency: HP. Readable, hand-tunable.
  *
  * The state score is built up LAYER BY LAYER. This file currently implements
- * layers 1–2 (effective life = life minus locked poison). The remaining layers
- * are the agreed plan, kept here as a roadmap (NOT yet active) :
+ * layers 1–3 (effective life minus locked poison, minus incoming danger). The
+ * remaining layers are the agreed plan, kept here as a roadmap (NOT yet active) :
  *
  *   1. [ACTIVE] material   : Σ sign·LIFE                      (raw life differential)
  *   2. [ACTIVE] eHP        : LIFE − COEF_POISON·POISON − COEF_POT·POISON_OVER_TIME
  *                            (shields are NOT folded here — they are already inside
  *                             `danger`; their value enters via layer 3, no double-count)
- *   3. exposure            : − k · danger_in(e)               (separate term, NOT clamped;
- *                                                              my side first to avoid enemy pre-credit)
+ *   3. [ACTIVE] exposure   : − DANGER_WEIGHT·danger_in(e)     (separate term, NOT clamped;
+ *                            single weight both sides. Shields regain value here, via
+ *                            the post-shield danger.)
  *   4. support             : + κ · support(e)                 (heal/shield/buff potential,
  *                                                              via the effect→HP valuation)
  *   5. focus-fire          : concave g() on the per-entity standing
@@ -26,9 +27,10 @@ include("../includes.leek")
 class ScoringClass {
 
     /**
-     * Layers 1–2 — signed effective-life differential : score = Σ sign·eHP.
-     * `BaseHash` is kept in the signature for BFS compatibility (unused for now,
-     * will be needed once danger / positional layers come back).
+     * Layers 1–3 — signed (effective-life − exposure) differential :
+     *   score = Σ sign·( eHP(e) − DANGER_WEIGHT·danger_in(e) )
+     * `danger_in` is the existing cached incoming-damage estimate (post-shield), so
+     * shields regain their value here without being double-counted inside eHP.
      */
     static getStateScore(State, MySide, BaseHash) {
         BenchOps.Start("Scoring")
@@ -36,7 +38,17 @@ class ScoringClass {
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            _score += sign * eHP(stat)
+            var value = eHP(stat)
+
+            // Layer 3 — exposure: subtract the (already-cached) incoming danger.
+            // DANGER_WEIGHT = 0 disables the layer (no danger computed, back to L2).
+            if (DANGER_WEIGHT != 0) {
+                var statsHash = DangerClass.getStatsHashForDanger(stat, State)
+                var danger = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
+                value -= DANGER_WEIGHT * danger
+            }
+
+            _score += sign * value
         }
         BenchOps.Stop("Scoring")
         return _score

@@ -19,3 +19,11 @@ include("../includes.leek")
 // a low antidote CD means the poison is likely cured soon → lower effective coef.
 global COEF_POISON = 0.5
 global COEF_POT = 0.2
+
+// === Layer 3 — exposure (incoming danger, post-shield, already cached) ===
+// value(e) = eHP(e) − DANGER_WEIGHT·danger_in(e).   NOT clamped. Same weight on both
+// sides. `danger` is a MAX-potential estimate (pessimistic — enemies can't focus
+// everyone at once), so keep it below 1. Set to 0 to disable the layer (back to L2).
+// Applied to enemies too, so my ALLIES' output onto an enemy lowers its value (focus
+// coordination); this can mildly pre-credit kills my allies haven't actually made.
+global DANGER_WEIGHT = 0.7
