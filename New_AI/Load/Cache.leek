@@ -15,6 +15,7 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     ENTITY_DANGER_CACHE_FOR_ME = [: ]
     AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
+    SURVIVAL_CACHE = [: ]
     ENTITY_ACTIONS_CACHE = [: ]
     ACTIONS_ON_ME_CACHE = [: ]
     ACTIONS_SUMMON_CACHE = [: ]
@@ -149,6 +150,9 @@ global HASHED_MAP_ITEM_CACHE = [: ]
 
 global AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
 global AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
+
+// Scoring: survival value keyed by round(LIFE, POISON, POISON_OVER_TIME, danger). Reset per turn.
+global SURVIVAL_CACHE = [: ]
 
 // ============================================================================
 // WalkCells (packed-couple bitmap BFS — see Maps/WalkCells/Class.leek)

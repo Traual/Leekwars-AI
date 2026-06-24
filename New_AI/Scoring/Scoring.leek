@@ -5,25 +5,28 @@
  *   afterPoison = max(0, LIFE − COEF_POISON·POISON)                  // certain next-turn poison tick
  *   pressure    = (DANGER_WEIGHT·danger + COEF_POT·POISON_OVER_TIME) // relative threats (never drowned)
  *               / (afterPoison + BUFFER)
- *   effLife     = afterPoison · exp(−pressure)                       // >0, monotone, threat-scaled
- *   value       = BASE_ALIVE + W_LIFE · pow(effLife, CONCAVITY)      // CONCAVITY<1 → low life matters more
+ *   effLife     = afterPoison / (1 + pressure)                       // >0, monotone, threat-scaled (cheap)
+ *   value       = BASE_ALIVE + W_LIFE · sqrt(effLife)                // concave → low life matters more
  * score = Σ sign(e) · value(e).  sign = +1 my side, −1 enemy. Dead entities contribute 0.
  * Same treatment for both sides (sign flips it).
  *
- * Properties this gives (all wanted):
- *  - value ≥ BASE_ALIVE > 0, dead = 0 → a KILL is always worth ≥ BASE_ALIVE (monotone,
- *    never indifferent).
- *  - +life → +value, +poison → −value, +danger → −value, each with a STRICTLY non-zero
- *    delta (no flat region).
- *  - Threats (danger, total poison) are RELATIVE to remaining life, so a 10000 danger on a
- *    1000-life target still bites hard instead of being drowned — and they hit a wounded
- *    target much harder (the pressure denominator shrinks).
- *  - CONCAVE in life: the marginal value of a HP rises as life drops → finishing a wounded
- *    target is worth more than chipping a healthy one (focus-fire).
+ * Properties: value ≥ BASE_ALIVE > 0, dead = 0 → kill always worth ≥ BASE_ALIVE (monotone);
+ * +life/+poison/+danger each give a strictly non-zero delta; danger & total poison are
+ * RELATIVE to remaining life (never drowned, hit a wounded target harder); sqrt is concave
+ * (low life worth more per HP → finish wounded); 1/(1+pressure) gives diminishing returns
+ * on danger. Cheap ops: 1/(1+pressure) replaces exp, sqrt replaces pow(.,0.7).
  *
- * Roadmap (NOT yet active): support (heal/buff potential), positioning/cover, turn-64
- * tiebreak, per-entity capital weight. POISON tick uses raw POISON; an antidote/liberation-
- * cooldown-aware refinement of the poison/POT weighting is a later TODO.
+ * Two op-caches:
+ *  - survivalValue() is cached in SURVIVAL_CACHE (reset per turn) by a single packed 64-bit
+ *    key: LIFE (bits 48-63) | POISON (32-47) | POT (16-31) | danger (0-15). Bit-ops truncate
+ *    the floats to int (verified), so no round() is needed. POISON / POT are masked with
+ *    & 0xFFFF because they can be NEGATIVE (net heal) — a raw negative would sign-extend and
+ *    erase the LIFE field through the OR. LIFE and danger are always ≥ 0 and fit in 16 bits.
+ *  - the danger "team context" hash is built in ONE pass (hashMine / hashEnemy); each entity
+ *    uses the OPPOSING team's hash. Assumes exactly 2 sides (solo / team).
+ *
+ * Roadmap (NOT yet active): per-entity "capital" (what it brings — offensive/support power,
+ * fixes the Δ=0 buff problem), support (heal/buff), positioning/cover, turn-64 tiebreak.
  **/
 
 include("../includes.leek")
@@ -31,35 +34,52 @@ include("../includes.leek")
 class ScoringClass {
 
     /**
-     * State value : Σ sign · survivalValue(e). `danger` is the existing cached post-shield
-     * incoming estimate (used in the threat pressure, both sides).
+     * State value : Σ sign · survivalValue(e). Both teams' danger-context hashes are built
+     * in one pass; each entity then adds its own shields to the OPPOSING team's hash.
      */
     static getStateScore(State, MySide, BaseHash) {
         BenchOps.Start("Scoring")
+
+        // Both teams' context hashes in ONE pass (assumes 2 sides — see file header).
+        var hashMine = OFFSET_BASIS
+        var hashEnemy = OFFSET_BASIS
+        for (var e: var stat in State) {
+            if (stat.LIFE <= 0) continue
+            var combined = (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER
+            var pos = (e << 10) | stat.CELL
+            if (stat.SIDE == MySide) hashMine = addValueToBinHash(addValueToBinHash(hashMine, combined), pos)
+            else                     hashEnemy = addValueToBinHash(addValueToBinHash(hashEnemy, combined), pos)
+        }
+
         var _score = 0
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
+            var context = (stat.SIDE == MySide) ? hashEnemy : hashMine
+            var statsHash = addValueToBinHash(context, (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
+            var danger = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
             var sign = (stat.SIDE == MySide) ? 1 : -1
-
-            var danger = 0
-            if (DANGER_WEIGHT != 0) {
-                var statsHash = DangerClass.getStatsHashForDanger(stat, State)
-                danger = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
-            }
-
-            // Certain next-turn poison tick removed up front; danger + total poison enter as
-            // a pressure relative to the remaining life (so big threats are never drowned).
-            var afterPoison = max(0, stat.LIFE - COEF_POISON * stat.POISON)
-            var pressure = (DANGER_WEIGHT * danger + COEF_POT * stat.POISON_OVER_TIME) / (afterPoison + BUFFER)
-            var effLife = afterPoison * exp(-pressure)
-
-            // Kill base + concave life (low life worth more per HP → push to finish).
-            var value = BASE_ALIVE + W_LIFE * pow(effLife, CONCAVITY)
-
-            _score += sign * value
+            _score += sign * survivalValue(stat, danger)
         }
+
         BenchOps.Stop("Scoring")
         return _score
+    }
+
+    /**
+     * Survival value of one entity, cached by a single packed 64-bit key. Bit-ops truncate
+     * the floats to int (no round needed). POISON / POT masked because they can be negative.
+     */
+    static survivalValue(stat, danger) {
+        var key = (stat.LIFE << 48) | ((stat.POISON & 0xFFFF) << 32) | ((stat.POISON_OVER_TIME & 0xFFFF) << 16) | danger
+        if (key in SURVIVAL_CACHE) return SURVIVAL_CACHE[key]
+
+        var afterPoison = max(0, stat.LIFE - COEF_POISON * stat.POISON)
+        var pressure = (DANGER_WEIGHT * danger + COEF_POT * stat.POISON_OVER_TIME) / (afterPoison + BUFFER)
+        var effLife = afterPoison / (1 + pressure)
+        var value = BASE_ALIVE + W_LIFE * sqrt(effLife)
+
+        SURVIVAL_CACHE[key] = value
+        return value
     }
 
     /**

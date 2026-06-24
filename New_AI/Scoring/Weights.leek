@@ -8,8 +8,8 @@
  *   afterPoison = max(0, LIFE − COEF_POISON·POISON)                         // certain next-turn tick
  *   pressure    = (DANGER_WEIGHT·danger + COEF_POT·POISON_OVER_TIME)        // relative threats
  *               / (afterPoison + BUFFER)
- *   effLife     = afterPoison · exp(−pressure)                              // >0, threats never drowned
- *   value       = BASE_ALIVE + W_LIFE · pow(effLife, CONCAVITY)            // concave: low life matters more
+ *   effLife     = afterPoison / (1 + pressure)                              // >0, threats never drowned
+ *   value       = BASE_ALIVE + W_LIFE · sqrt(effLife)                       // concave: low life matters more
  * score = Σ sign·value. Dead (LIFE=0, skipped) = 0 → kill always worth ≥ BASE_ALIVE.
  **/
 
@@ -19,12 +19,11 @@ include("../includes.leek")
 // is always worth ≥ BASE_ALIVE (monotone, never indifferent). Also values summons/resurrects.
 global BASE_ALIVE = 1000
 
-// Life term: W_LIFE · pow(effLife, CONCAVITY).
-//   CONCAVITY < 1 → CONCAVE: the marginal value of a HP is higher at low life, so the same
-//   +500 HP is worth more near death than at full → pushes finishing wounded targets.
-//   (1.0 = linear, lower = more concave.) W_LIFE scales the life term vs BASE_ALIVE.
-global W_LIFE = 3.0
-global CONCAVITY = 0.7
+// Life term: W_LIFE · sqrt(effLife). sqrt is concave → the marginal value of a HP is higher
+// at low life, so the same +HP is worth more near death (push to finish wounded targets).
+// sqrt returns smaller numbers than pow(.,0.7), so W_LIFE is scaled up to keep the life term
+// meaningful vs BASE_ALIVE. (Want ~0.75 concavity instead? use sqrt(effLife·sqrt(effLife)).)
+global W_LIFE = 14.0
 
 // Immediate poison tick: certain damage next turn → subtracted directly from life.
 global COEF_POISON = 0.5
@@ -33,8 +32,9 @@ global COEF_POISON = 0.5
 // never get drowned). Both go in the SAME pressure term, scaled by remaining life:
 //   - danger            (incoming, post-shield, cached)            weighted DANGER_WEIGHT
 //   - POISON_OVER_TIME  (total remaining poison, can reach 100000) weighted COEF_POT
-// BUFFER avoids a divide-by-zero as remaining life → 0 and sets the pressure scale.
-// (POT is here, not in afterPoison, because it is large + future + curable, like danger.)
+// BUFFER avoids divide-by-zero as remaining life → 0 and sets the pressure scale.
+// effLife = afterPoison/(1+pressure) is decreasing & convex → diminishing returns on danger
+// (each extra point of danger matters less when danger is already high).
 global DANGER_WEIGHT = 0.7
 global COEF_POT = 0.2
 global BUFFER = 500
