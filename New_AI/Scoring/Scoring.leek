@@ -22,8 +22,9 @@
  *    the floats to int (verified), so no round() is needed. POISON / POT are masked with
  *    & 0xFFFF because they can be NEGATIVE (net heal) — a raw negative would sign-extend and
  *    erase the LIFE field through the OR. LIFE and danger are always ≥ 0 and fit in 16 bits.
- *  - the danger "team context" hash is built in ONE pass (hashMine / hashEnemy); each entity
- *    uses the OPPOSING team's hash. Assumes exactly 2 sides (solo / team).
+ *  - the danger "opposing-team context" hash is precomputed once PER SIDE (contextBySide,
+ *    supports any number of teams: a side's context = every entity NOT on that side); each
+ *    entity then only adds its own shields to its side's context.
  *
  * Roadmap (NOT yet active): per-entity "capital" (what it brings — offensive/support power,
  * fixes the Δ=0 buff problem), support (heal/buff), positioning/cover, turn-64 tiebreak.
@@ -34,28 +35,31 @@ include("../includes.leek")
 class ScoringClass {
 
     /**
-     * State value : Σ sign · survivalValue(e). Both teams' danger-context hashes are built
-     * in one pass; each entity then adds its own shields to the OPPOSING team's hash.
+     * State value : Σ sign · survivalValue(e). The danger key's opposing-team context is
+     * precomputed once per side; each entity then adds its own shields to it.
      */
     static getStateScore(State, MySide, BaseHash) {
         BenchOps.Start("Scoring")
 
-        // Both teams' context hashes in ONE pass (assumes 2 sides — see file header).
-        var hashMine = OFFSET_BASIS
-        var hashEnemy = OFFSET_BASIS
-        for (var e: var stat in State) {
-            if (stat.LIFE <= 0) continue
-            var combined = (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER
-            var pos = (e << 10) | stat.CELL
-            if (stat.SIDE == MySide) hashMine = addValueToBinHash(addValueToBinHash(hashMine, combined), pos)
-            else                     hashEnemy = addValueToBinHash(addValueToBinHash(hashEnemy, combined), pos)
+        // Precompute each side's "opposing-team context" hash once (works for any number of
+        // teams): for a side it is the hash of every alive entity NOT on that side.
+        var sides = [:]
+        for (var e: var stat in State) if (stat.LIFE > 0) sides[stat.SIDE] = true
+        var contextBySide = [:]
+        for (var side: var _ in sides) {
+            var h = OFFSET_BASIS
+            for (var e: var stat in State) {
+                if (stat.LIFE <= 0 || stat.SIDE == side) continue
+                h = addValueToBinHash(h, (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER)
+                h = addValueToBinHash(h, (e << 10) | stat.CELL)
+            }
+            contextBySide[side] = h
         }
 
         var _score = 0
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
-            var context = (stat.SIDE == MySide) ? hashEnemy : hashMine
-            var statsHash = addValueToBinHash(context, (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
+            var statsHash = addValueToBinHash(contextBySide[stat.SIDE], (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
             var danger = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
             var sign = (stat.SIDE == MySide) ? 1 : -1
             _score += sign * survivalValue(stat, danger)
