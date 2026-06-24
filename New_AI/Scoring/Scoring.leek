@@ -1,23 +1,29 @@
 /**
  * Scoring v3 — full rewrite. ONE currency: HP. Readable, hand-tunable.
  *
- * Per ALIVE entity, a TIERED value (fixed floors + a continuous remainder) :
- *   value(e) = BASE_ALIVE                                       // tier 0: alive (real-kill floor)
- *            + (LIFE > POISON          ? BASE_ALIVE_POISON : 0) // tier 1: survives next poison tick
- *            + (danger < LIFE − POISON ? BASE_ALIVE_DANGER : 0) // tier 2: survives incoming danger
- *            + max(0, eHP(e) − DANGER_WEIGHT·danger)            // continuous HP gradient, floored
+ * Per ALIVE entity, a SURVIVAL value (kill base + concave, threat-pressured life):
+ *   afterPoison = max(0, LIFE − COEF_POISON·POISON)                  // certain next-turn poison tick
+ *   pressure    = (DANGER_WEIGHT·danger + COEF_POT·POISON_OVER_TIME) // relative threats (never drowned)
+ *               / (afterPoison + BUFFER)
+ *   effLife     = afterPoison · exp(−pressure)                       // >0, monotone, threat-scaled
+ *   value       = BASE_ALIVE + W_LIFE · pow(effLife, CONCAVITY)      // CONCAVITY<1 → low life matters more
  * score = Σ sign(e) · value(e).  sign = +1 my side, −1 enemy. Dead entities contribute 0.
+ * Same treatment for both sides (sign flips it).
  *
- * Why tiers: a dead entity is 0, an alive one is ≥ BASE_ALIVE, so a kill is ALWAYS worth
- * ≥ BASE_ALIVE (never indifferent / never beaten by a doomed-alive enemy → monotone). When
- * an enemy LOSES a tier (we push it toward death) the score rises by that tier's value:
- * making it poison-lethal frees BASE_ALIVE_POISON, making it danger-lethal frees
- * BASE_ALIVE_DANGER, finishing it frees BASE_ALIVE — the three "push to kill" rewards.
- * The max(0,…) floors keep each tier's minimum intact (exposure can't drag it under).
- * Because every term is ≥ 0 and BASE_ALIVE > 0, danger is monotone-safe on BOTH sides.
+ * Properties this gives (all wanted):
+ *  - value ≥ BASE_ALIVE > 0, dead = 0 → a KILL is always worth ≥ BASE_ALIVE (monotone,
+ *    never indifferent).
+ *  - +life → +value, +poison → −value, +danger → −value, each with a STRICTLY non-zero
+ *    delta (no flat region).
+ *  - Threats (danger, total poison) are RELATIVE to remaining life, so a 10000 danger on a
+ *    1000-life target still bites hard instead of being drowned — and they hit a wounded
+ *    target much harder (the pressure denominator shrinks).
+ *  - CONCAVE in life: the marginal value of a HP rises as life drops → finishing a wounded
+ *    target is worth more than chipping a healthy one (focus-fire).
  *
- * Roadmap (NOT yet active): a POT-lethal tier (needs antidote/liberation cooldowns),
- * support (heal/buff potential), positioning/cover, turn-64 tiebreak, per-entity capital.
+ * Roadmap (NOT yet active): support (heal/buff potential), positioning/cover, turn-64
+ * tiebreak, per-entity capital weight. POISON tick uses raw POISON; an antidote/liberation-
+ * cooldown-aware refinement of the poison/POT weighting is a later TODO.
  **/
 
 include("../includes.leek")
@@ -25,8 +31,8 @@ include("../includes.leek")
 class ScoringClass {
 
     /**
-     * State value : Σ sign · tieredValue(e). `danger` is the existing cached post-shield
-     * incoming estimate (reused for the danger tier AND the continuous exposure).
+     * State value : Σ sign · survivalValue(e). `danger` is the existing cached post-shield
+     * incoming estimate (used in the threat pressure, both sides).
      */
     static getStateScore(State, MySide, BaseHash) {
         BenchOps.Start("Scoring")
@@ -35,32 +41,25 @@ class ScoringClass {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
 
-            // Incoming danger (cached). Needed by the danger tier AND the exposure term;
-            // computed unless both are disabled.
             var danger = 0
-            if (DANGER_WEIGHT != 0 || BASE_ALIVE_DANGER != 0) {
+            if (DANGER_WEIGHT != 0) {
                 var statsHash = DangerClass.getStatsHashForDanger(stat, State)
                 danger = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
             }
 
-            // Tiered floors (each lost tier = a "push to kill" reward) + continuous remainder.
-            var value = BASE_ALIVE
-            if (stat.LIFE > stat.POISON)            value += BASE_ALIVE_POISON
-            if (danger < stat.LIFE - stat.POISON)   value += BASE_ALIVE_DANGER
-            value += max(0, eHP(stat) - DANGER_WEIGHT * danger)
+            // Certain next-turn poison tick removed up front; danger + total poison enter as
+            // a pressure relative to the remaining life (so big threats are never drowned).
+            var afterPoison = max(0, stat.LIFE - COEF_POISON * stat.POISON)
+            var pressure = (DANGER_WEIGHT * danger + COEF_POT * stat.POISON_OVER_TIME) / (afterPoison + BUFFER)
+            var effLife = afterPoison * exp(-pressure)
+
+            // Kill base + concave life (low life worth more per HP → push to finish).
+            var value = BASE_ALIVE + W_LIFE * pow(effLife, CONCAVITY)
 
             _score += sign * value
         }
         BenchOps.Stop("Scoring")
         return _score
-    }
-
-    /**
-     * Certain remaining HP : LIFE minus locked poison (true damage, bypasses shields),
-     * floored at 0. Feeds the continuous remainder. COEF_* are tunable in Weights.leek.
-     */
-    static eHP(stat) {
-        return max(0, stat.LIFE - COEF_POISON * stat.POISON - COEF_POT * stat.POISON_OVER_TIME)
     }
 
     /**
