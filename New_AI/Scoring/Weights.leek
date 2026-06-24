@@ -1,32 +1,37 @@
 /**
  * Scoring weights & coefficients (HP-equivalent scoring).
  *
- * Every tunable scalar used by getStateScore lives here, so the numbers can be
- * swept (by hand or CMA-ES later) WITHOUT touching the scoring logic. All values
- * are in HP-equivalent units, so they are readable / sanity-checkable by hand.
+ * Every tunable scalar used by getStateScore lives here, so the numbers can be swept
+ * (by hand or CMA-ES) WITHOUT touching the scoring logic. All values are HP-equivalent,
+ * so they stay readable / sanity-checkable by hand.
  **/
 
 include("../includes.leek")
 
-// === Layer 2 — eHP : locked poison (TRUE damage, bypasses shields) ===
-// eHP = LIFE − COEF_POISON·POISON − COEF_POT·POISON_OVER_TIME
-//   POISON            = next-turn poison tick (net of heal), already locked on the entity
-//   POISON_OVER_TIME  = total remaining poison over all future ticks
-// Discounted (< 1) because locked poison may be cured (antidote), the victim may
-// die first, or the fight may end before it all ticks. POT is discounted more than
-// the imminent tick (further in the future / more uncertain).
-// TODO (once cooldowns are modelled): scale these by the victim's ANTIDOTE cooldown —
-// a low antidote CD means the poison is likely cured soon → lower effective coef.
+// === Tiered "how alive" floors ===
+// An alive entity is worth BASE_ALIVE, plus a fixed bonus for each survival tier it still
+// holds. When an ENEMY loses a tier (we push it toward death) the score rises by that
+// tier's value, so each tier is a "push to kill" reward; a real kill removes the whole
+// term (always ≥ BASE_ALIVE → dead strictly > alive, monotone). Cumulative floors:
+//   alive only ............................. BASE_ALIVE                       (= 1000)
+//   + won't die to poison next turn ........ + BASE_ALIVE_POISON              (→ 1500)
+//   + won't die to incoming danger ......... + BASE_ALIVE_DANGER             (→ 1750)
+// BASE_ALIVE also values summons / resurrects (they add an entity).
+global BASE_ALIVE        = 1000   // tier 0: alive at all (real-kill floor)
+global BASE_ALIVE_POISON = 500    // tier 1: LIFE > POISON (survives next turn's poison tick)
+global BASE_ALIVE_DANGER = 250    // tier 2: danger < LIFE − POISON (survives incoming danger)
+
+// === Continuous remainder : locked poison (true damage) + exposure ===
+// max(0, LIFE − COEF_POISON·POISON − COEF_POT·POT − DANGER_WEIGHT·danger), floored so it
+// never drags the value below the tier floors. This is the intra-tier HP gradient.
+//   POISON           = next-turn tick (net of heal)   — also the tier conditions use raw POISON
+//   POISON_OVER_TIME = total remaining (discounted)   — POT tier deferred (needs antidote/libé CDs)
+// TODO (with cooldowns): scale poison by the victim's antidote CD; add a POT-lethal tier.
 global COEF_POISON = 0.5
 global COEF_POT = 0.2
 
-// === Layer 3 — exposure (incoming danger, post-shield, already cached) ===
-// value(e) = eHP(e) − DANGER_WEIGHT·danger_in(e).   NOT clamped. Same weight on both
-// sides. `danger` is a MAX-potential estimate (pessimistic — enemies can't focus
-// everyone at once), so keep it below 1. Set to 0 to disable the layer (back to L2).
-// On enemies, danger_in is my ALLIES' output onto them — MY own output is excluded
-// from danger (toSkipMap[Me]), it's applied by the search instead. So it acts as a
-// focus-coordination / overkill discount, NOT a kill pre-credit: with weight < 1 an
-// enemy never reads as fully dead from danger alone, so finishing a kill stays
-// positively rewarded (eHP − weight·danger ≥ (1−weight)·eHP > 0).
+// Exposure: incoming danger (post-shield, already cached). `danger` is a MAX-potential
+// estimate (pessimistic), so keep this below 1. The tiered floors make it monotone-safe
+// on BOTH sides. Danger is still computed when BASE_ALIVE_DANGER != 0 (the danger tier
+// needs it) even if this weight is 0.
 global DANGER_WEIGHT = 0.7

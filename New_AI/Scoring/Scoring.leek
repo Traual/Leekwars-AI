@@ -1,25 +1,23 @@
 /**
  * Scoring v3 — full rewrite. ONE currency: HP. Readable, hand-tunable.
  *
- * The state score is built up LAYER BY LAYER. This file currently implements
- * layers 1–3 (effective life minus locked poison, minus incoming danger). The
- * remaining layers are the agreed plan, kept here as a roadmap (NOT yet active) :
+ * Per ALIVE entity, a TIERED value (fixed floors + a continuous remainder) :
+ *   value(e) = BASE_ALIVE                                       // tier 0: alive (real-kill floor)
+ *            + (LIFE > POISON          ? BASE_ALIVE_POISON : 0) // tier 1: survives next poison tick
+ *            + (danger < LIFE − POISON ? BASE_ALIVE_DANGER : 0) // tier 2: survives incoming danger
+ *            + max(0, eHP(e) − DANGER_WEIGHT·danger)            // continuous HP gradient, floored
+ * score = Σ sign(e) · value(e).  sign = +1 my side, −1 enemy. Dead entities contribute 0.
  *
- *   1. [ACTIVE] material   : Σ sign·LIFE                      (raw life differential)
- *   2. [ACTIVE] eHP        : LIFE − COEF_POISON·POISON − COEF_POT·POISON_OVER_TIME
- *                            (shields are NOT folded here — they are already inside
- *                             `danger`; their value enters via layer 3, no double-count)
- *   3. [ACTIVE] exposure   : − DANGER_WEIGHT·danger_in(e)     (separate term, NOT clamped;
- *                            single weight both sides. Shields regain value here, via
- *                            the post-shield danger.)
- *   4. support             : + κ · support(e)                 (heal/shield/buff potential,
- *                                                              via the effect→HP valuation)
- *   5. focus-fire          : concave g() on the per-entity standing
- *   6. positioning/cover   : reuse already-warmed getLos / getCircleWithLos
- *   7. tiebreak (turn 64)  : + W64 · (Σ ally LIFE − Σ enemy LIFE)
+ * Why tiers: a dead entity is 0, an alive one is ≥ BASE_ALIVE, so a kill is ALWAYS worth
+ * ≥ BASE_ALIVE (never indifferent / never beaten by a doomed-alive enemy → monotone). When
+ * an enemy LOSES a tier (we push it toward death) the score rises by that tier's value:
+ * making it poison-lethal frees BASE_ALIVE_POISON, making it danger-lethal frees
+ * BASE_ALIVE_DANGER, finishing it frees BASE_ALIVE — the three "push to kill" rewards.
+ * The max(0,…) floors keep each tier's minimum intact (exposure can't drag it under).
+ * Because every term is ≥ 0 and BASE_ALIVE > 0, danger is monotone-safe on BOTH sides.
  *
- * sign(e) = +1 my side, −1 enemy. Dead entities (LIFE ≤ 0) contribute 0
- * (a kill is therefore a free discontinuity: the term simply disappears).
+ * Roadmap (NOT yet active): a POT-lethal tier (needs antidote/liberation cooldowns),
+ * support (heal/buff potential), positioning/cover, turn-64 tiebreak, per-entity capital.
  **/
 
 include("../includes.leek")
@@ -27,10 +25,8 @@ include("../includes.leek")
 class ScoringClass {
 
     /**
-     * Layers 1–3 — signed (effective-life − exposure) differential :
-     *   score = Σ sign·( eHP(e) − DANGER_WEIGHT·danger_in(e) )
-     * `danger_in` is the existing cached incoming-damage estimate (post-shield), so
-     * shields regain their value here without being double-counted inside eHP.
+     * State value : Σ sign · tieredValue(e). `danger` is the existing cached post-shield
+     * incoming estimate (reused for the danger tier AND the continuous exposure).
      */
     static getStateScore(State, MySide, BaseHash) {
         BenchOps.Start("Scoring")
@@ -38,15 +34,20 @@ class ScoringClass {
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            var value = eHP(stat)
 
-            // Layer 3 — exposure: subtract the (already-cached) incoming danger.
-            // DANGER_WEIGHT = 0 disables the layer (no danger computed, back to L2).
-            if (DANGER_WEIGHT != 0) {
+            // Incoming danger (cached). Needed by the danger tier AND the exposure term;
+            // computed unless both are disabled.
+            var danger = 0
+            if (DANGER_WEIGHT != 0 || BASE_ALIVE_DANGER != 0) {
                 var statsHash = DangerClass.getStatsHashForDanger(stat, State)
-                var danger = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
-                value -= DANGER_WEIGHT * danger
+                danger = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
             }
+
+            // Tiered floors (each lost tier = a "push to kill" reward) + continuous remainder.
+            var value = BASE_ALIVE
+            if (stat.LIFE > stat.POISON)            value += BASE_ALIVE_POISON
+            if (danger < stat.LIFE - stat.POISON)   value += BASE_ALIVE_DANGER
+            value += max(0, eHP(stat) - DANGER_WEIGHT * danger)
 
             _score += sign * value
         }
@@ -55,25 +56,17 @@ class ScoringClass {
     }
 
     /**
-     * Effective HP (layer 2). Life minus LOCKED poison — true damage already owed
-     * (it bypasses shields/resistance and will tick regardless of what happens) :
-     *   eHP = LIFE − COEF_POISON·POISON − COEF_POT·POISON_OVER_TIME
-     * Shields (ABS/REL) are deliberately NOT folded in: they are already modelled
-     * inside `danger` (post-shield), so their value enters via layer 3 — folding
-     * them here too would double-count. NOT clamped: an entity whose locked poison
-     * exceeds its life reads as "more than dead", a useful gradient.
-     * COEF_* are tunable in Scoring/Weights.leek.
+     * Certain remaining HP : LIFE minus locked poison (true damage, bypasses shields),
+     * floored at 0. Feeds the continuous remainder. COEF_* are tunable in Weights.leek.
      */
     static eHP(stat) {
-        return stat.LIFE - COEF_POISON * stat.POISON - COEF_POT * stat.POISON_OVER_TIME
+        return max(0, stat.LIFE - COEF_POISON * stat.POISON - COEF_POT * stat.POISON_OVER_TIME)
     }
 
     /**
      * Value used by Modifier/Resurrection.leek to rank WHICH dead ally to revive.
-     * A resurrected entity comes back at TOTAL_LIFE/4 of life (Resurrection.Update
-     * halves TOTAL_LIFE, then sets LIFE to half of that), so the life the team
-     * regains is exactly that. Monotone in TOTAL_LIFE → revive the biggest leek first.
-     * Consistent with the HP-only scoring (the score gains this much life).
+     * Resurrected life = TOTAL_LIFE/4 (Update halves TOTAL_LIFE, LIFE = half of that).
+     * Monotone in TOTAL_LIFE → revive the biggest leek first.
      */
     static getResurrectionScore(entity_state, State) {
         return entity_state.TOTAL_LIFE / 4
