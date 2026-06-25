@@ -40,17 +40,13 @@ class DeltaClass {
             contextBySide[side] = h
         }
 
+        // getHealMap builds the per-side healers fingerprint (id + cell/mp/wis/tp, XOR-combined,
+        // order-independent) while scanning State and publishes it here. The SAME fingerprint keys
+        // both HEAL_MAP_CACHE (inside getHealMap) and the per-entity NETDAMAGE_CACHE below -> a
+        // buff/shackle/move/death on a healer flips it. Per side so touching MY healer doesn't
+        // invalidate the enemies' cache (and vice-versa once enemy heals are added).
         var healMap = HealClass.getHealMap(State)
-
-        // Per-side fingerprint of the healers (id + cell/mp/wis/tp), order-independent (XOR-combined)
-        // so a buff/shackle/move on a healer changes the net-damage key. Per side so touching MY
-        // healer doesn't invalidate the enemies' cache (and vice-versa once enemy heals are added).
-        var healersFingerprintBySide = [: ]
-        for (var caster: var _ in healMap) {
-            var cs = State[caster]
-            var perHealer = addValueToBinHash(OFFSET_BASIS ^ caster, (cs.WISDOM << 32) | (cs.TOTAL_TP << 22) | (cs.TOTAL_MP << 12) | cs.CELL)
-            healersFingerprintBySide[cs.SIDE] = ((cs.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[cs.SIDE] : 0) ^ perHealer
-        }
+        var healersFingerprintBySide = HEALERS_FINGERPRINT_BY_SIDE
 
         var _final = [: ]
         for (var e: var stat in State) {

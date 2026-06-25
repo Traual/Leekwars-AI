@@ -30,13 +30,36 @@ class HealClass {
     static getHealMap(State) {
         BenchOps.Start("Heal")
         var mySide = getSide(Me)
-        var _final = [: ]
+
+        // Fingerprint the qualifying my-side healers (id + wis/tp/mp/cell) in one State pass,
+        // order-independent (XOR-fold). These are exactly the fields that change a caster's
+        // coverage, so the fold keys the whole outer map. Built from State here so Delta can reuse
+        // the SAME fingerprint for NETDAMAGE_CACHE (one fingerprint, two caches).
+        var fp = 0
+        var casters = []
         for (var caster: var casterStats in State) {
             if (caster == Me || casterStats.LIFE <= 0) continue
             if (casterStats.SIDE != mySide) continue        // only my-side healers (an enemy won't heal me)
             if (!hasHealItem(casterStats)) continue
-            _final[caster] = getCasterCoverage(casterStats)
+            fp ^= addValueToBinHash(OFFSET_BASIS ^ caster, (casterStats.WISDOM << 32) | (casterStats.TOTAL_TP << 22) | (casterStats.TOTAL_MP << 12) | casterStats.CELL)
+            push(casters, caster)
         }
+
+        // Publish per side (only mySide populated — heal map is my-side only; enemy slot stays
+        // absent and Delta treats a missing side as 0). Valid only until the next getHealMap call.
+        HEALERS_FINGERPRINT_BY_SIDE = [: ]
+        if (fp != 0) HEALERS_FINGERPRINT_BY_SIDE[mySide] = fp
+
+        if (fp in HEAL_MAP_CACHE) {                          // unchanged healers across BFS nodes -> hit
+            BenchOps.Stop("Heal")
+            return HEAL_MAP_CACHE[fp]                        // BY REFERENCE — read-only downstream
+        }
+
+        var _final = [: ]
+        for (var caster in casters) {
+            _final[caster] = getCasterCoverage(State[caster])
+        }
+        HEAL_MAP_CACHE[fp] = _final
         BenchOps.Stop("Heal")
         return _final
     }
