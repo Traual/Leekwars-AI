@@ -7,16 +7,18 @@
  *               ⇒ buffs on allies AND nerfs on enemies both register a delta.
  *
  * computeCombo(e) = a TP-BOUNDED GREEDY COMBO of what the entity can cast this turn:
- *  1) score each castable item (cd 0): Σ effects  base · perEffectWeight · (1 + stat·0.01)
- *     (exact Consequences scaling). Effect→stat: RES→ABSOLUTE/RELATIVE_SHIELD,
- *     AGI→DAMAGE_RETURN, SCI→NOVA_DAMAGE/NOVA_VITALITY/AFTEREFFECT/BUFF_* (RAW_BUFF_* same
- *     weight but NOT SCI-scaled). perEffectWeight = HP per real point (RELATIVE ≫ ABSOLUTE;
- *     AFTEREFFECT negative = doping's self-poison).
+ *  1) score each castable item (cd 0) = sumRES·resMul + sumSCI·sciMul + sumAGI·agiMul + sumRaw,
+ *     where the per-item stat-independent sums (base · perEffectWeight grouped by scaling stat)
+ *     are precomputed once in ITEM_EFF_SCORE. Effect→stat: RES→ABSOLUTE/RELATIVE_SHIELD,
+ *     AGI→DAMAGE_RETURN, SCI→NOVA_DAMAGE/NOVA_VITALITY/AFTEREFFECT/BUFF_*; RAW_BUFF_* go to
+ *     sumRaw (same weight, NOT SCI-scaled). perEffectWeight = HP per real point (RELATIVE ≫
+ *     ABSOLUTE; AFTEREFFECT negative = doping's self-poison).
  *  2) sort items by score desc, take while TP remains.
  *  3) efficacy = EFF_SCALE · Σ(taken). Net-negative items are dropped.
  *
- * Cooldown-aware. AGI crit/dodge are passive (not item effects) → only damage-return counted.
- * No cache yet (one inventory pass + arraySort per entity per call).
+ * TWO CACHES: ITEM_EFF_SCORE[itemId] (fight-wide, stat-independent) avoids the per-effect
+ * switch; EFFICACY_CACHE[packedKey] (reset per turn) avoids the whole combo on hit — non-Me
+ * entities are constant per turn so it hits everywhere except when I debuff/buff one in-tree.
  **/
 
 include("../includes.leek")
@@ -41,105 +43,134 @@ global EFF_SCALE             = 0.2
 class EfficacyClass {
 
     /**
-     * #2 additive value of one entity (0 for Me — handled elsewhere).
+     * #2 additive value of one entity (0 for Me). Cached per turn by a single packed key
+     * (id, TP, RES, SCI, AGI) — these are all the combo depends on (inventory fixed by id,
+     * non-Me cooldowns constant per turn).
+     *   layout: AGI 0-13 | SCI 14-27 | RES 28-41 | TP 42-49 | id 50-63  (14-bit stats, masked).
      */
     static get(stat) {
         if (stat.ID == Me) return 0
-        return computeCombo(stat)
+        var cacheKey = ((stat.ID & 0x3FFF) << 50)
+                     | ((stat.TP & 0xFF) << 42)
+                     | ((stat.RESISTANCE & 0x3FFF) << 28)
+                     | ((stat.SCIENCE & 0x3FFF) << 14)
+                     | (stat.AGILITY & 0x3FFF)
+        if (cacheKey in EFFICACY_CACHE) return EFFICACY_CACHE[cacheKey]
+        var efficacy = computeCombo(stat)
+        EFFICACY_CACHE[cacheKey] = efficacy
+        return efficacy
     }
 
     /**
-     * The TP-bounded combo value of an entity's castable RES/SCI/AGI items (no Me-skip).
+     * Stat-independent per-item sums [sumRES, sumSCI, sumAGI, sumRaw, cost], cached fight-wide
+     * (depends only on the item's static effects + the weights).
+     */
+    static itemEffScore(itemId) {
+        if (itemId in ITEM_EFF_SCORE) return ITEM_EFF_SCORE[itemId]
+        var sumResistance = 0
+        var sumScience = 0
+        var sumAgility = 0
+        var sumRaw = 0
+        for (var eff in ITEMINFO[itemId].EFFECTS) {
+            var base = eff[1]
+            switch (eff[0]) {
+                case EFFECT_ABSOLUTE_SHIELD:
+                    sumResistance += base * EFF_W_ABSOLUTE_SHIELD
+                    break
+                case EFFECT_RELATIVE_SHIELD:
+                    sumResistance += base * EFF_W_RELATIVE_SHIELD
+                    break
+                case EFFECT_DAMAGE_RETURN:
+                    sumAgility += base * EFF_W_DAMAGE_RETURN
+                    break
+                case EFFECT_NOVA_DAMAGE:
+                    sumScience += base * EFF_W_NOVA_DAMAGE
+                    break
+                case EFFECT_NOVA_VITALITY:
+                    sumScience += base * EFF_W_NOVA_VITALITY
+                    break
+                case EFFECT_AFTEREFFECT:
+                    sumScience += base * EFF_W_AFTEREFFECT
+                    break
+                case EFFECT_BUFF_STRENGTH:
+                    sumScience += base * EFF_W_BUFF_STRENGTH
+                    break
+                case EFFECT_RAW_BUFF_STRENGTH:
+                    sumRaw += base * EFF_W_BUFF_STRENGTH
+                    break
+                case EFFECT_BUFF_AGILITY:
+                    sumScience += base * EFF_W_BUFF_AGILITY
+                    break
+                case EFFECT_RAW_BUFF_AGILITY:
+                    sumRaw += base * EFF_W_BUFF_AGILITY
+                    break
+                case EFFECT_BUFF_RESISTANCE:
+                    sumScience += base * EFF_W_BUFF_RESISTANCE
+                    break
+                case EFFECT_RAW_BUFF_RESISTANCE:
+                    sumRaw += base * EFF_W_BUFF_RESISTANCE
+                    break
+                case EFFECT_BUFF_WISDOM:
+                    sumScience += base * EFF_W_BUFF_WISDOM
+                    break
+                case EFFECT_RAW_BUFF_WISDOM:
+                    sumRaw += base * EFF_W_BUFF_WISDOM
+                    break
+                case EFFECT_BUFF_MP:
+                    sumScience += base * EFF_W_BUFF_MP
+                    break
+                case EFFECT_RAW_BUFF_MP:
+                    sumRaw += base * EFF_W_BUFF_MP
+                    break
+                case EFFECT_BUFF_TP:
+                    sumScience += base * EFF_W_BUFF_TP
+                    break
+                case EFFECT_RAW_BUFF_TP:
+                    sumRaw += base * EFF_W_BUFF_TP
+                    break
+            }
+        }
+        var result = [sumResistance, sumScience, sumAgility, sumRaw, ITEMINFO[itemId].COST]
+        ITEM_EFF_SCORE[itemId] = result
+        return result
+    }
+
+    /**
+     * The TP-bounded combo value of an entity's castable RES/SCI/AGI items (no Me-skip, no cache).
      */
     static computeCombo(stat) {
-        var resMul = 1 + stat.RESISTANCE * 0.01
-        var sciMul = 1 + stat.SCIENCE * 0.01
-        var agiMul = 1 + stat.AGILITY * 0.01
+        var resistanceMul = 1 + stat.RESISTANCE * 0.01
+        var scienceMul    = 1 + stat.SCIENCE * 0.01
+        var agilityMul    = 1 + stat.AGILITY * 0.01
 
-        // 1) score every castable item that has #2 value → [score, tpCost]
+        // 1) value every castable item via its precomputed sums → [itemValue, tpCost]
         var items = []
-        for (var id in stat.INVENTORY) {
-            if (stat.COOLDOWNS[id] != 0) continue              // not castable this turn
-            var v = 0
-            for (var eff in ITEMINFO[id].EFFECTS) {
-                var base = eff[1]
-                switch (eff[0]) {
-                    case EFFECT_ABSOLUTE_SHIELD:
-                        v += base * EFF_W_ABSOLUTE_SHIELD * resMul
-                        break
-                    case EFFECT_RELATIVE_SHIELD:
-                        v += base * EFF_W_RELATIVE_SHIELD * resMul
-                        break
-                    case EFFECT_DAMAGE_RETURN:
-                        v += base * EFF_W_DAMAGE_RETURN * agiMul
-                        break
-                    case EFFECT_NOVA_DAMAGE:
-                        v += base * EFF_W_NOVA_DAMAGE * sciMul
-                        break
-                    case EFFECT_NOVA_VITALITY:
-                        v += base * EFF_W_NOVA_VITALITY * sciMul
-                        break
-                    case EFFECT_AFTEREFFECT:
-                        v += base * EFF_W_AFTEREFFECT * sciMul
-                        break
-                    case EFFECT_BUFF_STRENGTH:
-                        v += base * EFF_W_BUFF_STRENGTH * sciMul
-                        break
-                    case EFFECT_RAW_BUFF_STRENGTH:
-                        v += base * EFF_W_BUFF_STRENGTH
-                        break
-                    case EFFECT_BUFF_AGILITY:
-                        v += base * EFF_W_BUFF_AGILITY * sciMul
-                        break
-                    case EFFECT_RAW_BUFF_AGILITY:
-                        v += base * EFF_W_BUFF_AGILITY
-                        break
-                    case EFFECT_BUFF_RESISTANCE:
-                        v += base * EFF_W_BUFF_RESISTANCE * sciMul
-                        break
-                    case EFFECT_RAW_BUFF_RESISTANCE:
-                        v += base * EFF_W_BUFF_RESISTANCE
-                        break
-                    case EFFECT_BUFF_WISDOM:
-                        v += base * EFF_W_BUFF_WISDOM * sciMul
-                        break
-                    case EFFECT_RAW_BUFF_WISDOM:
-                        v += base * EFF_W_BUFF_WISDOM
-                        break
-                    case EFFECT_BUFF_MP:
-                        v += base * EFF_W_BUFF_MP * sciMul
-                        break
-                    case EFFECT_RAW_BUFF_MP:
-                        v += base * EFF_W_BUFF_MP
-                        break
-                    case EFFECT_BUFF_TP:
-                        v += base * EFF_W_BUFF_TP * sciMul
-                        break
-                    case EFFECT_RAW_BUFF_TP:
-                        v += base * EFF_W_BUFF_TP
-                        break
-                }
-            }
-            if (v > 0) push(items, [v, ITEMINFO[id].COST])     // net-positive items only
+        for (var itemId in stat.INVENTORY) {
+            if (stat.COOLDOWNS[itemId] != 0) continue           // not castable this turn
+            var precomputed = itemEffScore(itemId)
+            var itemValue = precomputed[0] * resistanceMul
+                          + precomputed[1] * scienceMul
+                          + precomputed[2] * agilityMul
+                          + precomputed[3]
+            if (itemValue > 0) push(items, [itemValue, precomputed[4]])   // net-positive only
         }
         if (count(items) == 0) return 0
 
         // 2) best-first, take while TP allows
         items = arraySort(items, function(a, b) { return b[0] - a[0] })
-        var tp = stat.TP
+        var remainingTp = stat.TP
         var total = 0
-        for (var it in items) {
-            if (it[1] <= tp) {
-                total += it[0]
-                tp -= it[1]
+        for (var item in items) {
+            if (item[1] <= remainingTp) {
+                total += item[0]
+                remainingTp -= item[1]
             }
         }
         return EFF_SCALE * total
     }
 
     /**
-     * TEMP debug: print the raw combo value of every alive entity (bypasses the Me-skip so
-     * you see what Me would score too). Call once per turn.
+     * TEMP debug: print the raw combo value of every alive entity (bypasses the Me-skip).
      */
     static debugAll() {
         var State = StateClass.Virtualize()
