@@ -16,6 +16,8 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
     SURVIVAL_CACHE = [: ]
+    HEAL_COVERAGE_CACHE = [: ]
+    HEAL_ENTITY_INVENTORY = [: ]
     ENTITY_ACTIONS_CACHE = [: ]
     ACTIONS_ON_ME_CACHE = [: ]
     ACTIONS_SUMMON_CACHE = [: ]
@@ -153,6 +155,11 @@ global AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
 
 // Scoring: survival value keyed by round(LIFE, POISON, POISON_OVER_TIME, danger). Reset per turn.
 global SURVIVAL_CACHE = [: ]
+
+// Heal map: per-caster coverage [cell -> heal] keyed by (id,cell,mp,wis,tp); and the per-caster
+// heal-item list keyed by id. Both reset per turn (cooldowns/positions change).
+global HEAL_COVERAGE_CACHE = [: ]
+global HEAL_ENTITY_INVENTORY = [: ]
 
 // ============================================================================
 // WalkCells (packed-couple bitmap BFS — see Maps/WalkCells/Class.leek)

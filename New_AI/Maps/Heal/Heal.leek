@@ -1,0 +1,151 @@
+/**
+ * HEAL MAP — symmetric to the danger map, but for ALLIED healing instead of enemy damage.
+ *
+ *   getHealMap(State) -> [ casterId -> [ cell -> heal ] ]
+ *
+ * For each alive caster that can heal (EXCEPT Me — my heals are handled by the BFS), its
+ * "coverage": how much INSTANT heal it can deliver to a same-side target standing on each
+ * cell, given where the caster can move + cast. Kept per-caster (not summed) so the net-HP
+ * step can sequence heals/damage in TURN ORDER (can't blindly add X heal if the target died
+ * or is already full life before the heal lands). heal_received(target) =
+ *   Σ over casters K with K.SIDE == target.SIDE of coverage[K][target.CELL].
+ *
+ * SIMPLER than danger:
+ *  - only EFFECT_HEAL with duration 0 (instant). duration>0 = "negative poison" (vaccine/serum,
+ *    a heal-over-time that cures POISON in Consequences) → excluded here.
+ *  - NO shields (heal isn't reduced), NO vulnerability loop.
+ *  - PESSIMISTIC: uses eff[1] (MIN roll) — small roll for heal (danger uses eff[2], max).
+ *  - value(item) = eff[1] · (1 + WISDOM/100) · (1 − 0.2·aoeDist).   (mirrors Consequences EFFECT_HEAL)
+ *  - combo = greedy heal/TP within TOTAL_TP + MAX_USES (no target dependence → per-caster only).
+ *
+ * Reuses DangerClass geometry (getMapAoeForItem) + WalkCells. RAW potential (no missing-life
+ * cap — that happens at the net-HP step). Not yet wired into getStateScore.
+ **/
+
+include("../../includes.leek")
+
+class HealClass {
+
+    /* Per-caster heal coverage map for the whole board. */
+    static getHealMap(State) {
+        var _final = [: ]
+        for (var caster: var casterStats in State) {
+            if (caster == Me || casterStats.LIFE <= 0) continue
+            if (!hasHealItem(casterStats)) continue
+            _final[caster] = getCasterCoverage(casterStats)
+        }
+        return _final
+    }
+
+    /* [cell -> heal] : the instant heal this caster can land on a same-side target per cell.
+     * Cached by (id, cell, mp, wisdom, tp) — constant per turn for a non-Me caster. */
+    static getCasterCoverage(casterStats) {
+        var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, (casterStats.CELL << 10) | casterStats.TOTAL_MP)
+        key = addValueToBinHash(key, (casterStats.WISDOM << 15) | casterStats.TOTAL_TP)
+        if (key in HEAL_COVERAGE_CACHE) return HEAL_COVERAGE_CACHE[key]
+
+        var walkCells = WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(casterStats)
+        var mapCellItemAoe = getMapCellItemAoe(casterStats, walkCells)
+        var _final = [: ]
+        for (var cell: var itemAoeMap in mapCellItemAoe) {
+            _final[cell] = comboAtCell(itemAoeMap, casterStats)
+        }
+        HEAL_COVERAGE_CACHE[key] = _final
+        return _final
+    }
+
+    /* [cell -> [item -> minAoeDist]] : which heal items reach which cells (reuses danger geometry). */
+    static getMapCellItemAoe(casterStats, walkCells) {
+        var startCell = casterStats.CELL
+        var _final = [: ]
+        for (var item in getHealItemsList(casterStats)) {
+            for (var cell: var minAoeDist in DangerClass.getMapAoeForItem(item, ITEMINFO[item], walkCells, startCell)) {
+                if (cell in _final) {
+                    _final[cell][item] = minAoeDist
+                } else {
+                    _final[cell] = [: ]
+                    _final[cell][item] = minAoeDist
+                }
+            }
+        }
+        return _final
+    }
+
+    /* Greedy heal combo on one cell: stack the best heal/TP items within TOTAL_TP + MAX_USES. */
+    static comboAtCell(itemAoeMap, casterStats) {
+        var items = []
+        for (var item: var aoeDist in itemAoeMap) {
+            var heal = getItemHeal(item, casterStats, aoeDist)
+            if (heal <= 0) continue
+            var cost = ITEMINFO[item].COST
+            push(items, [item, heal, cost])
+        }
+        if (count(items) == 0) return 0
+        items = arraySort(items, function(a, b) { return (b[1] / b[2]) - (a[1] / a[2]) })  // heal/TP desc
+
+        var remainingTp = casterStats.TOTAL_TP
+        var uses = clone(casterStats.USES)
+        var total = 0
+        for (var it in items) {
+            var item = it[0]
+            var heal = it[1]
+            var cost = it[2]
+            var maxUses = ITEMINFO[item].MAX_USES
+            while (remainingTp >= cost && uses[item] < maxUses) {
+                total += heal
+                remainingTp -= cost
+                uses[item]++
+            }
+        }
+        return total
+    }
+
+    /* Instant heal of one item on a target at AoE distance (eff MIN, WIS-scaled, no shields). */
+    static getItemHeal(item, casterStats, distance) {
+        var distFactor = 1 - distance * 0.2
+        var wisdomFactor = 1 + casterStats.WISDOM / 100
+        var _final = 0
+        for (var eff in ITEMINFO[item].EFFECTS) {
+            if (eff[0] == EFFECT_HEAL && eff[3] == 0) {        // instant heal only (duration 0)
+                _final += eff[1] * distFactor * wisdomFactor   // eff[1] = MIN roll (pessimistic)
+            }
+        }
+        return _final
+    }
+
+    static getHealItemsList(casterStats) {
+        if (casterStats.ID in HEAL_ENTITY_INVENTORY) return HEAL_ENTITY_INVENTORY[casterStats.ID]
+        var _final = []
+        for (var i: var cd in casterStats.COOLDOWNS) {
+            if (cd > 1) continue
+            if (isHealItem(ITEMINFO[i])) push(_final, i)
+        }
+        HEAL_ENTITY_INVENTORY[casterStats.ID] = _final
+        return _final
+    }
+
+    static hasHealItem(casterStats) {
+        return count(getHealItemsList(casterStats)) > 0
+    }
+
+    static isHealItem(Infos) {
+        for (var eff in Infos.EFFECTS) {
+            if (eff[0] == EFFECT_HEAL && eff[3] == 0) return true
+        }
+        return false
+    }
+
+    /* TEMP debug: heal each alive entity would RECEIVE at its current cell (sum of same-side casters). */
+    static debugAll() {
+        var State = StateClass.Virtualize()
+        var healMap = getHealMap(State)
+        for (var e: var stat in State) {
+            if (stat.LIFE <= 0) continue
+            var received = 0
+            for (var caster: var coverage in healMap) {
+                if (State[caster].SIDE == stat.SIDE && stat.CELL in coverage) received += coverage[stat.CELL]
+            }
+            debug("[HEAL] " + stat.NAME + " id=" + e + " cell=" + stat.CELL + " -> heal received=" + received)
+        }
+    }
+}
