@@ -1,0 +1,66 @@
+/**
+ * #1 ENTITY IMPORTANCE — a per-entity MULTIPLIER in [0,1] on the survival value.
+ *
+ *   value(e) = importance(e) · (BASE_ALIVE + W_LIFE·sqrt(effLife))     (+ #2 efficacy, later)
+ *
+ * GOAL: rank entities so the AI protects / focuses the ones that matter and does NOT
+ * over-invest on weak ones (a level-1 leek, a summon). Read from the raw STATS — the
+ * level is unreliable because of components. TOTAL_TP / TOTAL_MP count too (small
+ * numbers but very impactful → bigger weights; TP ≫ MP, MP is off-meta right now).
+ *
+ * PER-STAT SLIGHT CONVEXITY:  contribution(S) = W[S]·stat[S]·(1 + IMP_CONVEX·stat[S]).
+ * Convex because (a) a high single stat is superlinear (700 STR partially bypasses
+ * absolute shields vs 200), and (b) concentration beats spread — x·(1+k·x) is
+ * superadditive, so 800 in one stat > 400+400 across two. IMP_CONVEX small = "un peu".
+ *
+ * SHAPE: the convex weighted sum goes through a SATURATING map  raw/(raw+IMP_HALF) → [0,1):
+ *   0 = no stats,   0.5 = when raw == IMP_HALF,   →1 = a maxed build. Diminishing returns
+ *   ⇒ top builds bunch up near the top (≈ equal) and weak entities sit low.
+ *
+ * DELIBERATELY COARSE: a single buff (+50) barely moves importance, so it RANKS entities
+ * WITHOUT meaningfully scoring buffs — buffs are scored by #2 (item efficacy, RES/SCI/AGI)
+ * and the payoff action via Consequences (STR/MAG/WIS, in the danger/heal maps). This is
+ * what keeps #1 from double-counting #2.
+ *
+ * SYMMETRIC: applied to every alive entity (sign-flipped in getStateScore) ⇒ nerfing an
+ * enemy's STR lowers its importance → a small positive delta even out of danger range.
+ *
+ * LIFE is NOT included (already in the survival term). Cheap (~40 ops/entity) → no cache.
+ **/
+
+include("../includes.leek")
+
+// ============================================================================
+// TUNE HERE.   raw = Σ W[S]·stat[S]·(1 + IMP_CONVEX·stat[S]) ;  importance = raw/(raw+IMP_HALF)
+//   - SCIENCE highest (team value); other combat stats equal; TP ≫ MP.
+//   - IMP_CONVEX: 0 = linear, higher = more reward for high/concentrated stats ("un peu" by default).
+//   - IMP_HALF: the 0.5 point. Raise to flatten toward 0, lower to spread toward 1.
+// ============================================================================
+global IMP_W_STRENGTH   = 0.002
+global IMP_W_MAGIC      = 0.002
+global IMP_W_WISDOM     = 0.002
+global IMP_W_SCIENCE    = 0.003
+global IMP_W_AGILITY    = 0.002
+global IMP_W_RESISTANCE = 0.002
+global IMP_W_TOTAL_TP   = 0.10
+global IMP_W_TOTAL_MP   = 0.05
+global IMP_CONVEX       = 0.0003
+global IMP_HALF         = 3.0
+
+class ImportanceClass {
+
+    /**
+     * Importance multiplier of one entity, in [0,1). 0 = matters none, →1 = maxed build.
+     */
+    static get(stat) {
+        var raw = IMP_W_STRENGTH   * stat.STRENGTH   * (1 + IMP_CONVEX * stat.STRENGTH)
+                + IMP_W_MAGIC      * stat.MAGIC      * (1 + IMP_CONVEX * stat.MAGIC)
+                + IMP_W_WISDOM     * stat.WISDOM     * (1 + IMP_CONVEX * stat.WISDOM)
+                + IMP_W_SCIENCE    * stat.SCIENCE    * (1 + IMP_CONVEX * stat.SCIENCE)
+                + IMP_W_AGILITY    * stat.AGILITY    * (1 + IMP_CONVEX * stat.AGILITY)
+                + IMP_W_RESISTANCE * stat.RESISTANCE * (1 + IMP_CONVEX * stat.RESISTANCE)
+                + IMP_W_TOTAL_TP   * stat.TOTAL_TP   * (1 + IMP_CONVEX * stat.TOTAL_TP)
+                + IMP_W_TOTAL_MP   * stat.TOTAL_MP   * (1 + IMP_CONVEX * stat.TOTAL_MP)
+        return raw / (raw + IMP_HALF)
+    }
+}

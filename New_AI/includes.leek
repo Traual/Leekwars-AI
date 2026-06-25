@@ -24,6 +24,7 @@ include("Maps/Danger/EntityDanger.leek")
 include("Maps/Danger/Danger.leek")
 
 include("Scoring/Weights.leek")
+include("Scoring/Importance.leek")
 include("Scoring/Scoring.leek")
 
 include("User/Node.leek")

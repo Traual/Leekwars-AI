@@ -62,7 +62,7 @@ class ScoringClass {
             var statsHash = addValueToBinHash(contextBySide[stat.SIDE], (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
             var danger = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            _score += sign * survivalValue(stat, danger)
+            _score += sign * ImportanceClass.get(stat) * survivalValue(stat, danger)
         }
 
         BenchOps.Stop("Scoring")
