@@ -4,37 +4,38 @@
  *   value(e) = importance(e) · (BASE_ALIVE + W_LIFE·sqrt(effLife))     (+ #2 efficacy, later)
  *
  * GOAL: rank entities so the AI protects / focuses the ones that matter and does NOT
- * over-invest on weak ones (a level-1 leek, a summon). Read from the raw STATS — the
- * level is unreliable because of components. TOTAL_TP / TOTAL_MP count too (small
- * numbers but very impactful → bigger weights; TP ≫ MP, MP is off-meta right now).
+ * over-invest on weak ones (a summon, a low leek). Read from the raw STATS (level is
+ * unreliable via components). TOTAL_TP / TOTAL_MP count too (small numbers but impactful;
+ * TP ≫ MP, MP off-meta). A summon needs no special flag — its weak stats put it low on
+ * their own (a bulb lands ≈ 1/3 of a real leek here).
  *
- * PER-STAT SLIGHT CONVEXITY:  contribution(S) = W[S]·stat[S]·(1 + IMP_CONVEX·stat[S]).
- * Convex because (a) a high single stat is superlinear (700 STR partially bypasses
- * absolute shields vs 200), and (b) concentration beats spread — x·(1+k·x) is
- * superadditive, so 800 in one stat > 400+400 across two. IMP_CONVEX small = "un peu".
+ * raw — weighted sum with a per-stat SLIGHT CONVEXITY  W[S]·stat[S]·(1 + IMP_CONVEX·stat[S]):
+ *   (a) a high single stat is superlinear (700 STR partially bypasses absolute shields vs
+ *   200), and (b) concentration > spread (x(1+kx) is superadditive: 800 > 400+400).
  *
- * SHAPE: the convex weighted sum goes through a SATURATING map  raw/(raw+IMP_HALF) → [0,1):
- *   0 = no stats,   0.5 = when raw == IMP_HALF,   →1 = a maxed build. Diminishing returns
- *   ⇒ top builds bunch up near the top (≈ equal) and weak entities sit low.
+ * SHAPE — LINEAR then clamped:  importance = min(1, raw / IMP_SCALE).  Kept simple on
+ * purpose: linear ~doubles the weak/strong separation vs the old concave saturation
+ * (bulb 1/3 of a top build vs 1/1.7). Note it can't push the bulb below ~1/3 because the
+ * TP/MP "floor" (~1.15 raw, near-constant for everyone) dominates a bulb's raw; if more
+ * separation is needed, raise IMP_CONVEX, lower the TP weight, or go to a power (raw^1.5).
  *
  * DELIBERATELY COARSE: a single buff (+50) barely moves importance, so it RANKS entities
  * WITHOUT meaningfully scoring buffs — buffs are scored by #2 (item efficacy, RES/SCI/AGI)
- * and the payoff action via Consequences (STR/MAG/WIS, in the danger/heal maps). This is
- * what keeps #1 from double-counting #2.
+ * and the payoff action via Consequences (STR/MAG/WIS, in the danger/heal maps).
  *
  * SYMMETRIC: applied to every alive entity (sign-flipped in getStateScore) ⇒ nerfing an
  * enemy's STR lowers its importance → a small positive delta even out of danger range.
  *
- * LIFE is NOT included (already in the survival term). Cheap (~40 ops/entity) → no cache.
+ * LIFE is NOT included (already in the survival term). Cheap (~35 ops/entity) → no cache.
  **/
 
 include("../includes.leek")
 
 // ============================================================================
-// TUNE HERE.   raw = Σ W[S]·stat[S]·(1 + IMP_CONVEX·stat[S]) ;  importance = raw/(raw+IMP_HALF)
+// TUNE HERE.   raw = Σ W[S]·stat[S]·(1 + IMP_CONVEX·stat[S]) ;  importance = min(1, raw/IMP_SCALE)
 //   - SCIENCE highest (team value); other combat stats equal; TP ≫ MP.
-//   - IMP_CONVEX: 0 = linear, higher = more reward for high/concentrated stats ("un peu" by default).
-//   - IMP_HALF: the 0.5 point. Raise to flatten toward 0, lower to spread toward 1.
+//   - IMP_CONVEX: 0 = linear stats, higher = more reward for high/concentrated stats.
+//   - IMP_SCALE: raw value that maps to importance 1. Raise to make everyone lower.
 // ============================================================================
 global IMP_W_STRENGTH   = 0.002
 global IMP_W_MAGIC      = 0.002
@@ -45,16 +46,13 @@ global IMP_W_RESISTANCE = 0.002
 global IMP_W_TOTAL_TP   = 0.10
 global IMP_W_TOTAL_MP   = 0.05
 global IMP_CONVEX       = 0.0003
-global IMP_HALF         = 3.0
-// Summons (bulbs) are disposable → flat discount on their final importance, so the AI
-// stops over-investing buffs/shields/max-life on them instead of on real leeks. The
-// concave sqrt(effLife) otherwise favors low-life bulbs for defensive investment.
-global IMP_SUMMON_FACTOR = 0.25
+global IMP_SCALE        = 9.0
 
 class ImportanceClass {
 
     /**
-     * Importance multiplier of one entity, in [0,1). 0 = matters none, →1 = maxed build.
+     * Importance multiplier of one entity, in [0,1]. Low for weak entities (a bulb ≈ 1/3
+     * of a real leek), 1 for a maxed build.
      */
     static get(stat) {
         var raw = IMP_W_STRENGTH   * stat.STRENGTH   * (1 + IMP_CONVEX * stat.STRENGTH)
@@ -65,8 +63,6 @@ class ImportanceClass {
                 + IMP_W_RESISTANCE * stat.RESISTANCE * (1 + IMP_CONVEX * stat.RESISTANCE)
                 + IMP_W_TOTAL_TP   * stat.TOTAL_TP   * (1 + IMP_CONVEX * stat.TOTAL_TP)
                 + IMP_W_TOTAL_MP   * stat.TOTAL_MP   * (1 + IMP_CONVEX * stat.TOTAL_MP)
-        var imp = raw / (raw + IMP_HALF)
-        if (stat.IS_SUMMON) imp *= IMP_SUMMON_FACTOR   // disposable summon: don't over-invest
-        return imp
+        return min(1, raw / IMP_SCALE)
     }
 }
