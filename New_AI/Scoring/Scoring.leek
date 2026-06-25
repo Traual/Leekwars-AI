@@ -35,66 +35,20 @@ include("../includes.leek")
 class ScoringClass {
 
     /**
-     * State value : Σ sign · survivalValue(e). The danger key's opposing-team context is
-     * precomputed once per side; each entity then adds its own shields to it.
+     * State value : Σ sign · importance(e) · survivalValue(e, netDamage). The per-entity net damage
+     * (danger cushioned by heal, sequenced by turn order) is owned by DeltaClass.
      */
     static getStateScore(State, MySide, BaseHash) {
         BenchOps.Start("Scoring")
-
-        // Precompute each side's "opposing-team context" hash once (works for any number of
-        // teams): for a side it is the hash of every alive entity NOT on that side.
-        var sides = [:]
-        for (var e: var stat in State) if (stat.LIFE > 0) sides[stat.SIDE] = true
-        var contextBySide = [:]
-        for (var side: var _ in sides) {
-            var h = OFFSET_BASIS
-            for (var e: var stat in State) {
-                if (stat.LIFE <= 0 || stat.SIDE == side) continue
-                h = addValueToBinHash(h, (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER)
-                h = addValueToBinHash(h, (e << 10) | stat.CELL)
-            }
-            contextBySide[side] = h
-        }
-
-        var healMap = HealClass.getHealMap(State)
-        var turnOrder = StateClass.getSortedEntityByTurnOrder(State) // to sequence danger+heal over 1 round
+        var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash)
         var _score = 0
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
-            var statsHash = addValueToBinHash(contextBySide[stat.SIDE], (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
-            var dangerToT = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
-            var danger = netDamage(stat, dangerToT, healMap, State, turnOrder)
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            _score += sign * ImportanceClass.get(stat) * survivalValue(stat, danger)
+            _score += sign * ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e])
         }
-
         BenchOps.Stop("Scoring")
         return _score
-    }
-
-    /**
-     * Net damage one entity takes over 1 round: sequence its incoming danger (opposing casters)
-     * and heal (same-side casters) in TURN ORDER, capping life at [0, TOTAL_LIFE]. So a heal is
-     * wasted if it would overheal, a dead entity isn't revived, and order matters (a heal before
-     * the lethal hit saves it, after doesn't). Per-event coefs DANGER_COEF / HEAL_COEF. The result
-     * feeds the UNCHANGED survival formula (poison/POT/pressure on top).
-     * (Note: for Me, dangerToT is at its min-flee cell while heal is looked up at its current cell —
-     *  a minor mismatch we accept for now.)
-     */
-    static netDamage(stat, dangerToT, healMap, State, turnOrder) {
-        var life = stat.LIFE
-        var totalLife = stat.TOTAL_LIFE
-        for (var caster in turnOrder) {
-            if (caster in dangerToT) { // opposing caster's damage to this entity
-                life -= DANGER_COEF * dangerToT[caster]
-                if (life <= 0) return stat.LIFE // dead this round -> full net damage, later heals ignored
-            }
-            if (State[caster].SIDE == stat.SIDE && caster in healMap && stat.CELL in healMap[caster]) {
-                life += HEAL_COEF * healMap[caster][stat.CELL]
-                if (life > totalLife) life = totalLife
-            }
-        }
-        return max(0, stat.LIFE - life)
     }
 
     /**

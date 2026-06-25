@@ -23,6 +23,7 @@ include("Modifier/Consequences.leek")
 include("Maps/Danger/EntityDanger.leek")
 include("Maps/Danger/Danger.leek")
 include("Maps/Heal/Heal.leek")
+include("Maps/Delta/Delta.leek")
 
 include("Scoring/Weights.leek")
 include("Scoring/Importance.leek")

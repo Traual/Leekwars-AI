@@ -1,0 +1,74 @@
+/**
+ * DELTA — combines the danger map and the heal map into the NET damage each entity takes over
+ * 1 round, sequenced by TURN ORDER. getStateScore feeds this to its survival formula as `danger`.
+ *
+ *   getNetDamageMap(State, BaseHash) -> [entityId -> net damage]
+ *
+ * Per entity, walk casters in turn order on a running `life` starting at LIFE:
+ *   - opposing caster      -> life -= DANGER_COEF · danger
+ *         NO floor: the danger keeps rolling even past 0 (overkill counts), so the AI still sees a
+ *         danger GRADIENT to reduce — it can work toward lowering it across several entity-turns
+ *         instead of the value going flat the moment an entity is "doomed".
+ *   - same-side caster, ONLY if life > 0  -> life += HEAL_COEF · heal, capped at TOTAL_LIFE
+ *         a dead entity isn't healed (cut the heal); overheal is wasted.
+ * net = max(0, LIFE − life). Poison/POT stay in the survival formula, untouched.
+ *
+ * (Minor mismatch accepted for now: for Me, dangerToT is computed at its min-flee cell while heal
+ *  is looked up at its current cell.)
+ **/
+
+include("../../includes.leek")
+
+class DeltaClass {
+
+    /* [entityId -> net damage taken over 1 round]. */
+    static getNetDamageMap(State, BaseHash) {
+        BenchOps.Start("Delta")
+
+        // Per-side "opposing-team context" hash, built once per side then reused per entity (works
+        // for any number of teams): a side's context = every alive entity NOT on that side.
+        var sides = [: ]
+        for (var e: var stat in State) if (stat.LIFE > 0) sides[stat.SIDE] = true
+        var contextBySide = [: ]
+        for (var side: var _ in sides) {
+            var h = OFFSET_BASIS
+            for (var e: var stat in State) {
+                if (stat.LIFE <= 0 || stat.SIDE == side) continue
+                h = addValueToBinHash(h, (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER)
+                h = addValueToBinHash(h, (e << 10) | stat.CELL)
+            }
+            contextBySide[side] = h
+        }
+
+        var healMap = HealClass.getHealMap(State)
+        var turnOrder = StateClass.getSortedEntityByTurnOrder(State)
+
+        var _final = [: ]
+        for (var e: var stat in State) {
+            if (stat.LIFE <= 0) continue
+            var statsHash = addValueToBinHash(contextBySide[stat.SIDE], (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
+            var dangerToT = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
+            _final[e] = netDamage(stat, dangerToT, healMap, State, turnOrder)
+        }
+
+        BenchOps.Stop("Delta")
+        return _final
+    }
+
+    /* Net damage one entity takes over 1 round: danger keeps rolling (overkill counts), heal is
+     * applied only while alive and capped at TOTAL_LIFE. */
+    static netDamage(stat, dangerToT, healMap, State, turnOrder) {
+        var life = stat.LIFE
+        var totalLife = stat.TOTAL_LIFE
+        for (var caster in turnOrder) {
+            if (caster in dangerToT) {
+                life -= DANGER_COEF * dangerToT[caster]                 // no floor -> overkill keeps the gradient
+            }
+            if (life > 0 && State[caster].SIDE == stat.SIDE && caster in healMap && stat.CELL in healMap[caster]) {
+                life += HEAL_COEF * healMap[caster][stat.CELL]          // only heal a living entity
+                if (life > totalLife) life = totalLife                 // overheal wasted
+            }
+        }
+        return max(0, stat.LIFE - life)
+    }
+}
