@@ -46,6 +46,10 @@ global IMP_W_TOTAL_TP   = 0.10
 global IMP_W_TOTAL_MP   = 0.05
 global IMP_CONVEX       = 0.0003
 global IMP_HALF         = 3.0
+// Summons (bulbs) are disposable → flat discount on their final importance, so the AI
+// stops over-investing buffs/shields/max-life on them instead of on real leeks. The
+// concave sqrt(effLife) otherwise favors low-life bulbs for defensive investment.
+global IMP_SUMMON_FACTOR = 0.25
 
 class ImportanceClass {
 
@@ -61,6 +65,8 @@ class ImportanceClass {
                 + IMP_W_RESISTANCE * stat.RESISTANCE * (1 + IMP_CONVEX * stat.RESISTANCE)
                 + IMP_W_TOTAL_TP   * stat.TOTAL_TP   * (1 + IMP_CONVEX * stat.TOTAL_TP)
                 + IMP_W_TOTAL_MP   * stat.TOTAL_MP   * (1 + IMP_CONVEX * stat.TOTAL_MP)
-        return raw / (raw + IMP_HALF)
+        var imp = raw / (raw + IMP_HALF)
+        if (stat.IS_SUMMON) imp *= IMP_SUMMON_FACTOR   // disposable summon: don't over-invest
+        return imp
     }
 }
