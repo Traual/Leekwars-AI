@@ -33,7 +33,7 @@ class DeltaClass {
         for (var side: var _ in sides) {
             var h = OFFSET_BASIS
             for (var e: var stat in State) {
-                if (stat.LIFE <= 0 || stat.SIDE == side) continue
+                if (stat.LIFE <= 0 || stat.SIDE == side || e == Me) continue // Me is excluded as a danger caster, so keep it out of the context too -> my moves don't invalidate enemy danger
                 h = addValueToBinHash(h, (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER)
                 h = addValueToBinHash(h, (e << 10) | stat.CELL)
             }
@@ -41,14 +41,16 @@ class DeltaClass {
         }
 
         var healMap = HealClass.getHealMap(State)
-        var turnOrder = StateClass.getSortedEntityByTurnOrder(State)
 
         var _final = [: ]
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var statsHash = addValueToBinHash(contextBySide[stat.SIDE], (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
             var dangerToT = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
-            _final[e] = netDamage(stat, dangerToT, healMap, State, turnOrder)
+            // Casters hit T in the order they act AFTER T this round (X-Y-Z with T=Y -> Z then X),
+            // not the absolute order. (getEntitiesInTurnOrderAfterEntity is what the danger uses too.)
+            var afterOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, e)
+            _final[e] = netDamage(stat, dangerToT, healMap, State, afterOrder)
         }
 
         BenchOps.Stop("Delta")
