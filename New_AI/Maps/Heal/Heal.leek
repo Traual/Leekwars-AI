@@ -28,6 +28,7 @@ class HealClass {
 
     /* Per-caster heal coverage map for the whole board. */
     static getHealMap(State) {
+        BenchOps.Start("Heal")
         var mySide = getSide(Me)
         var _final = [: ]
         for (var caster: var casterStats in State) {
@@ -36,6 +37,7 @@ class HealClass {
             if (!hasHealItem(casterStats)) continue
             _final[caster] = getCasterCoverage(casterStats)
         }
+        BenchOps.Stop("Heal")
         return _final
     }
 
