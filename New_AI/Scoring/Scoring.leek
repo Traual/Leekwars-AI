@@ -56,18 +56,33 @@ class ScoringClass {
             contextBySide[side] = h
         }
 
+        var healMap = HealClass.getHealMap(State) // heal offsets danger below
         var _score = 0
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var statsHash = addValueToBinHash(contextBySide[stat.SIDE], (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
             var dangerMap = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
             var danger = DangerClass.sumDamages(dangerMap)
+            var heal = healReceived(stat, healMap, State)
+            danger = max(0, DANGER_COEF * danger - HEAL_COEF * heal) // heal cushions incoming danger
             var sign = (stat.SIDE == MySide) ? 1 : -1
             _score += sign * ImportanceClass.get(stat) * survivalValue(stat, danger)
         }
 
         BenchOps.Stop("Scoring")
         return _score
+    }
+
+    /**
+     * Total heal an entity receives from its SAME-side casters (the heal map summed at its cell).
+     * The heal map only holds my-side casters, so enemy entities get 0 (no enemy-heal modelled yet).
+     */
+    static healReceived(stat, healMap, State) {
+        var total = 0
+        for (var caster: var coverage in healMap) {
+            if (State[caster].SIDE == stat.SIDE && stat.CELL in coverage) total += coverage[stat.CELL]
+        }
+        return total
     }
 
     /**

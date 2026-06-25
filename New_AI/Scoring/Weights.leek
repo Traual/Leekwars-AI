@@ -38,3 +38,9 @@ global COEF_POISON = 0.5
 global DANGER_WEIGHT = 0.7
 global COEF_POT = 0.2
 global BUFFER = 500
+
+// Heal offsets incoming danger before it enters the pressure formula (heal map summed per
+// entity): danger = max(0, DANGER_COEF·danger − HEAL_COEF·heal). Poison/POT/formula untouched.
+// (DANGER_WEIGHT can be bumped a bit since danger drops slightly once heal is subtracted.)
+global DANGER_COEF = 1.0
+global HEAL_COEF = 0.8
