@@ -56,15 +56,14 @@ class ScoringClass {
             contextBySide[side] = h
         }
 
-        var healMap = HealClass.getHealMap(State) // heal offsets danger below
+        var healMap = HealClass.getHealMap(State)
+        var turnOrder = StateClass.getSortedEntityByTurnOrder(State) // to sequence danger+heal over 1 round
         var _score = 0
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var statsHash = addValueToBinHash(contextBySide[stat.SIDE], (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
-            var dangerMap = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
-            var danger = DangerClass.sumDamages(dangerMap)
-            var heal = healReceived(stat, healMap, State)
-            danger = max(0, DANGER_COEF * danger - HEAL_COEF * heal) // heal cushions incoming danger
+            var dangerToT = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
+            var danger = netDamage(stat, dangerToT, healMap, State, turnOrder)
             var sign = (stat.SIDE == MySide) ? 1 : -1
             _score += sign * ImportanceClass.get(stat) * survivalValue(stat, danger)
         }
@@ -74,15 +73,28 @@ class ScoringClass {
     }
 
     /**
-     * Total heal an entity receives from its SAME-side casters (the heal map summed at its cell).
-     * The heal map only holds my-side casters, so enemy entities get 0 (no enemy-heal modelled yet).
+     * Net damage one entity takes over 1 round: sequence its incoming danger (opposing casters)
+     * and heal (same-side casters) in TURN ORDER, capping life at [0, TOTAL_LIFE]. So a heal is
+     * wasted if it would overheal, a dead entity isn't revived, and order matters (a heal before
+     * the lethal hit saves it, after doesn't). Per-event coefs DANGER_COEF / HEAL_COEF. The result
+     * feeds the UNCHANGED survival formula (poison/POT/pressure on top).
+     * (Note: for Me, dangerToT is at its min-flee cell while heal is looked up at its current cell —
+     *  a minor mismatch we accept for now.)
      */
-    static healReceived(stat, healMap, State) {
-        var total = 0
-        for (var caster: var coverage in healMap) {
-            if (State[caster].SIDE == stat.SIDE && stat.CELL in coverage) total += coverage[stat.CELL]
+    static netDamage(stat, dangerToT, healMap, State, turnOrder) {
+        var life = stat.LIFE
+        var totalLife = stat.TOTAL_LIFE
+        for (var caster in turnOrder) {
+            if (caster in dangerToT) { // opposing caster's damage to this entity
+                life -= DANGER_COEF * dangerToT[caster]
+                if (life <= 0) return stat.LIFE // dead this round -> full net damage, later heals ignored
+            }
+            if (State[caster].SIDE == stat.SIDE && caster in healMap && stat.CELL in healMap[caster]) {
+                life += HEAL_COEF * healMap[caster][stat.CELL]
+                if (life > totalLife) life = totalLife
+            }
         }
-        return total
+        return max(0, stat.LIFE - life)
     }
 
     /**
