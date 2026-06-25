@@ -1,0 +1,102 @@
+/**
+ * #2 STAT EFFICACY — an ADDITIVE term scoring buffs/nerfs of the stats NOT in the
+ * danger/heal maps: RESISTANCE, SCIENCE, AGILITY. (STR/MAG in the danger map, WIS in the
+ * future heal map.) NOT scored on Me — Me's own buffs are handled by the BFS (payoff
+ * action) + #1 importance.
+ *
+ *   value(e) += efficacy(e)            (added per entity, sign-flipped in getStateScore)
+ *               ⇒ buffs on allies AND nerfs on enemies both register a delta.
+ *
+ * A SIMPLE TP-BOUNDED COMBO of what the entity can cast this turn:
+ *  1) score each castable item (cd 0): Σ over effects of  base · perEffectWeight · (1 + stat·0.01)
+ *     (Consequences' exact scaling; perEffectWeight in HP per real point — RELATIVE shield ≫
+ *     ABSOLUTE; AFTEREFFECT is NEGATIVE = doping's self-poison downside).
+ *       RES → ABSOLUTE_SHIELD, RELATIVE_SHIELD
+ *       AGI → DAMAGE_RETURN
+ *       SCI → NOVA_DAMAGE, NOVA_VITALITY, AFTEREFFECT, BUFF_* (SCI amplifies buffs; RAW_BUFF_*
+ *             same weight but NOT SCI-scaled so doping-like items stay net positive)
+ *  2) sort items by score desc, take while TP remains → real TP-bounded combo.
+ *  3) efficacy = EFF_SCALE · Σ(taken).
+ *
+ * Cooldown-aware (on-cooldown items don't count). AGI crit/dodge are passive (not item
+ * effects) → only damage-return captured. No cache yet (we'll cache the per-entity combo map).
+ **/
+
+include("../includes.leek")
+
+// ============================================================================
+// TUNE HERE — HP per real point of effect (user-calibrated). EFF_SCALE = master dial vs the
+// survival term (kept so 100% shield ≠ a kill).
+// ============================================================================
+global EFF_W_ABSOLUTE_SHIELD = 5.0
+global EFF_W_RELATIVE_SHIELD = 25.0
+global EFF_W_DAMAGE_RETURN   = 15.0
+global EFF_W_NOVA_DAMAGE     = 10.0
+global EFF_W_NOVA_VITALITY   = 10.0
+global EFF_W_AFTEREFFECT     = -2.0          // doping's self-poison: a downside
+global EFF_W_BUFF_STRENGTH   = 5.0
+global EFF_W_BUFF_AGILITY    = 2.0
+global EFF_W_BUFF_RESISTANCE = 3.0
+global EFF_W_BUFF_WISDOM     = 3.0
+global EFF_W_BUFF_MP         = 40.0
+global EFF_W_BUFF_TP         = 100.0
+global EFF_SCALE             = 0.2
+
+class EfficacyClass {
+
+    /**
+     * #2 additive value of one entity: a TP-bounded combo of its castable RES/SCI/AGI items,
+     * each scaled by the relevant stat exactly like Consequences (1 + stat·0.01).
+     */
+    static get(stat) {
+        if (stat.ID == Me) return 0                            // Me's buffs handled by BFS + importance
+
+        var resMul = 1 + stat.RESISTANCE * 0.01
+        var sciMul = 1 + stat.SCIENCE * 0.01
+        var agiMul = 1 + stat.AGILITY * 0.01
+
+        // 1) score every castable item that has #2 value → [score, tpCost]
+        var items = []
+        for (var id in stat.INVENTORY) {
+            if (stat.COOLDOWNS[id] != 0) continue              // not castable this turn
+            var v = 0
+            for (var eff in ITEMINFO[id].EFFECTS) {
+                var base = eff[1]
+                switch (eff[0]) {
+                    case EFFECT_ABSOLUTE_SHIELD:    v += base * EFF_W_ABSOLUTE_SHIELD * resMul; break
+                    case EFFECT_RELATIVE_SHIELD:    v += base * EFF_W_RELATIVE_SHIELD * resMul; break
+                    case EFFECT_DAMAGE_RETURN:      v += base * EFF_W_DAMAGE_RETURN   * agiMul; break
+                    case EFFECT_NOVA_DAMAGE:        v += base * EFF_W_NOVA_DAMAGE     * sciMul; break
+                    case EFFECT_NOVA_VITALITY:      v += base * EFF_W_NOVA_VITALITY   * sciMul; break
+                    case EFFECT_AFTEREFFECT:        v += base * EFF_W_AFTEREFFECT     * sciMul; break
+                    case EFFECT_BUFF_STRENGTH:      v += base * EFF_W_BUFF_STRENGTH   * sciMul; break
+                    case EFFECT_RAW_BUFF_STRENGTH:  v += base * EFF_W_BUFF_STRENGTH;           break
+                    case EFFECT_BUFF_AGILITY:       v += base * EFF_W_BUFF_AGILITY    * sciMul; break
+                    case EFFECT_RAW_BUFF_AGILITY:   v += base * EFF_W_BUFF_AGILITY;            break
+                    case EFFECT_BUFF_RESISTANCE:    v += base * EFF_W_BUFF_RESISTANCE * sciMul; break
+                    case EFFECT_RAW_BUFF_RESISTANCE:v += base * EFF_W_BUFF_RESISTANCE;         break
+                    case EFFECT_BUFF_WISDOM:        v += base * EFF_W_BUFF_WISDOM     * sciMul; break
+                    case EFFECT_RAW_BUFF_WISDOM:    v += base * EFF_W_BUFF_WISDOM;             break
+                    case EFFECT_BUFF_MP:            v += base * EFF_W_BUFF_MP         * sciMul; break
+                    case EFFECT_RAW_BUFF_MP:        v += base * EFF_W_BUFF_MP;                 break
+                    case EFFECT_BUFF_TP:            v += base * EFF_W_BUFF_TP         * sciMul; break
+                    case EFFECT_RAW_BUFF_TP:        v += base * EFF_W_BUFF_TP;                 break
+                }
+            }
+            if (v > 0) push(items, [v, ITEMINFO[id].COST])              // net-positive items only (worth casting)
+        }
+        if (count(items) == 0) return 0
+
+        // 2) best-first, take while TP allows (simple greedy combo)
+        items = arraySort(items, function(a, b) { return b[0] - a[0] })
+        var tp = stat.TP
+        var total = 0
+        for (var it in items) {
+            if (it[1] <= tp) {
+                total += it[0]
+                tp -= it[1]
+            }
+        }
+        return EFF_SCALE * total
+    }
+}
