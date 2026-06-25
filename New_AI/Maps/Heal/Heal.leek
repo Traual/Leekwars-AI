@@ -28,9 +28,11 @@ class HealClass {
 
     /* Per-caster heal coverage map for the whole board. */
     static getHealMap(State) {
+        var mySide = getSide(Me)
         var _final = [: ]
         for (var caster: var casterStats in State) {
             if (caster == Me || casterStats.LIFE <= 0) continue
+            if (casterStats.SIDE != mySide) continue        // only my-side healers (an enemy won't heal me)
             if (!hasHealItem(casterStats)) continue
             _final[caster] = getCasterCoverage(casterStats)
         }
@@ -155,7 +157,7 @@ class HealClass {
         var State = StateClass.Virtualize()
         var healMap = getHealMap(State)
         for (var caster: var coverage in healMap) {
-            debug("[HEAL] Caster: " + State[caster].NAME + " (id " + caster + ", " + count(coverage) + " cells)")
+            debug("[HEAL] Caster: " + State[caster].NAME + " (id " + caster + ", " + mapSize(coverage) + " cells)")
             for (var cell: var heal in coverage) {
                 markText(cell, round(heal))
             }
