@@ -37,7 +37,8 @@ class FinalCell {
 
         debugC("--- Finding Best Final Cell (min danger) ---", COLOR_BLUE)
         for (var cell: var mp in possibleCells) {
-            var danger = DangerClass.get(cell, State, MyState, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
+            var dangerMap = DangerClass.get(cell, State, MyState, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
+            var danger = DangerClass.sumDamages(dangerMap)
             if (danger < bestDanger) {
                 bestDanger = danger
                 bestCell = cell

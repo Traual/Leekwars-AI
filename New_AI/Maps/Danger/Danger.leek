@@ -50,23 +50,26 @@ class DangerClass {
 			//Finding lowest danger cell in my WalkCells :
 			BenchOps.Start("Danger.cellLoop")
 			var minDanger = MAX_VALUE
+			var minMap = [: ] // per-caster danger at the min-total flee cell
 			for (var cell: var mp in MyFullWalkCells) {
-				var thisCellDanger = get(cell, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
+				var thisCellMap = get(cell, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
+				var thisCellDanger = sumDamages(thisCellMap)
 				if (thisCellDanger < minDanger) {
 					if (thisCellDanger == 0) { //Found a safe cell
 						BenchOps.Stop("Danger.cellLoop")
-						ENTITY_DANGER_CACHE_FOR_ME[Hash] = 0
+						ENTITY_DANGER_CACHE_FOR_ME[Hash] = [: ]
 						BenchOps.Stop("Danger")
-						return 0
+						return [: ]
 					}
 					minDanger = thisCellDanger
+					minMap = thisCellMap
 				}
 			}
 			BenchOps.Stop("Danger.cellLoop")
-			//Returning min danger found in my walkcells
-			ENTITY_DANGER_CACHE_FOR_ME[Hash] = minDanger
+			//Returning the per-caster danger at the lowest-total flee cell
+			ENTITY_DANGER_CACHE_FOR_ME[Hash] = minMap
 			BenchOps.Stop("Danger")
-			return minDanger
+			return minMap
 		} else {
 			//loading the hash for entity's danger
 			var Hash = addValueToBinHash(OFFSET_BASIS ^ thisStatsHashForDanger, entity_state.CELL)
@@ -87,6 +90,46 @@ class DangerClass {
 			ENTITY_DANGER_CACHE_FOR_OTHERS[Hash] = tmp
 			BenchOps.Stop("Danger")
 			return tmp
+		}
+	}
+
+	/* Sum the per-caster damages of a danger map -> scalar total (back-compat for scoring / FinalCell). */
+	static sumDamages(dangerMap) {
+		var total = 0
+		for (var caster: var damage in dangerMap) total += damage
+		return total
+	}
+
+	/* Whole-board danger map, symmetric to HealClass.getHealMap: [casterId -> [cell -> damage]].
+	 * Per target, getEntityDanger gives per-caster danger (Me at its min-flee cell, others at their
+	 * cell); transposed by caster. A target only takes damage from opposite-side casters, so
+	 * danger_received(T) = Σ K with K.SIDE != T.SIDE of dangerMap[K][T.CELL]. */
+	static getDangerMap(State, BaseHash) {
+		var _final = [: ]
+		for (var target: var targetStats in State) {
+			if (targetStats.LIFE <= 0) continue
+			var statsHash = getStatsHashForDanger(targetStats, State)
+			var perCaster = getEntityDanger(targetStats, State, target, BaseHash, statsHash)
+			for (var caster: var damage in perCaster) {
+				if (!(caster in _final)) _final[caster] = [: ]
+				_final[caster][targetStats.CELL] = damage
+			}
+		}
+		return _final
+	}
+
+	/* TEMP visual debug: one caster at a time — markText its danger per cell, pause(), clearMarks(). */
+	static debugVisual() {
+		var State = StateClass.Virtualize()
+		var BaseHash = StateClass.getBaseHash(State)
+		var dangerMap = getDangerMap(State, BaseHash)
+		for (var caster: var coverage in dangerMap) {
+			debug("[DANGER] Caster: " + State[caster].NAME + " (id " + caster + ", " + mapSize(coverage) + " cells)")
+			for (var cell: var damage in coverage) {
+				markText(cell, round(damage))
+			}
+			pause()
+			clearMarks()
 		}
 	}
 
@@ -132,7 +175,7 @@ class DangerClass {
 		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), Cell)
 		if (ThisHash in CELL_DANGER_GET_CACHE) return CELL_DANGER_GET_CACHE[ThisHash]
 		BenchOps.Start("Danger.cellGet")
-		var _final = 0
+		var _final = [: ] // [casterId -> damage] : per-caster instead of a summed scalar (for net-HP turn ordering)
 		var TargetStatsCloned = clone(TargetStats, 3)
 		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
@@ -142,7 +185,8 @@ class DangerClass {
 			var MapThisCellItemAoe = Cell in MapCellItemAoe ? MapCellItemAoe[Cell] : [: ]
 			BenchOps.Stop("Danger.mapItemAoe")
 			BenchOps.Start("Danger.combo")
-			_final += getComboFromItemAoe(MapThisCellItemAoe, CasterStats, TargetStatsCloned)
+			var thisCombo = getComboFromItemAoe(MapThisCellItemAoe, CasterStats, TargetStatsCloned)
+			if (thisCombo > 0) _final[Caster] = thisCombo
 			BenchOps.Stop("Danger.combo")
 		}
 		CELL_DANGER_GET_CACHE[ThisHash] = _final
