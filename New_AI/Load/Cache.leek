@@ -18,6 +18,7 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     SURVIVAL_CACHE = [: ]
     HEAL_COVERAGE_CACHE = [: ]
     HEAL_ENTITY_INVENTORY = [: ]
+    NETDAMAGE_CACHE = [: ]
     ENTITY_ACTIONS_CACHE = [: ]
     ACTIONS_ON_ME_CACHE = [: ]
     ACTIONS_SUMMON_CACHE = [: ]
@@ -160,6 +161,10 @@ global SURVIVAL_CACHE = [: ]
 // heal-item list keyed by id. Both reset per turn (cooldowns/positions change).
 global HEAL_COVERAGE_CACHE = [: ]
 global HEAL_ENTITY_INVENTORY = [: ]
+
+// Delta: per-entity net damage keyed by (statsHash ^ healersFP[side], packed cell/life/totallife).
+// Reset per turn. Lets unchanged entities skip the danger query + heal + turn-order sequencing.
+global NETDAMAGE_CACHE = [: ]
 
 // ============================================================================
 // WalkCells (packed-couple bitmap BFS — see Maps/WalkCells/Class.leek)

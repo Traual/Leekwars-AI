@@ -42,15 +42,42 @@ class DeltaClass {
 
         var healMap = HealClass.getHealMap(State)
 
+        // Per-side fingerprint of the healers (id + cell/mp/wis/tp), order-independent (XOR-combined)
+        // so a buff/shackle/move on a healer changes the net-damage key. Per side so touching MY
+        // healer doesn't invalidate the enemies' cache (and vice-versa once enemy heals are added).
+        var healersFingerprintBySide = [: ]
+        for (var caster: var _ in healMap) {
+            var cs = State[caster]
+            var perHealer = addValueToBinHash(OFFSET_BASIS ^ caster, (cs.WISDOM << 32) | (cs.TOTAL_TP << 22) | (cs.TOTAL_MP << 12) | cs.CELL)
+            healersFingerprintBySide[cs.SIDE] = ((cs.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[cs.SIDE] : 0) ^ perHealer
+        }
+
         var _final = [: ]
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var statsHash = addValueToBinHash(contextBySide[stat.SIDE], (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
+
+            // Per-entity net-damage cache: an entity untouched by my action keeps the same key across
+            // BFS nodes -> hit -> skip the danger query + heal lookups + turn-order build + sequencing.
+            // Skip Me: its danger is a min-flee over its walkcells (not captured by a cell-based key),
+            // and Me changes every node so it would never hit anyway.
+            var ndKey = 0
+            var cacheable = (e != Me)
+            if (cacheable) {
+                var hfp = (stat.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[stat.SIDE] : 0
+                ndKey = addValueToBinHash(statsHash ^ hfp, (stat.CELL << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE)
+                if (ndKey in NETDAMAGE_CACHE) {
+                    _final[e] = NETDAMAGE_CACHE[ndKey]
+                    continue
+                }
+            }
+
             var dangerToT = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
-            // Casters hit T in the order they act AFTER T this round (X-Y-Z with T=Y -> Z then X),
-            // not the absolute order. (getEntitiesInTurnOrderAfterEntity is what the danger uses too.)
+            // Casters hit T in the order they act AFTER T this round (X-Y-Z with T=Y -> Z then X).
             var afterOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, e)
-            _final[e] = netDamage(stat, dangerToT, healMap, State, afterOrder)
+            var nd = netDamage(stat, dangerToT, healMap, State, afterOrder)
+            if (cacheable) NETDAMAGE_CACHE[ndKey] = nd
+            _final[e] = nd
         }
 
         BenchOps.Stop("Delta")
