@@ -1,32 +1,28 @@
 /**
  * #2 STAT EFFICACY — an ADDITIVE term scoring buffs/nerfs of the stats NOT in the
- * danger/heal maps: RESISTANCE, SCIENCE, AGILITY. (STR/MAG in the danger map, WIS in the
- * future heal map.) NOT scored on Me — Me's own buffs are handled by the BFS (payoff
- * action) + #1 importance.
+ * danger/heal maps: RESISTANCE, SCIENCE, AGILITY. NOT scored on Me (handled by the BFS
+ * payoff + #1 importance).
  *
  *   value(e) += efficacy(e)            (added per entity, sign-flipped in getStateScore)
  *               ⇒ buffs on allies AND nerfs on enemies both register a delta.
  *
- * A SIMPLE TP-BOUNDED COMBO of what the entity can cast this turn:
- *  1) score each castable item (cd 0): Σ over effects of  base · perEffectWeight · (1 + stat·0.01)
- *     (Consequences' exact scaling; perEffectWeight in HP per real point — RELATIVE shield ≫
- *     ABSOLUTE; AFTEREFFECT is NEGATIVE = doping's self-poison downside).
- *       RES → ABSOLUTE_SHIELD, RELATIVE_SHIELD
- *       AGI → DAMAGE_RETURN
- *       SCI → NOVA_DAMAGE, NOVA_VITALITY, AFTEREFFECT, BUFF_* (SCI amplifies buffs; RAW_BUFF_*
- *             same weight but NOT SCI-scaled so doping-like items stay net positive)
- *  2) sort items by score desc, take while TP remains → real TP-bounded combo.
- *  3) efficacy = EFF_SCALE · Σ(taken).
+ * computeCombo(e) = a TP-BOUNDED GREEDY COMBO of what the entity can cast this turn:
+ *  1) score each castable item (cd 0): Σ effects  base · perEffectWeight · (1 + stat·0.01)
+ *     (exact Consequences scaling). Effect→stat: RES→ABSOLUTE/RELATIVE_SHIELD,
+ *     AGI→DAMAGE_RETURN, SCI→NOVA_DAMAGE/NOVA_VITALITY/AFTEREFFECT/BUFF_* (RAW_BUFF_* same
+ *     weight but NOT SCI-scaled). perEffectWeight = HP per real point (RELATIVE ≫ ABSOLUTE;
+ *     AFTEREFFECT negative = doping's self-poison).
+ *  2) sort items by score desc, take while TP remains.
+ *  3) efficacy = EFF_SCALE · Σ(taken). Net-negative items are dropped.
  *
- * Cooldown-aware (on-cooldown items don't count). AGI crit/dodge are passive (not item
- * effects) → only damage-return captured. No cache yet (we'll cache the per-entity combo map).
+ * Cooldown-aware. AGI crit/dodge are passive (not item effects) → only damage-return counted.
+ * No cache yet (one inventory pass + arraySort per entity per call).
  **/
 
 include("../includes.leek")
 
 // ============================================================================
-// TUNE HERE — HP per real point of effect (user-calibrated). EFF_SCALE = master dial vs the
-// survival term (kept so 100% shield ≠ a kill).
+// TUNE HERE — HP per real point of effect (user-calibrated). EFF_SCALE = master dial vs survival.
 // ============================================================================
 global EFF_W_ABSOLUTE_SHIELD = 5.0
 global EFF_W_RELATIVE_SHIELD = 25.0
@@ -45,12 +41,17 @@ global EFF_SCALE             = 0.2
 class EfficacyClass {
 
     /**
-     * #2 additive value of one entity: a TP-bounded combo of its castable RES/SCI/AGI items,
-     * each scaled by the relevant stat exactly like Consequences (1 + stat·0.01).
+     * #2 additive value of one entity (0 for Me — handled elsewhere).
      */
     static get(stat) {
-        if (stat.ID == Me) return 0                            // Me's buffs handled by BFS + importance
+        if (stat.ID == Me) return 0
+        return computeCombo(stat)
+    }
 
+    /**
+     * The TP-bounded combo value of an entity's castable RES/SCI/AGI items (no Me-skip).
+     */
+    static computeCombo(stat) {
         var resMul = 1 + stat.RESISTANCE * 0.01
         var sciMul = 1 + stat.SCIENCE * 0.01
         var agiMul = 1 + stat.AGILITY * 0.01
@@ -63,31 +64,67 @@ class EfficacyClass {
             for (var eff in ITEMINFO[id].EFFECTS) {
                 var base = eff[1]
                 switch (eff[0]) {
-                    case EFFECT_ABSOLUTE_SHIELD:    v += base * EFF_W_ABSOLUTE_SHIELD * resMul; break
-                    case EFFECT_RELATIVE_SHIELD:    v += base * EFF_W_RELATIVE_SHIELD * resMul; break
-                    case EFFECT_DAMAGE_RETURN:      v += base * EFF_W_DAMAGE_RETURN   * agiMul; break
-                    case EFFECT_NOVA_DAMAGE:        v += base * EFF_W_NOVA_DAMAGE     * sciMul; break
-                    case EFFECT_NOVA_VITALITY:      v += base * EFF_W_NOVA_VITALITY   * sciMul; break
-                    case EFFECT_AFTEREFFECT:        v += base * EFF_W_AFTEREFFECT     * sciMul; break
-                    case EFFECT_BUFF_STRENGTH:      v += base * EFF_W_BUFF_STRENGTH   * sciMul; break
-                    case EFFECT_RAW_BUFF_STRENGTH:  v += base * EFF_W_BUFF_STRENGTH;           break
-                    case EFFECT_BUFF_AGILITY:       v += base * EFF_W_BUFF_AGILITY    * sciMul; break
-                    case EFFECT_RAW_BUFF_AGILITY:   v += base * EFF_W_BUFF_AGILITY;            break
-                    case EFFECT_BUFF_RESISTANCE:    v += base * EFF_W_BUFF_RESISTANCE * sciMul; break
-                    case EFFECT_RAW_BUFF_RESISTANCE:v += base * EFF_W_BUFF_RESISTANCE;         break
-                    case EFFECT_BUFF_WISDOM:        v += base * EFF_W_BUFF_WISDOM     * sciMul; break
-                    case EFFECT_RAW_BUFF_WISDOM:    v += base * EFF_W_BUFF_WISDOM;             break
-                    case EFFECT_BUFF_MP:            v += base * EFF_W_BUFF_MP         * sciMul; break
-                    case EFFECT_RAW_BUFF_MP:        v += base * EFF_W_BUFF_MP;                 break
-                    case EFFECT_BUFF_TP:            v += base * EFF_W_BUFF_TP         * sciMul; break
-                    case EFFECT_RAW_BUFF_TP:        v += base * EFF_W_BUFF_TP;                 break
+                    case EFFECT_ABSOLUTE_SHIELD:
+                        v += base * EFF_W_ABSOLUTE_SHIELD * resMul
+                        break
+                    case EFFECT_RELATIVE_SHIELD:
+                        v += base * EFF_W_RELATIVE_SHIELD * resMul
+                        break
+                    case EFFECT_DAMAGE_RETURN:
+                        v += base * EFF_W_DAMAGE_RETURN * agiMul
+                        break
+                    case EFFECT_NOVA_DAMAGE:
+                        v += base * EFF_W_NOVA_DAMAGE * sciMul
+                        break
+                    case EFFECT_NOVA_VITALITY:
+                        v += base * EFF_W_NOVA_VITALITY * sciMul
+                        break
+                    case EFFECT_AFTEREFFECT:
+                        v += base * EFF_W_AFTEREFFECT * sciMul
+                        break
+                    case EFFECT_BUFF_STRENGTH:
+                        v += base * EFF_W_BUFF_STRENGTH * sciMul
+                        break
+                    case EFFECT_RAW_BUFF_STRENGTH:
+                        v += base * EFF_W_BUFF_STRENGTH
+                        break
+                    case EFFECT_BUFF_AGILITY:
+                        v += base * EFF_W_BUFF_AGILITY * sciMul
+                        break
+                    case EFFECT_RAW_BUFF_AGILITY:
+                        v += base * EFF_W_BUFF_AGILITY
+                        break
+                    case EFFECT_BUFF_RESISTANCE:
+                        v += base * EFF_W_BUFF_RESISTANCE * sciMul
+                        break
+                    case EFFECT_RAW_BUFF_RESISTANCE:
+                        v += base * EFF_W_BUFF_RESISTANCE
+                        break
+                    case EFFECT_BUFF_WISDOM:
+                        v += base * EFF_W_BUFF_WISDOM * sciMul
+                        break
+                    case EFFECT_RAW_BUFF_WISDOM:
+                        v += base * EFF_W_BUFF_WISDOM
+                        break
+                    case EFFECT_BUFF_MP:
+                        v += base * EFF_W_BUFF_MP * sciMul
+                        break
+                    case EFFECT_RAW_BUFF_MP:
+                        v += base * EFF_W_BUFF_MP
+                        break
+                    case EFFECT_BUFF_TP:
+                        v += base * EFF_W_BUFF_TP * sciMul
+                        break
+                    case EFFECT_RAW_BUFF_TP:
+                        v += base * EFF_W_BUFF_TP
+                        break
                 }
             }
-            if (v > 0) push(items, [v, ITEMINFO[id].COST])              // net-positive items only (worth casting)
+            if (v > 0) push(items, [v, ITEMINFO[id].COST])     // net-positive items only
         }
         if (count(items) == 0) return 0
 
-        // 2) best-first, take while TP allows (simple greedy combo)
+        // 2) best-first, take while TP allows
         items = arraySort(items, function(a, b) { return b[0] - a[0] })
         var tp = stat.TP
         var total = 0
@@ -98,5 +135,17 @@ class EfficacyClass {
             }
         }
         return EFF_SCALE * total
+    }
+
+    /**
+     * TEMP debug: print the raw combo value of every alive entity (bypasses the Me-skip so
+     * you see what Me would score too). Call once per turn.
+     */
+    static debugAll() {
+        var State = StateClass.Virtualize()
+        for (var e: var stat in State) {
+            if (stat.LIFE <= 0) continue
+            debug("[EFF] " + stat.NAME + " id=" + e + " Me=" + (e == Me) + " RES=" + stat.RESISTANCE + " SCI=" + stat.SCIENCE + " AGI=" + stat.AGILITY + " -> " + computeCombo(stat))
+        }
     }
 }
