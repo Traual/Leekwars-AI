@@ -46,11 +46,13 @@ class WalkCellsClass {
 	// ============================================================================
 
 	static canJump(stats) {
+		if (!(CHIP_JUMP in stats.COOLDOWNS)) return false // entity doesn't have jump equipped
 		var cd = stats.COOLDOWNS[CHIP_JUMP]
 		return (cd == 0 || (stats.ID != Me && cd <= 1)) && stats.TP >= ITEMINFO[CHIP_JUMP].COST
 	}
 
 	static canTele(stats) {
+		if (!(CHIP_TELEPORTATION in stats.COOLDOWNS)) return false // entity doesn't have teleport equipped
 		var cd = stats.COOLDOWNS[CHIP_TELEPORTATION]
 		return (cd == 0 || (stats.ID != Me && cd <= 1)) && stats.TP >= ITEMINFO[CHIP_TELEPORTATION].COST
 	}
