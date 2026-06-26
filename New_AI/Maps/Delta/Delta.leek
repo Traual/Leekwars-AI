@@ -55,10 +55,10 @@ class DeltaClass {
             var statsHash = addValueToBinHash(contextBySide[stat.SIDE], (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
 
             if (e == Me) {
-                // Me MOVES this turn: take the MIN net delta over my reachable flee cells (danger AND
-                // heal at the SAME cell). Returned directly. Not cached yet (the min is over a moving
-                // flee-set, not a single cell key) -> next optimization step.
-                _final[e] = minDeltaForMe(stat, State, BaseHash, statsHash, healMap)
+                // Me MOVES this turn: MIN net delta over my reachable flee cells (danger AND heal at
+                // the SAME cell). Two-level cached inside (per-cell net + the whole min by reachable set).
+                var hfp = (stat.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[stat.SIDE] : 0
+                _final[e] = minDeltaForMe(stat, State, BaseHash, statsHash, hfp, healMap)
                 continue
             }
 
@@ -88,7 +88,16 @@ class DeltaClass {
      * (danger there sequenced with heal there + turn order). Returned directly — no post-processing.
      * Heal-aware (danger & heal at the SAME flee cell) and gradient-preserving (net is uncapped, so
      * overkill cells stay distinguishable). Not cached yet — caching is the next step. */
-    static minDeltaForMe(MeStats, State, BaseHash, statsHash, healMap) {
+    static minDeltaForMe(MeStats, State, BaseHash, statsHash, hfp, healMap) {
+        // seed = everything that fixes net(cell) EXCEPT the cell: enemy context + my shields
+        // (statsHash), my-side healers (hfp), my current+max life (heal cap + the life<=0 cut). The
+        // SAME seed keys BOTH caches — folded with the cell (inner) or my reachable-set hash (outer).
+        var seed = addValueToBinHash(statsHash ^ hfp, (MeStats.LIFE << 16) | MeStats.TOTAL_LIFE)
+
+        // OUTER: revisiting the exact same Me-state (stats + reachable set) -> whole search skipped.
+        var outerKey = addValueToBinHash(seed, WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MeStats))
+        if (outerKey in ENTITY_DELTA_CACHE_FOR_ME) return ENTITY_DELTA_CACHE_FOR_ME[outerKey]
+
         var toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
         var enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash)
         var myWalkCells    = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
@@ -96,13 +105,22 @@ class DeltaClass {
 
         var minDelta = MAX_VALUE
         for (var cell: var mp in myWalkCells) {
-            var dangerAtCell = DangerClass.get(cell, State, MeStats, enemyWalkCells, toSkipMap, statsHash, castersInOrder)
-            var delta = netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
+            // INNER: net at this cell. Same seed -> hits even if I moved (overlapping reachable sets).
+            var innerKey = addValueToBinHash(seed, cell)
+            var delta = 0
+            if (innerKey in CELL_NETDAMAGE_FOR_ME_CACHE) {
+                delta = CELL_NETDAMAGE_FOR_ME_CACHE[innerKey]
+            } else {
+                var dangerAtCell = DangerClass.get(cell, State, MeStats, enemyWalkCells, toSkipMap, statsHash, castersInOrder)
+                delta = netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
+                CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
+            }
             if (delta < minDelta) {
-                if (delta == 0) return 0                                // can't beat 0 net damage -> stop
+                if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // can't beat 0
                 minDelta = delta
             }
         }
+        ENTITY_DELTA_CACHE_FOR_ME[outerKey] = minDelta
         return minDelta
     }
 

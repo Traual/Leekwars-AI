@@ -12,7 +12,8 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     HAVE_AN_HITTABLE_ITEM_CACHE = [: ]
     TO_SKIP_MAP_CACHE = [: ]
     ENEMIES_BASE_HASH_CACHE = [: ]
-    ENTITY_DANGER_CACHE_FOR_ME = [: ]
+    ENTITY_DELTA_CACHE_FOR_ME = [: ]
+    CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
     SURVIVAL_CACHE = [: ]
@@ -123,8 +124,15 @@ global ENEMIES_BASE_HASH_CACHE = [: ]
 
 //Branch Danger Cache :
 
-global ENTITY_DANGER_CACHE_FOR_ME = [: ]
 global ENTITY_DANGER_CACHE_FOR_OTHERS = [: ]
+
+// Me's flee search caches (net delta, two levels). CELL_NETDAMAGE_FOR_ME_CACHE = net at ONE flee
+// cell; ENTITY_DELTA_CACHE_FOR_ME = the whole MIN over my reachable set. Both keyed by the same
+// seed = addValueToBinHash(statsHash ^ healersFP, pack(LIFE,TOTAL_LIFE)) — folded with the cell,
+// resp. the reachable-set fingerprint (walkcellsHash). Both reset per turn. (Replaces the retired
+// ENTITY_DANGER_CACHE_FOR_ME — the Me danger min is now a net-delta min, computed in DeltaClass.)
+global CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
+global ENTITY_DELTA_CACHE_FOR_ME = [: ]
 
 //For Walkable cells / Jump Walkable cells
 
