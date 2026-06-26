@@ -13,8 +13,9 @@
  *         a dead entity isn't healed (cut the heal); overheal is wasted.
  * net = max(0, LIFE − life). Poison/POT stay in the survival formula, untouched.
  *
- * (Minor mismatch accepted for now: for Me, dangerToT is computed at its min-flee cell while heal
- *  is looked up at its current cell.)
+ * Others take net damage at their current cell (they don't move on my turn). Me searches its
+ * reachable cells (minDeltaForMe) for the one MINIMISING the net delta — danger AND heal evaluated
+ * at the SAME flee cell (no mismatch), returned directly.
  **/
 
 include("../../includes.leek")
@@ -53,26 +54,29 @@ class DeltaClass {
             if (stat.LIFE <= 0) continue
             var statsHash = addValueToBinHash(contextBySide[stat.SIDE], (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
 
-            // Per-entity net-damage cache: an entity untouched by my action keeps the same key across
-            // BFS nodes -> hit -> skip the danger query + heal lookups + turn-order build + sequencing.
-            // Skip Me: its danger is a min-flee over its walkcells (not captured by a cell-based key),
-            // and Me changes every node so it would never hit anyway.
-            var ndKey = 0
-            var cacheable = (e != Me)
-            if (cacheable) {
-                var hfp = (stat.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[stat.SIDE] : 0
-                ndKey = addValueToBinHash(statsHash ^ hfp, (stat.CELL << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE)
-                if (ndKey in NETDAMAGE_CACHE) {
-                    _final[e] = NETDAMAGE_CACHE[ndKey]
-                    continue
-                }
+            if (e == Me) {
+                // Me MOVES this turn: take the MIN net delta over my reachable flee cells (danger AND
+                // heal at the SAME cell). Returned directly. Not cached yet (the min is over a moving
+                // flee-set, not a single cell key) -> next optimization step.
+                _final[e] = minDeltaForMe(stat, State, BaseHash, statsHash, healMap)
+                continue
+            }
+
+            // Others don't move on my turn -> net damage at their CURRENT cell. Cache it: an entity
+            // untouched by my action keeps the same key across BFS nodes -> hit -> skip danger + heal
+            // + turn-order build + sequencing.
+            var hfp = (stat.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[stat.SIDE] : 0
+            var ndKey = addValueToBinHash(statsHash ^ hfp, (stat.CELL << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE)
+            if (ndKey in NETDAMAGE_CACHE) {
+                _final[e] = NETDAMAGE_CACHE[ndKey]
+                continue
             }
 
             var dangerToT = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
             // Casters hit T in the order they act AFTER T this round (X-Y-Z with T=Y -> Z then X).
             var afterOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, e)
-            var nd = netDamage(stat, dangerToT, healMap, State, afterOrder)
-            if (cacheable) NETDAMAGE_CACHE[ndKey] = nd
+            var nd = netDamage(stat, dangerToT, healMap, State, afterOrder, stat.CELL)
+            NETDAMAGE_CACHE[ndKey] = nd
             _final[e] = nd
         }
 
@@ -80,17 +84,39 @@ class DeltaClass {
         return _final
     }
 
-    /* Net damage one entity takes over 1 round: danger keeps rolling (overkill counts), heal is
-     * applied only while alive and capped at TOTAL_LIFE. */
-    static netDamage(stat, dangerToT, healMap, State, turnOrder) {
+    /* Min net delta Me takes this turn = MIN over my reachable cells of the net damage AT that cell
+     * (danger there sequenced with heal there + turn order). Returned directly — no post-processing.
+     * Heal-aware (danger & heal at the SAME flee cell) and gradient-preserving (net is uncapped, so
+     * overkill cells stay distinguishable). Not cached yet — caching is the next step. */
+    static minDeltaForMe(MeStats, State, BaseHash, statsHash, healMap) {
+        var toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
+        var enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash)
+        var myWalkCells    = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
+        var castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
+
+        var minDelta = MAX_VALUE
+        for (var cell: var mp in myWalkCells) {
+            var dangerAtCell = DangerClass.get(cell, State, MeStats, enemyWalkCells, toSkipMap, statsHash, castersInOrder)
+            var delta = netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
+            if (delta < minDelta) {
+                if (delta == 0) return 0                                // can't beat 0 net damage -> stop
+                minDelta = delta
+            }
+        }
+        return minDelta
+    }
+
+    /* Net damage one entity takes over 1 round AT `cell`: danger keeps rolling (overkill counts),
+     * heal is applied only while alive AT `cell`, capped at TOTAL_LIFE. */
+    static netDamage(stat, dangerToT, healMap, State, turnOrder, cell) {
         var life = stat.LIFE
         var totalLife = stat.TOTAL_LIFE
         for (var caster in turnOrder) {
             if (caster in dangerToT) {
                 life -= DANGER_COEF * dangerToT[caster]                 // no floor -> overkill keeps the gradient
             }
-            if (life > 0 && State[caster].SIDE == stat.SIDE && caster in healMap && stat.CELL in healMap[caster]) {
-                life += HEAL_COEF * healMap[caster][stat.CELL]          // only heal a living entity
+            if (life > 0 && State[caster].SIDE == stat.SIDE && caster in healMap && cell in healMap[caster]) {
+                life += HEAL_COEF * healMap[caster][cell]               // heal AT `cell` (the flee cell for Me)
                 if (life > totalLife) life = totalLife                 // overheal wasted
             }
         }

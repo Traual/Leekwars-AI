@@ -28,64 +28,23 @@ class DangerClass {
 
 	static getEntityDanger(entity_state, state, entity_id, base_hash, thisStatsHashForDanger) {
 		BenchOps.Start("Danger")
-		if (entity_id == Me) {
-			//Then loading walkcells hash from current situation
-			var thisWalkcellsHash = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(entity_state)
-			//loading the hash for my danger
-			var Hash = addValueToBinHash(OFFSET_BASIS ^ thisStatsHashForDanger, thisWalkcellsHash)
-			if (Hash in ENTITY_DANGER_CACHE_FOR_ME) {
-				BenchOps.Stop("Danger")
-				return ENTITY_DANGER_CACHE_FOR_ME[Hash]
-			}
-			//Finding the lowest danger cell possible in my walkcells
-			var thisToSkipMap = EntitiesToSkip(entity_state, state, base_hash)
-			//Loading entity's enemies walk cells
-			var thisEnemiesWalkableCellsMap = LoadEnemiesWalkableCellsMap(state, entity_id, thisToSkipMap, base_hash)
-			//Loading My WalkCells at this instant :
-			var MyFullWalkCells = WalkCellsClass.getMaxLayer(state, entity_id, base_hash)
-			//Pre-compute caster iteration order (constant across cell loop)
-			var thisCastersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(state, entity_state.ID)
-			//Finding lowest danger cell in my WalkCells :
-			var minDanger = MAX_VALUE
-			var minMap = [: ] // per-caster danger at the min-total flee cell
-			for (var cell: var mp in MyFullWalkCells) {
-				var thisCellMap = get(cell, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
-				var thisCellDanger = sumDamages(thisCellMap)
-				if (thisCellDanger < minDanger) {
-					if (thisCellDanger == 0) { //Found a safe cell
-						ENTITY_DANGER_CACHE_FOR_ME[Hash] = [: ]
-						BenchOps.Stop("Danger")
-						return [: ]
-					}
-					minDanger = thisCellDanger
-					minMap = thisCellMap
-				}
-			}
-			//Returning the per-caster danger at the lowest-total flee cell
-			ENTITY_DANGER_CACHE_FOR_ME[Hash] = minMap
+		// Danger the entity takes at its CURRENT cell, per caster. Me's min-delta flee search moved to
+		// DeltaClass.minDeltaForMe (which calls get() per flee cell directly), so this is now uniform.
+		var Hash = addValueToBinHash(OFFSET_BASIS ^ thisStatsHashForDanger, entity_state.CELL)
+		if (Hash in ENTITY_DANGER_CACHE_FOR_OTHERS) {
 			BenchOps.Stop("Danger")
-			return minMap
-		} else {
-			//loading the hash for entity's danger
-			var Hash = addValueToBinHash(OFFSET_BASIS ^ thisStatsHashForDanger, entity_state.CELL)
-			if (Hash in ENTITY_DANGER_CACHE_FOR_OTHERS) {
-				BenchOps.Stop("Danger")
-				return ENTITY_DANGER_CACHE_FOR_OTHERS[Hash]
-			}
-			//Returning the actual entity's danger with Me in toSkipMap
-			var thisToSkipMap = clone(DangerClass.EntitiesToSkip(entity_state, state, base_hash))
-			//Adding MySelf in To Skip Map (to avoid lowering danger when i play)
-			thisToSkipMap[Me] = true
-			//Loading entity's enemies walk cells
-			var thisEnemiesWalkableCellsMap = LoadEnemiesWalkableCellsMap(state, entity_id, thisToSkipMap, base_hash)
-			//Pre-compute caster iteration order (single get() call but keeps the API uniform)
-			var thisCastersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(state, entity_state.ID)
-			//Then Loading the Danger of its position in this state
-			var tmp = DangerClass.get(entity_state.CELL, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
-			ENTITY_DANGER_CACHE_FOR_OTHERS[Hash] = tmp
-			BenchOps.Stop("Danger")
-			return tmp
+			return ENTITY_DANGER_CACHE_FOR_OTHERS[Hash]
 		}
+		//Skip MySelf as a caster: my own output is searched by the BFS, never counted as ambient danger
+		var thisToSkipMap = clone(DangerClass.EntitiesToSkip(entity_state, state, base_hash))
+		thisToSkipMap[Me] = true
+		//Loading entity's enemies walk cells
+		var thisEnemiesWalkableCellsMap = LoadEnemiesWalkableCellsMap(state, entity_id, thisToSkipMap, base_hash)
+		var thisCastersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(state, entity_state.ID)
+		var tmp = DangerClass.get(entity_state.CELL, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
+		ENTITY_DANGER_CACHE_FOR_OTHERS[Hash] = tmp
+		BenchOps.Stop("Danger")
+		return tmp
 	}
 
 	/* Sum the per-caster damages of a danger map -> scalar total (back-compat for scoring / FinalCell). */
@@ -96,8 +55,8 @@ class DangerClass {
 	}
 
 	/* Whole-board danger map, symmetric to HealClass.getHealMap: [casterId -> [cell -> damage]].
-	 * Per target, getEntityDanger gives per-caster danger (Me at its min-flee cell, others at their
-	 * cell); transposed by caster. A target only takes damage from opposite-side casters, so
+	 * Per target, getEntityDanger gives per-caster danger at the target's current cell; transposed by
+	 * caster. A target only takes damage from opposite-side casters, so
 	 * danger_received(T) = Σ K with K.SIDE != T.SIDE of dangerMap[K][T.CELL]. */
 	static getDangerMap(State, BaseHash) {
 		var _final = [: ]
