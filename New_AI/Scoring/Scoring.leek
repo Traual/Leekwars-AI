@@ -38,9 +38,19 @@ class ScoringClass {
      * State value : Σ sign · importance(e) · survivalValue(e, netDamage). The per-entity net damage
      * (danger cushioned by heal, sequenced by turn order) is owned by DeltaClass.
      */
-    static getStateScore(State, MySide, BaseHash) {
+    static getStateScore(State, MySide, BaseHash, node) {
         BenchOps.Start("Scoring")
-        var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash)
+        // contextBySide depends only on non-Me entities. The node inherits it from its parent unless
+        // its action touched the enemy/ally context (Node.ActionToNodeInTree); build + memoize it here
+        // only when the node didn't supply one (root, base nodes, or context-touching nodes).
+        var contextBySide
+        if (node != null && node.CONTEXT_BY_SIDE != null) {
+            contextBySide = node.CONTEXT_BY_SIDE
+        } else {
+            contextBySide = DeltaClass.buildContextBySide(State)
+            if (node != null) node.CONTEXT_BY_SIDE = contextBySide
+        }
+        var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash, contextBySide)
         var _score = 0
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue

@@ -33,7 +33,7 @@ class ActionSuite {
 		BenchOps.Start("BFS")
 		var MySide = State[Me].SIDE
 		var BaseHash = StateClass.getBaseHash(State)
-		var initialScore = ScoringClass.getStateScore(State, MySide, BaseHash)
+		var initialScore = ScoringClass.getStateScore(State, MySide, BaseHash, null)
 
 		// Per-call cache : BaseHash -> sorted ScoredEntries
 		// Entry shape : [act, deltaVsReference, node, nodeScore, nodeBaseHash]
@@ -150,7 +150,7 @@ class ActionSuite {
 			var candidate = NodeClass.ActionToNode(act, State, BaseHash, Parent)
 			if (candidate == null) continue
 			var candidateBaseHash = StateClass.getBaseHash(candidate.END_STATS)
-			var candidateScore = ScoringClass.getStateScore(candidate.END_STATS, MySide, candidateBaseHash)
+			var candidateScore = ScoringClass.getStateScore(candidate.END_STATS, MySide, candidateBaseHash, candidate)
 			var deltaFromParent = candidateScore - ParentScore
 
 			if (deltaFromParent > BestDeltaFromParent) {
@@ -176,7 +176,7 @@ class ActionSuite {
 			var node = NodeClass.ActionToNode(act, State, BaseHash, null)
 			if (node == null) continue
 			var nodeBaseHash = StateClass.getBaseHash(node.END_STATS)
-			var nodeScore = ScoringClass.getStateScore(node.END_STATS, MySide, nodeBaseHash)
+			var nodeScore = ScoringClass.getStateScore(node.END_STATS, MySide, nodeBaseHash, node)
 			push(Entries, [act, nodeScore - ReferenceScore, node, nodeScore, nodeBaseHash])
 		}
 		// arraySort RETURNS the sorted array (per LS doc) -- must capture.
