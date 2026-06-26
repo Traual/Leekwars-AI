@@ -2,7 +2,7 @@
  * DELTA — combines the danger map and the heal map into the NET damage each entity takes over
  * 1 round, sequenced by TURN ORDER. getStateScore feeds this to its survival formula as `danger`.
  *
- *   getNetDamageMap(State, BaseHash, contextBySide) -> [entityId -> net damage]
+ *   getNetDamageMap(State, BaseHash) -> [entityId -> net damage]
  *
  * Per entity, walk casters in turn order on a running `life` starting at LIFE:
  *   - opposing caster      -> life -= DANGER_COEF · danger
@@ -22,30 +22,24 @@ include("../../includes.leek")
 
 class DeltaClass {
 
-    /* Per-side "opposing-team context" hash: a side's context = every alive entity NOT on that side
-     * (Me excluded — not a danger caster). Depends ONLY on non-Me entities' stats+cells, so it's
-     * invariant across BFS nodes whose action didn't touch a non-Me entity -> the BFS inherits it down
-     * the tree (Node.CONTEXT_BY_SIDE) and only rebuilds it here on the root / context-touching nodes. */
-    static buildContextBySide(State) {
+    /* [entityId -> net damage taken over 1 round]. */
+    static getNetDamageMap(State, BaseHash) {
+        BenchOps.Start("Delta")
+
+        // Per-side "opposing-team context" hash, built once per side then reused per entity (works
+        // for any number of teams): a side's context = every alive entity NOT on that side.
         var sides = [: ]
         for (var e: var stat in State) if (stat.LIFE > 0) sides[stat.SIDE] = true
         var contextBySide = [: ]
         for (var side: var _ in sides) {
             var h = OFFSET_BASIS
             for (var e: var stat in State) {
-                if (stat.LIFE <= 0 || stat.SIDE == side || e == Me) continue
+                if (stat.LIFE <= 0 || stat.SIDE == side || e == Me) continue // Me is excluded as a danger caster, so keep it out of the context too -> my moves don't invalidate enemy danger
                 h = addValueToBinHash(h, (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER)
                 h = addValueToBinHash(h, (e << 10) | stat.CELL)
             }
             contextBySide[side] = h
         }
-        return contextBySide
-    }
-
-    /* [entityId -> net damage taken over 1 round]. contextBySide is supplied by the caller (built once
-     * at the root, inherited across nodes) — see ScoringClass.getStateScore + Node.ActionToNodeInTree. */
-    static getNetDamageMap(State, BaseHash, contextBySide) {
-        BenchOps.Start("Delta")
 
         // getHealMap builds the per-side healers fingerprint (id + cell/mp/wis/tp, XOR-combined,
         // order-independent) while scanning State and publishes it here. The SAME fingerprint keys

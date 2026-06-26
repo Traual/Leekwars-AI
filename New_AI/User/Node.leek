@@ -10,7 +10,6 @@ class NodeClass {
 	PARENT      // Node we came from (null for root / base / no-play)
 	SCORE       // Absolute state score of END_STATS (cached, filled by BFS)
 	BASE_HASH   // BaseHash of END_STATS (filled by BFS for cache lookup)
-	CONTEXT_BY_SIDE // DeltaClass per-side enemy-context hash; inherited from PARENT unless this action touched it
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction
@@ -107,26 +106,6 @@ class NodeClass {
 				ThisActionStats[Me].COOLDOWNS[CHIP_TELEPORTATION] = ITEMINFO[CHIP_TELEPORTATION].COOLDOWN //Adding the Teleportation cooldown
 			}
 		}
-		// contextBySide (Delta) depends only on non-Me entities -> inherit the parent's UNLESS this
-		// action changed a non-Me entity's context (STR/MAG/MP/TP/POWER/CELL) or the alive set.
-		// Bulletproof, conservative detection:
-		//  - any non-Me target (debuff/shackle/push/damage/kill/ally-buff)
-		//  - Me dies (self-kill cascades ENHANCED_LIGHTNINGER +TP / summon-death onto NON-targets)
-		//  - a summon (entity added -> mapSize grows) or a resurrection (revives a non-Me ally)
-		// Invariant: Targets must be a superset of every non-Me entity getConsequences writes a context
-		// field to. The only board-wide exception (getKillConsequences' cascade) is always kill-gated ->
-		// caught by Me-died or a non-Me target. A future effect writing outside RealTargets needs a flag here.
-		var contextTouched = (Item == CHIP_RESURRECTION) || ThisActionStats[Me].LIFE <= 0 || mapSize(ThisActionStats) != mapSize(State)
-		if (!contextTouched) {
-			for (var t: var _ in Targets) {
-				if (t != Me) {
-					contextTouched = true
-					break
-				}
-			}
-		}
-		var node = new NodeClass(Act, ThisActionStats, Parent) //Creating Node
-		node.CONTEXT_BY_SIDE = (!contextTouched && Parent != null) ? Parent.CONTEXT_BY_SIDE : null
-		return node
+		return new NodeClass(Act, ThisActionStats, Parent) //Creating Node
 	}
 }
