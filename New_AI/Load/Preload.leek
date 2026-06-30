@@ -75,14 +75,18 @@ class Preload {
 	static InitStateClass() {
 		Me = getEntity()
 		BASE_INVENTORY = getWeapons(Me) + getChips(Me)
-		MY_INVENTORY_ON_ME = ActionsClass.getInventoryOnMe(BASE_INVENTORY, new EntityStateClass(Me))
+		var myStateOnMe = new EntityStateClass(Me)
+		MY_INVENTORY_ON_ME = ActionsClass.getInventoryOnMe(BASE_INVENTORY, myStateOnMe)
 		MY_INVENTORY_ON_VOID = ActionsClass.getInventoryOnVoid(BASE_INVENTORY)
 		MY_INVENTORY_SUMMON = ActionsClass.getInventorySummon(BASE_INVENTORY)
 		MY_INVENTORY_ON_EVERYONE = ActionsClass.getInventoryOnEveryOne(BASE_INVENTORY)
-		// Cheapest item TP cost — used by ActionSuite.findBestNextNode to bail out early
-		// when remaining TP is below any usable item's cost.
+		// Cheapest USABLE (off-cooldown) item TP cost — ActionSuite.findBestNextNode bails out early
+		// when remaining TP is below it. Cooldown-aware: an item on cooldown can't be played this turn
+		// (my cooldowns only RISE during my turn, never tick down), so excluding it tightens the bound
+		// -> more early-outs, and the start-of-turn value stays a valid floor for the whole search.
 		var cheapest = 100
 		for (var i in BASE_INVENTORY) {
+			if (myStateOnMe.COOLDOWNS[i] > 0) continue   // on cooldown this turn -> unplayable -> skip
 			var c = isChip(i) ? getChipCost(i) : getWeaponCost(i)
 			if (c < cheapest) cheapest = c
 		}
