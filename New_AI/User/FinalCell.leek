@@ -34,7 +34,7 @@ class FinalCell {
         var healMap    = HealClass.getHealMap(State)
 
         // Best placement first.
-        var cells = arraySort(keys(possibleCells), function(a, b) { return gravityMap[b] - gravityMap[a] })
+        var cells = arraySort(mapKeys(possibleCells), function(a, b) { return gravityMap[b] - gravityMap[a] })
 
         // Danger context (same setup the danger module uses everywhere else).
         var thisStatsHashForDanger      = DangerClass.getStatsHashForDanger(MyState, State)
