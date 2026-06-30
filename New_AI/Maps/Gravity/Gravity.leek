@@ -1,0 +1,85 @@
+/**
+ * GRAVITY MAP — positioning "pull" score per cell, for FinalCell. Higher = better placement.
+ * NOT a danger trade (danger stays separate). loadGravityMap(State, walkCells) -> [cell -> score].
+ *
+ * Per cell, SUM over every alive non-Me entity (importance-weighted):
+ *   - enemies : linear approach pull (closer = higher).
+ *   - allies  : convex cohesion pull, 1 - (d/maxDist)^x  -> flat when near (freedom to chase the
+ *               enemy) / steep when far (urgency to regroup); plus an anti-AOE cluster penalty
+ *               (don't get wiped by a single AOE / a teleporting enemy).
+ *   - center  : tiny pull toward the map center.
+ *   - COVID block (gated by myCovidValue > 0): within contagion range, REWARD being near enemies
+ *               (spread it) and PENALISE being near allies (don't infect them). Dormant until
+ *               myCovidValue is wired to the real covid effect.
+ **/
+
+include("../../includes.leek")
+
+// Tunable weights
+global GRAV_W_CENTER    = 0.01
+global GRAV_W_ENEMY     = 0.20
+global GRAV_W_ALLY      = 0.79
+global GRAV_ALLY_POWER  = 2       // convexité cohésion : plus haut = plus plat près / plus pentu loin
+global GRAV_AOE_RADIUS  = 2       // anti-cluster (rayon)
+global GRAV_AOE_PENALTY = 0.3
+global GRAV_COVID_W     = 2.0     // covid : très important mais borné (vs allié 0.79)
+global GRAV_COVID_RANGE = 2       // rayon de contagion
+
+// Map constant (NOT a tunable score)
+global GRAV_MAXDIST     = 34      // distance max sur la carte, pour normaliser
+
+class GravityClass {
+
+    /* [cell -> gravity score] over the given cells. */
+    static loadGravityMap(State, walkCells) {
+        BenchOps.Start("Gravity")
+        var mySide = getSide(Me)
+        var centerCell = getCellFromXY(0, 0)
+        var covid = myCovidValue()                        // GATE : > 0 = j'ai covid
+
+        // Toutes les entités une fois : [cell, importance, isAlly].
+        var ents = []
+        for (var e: var stat in State) {
+            if (stat.LIFE <= 0 || e == Me) continue
+            push(ents, [stat.CELL, ImportanceClass.get(stat), stat.SIDE == mySide])
+        }
+
+        var _final = [: ]
+        for (var cell: var _ in walkCells) {
+            var g = GRAV_W_CENTER * (1 - CellClass.getDist(cell, centerCell) / GRAV_MAXDIST)
+            for (var en in ents) {
+                var d = CellClass.getDist(cell, en[0])
+                var imp = en[1]
+                if (en[2]) {                                                                  // ALLIÉ
+                    g += GRAV_W_ALLY * imp * (1 - pow(d / GRAV_MAXDIST, GRAV_ALLY_POWER))      // cohésion convexe sommée
+                    if (d < GRAV_AOE_RADIUS) g -= GRAV_AOE_PENALTY                             // anti-cluster
+                    if (covid > 0 && d <= GRAV_COVID_RANGE) g -= GRAV_COVID_W * imp            // épargner l'allié
+                } else {                                                                       // ENNEMI
+                    g += GRAV_W_ENEMY * imp * (1 - d / GRAV_MAXDIST)                          // approche linéaire sommée
+                    if (covid > 0 && d <= GRAV_COVID_RANGE) g += GRAV_COVID_W * imp            // contaminer l'ennemi
+                }
+            }
+            _final[cell] = g
+        }
+        BenchOps.Stop("Gravity")
+        return _final
+    }
+
+    /* Magnitude of my covid effect (contagious poison on Me). 0 = no covid -> the covid block stays
+     * dormant. TODO: read it from my effects once we have the covid effect type/constant. */
+    static myCovidValue() {
+        return 0
+    }
+
+    /* TEMP debug: markText the gravity score on every map cell (heatmap to eyeball the field). */
+    static debugVisual() {
+        var State = StateClass.Virtualize()
+        var allCells = [: ]
+        for (var c = 0; c < 613; c++) allCells[c] = 0
+        var gravity = loadGravityMap(State, allCells)
+        clearMarks()
+        for (var cell: var score in gravity) {
+            markText(cell, round(score * 100) / 100)
+        }
+    }
+}

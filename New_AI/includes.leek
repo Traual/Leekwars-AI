@@ -29,6 +29,8 @@ include("Scoring/Weights.leek")
 include("Scoring/Importance.leek")
 include("Scoring/Scoring.leek")
 
+include("Maps/Gravity/Gravity.leek")
+
 include("User/Node.leek")
 include("User/BFS.leek")
 include("User/FinalCell.leek")
