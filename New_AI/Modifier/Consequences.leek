@@ -356,7 +356,7 @@ class ConsequencesClass {
 			var EffectType = Effect[0]
 			switch (EffectType) {
 				case EFFECT_SUMMON:
-					var Id = StateClass.getMaxUsedID(State)
+					var Id = StateClass.getMaxUsedID(State) + BulbState.getTypeOffset(Item)
 					var EntityStats = new BulbState(Id, SUMMONER_LEVEL_TIMES, Item, To, Caster, CastStats)
 					State[Id] = EntityStats
 					break

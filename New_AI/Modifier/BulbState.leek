@@ -160,4 +160,26 @@ class BulbState {
 				return "lightning_bulb"
 		}
 	}
+
+	/* Distinct per-bulb-type id offset (1..10), added to getMaxUsedID so two DIFFERENT bulb types
+	 * summoned in the same turn get DIFFERENT ids -> the id-only caches (HEAL_ENTITY_INVENTORY,
+	 * DANGER_ENTITY_INVENTORY) can't collide between types. Offset >= 1 also means the bulb takes a
+	 * FREE id (max+offset) instead of OVERWRITING the max-id entity (the old code used getMaxUsedID
+	 * with no +1). Same-type double-summon in one turn can still share an id -> tolerated (very rare,
+	 * and same type = same inventory anyway). Kept small (max+10) so ids stay low. */
+	static getTypeOffset(Chip) {
+		switch (Chip) {
+			case CHIP_PUNY_BULB:      return 1
+			case CHIP_ROCKY_BULB:     return 2
+			case CHIP_ICED_BULB:      return 3
+			case CHIP_HEALER_BULB:    return 4
+			case CHIP_FIRE_BULB:      return 5
+			case CHIP_WIZARD_BULB:    return 6
+			case CHIP_METALLIC_BULB:  return 7
+			case CHIP_SAVANT_BULB:    return 8
+			case CHIP_TACTICIAN_BULB: return 9
+			case CHIP_LIGHTNING_BULB: return 10
+		}
+		return 1   // unknown summon chip -> still +1 (free id, no overwrite)
+	}
 }
