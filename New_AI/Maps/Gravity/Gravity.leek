@@ -19,7 +19,7 @@ include("../../includes.leek")
 global GRAV_W_CENTER    = 0.01
 global GRAV_W_ENEMY     = 0.20
 global GRAV_W_ALLY      = 0.79
-global GRAV_ALLY_POWER  = 2       // convexité cohésion : plus haut = plus plat près / plus pentu loin
+global GRAV_ALLY_POWER  = 3       // convexité cohésion : plus haut = plus plat près / plus pentu loin
 global GRAV_AOE_RADIUS  = 2       // anti-cluster (rayon)
 global GRAV_AOE_PENALTY = 0.3
 global GRAV_COVID_W     = 2.0     // covid : très important mais borné (vs allié 0.79)
