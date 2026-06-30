@@ -12,6 +12,12 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     HAVE_AN_HITTABLE_ITEM_CACHE = [: ]
     TO_SKIP_MAP_CACHE = [: ]
     ENEMIES_BASE_HASH_CACHE = [: ]
+    // Turn order is re-captured each turn (getEntityTurnOrder) and can shift for the SAME alive-id
+    // set across turns (summons inserting orders, deaths, a temporary agility buff expiring). The
+    // cache key is the id-set only, so cross-turn reuse could go stale -> reset both per turn. All
+    // the op savings are WITHIN a turn (thousands of calls hit the same few keys), so this is ~free.
+    ENTITY_SORTED_BY_TURN_ORDER_CACHE = [: ]
+    ENTITIES_AFTER_TURN_ORDER_CACHE = [: ]
     ENTITY_DELTA_CACHE_FOR_ME = [: ]
     CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
@@ -47,12 +53,12 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
 }
 
 // STATE
+// Both reset per turn (see ReloadCacheNewTurn): TURN_ORDER is re-captured each turn and can shift
+// for the same alive-id set across turns (summons / deaths / agility). ENTITIES_AFTER_..._CACHE is
+// the rotated "who plays after X", keyed by (entity-set hash) folded with X. Returned BY REFERENCE;
+// consumers (DeltaClass.netDamage, DangerClass.get) only iterate it, never mutate it.
 
 global ENTITY_SORTED_BY_TURN_ORDER_CACHE = [: ]
-// Rotated turn order "who plays after entity X", keyed by (entity-set hash) folded with X. Pure
-// function of the same fight-stable data as ENTITY_SORTED_BY_TURN_ORDER_CACHE -> same lifetime
-// (persistent, NOT reset per turn). Returned BY REFERENCE; consumers (DeltaClass.netDamage,
-// DangerClass.get) only iterate it, never mutate it.
 global ENTITIES_AFTER_TURN_ORDER_CACHE = [: ]
 
 // CELL CLASS
