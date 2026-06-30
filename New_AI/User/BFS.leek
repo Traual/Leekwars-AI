@@ -31,6 +31,7 @@ class ActionSuite {
 	 */
 	static getBestAction(State) {
 		BenchOps.Start("BFS")
+		INSTR_GBA++   // TEMP instrumentation
 		var MySide = State[Me].SIDE
 		var BaseHash = StateClass.getBaseHash(State)
 		var initialScore = ScoringClass.getStateScore(State, MySide, BaseHash)
@@ -151,6 +152,7 @@ class ActionSuite {
 			if (candidate == null) continue
 			var candidateBaseHash = StateClass.getBaseHash(candidate.END_STATS)
 			var candidateScore = ScoringClass.getStateScore(candidate.END_STATS, MySide, candidateBaseHash)
+			INSTR_EXPAND_SCORES++   // TEMP instrumentation
 			var deltaFromParent = candidateScore - ParentScore
 
 			if (deltaFromParent > BestDeltaFromParent) {
@@ -170,6 +172,7 @@ class ActionSuite {
 	 * The node has PARENT=null (caller sets if needed).
 	 */
 	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide) {
+		INSTR_ENUM_CALLS++   // TEMP instrumentation
 		var baseActions = getBaseActions(State, BaseHash)
 		var Entries = []
 		for (var act in baseActions) {
@@ -177,6 +180,7 @@ class ActionSuite {
 			if (node == null) continue
 			var nodeBaseHash = StateClass.getBaseHash(node.END_STATS)
 			var nodeScore = ScoringClass.getStateScore(node.END_STATS, MySide, nodeBaseHash)
+			INSTR_ENUM_SCORES++   // TEMP instrumentation
 			push(Entries, [act, nodeScore - ReferenceScore, node, nodeScore, nodeBaseHash])
 		}
 		// arraySort RETURNS the sorted array (per LS doc) -- must capture.

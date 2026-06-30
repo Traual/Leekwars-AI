@@ -44,7 +44,16 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     // must be refreshed together for the new list to propagate.
     DANGER_ENTITY_INVENTORY = [: ]
     DANGER_ENTITY_CACHE = [: ]
+
+    // TEMP instrumentation (BFS scoring split) — remove after measuring.
+    INSTR_GBA = 0 ; INSTR_ENUM_CALLS = 0 ; INSTR_ENUM_SCORES = 0 ; INSTR_EXPAND_SCORES = 0
 }
+
+// TEMP instrumentation globals (BFS scoring split). Remove after measuring.
+global INSTR_GBA = 0
+global INSTR_ENUM_CALLS = 0
+global INSTR_ENUM_SCORES = 0
+global INSTR_EXPAND_SCORES = 0
 
 // STATE
 
