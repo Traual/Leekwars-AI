@@ -28,8 +28,21 @@ class DeltaClass {
 
         // Per-side "opposing-team context" hash, built once per side then reused per entity (works
         // for any number of teams): a side's context = every alive entity NOT on that side.
+        // Single pass: build `sides` AND fold the my-side healers fingerprint (so getHealMap doesn't
+        // walk State a second time). fp is a XOR fold -> order-independent -> bit-identical to the
+        // scan getHealMap would do itself.
+        var mySide = getSide(Me)
         var sides = [: ]
-        for (var e: var stat in State) if (stat.LIFE > 0) sides[stat.SIDE] = true
+        var healFp = 0
+        var healCasters = []
+        for (var e: var stat in State) {
+            if (stat.LIFE <= 0) continue
+            sides[stat.SIDE] = true
+            if (e != Me && stat.SIDE == mySide && HealClass.hasHealItem(stat)) {
+                healFp ^= addValueToBinHash(OFFSET_BASIS ^ e, (stat.WISDOM << 32) | (stat.TOTAL_TP << 22) | (stat.TOTAL_MP << 12) | stat.CELL)
+                push(healCasters, e)
+            }
+        }
         var contextBySide = [: ]
         for (var side: var _ in sides) {
             var h = OFFSET_BASIS
@@ -46,7 +59,7 @@ class DeltaClass {
         // both HEAL_MAP_CACHE (inside getHealMap) and the per-entity NETDAMAGE_CACHE below -> a
         // buff/shackle/move/death on a healer flips it. Per side so touching MY healer doesn't
         // invalidate the enemies' cache (and vice-versa once enemy heals are added).
-        var healMap = HealClass.getHealMap(State)
+        var healMap = HealClass.getHealMapPrecomputed(State, healFp, healCasters)
         var healersFingerprintBySide = HEALERS_FINGERPRINT_BY_SIDE
 
         var _final = [: ]

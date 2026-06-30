@@ -26,15 +26,10 @@ include("../../includes.leek")
 
 class HealClass {
 
-    /* Per-caster heal coverage map for the whole board. */
+    /* No-arg entry: scans State to build the healers fingerprint + caster list, then delegates.
+     * For callers that don't already walk State (FinalCell, debug). */
     static getHealMap(State) {
-        BenchOps.Start("Heal")
         var mySide = getSide(Me)
-
-        // Fingerprint the qualifying my-side healers (id + wis/tp/mp/cell) in one State pass,
-        // order-independent (XOR-fold). These are exactly the fields that change a caster's
-        // coverage, so the fold keys the whole outer map. Built from State here so Delta can reuse
-        // the SAME fingerprint for NETDAMAGE_CACHE (one fingerprint, two caches).
         var fp = 0
         var casters = []
         for (var caster: var casterStats in State) {
@@ -44,11 +39,17 @@ class HealClass {
             fp ^= addValueToBinHash(OFFSET_BASIS ^ caster, (casterStats.WISDOM << 32) | (casterStats.TOTAL_TP << 22) | (casterStats.TOTAL_MP << 12) | casterStats.CELL)
             push(casters, caster)
         }
+        return getHealMapPrecomputed(State, fp, casters)
+    }
 
-        // Publish per side (only mySide populated — heal map is my-side only; enemy slot stays
-        // absent and Delta treats a missing side as 0). Valid only until the next getHealMap call.
+    /* Hot path: `fp` (XOR healers fingerprint, ORDER-INDEPENDENT) + `casters` are already built by the
+     * caller's own State scan — DeltaClass folds them into its `sides` pass, so State isn't walked a
+     * second time here. Bit-identical to the inline scan in getHealMap (same XOR fold, order-free).
+     * Publishes HEALERS_FINGERPRINT_BY_SIDE (salts NETDAMAGE_CACHE) + returns the heal map BY REFERENCE. */
+    static getHealMapPrecomputed(State, fp, casters) {
+        BenchOps.Start("Heal")
         HEALERS_FINGERPRINT_BY_SIDE = [: ]
-        if (fp != 0) HEALERS_FINGERPRINT_BY_SIDE[mySide] = fp
+        if (fp != 0) HEALERS_FINGERPRINT_BY_SIDE[getSide(Me)] = fp
 
         if (fp in HEAL_MAP_CACHE) {                          // unchanged healers across BFS nodes -> hit
             BenchOps.Stop("Heal")
