@@ -93,9 +93,13 @@ class DeltaClass {
         // (statsHash), my-side healers (hfp), my current+max life (heal cap + the life<=0 cut). The
         // SAME seed keys BOTH caches — folded with the cell (inner) or my reachable-set hash (outer).
         var seed = addValueToBinHash(statsHash ^ hfp, (MeStats.LIFE << 16) | MeStats.TOTAL_LIFE)
+        // seed is loop-invariant below, and addValueToBinHash(seed, x) == rotl13(seed) ^ x. Precompute
+        // rotl13(seed) ONCE so the outer key and every per-cell inner key collapse to a single XOR
+        // (bit-identical to addValueToBinHash -> same cache keys, same result).
+        var rotSeed = (seed << SHIFT) | ((seed >> HIGH_SHIFT) & MASK_HIGH)
 
         // OUTER: revisiting the exact same Me-state (stats + reachable set) -> whole search skipped.
-        var outerKey = addValueToBinHash(seed, WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MeStats))
+        var outerKey = rotSeed ^ WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MeStats)
         if (outerKey in ENTITY_DELTA_CACHE_FOR_ME) return ENTITY_DELTA_CACHE_FOR_ME[outerKey]
 
         var toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
@@ -106,7 +110,7 @@ class DeltaClass {
         var minDelta = MAX_VALUE
         for (var cell: var mp in myWalkCells) {
             // INNER: net at this cell. Same seed -> hits even if I moved (overlapping reachable sets).
-            var innerKey = addValueToBinHash(seed, cell)
+            var innerKey = rotSeed ^ cell
             var delta = 0
             if (innerKey in CELL_NETDAMAGE_FOR_ME_CACHE) {
                 delta = CELL_NETDAMAGE_FOR_ME_CACHE[innerKey]
