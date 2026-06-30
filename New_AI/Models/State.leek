@@ -45,21 +45,9 @@ class StateClass {
 	 */
 
 	static getEntitiesInTurnOrderAfterEntity(State, entity) {
-		var entitiesHash = getHashedEntities(State)
-		var key = addValueToBinHash(entitiesHash, entity)
-		if (key in ENTITIES_AFTER_TURN_ORDER_CACHE) return ENTITIES_AFTER_TURN_ORDER_CACHE[key]
-
-		// Reuse the sorted-by-turn-order array (keyed by the SAME entitiesHash) so we don't recompute
-		// getHashedEntities a second time inside getSortedEntityByTurnOrder on a miss.
-		var _turn_order_array
-		if (entitiesHash in ENTITY_SORTED_BY_TURN_ORDER_CACHE) {
-			_turn_order_array = ENTITY_SORTED_BY_TURN_ORDER_CACHE[entitiesHash]
-		} else {
-			_turn_order_array = getSortedEntityByTurnOrder(State)
-		}
-
 		var _toPush = []
 		var _final = []
+		var _turn_order_array = getSortedEntityByTurnOrder(State)
 		var _entity_turn_order = State[entity].TURN_ORDER
 		for (var e in _turn_order_array) {
 			if (State[e].TURN_ORDER < _entity_turn_order) {
@@ -69,8 +57,6 @@ class StateClass {
 			}
 		}
 		for (var e in _toPush) push(_final, e)
-
-		ENTITIES_AFTER_TURN_ORDER_CACHE[key] = _final
 		return _final
 	}
 

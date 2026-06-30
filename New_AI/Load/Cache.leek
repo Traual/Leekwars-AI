@@ -49,11 +49,6 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
 // STATE
 
 global ENTITY_SORTED_BY_TURN_ORDER_CACHE = [: ]
-// Rotated turn order "who plays after entity X", keyed by (entity-set hash) folded with X. Pure
-// function of the same fight-stable data as ENTITY_SORTED_BY_TURN_ORDER_CACHE -> same lifetime
-// (persistent, NOT reset per turn). Returned BY REFERENCE; consumers (DeltaClass.netDamage,
-// DangerClass.get) only iterate it, never mutate it.
-global ENTITIES_AFTER_TURN_ORDER_CACHE = [: ]
 
 // CELL CLASS
 
