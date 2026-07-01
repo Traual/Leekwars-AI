@@ -134,14 +134,6 @@ class NodeClass {
 			result.CONTEXT_BY_SIDE = ctx
 		}
 
-		// TEMP Phase-2 self-test (remove once validated): patched MUST equal a full recompute.
-		var fullBase = StateClass.getBaseHash(ThisActionStats)
-		if (result.BASE_HASH != fullBase) debugC("[PATCHTEST] BASE_HASH " + result.BASE_HASH + " != full " + fullBase + " item=" + Item, COLOR_RED)
-		var fullCtx = DeltaClass.buildContextBySide(ThisActionStats)
-		for (var side: var h in fullCtx) {
-			if (!(side in result.CONTEXT_BY_SIDE) || result.CONTEXT_BY_SIDE[side] != h) debugC("[PATCHTEST] CONTEXT side=" + side + " item=" + Item, COLOR_RED)
-		}
-
 		return result
 	}
 }
