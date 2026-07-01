@@ -79,7 +79,7 @@ class ActionSuite {
 	 * future incremental score (Phase 4): carry the parent score down and patch it per child. */
 	static unroll(node, ScoredCache, MySide, depth) {
 		var next = findBestNextNode(node, ScoredCache, MySide)
-		if (next == null) return
+		if (next == null) return;
 		if (next.SCORE > BFS_BEST_NODE.SCORE + BFS_DELTA_EPSILON) BFS_BEST_NODE = next
 		debug("  [+" + depth + "] " + ITEMINFO[next.ACTION.Item].NAME + " " + next.ACTION.From + "->" + next.ACTION.To + " | Δ=" + (next.SCORE - node.SCORE) + " | Score=" + next.SCORE)
 		unroll(next, ScoredCache, MySide, depth + 1)
