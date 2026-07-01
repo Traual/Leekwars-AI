@@ -97,8 +97,7 @@ class ActionSuite {
 		var MyTp = MyStats.TP
 		if (MyTp < MINIMUM_COST_ITEM) return null
 
-		var BaseHash = Parent.BASE_HASH
-		if (BaseHash == null) BaseHash = StateClass.getBaseHash(State)
+		var BaseHash = Parent.BASE_HASH   // always set at node creation since Phase 2
 
 		var Entries
 		if (BaseHash in ScoredCache) {
