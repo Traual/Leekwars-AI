@@ -102,14 +102,18 @@ class StateClass {
 		return hash_value
 	}
 
-	// TEMP (Phase 1 self-test only): OLD chained BaseHash as the collision reference (collision-resistant).
-	// Remove with the self-test once Phase 1 is validated.
+	// TEMP (Phase 1 self-test only): CANONICAL (sorted) state fingerprint -> ORDER-INDEPENDENT, so a
+	// flagged collision now means two GENUINELY different states share the mix64 hash (a real mix64
+	// fault) — not merely a different map-iteration order. Remove with the self-test after Phase 1.
 	static getBaseHashRef(State) {
-		var hash_value = OFFSET_BASIS
+		var vals = []
 		for (var id: var stat in State) {
 			if (id == Me || stat.LIFE <= 0) continue
-			hash_value = addValueToBinHash(hash_value, (id << 32) | stat.CELL)
+			push(vals, (id << 32) | stat.CELL)
 		}
+		vals = arraySort(vals, function(a, b) { return a < b ? -1 : (a > b ? 1 : 0) })   // canonical order
+		var hash_value = OFFSET_BASIS
+		for (var v in vals) hash_value = addValueToBinHash(hash_value, v)
 		return hash_value
 	}
 
