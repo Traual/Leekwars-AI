@@ -26,8 +26,10 @@ class DeltaClass {
     static getNetDamageMap(State, BaseHash) {
         BenchOps.Start("Delta")
 
-        // Per-side "opposing-team context" hash, built once per side then reused per entity (works
-        // for any number of teams): a side's context = every alive entity NOT on that side.
+        // Per-side "opposing-team context" hash: a side's context = every alive entity NOT on that
+        // side (works for any number of teams). COMPOSABLE XOR-fold (mix64) -> order-independent, so
+        // a Node can patch it incrementally later (Phase 2), AND same-config states stop fragmenting
+        // NETDAMAGE_CACHE / the danger cache under LeekScript's unstable iteration (like BaseHash did).
         // Single pass: build `sides` AND fold the my-side healers fingerprint (so getHealMap doesn't
         // walk State a second time). fp is a XOR fold -> order-independent -> bit-identical to the
         // scan getHealMap would do itself.
@@ -48,8 +50,7 @@ class DeltaClass {
             var h = OFFSET_BASIS
             for (var e: var stat in State) {
                 if (stat.LIFE <= 0 || stat.SIDE == side || e == Me) continue // Me is excluded as a danger caster, so keep it out of the context too -> my moves don't invalidate enemy danger
-                h = addValueToBinHash(h, (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER)
-                h = addValueToBinHash(h, (e << 10) | stat.CELL)
+                h ^= mix64(mix64((e << 10) | stat.CELL) ^ ((stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER))   // COMPOSABLE XOR-fold; stats CHAINED through mix64 (not XORed) so two same-stat entities don't cancel
             }
             contextBySide[side] = h
         }
