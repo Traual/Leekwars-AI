@@ -163,32 +163,4 @@ class HealClass {
         return false
     }
 
-    /* TEMP debug: heal each alive entity would RECEIVE at its current cell (sum of same-side casters). */
-    static debugAll() {
-        var State = StateClass.Virtualize()
-        var healMap = getHealMap(State)
-        for (var e: var stat in State) {
-            if (stat.LIFE <= 0) continue
-            var received = 0
-            for (var caster: var coverage in healMap) {
-                if (State[caster].SIDE == stat.SIDE && stat.CELL in coverage) received += coverage[stat.CELL]
-            }
-            debug("[HEAL] " + stat.NAME + " id=" + e + " cell=" + stat.CELL + " -> heal received=" + received)
-        }
-    }
-
-    /* TEMP visual debug: one caster at a time — markText each cell of its heal coverage, then
-     * pause() so you can inspect, then clearMarks() before the next caster. */
-    static debugVisual() {
-        var State = StateClass.Virtualize()
-        var healMap = getHealMap(State)
-        for (var caster: var coverage in healMap) {
-            debug("[HEAL] Caster: " + State[caster].NAME + " (id " + caster + ", " + mapSize(coverage) + " cells)")
-            for (var cell: var heal in coverage) {
-                markText(cell, round(heal))
-            }
-            pause()
-            clearMarks()
-        }
-    }
 }

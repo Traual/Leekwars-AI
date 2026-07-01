@@ -72,20 +72,6 @@ class DangerClass {
 		return _final
 	}
 
-	/* TEMP visual debug: one caster at a time — markText its danger per cell, pause(), clearMarks(). */
-	static debugVisual() {
-		var State = StateClass.Virtualize()
-		var BaseHash = StateClass.getBaseHash(State)
-		var dangerMap = getDangerMap(State, BaseHash)
-		for (var caster: var coverage in dangerMap) {
-			debug("[DANGER] Caster: " + State[caster].NAME + " (id " + caster + ", " + mapSize(coverage) + " cells)")
-			for (var cell: var damage in coverage) {
-				markText(cell, round(damage))
-			}
-			pause()
-			clearMarks()
-		}
-	}
 
 	/* Gives me a map of every entity's ennemies walkable cells (used for danger loading)
 	 *
