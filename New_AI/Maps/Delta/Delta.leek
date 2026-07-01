@@ -23,36 +23,21 @@ include("../../includes.leek")
 class DeltaClass {
 
     /* [entityId -> net damage taken over 1 round]. */
-    static getNetDamageMap(State, BaseHash) {
+    static getNetDamageMap(State, BaseHash, contextBySide) {   // contextBySide is PATCHED on the Node (Phase 2) — no rebuild here
         BenchOps.Start("Delta")
 
-        // Per-side "opposing-team context" hash: a side's context = every alive entity NOT on that
-        // side (works for any number of teams). COMPOSABLE XOR-fold (mix64) -> order-independent, so
-        // a Node can patch it incrementally later (Phase 2), AND same-config states stop fragmenting
-        // NETDAMAGE_CACHE / the danger cache under LeekScript's unstable iteration (like BaseHash did).
-        // Single pass: build `sides` AND fold the my-side healers fingerprint (so getHealMap doesn't
-        // walk State a second time). fp is a XOR fold -> order-independent -> bit-identical to the
-        // scan getHealMap would do itself.
+        // Healers fingerprint, folded in one scan (Phase 1 heal fold) so getHealMap doesn't rescan
+        // State. The per-side opposing-team context is now PASSED IN (incrementally patched at node
+        // creation, Node.leek) instead of rebuilt O(sides*N) here — see buildContextBySide below.
         var mySide = getSide(Me)
-        var sides = [: ]
         var healFp = 0
         var healCasters = []
         for (var e: var stat in State) {
-            if (stat.LIFE <= 0) continue
-            sides[stat.SIDE] = true
-            if (e != Me && stat.SIDE == mySide && HealClass.hasHealItem(stat)) {
+            if (stat.LIFE <= 0 || e == Me || stat.SIDE != mySide) continue
+            if (HealClass.hasHealItem(stat)) {
                 healFp ^= addValueToBinHash(OFFSET_BASIS ^ e, (stat.WISDOM << 32) | (stat.TOTAL_TP << 22) | (stat.TOTAL_MP << 12) | stat.CELL)
                 push(healCasters, e)
             }
-        }
-        var contextBySide = [: ]
-        for (var side: var _ in sides) {
-            var h = OFFSET_BASIS
-            for (var e: var stat in State) {
-                if (stat.LIFE <= 0 || stat.SIDE == side || e == Me) continue // Me is excluded as a danger caster, so keep it out of the context too -> my moves don't invalidate enemy danger
-                h ^= mix64(mix64((e << 10) | stat.CELL) ^ ((stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER))   // COMPOSABLE XOR-fold; stats CHAINED through mix64 (not XORed) so two same-stat entities don't cancel
-            }
-            contextBySide[side] = h
         }
 
         // getHealMap builds the per-side healers fingerprint (id + cell/mp/wis/tp, XOR-combined,
@@ -157,5 +142,33 @@ class DeltaClass {
             }
         }
         return max(0, stat.LIFE - life)
+    }
+
+    /* Full rebuild of the per-side opposing-team context (a side's context = every alive non-Me
+     * entity NOT on that side). COMPOSABLE XOR-fold via contextContribution -> the incremental Node
+     * patch and this MUST share the same contribution formula (single source of truth, else the
+     * patched==full self-test would false-mismatch). Used at the BFS root, as the summon/resurrect
+     * fallback, and as the Phase-2 self-test reference. */
+    static buildContextBySide(State) {
+        var sides = [: ]
+        for (var e: var stat in State) if (stat.LIFE > 0) sides[stat.SIDE] = true
+        var contextBySide = [: ]
+        for (var side: var _ in sides) {
+            var h = OFFSET_BASIS
+            for (var e: var stat in State) {
+                if (e == Me || stat.SIDE == side) continue
+                h ^= contextContribution(stat, e)   // 0 when dead -> harmless
+            }
+            contextBySide[side] = h
+        }
+        return contextBySide
+    }
+
+    /* One entity's contribution to an OPPOSING-side context bucket. 0 if dead (so death removes it
+     * via XOR). stats CHAINED through mix64 (not XORed with the id/cell term) so two same-stat
+     * entities never cancel. */
+    static contextContribution(stat, id) {
+        if (stat.LIFE <= 0) return 0
+        return mix64(mix64((id << 10) | stat.CELL) ^ ((stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER))
     }
 }

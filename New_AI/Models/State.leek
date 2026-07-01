@@ -95,6 +95,12 @@ class StateClass {
 		return hash_value
 	}
 
+	/* One entity's contribution to the BaseHash (0 if dead). SINGLE SOURCE OF TRUTH shared with the
+	 * incremental Node patch (Phase 2) so patched == full recompute. Same formula as getBaseHash. */
+	static baseContribution(stat, id) {
+		return stat.LIFE > 0 ? mix64((id << 32) | stat.CELL) : 0
+	}
+
 	/* Hash Function for having an Hash of every Enemy Entities positions in Game (Used in cell Danger)
 	 *
 	 * @param State Map <Id : Class Stats of Id>

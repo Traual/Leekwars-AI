@@ -38,9 +38,9 @@ class ScoringClass {
      * State value : Σ sign · importance(e) · survivalValue(e, netDamage). The per-entity net damage
      * (danger cushioned by heal, sequenced by turn order) is owned by DeltaClass.
      */
-    static getStateScore(State, MySide, BaseHash) {
+    static getStateScore(State, MySide, BaseHash, contextBySide) {
         BenchOps.Start("Scoring")
-        var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash)
+        var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash, contextBySide)
         var _score = 0
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue

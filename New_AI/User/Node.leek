@@ -10,6 +10,7 @@ class NodeClass {
 	PARENT      // Node we came from (null for root / base / no-play)
 	SCORE       // Absolute state score of END_STATS (cached, filled by BFS)
 	BASE_HASH   // BaseHash of END_STATS (filled by BFS for cache lookup)
+	CONTEXT_BY_SIDE   // Phase 2: per-side opposing-team context, patched incrementally at creation
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction
@@ -25,7 +26,7 @@ class NodeClass {
 	 * @return New Node Class
 	 */
 
-	static ActionToNode(Action, State, BaseHash, Parent) {
+	static ActionToNode(Action, State, BaseHash, Parent, ParentContext) {
 		if (Action == null) return;
 		BenchOps.Start("Node")
 		var MyState = State[Me]
@@ -47,7 +48,7 @@ class NodeClass {
 				Cost += ITEMINFO[CHIP_TELEPORTATION].COST + ITEMINFO[CHIP_JUMP].COST
 			}
 		}
-		var result = ActionToNodeInTree(Action, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent)
+		var result = ActionToNodeInTree(Action, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, ParentContext)
 		BenchOps.Stop("Node")
 		return result
 	}
@@ -67,7 +68,7 @@ class NodeClass {
 	 * @return New Node Class
 	 */
 
-	static ActionToNodeInTree(Act, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent) {
+	static ActionToNodeInTree(Act, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, ParentContext) {
 		var Targets = ConsequencesClass.ConsequenceTargets(Item, From, To, State, Me, BaseHash)
 		var ThisActionStats = StateClass.CloneOnlyTargetsAndMe(Targets, State)
 
@@ -106,6 +107,41 @@ class NodeClass {
 				ThisActionStats[Me].COOLDOWNS[CHIP_TELEPORTATION] = ITEMINFO[CHIP_TELEPORTATION].COOLDOWN //Adding the Teleportation cooldown
 			}
 		}
-		return new NodeClass(Act, ThisActionStats, Parent) //Creating Node
+		var result = new NodeClass(Act, ThisActionStats, Parent) //Creating Node
+
+		// === Phase 2: incremental hash patch (BASE_HASH + CONTEXT_BY_SIDE) ===
+		if (Item == CHIP_RESURRECTION || mapSize(ThisActionStats) != mapSize(State)) {
+			// Summon / resurrect ADD entities -> full recompute for now.
+			// TODO Phase 2+: patch the born/revived entities incrementally instead of a full rebuild.
+			result.BASE_HASH = StateClass.getBaseHash(ThisActionStats)
+			result.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(ThisActionStats)
+		} else {
+			// Only Targets (+Me) were cloned/mutated -> patch just those from the parent's hashes.
+			var bh = BaseHash                    // parent State's BaseHash
+			var ctx = clone(ParentContext, 1)    // copy so we never mutate the parent's context
+			for (var tar: var _d in Targets) {
+				if (tar == Me) continue          // Me excluded from both hashes
+				var oldStat = State[tar]
+				var newStat = ThisActionStats[tar]
+				bh ^= StateClass.baseContribution(oldStat, tar) ^ StateClass.baseContribution(newStat, tar)
+				var deltaCtx = DeltaClass.contextContribution(oldStat, tar) ^ DeltaClass.contextContribution(newStat, tar)
+				if (deltaCtx != 0) {
+					var side = newStat.SIDE      // side doesn't change
+					for (var s in mapKeys(ctx)) if (s != side) ctx[s] ^= deltaCtx
+				}
+			}
+			result.BASE_HASH = bh
+			result.CONTEXT_BY_SIDE = ctx
+		}
+
+		// TEMP Phase-2 self-test (remove once validated): patched MUST equal a full recompute.
+		var fullBase = StateClass.getBaseHash(ThisActionStats)
+		if (result.BASE_HASH != fullBase) debugC("[PATCHTEST] BASE_HASH " + result.BASE_HASH + " != full " + fullBase + " item=" + Item, COLOR_RED)
+		var fullCtx = DeltaClass.buildContextBySide(ThisActionStats)
+		for (var side: var h in fullCtx) {
+			if (!(side in result.CONTEXT_BY_SIDE) || result.CONTEXT_BY_SIDE[side] != h) debugC("[PATCHTEST] CONTEXT side=" + side + " item=" + Item, COLOR_RED)
+		}
+
+		return result
 	}
 }

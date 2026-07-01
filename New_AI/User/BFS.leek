@@ -34,14 +34,15 @@ class ActionSuite {
 		INSTR_GBA++   // TEMP instrumentation
 		var MySide = State[Me].SIDE
 		var BaseHash = StateClass.getBaseHash(State)
-		var initialScore = ScoringClass.getStateScore(State, MySide, BaseHash)
+		var RootContext = DeltaClass.buildContextBySide(State)   // Phase 2: root context, patched down the tree
+		var initialScore = ScoringClass.getStateScore(State, MySide, BaseHash, RootContext)
 
 		// Per-call cache : BaseHash -> sorted ScoredEntries
 		// Entry shape : [act, deltaVsReference, node, nodeScore, nodeBaseHash]
 		var ScoredCache = [:]
 
 		// === Step 1 : enumerate, clone+apply+score+sort base actions ===
-		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide)
+		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext)
 		ScoredCache[BaseHash] = rootEntries
 		debugC("--- Evaluating " + count(rootEntries) + " actions ---", COLOR_BLUE)
 
@@ -148,10 +149,10 @@ class ActionSuite {
 			}
 			if (cost > MyTp) continue
 
-			var candidate = NodeClass.ActionToNode(act, State, BaseHash, Parent)
+			var candidate = NodeClass.ActionToNode(act, State, BaseHash, Parent, Parent.CONTEXT_BY_SIDE)
 			if (candidate == null) continue
-			var candidateBaseHash = StateClass.getBaseHash(candidate.END_STATS)
-			var candidateScore = ScoringClass.getStateScore(candidate.END_STATS, MySide, candidateBaseHash)
+			var candidateBaseHash = candidate.BASE_HASH   // Phase 2: patched at creation, no O(N) recompute
+			var candidateScore = ScoringClass.getStateScore(candidate.END_STATS, MySide, candidateBaseHash, candidate.CONTEXT_BY_SIDE)
 			INSTR_EXPAND_SCORES++   // TEMP instrumentation
 			var deltaFromParent = candidateScore - ParentScore
 
@@ -171,15 +172,15 @@ class ActionSuite {
 	 * Returns entries [act, delta, node, nodeScore, nodeBaseHash].
 	 * The node has PARENT=null (caller sets if needed).
 	 */
-	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide) {
+	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext) {
 		INSTR_ENUM_CALLS++   // TEMP instrumentation
 		var baseActions = getBaseActions(State, BaseHash)
 		var Entries = []
 		for (var act in baseActions) {
-			var node = NodeClass.ActionToNode(act, State, BaseHash, null)
+			var node = NodeClass.ActionToNode(act, State, BaseHash, null, ParentContext)
 			if (node == null) continue
-			var nodeBaseHash = StateClass.getBaseHash(node.END_STATS)
-			var nodeScore = ScoringClass.getStateScore(node.END_STATS, MySide, nodeBaseHash)
+			var nodeBaseHash = node.BASE_HASH   // Phase 2: patched at creation
+			var nodeScore = ScoringClass.getStateScore(node.END_STATS, MySide, nodeBaseHash, node.CONTEXT_BY_SIDE)
 			INSTR_ENUM_SCORES++   // TEMP instrumentation
 			push(Entries, [act, nodeScore - ReferenceScore, node, nodeScore, nodeBaseHash])
 		}
