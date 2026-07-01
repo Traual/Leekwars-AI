@@ -92,28 +92,6 @@ class StateClass {
 			// combining id (32 bits haut) and CELL (32 bits bas) in a 64 bits word to then put the word to the hash
 			hash_value ^= mix64((id << 32) | stat.CELL)   // COMPOSABLE XOR-fold (mix64 = non-linear -> collision-safe)
 		}
-		// TEMP self-test (Phase 1): flag if the new hash collides where the old chained hash didn't.
-		var ref = getBaseHashRef(State)
-		if (hash_value in BASEHASH_COLLISION_TEST) {
-			if (BASEHASH_COLLISION_TEST[hash_value] != ref) debugC("[HASHTEST] BASEHASH COLLISION h=" + hash_value + " : ref " + ref + " != " + BASEHASH_COLLISION_TEST[hash_value], COLOR_RED)
-		} else {
-			BASEHASH_COLLISION_TEST[hash_value] = ref
-		}
-		return hash_value
-	}
-
-	// TEMP (Phase 1 self-test only): CANONICAL (sorted) state fingerprint -> ORDER-INDEPENDENT, so a
-	// flagged collision now means two GENUINELY different states share the mix64 hash (a real mix64
-	// fault) — not merely a different map-iteration order. Remove with the self-test after Phase 1.
-	static getBaseHashRef(State) {
-		var vals = []
-		for (var id: var stat in State) {
-			if (id == Me || stat.LIFE <= 0) continue
-			push(vals, (id << 32) | stat.CELL)
-		}
-		vals = arraySort(vals, function(a, b) { return a < b ? -1 : (a > b ? 1 : 0) })   // canonical order
-		var hash_value = OFFSET_BASIS
-		for (var v in vals) hash_value = addValueToBinHash(hash_value, v)
 		return hash_value
 	}
 
