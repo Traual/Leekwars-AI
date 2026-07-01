@@ -38,7 +38,7 @@ class ActionSuite {
 		var initialScore = ScoringClass.getStateScore(State, MySide, BaseHash, RootContext)
 
 		// Per-call cache : BaseHash -> sorted ScoredEntries
-		// Entry shape : [act, deltaVsReference, node, nodeScore, nodeBaseHash]
+		// Entry shape : [act, deltaVsReference, node, nodeScore] (hashes live ON the node since Phase 2)
 		var ScoredCache = [:]
 
 		// === Step 1 : enumerate, clone+apply+score+sort base actions ===
@@ -51,19 +51,16 @@ class ActionSuite {
 		// from outranking the floor / other candidates. DFS order + epsilon == the old array scan.
 		var noPlay = new NodeClass(null, State, null)
 		noPlay.SCORE = initialScore
-		BFS_BEST_NODE = noPlay
+		var best = noPlay
 
 		for (var entry in rootEntries) {
 			var baseNode = entry[2]
-			baseNode.SCORE = entry[3]
-			baseNode.BASE_HASH = entry[4]
-			if (baseNode.SCORE > BFS_BEST_NODE.SCORE + BFS_DELTA_EPSILON) BFS_BEST_NODE = baseNode
+			baseNode.SCORE = entry[3]   // BASE_HASH / CONTEXT_BY_SIDE already set at node creation (Phase 2)
+			if (baseNode.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = baseNode
 			debug("[Base] " + ITEMINFO[baseNode.ACTION.Item].NAME + " " + baseNode.ACTION.From + "->" + baseNode.ACTION.To + " | Δ=" + entry[1] + " | Score=" + entry[3])
 			if (entry[1] <= BFS_DELTA_EPSILON) continue   // no-op / negative-delta bases : skip expansion
-			unroll(baseNode, ScoredCache, MySide, 1)
+			best = unroll(baseNode, ScoredCache, MySide, 1, best)
 		}
-
-		var best = BFS_BEST_NODE
 		BenchOps.Stop("BFS")
 
 		if (best.ACTION == null) return null
@@ -74,15 +71,15 @@ class ActionSuite {
 	}
 
 	/* Greedy recursive branch unroll (replaces the Tree_Array + while loop). Descends the single best
-	 * next action, tracking the global BFS_BEST_NODE by absolute SCORE (same DFS order + epsilon margin
-	 * as the old array scan -> behaviour-identical). No node storage. This recursion is the home for the
-	 * future incremental score (Phase 4): carry the parent score down and patch it per child. */
-	static unroll(node, ScoredCache, MySide, depth) {
+	 * next action; `best` is threaded as a parameter and returned (no global). Same DFS order + epsilon
+	 * margin as the old array scan -> behaviour-identical. No node storage. This recursion is the home
+	 * for the future incremental score (Phase 4): carry the parent score down and patch it per child. */
+	static unroll(node, ScoredCache, MySide, depth, best) {
 		var next = findBestNextNode(node, ScoredCache, MySide)
-		if (next == null) return;
-		if (next.SCORE > BFS_BEST_NODE.SCORE + BFS_DELTA_EPSILON) BFS_BEST_NODE = next
+		if (next == null) return best
+		if (next.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = next
 		debug("  [+" + depth + "] " + ITEMINFO[next.ACTION.Item].NAME + " " + next.ACTION.From + "->" + next.ACTION.To + " | Δ=" + (next.SCORE - node.SCORE) + " | Score=" + next.SCORE)
-		unroll(next, ScoredCache, MySide, depth + 1)
+		return unroll(next, ScoredCache, MySide, depth + 1, best)
 	}
 
 	/**
@@ -148,8 +145,7 @@ class ActionSuite {
 
 			var candidate = NodeClass.ActionToNode(act, State, BaseHash, Parent, Parent.CONTEXT_BY_SIDE)
 			if (candidate == null) continue
-			var candidateBaseHash = candidate.BASE_HASH   // Phase 2: patched at creation, no O(N) recompute
-			var candidateScore = ScoringClass.getStateScore(candidate.END_STATS, MySide, candidateBaseHash, candidate.CONTEXT_BY_SIDE)
+			var candidateScore = ScoringClass.getStateScore(candidate.END_STATS, MySide, candidate.BASE_HASH, candidate.CONTEXT_BY_SIDE)   // hashes patched at creation (Phase 2)
 			INSTR_EXPAND_SCORES++   // TEMP instrumentation
 			var deltaFromParent = candidateScore - ParentScore
 
@@ -157,7 +153,6 @@ class ActionSuite {
 				BestDeltaFromParent = deltaFromParent
 				BestNode = candidate
 				BestNode.SCORE = candidateScore
-				BestNode.BASE_HASH = candidateBaseHash
 			}
 		}
 
@@ -166,7 +161,7 @@ class ActionSuite {
 
 	/**
 	 * Enumerates baseActions, applies+scores each, sorts by delta-vs-ReferenceScore desc.
-	 * Returns entries [act, delta, node, nodeScore, nodeBaseHash].
+	 * Returns entries [act, delta, node, nodeScore] (BASE_HASH / CONTEXT_BY_SIDE live on the node).
 	 * The node has PARENT=null (caller sets if needed).
 	 */
 	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext) {
@@ -176,10 +171,9 @@ class ActionSuite {
 		for (var act in baseActions) {
 			var node = NodeClass.ActionToNode(act, State, BaseHash, null, ParentContext)
 			if (node == null) continue
-			var nodeBaseHash = node.BASE_HASH   // Phase 2: patched at creation
-			var nodeScore = ScoringClass.getStateScore(node.END_STATS, MySide, nodeBaseHash, node.CONTEXT_BY_SIDE)
+			var nodeScore = ScoringClass.getStateScore(node.END_STATS, MySide, node.BASE_HASH, node.CONTEXT_BY_SIDE)   // hashes patched at creation (Phase 2)
 			INSTR_ENUM_SCORES++   // TEMP instrumentation
-			push(Entries, [act, nodeScore - ReferenceScore, node, nodeScore, nodeBaseHash])
+			push(Entries, [act, nodeScore - ReferenceScore, node, nodeScore])
 		}
 		// arraySort RETURNS the sorted array (per LS doc) -- must capture.
 		// Comparator returns negative / 0 / positive : here descending by delta.

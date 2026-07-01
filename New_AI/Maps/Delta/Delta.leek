@@ -2,7 +2,8 @@
  * DELTA — combines the danger map and the heal map into the NET damage each entity takes over
  * 1 round, sequenced by TURN ORDER. getStateScore feeds this to its survival formula as `danger`.
  *
- *   getNetDamageMap(State, BaseHash) -> [entityId -> net damage]
+ *   getNetDamageMap(State, BaseHash, contextBySide) -> [entityId -> net damage]
+ *   (contextBySide = the per-side opposing-team hash, patched incrementally on the Node — Phase 2)
  *
  * Per entity, walk casters in turn order on a running `life` starting at LIFE:
  *   - opposing caster      -> life -= DANGER_COEF · danger

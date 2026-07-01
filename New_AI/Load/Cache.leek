@@ -55,9 +55,6 @@ global INSTR_ENUM_CALLS = 0
 global INSTR_ENUM_SCORES = 0
 global INSTR_EXPAND_SCORES = 0
 
-// BFS: best node found during the recursive unroll (reset at each getBestAction call).
-global BFS_BEST_NODE = null
-
 // STATE
 
 global ENTITY_SORTED_BY_TURN_ORDER_CACHE = [: ]

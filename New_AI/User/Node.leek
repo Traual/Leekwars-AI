@@ -119,6 +119,7 @@ class NodeClass {
 			// Only Targets (+Me) were cloned/mutated -> patch just those from the parent's hashes.
 			var bh = BaseHash                    // parent State's BaseHash
 			var ctx = clone(ParentContext, 1)    // copy so we never mutate the parent's context
+			var ctxSides = mapKeys(ctx)          // hoisted: the side set never changes inside the patch loop
 			for (var tar: var _d in Targets) {
 				if (tar == Me) continue          // Me excluded from both hashes
 				var oldStat = State[tar]
@@ -127,7 +128,7 @@ class NodeClass {
 				var deltaCtx = DeltaClass.contextContribution(oldStat, tar) ^ DeltaClass.contextContribution(newStat, tar)
 				if (deltaCtx != 0) {
 					var side = newStat.SIDE      // side doesn't change
-					for (var s in mapKeys(ctx)) if (s != side) ctx[s] ^= deltaCtx
+					for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx
 				}
 			}
 			result.BASE_HASH = bh
