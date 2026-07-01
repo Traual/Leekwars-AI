@@ -77,6 +77,23 @@ function addValueToBinHash(BaseHashValue, AddedValue) {
     return ((BaseHashValue << SHIFT) | ((BaseHashValue >> HIGH_SHIFT) & MASK_HIGH)) ^ AddedValue
 }
 
+// mix64 : non-linear 64-bit mixer (splitmix64-style finalizer) for COMPOSABLE XOR-fold hashes.
+// addValueToBinHash is LINEAR (rotate+XOR) -> a plain XOR-fold of its outputs collides on swaps
+// (two entities exchanging cells give the same hash). The MULTIPLY here breaks that linearity.
+// Constraints, all verified on LeekWars: literals > 2^63 become FLOATs -> keep constants < 2^63;
+// `*` wraps mod 2^64 (good); `>>` is ARITHMETIC (sign-extends) -> mask each shift to emulate logical.
+global MIX_A   = 6364136223846793005    // 0x5851F42D4C957F2D, odd, < 2^63 (MMIX/Knuth multiplier)
+global MIX_B   = 2685821657736338717    // 0x2545F4914F6CDD1D, odd, < 2^63
+global MIX_M34 = 17179869183            // (1<<34)-1, masks a >>30
+global MIX_M37 = 137438953471           // (1<<37)-1, masks a >>27
+global MIX_M33 = 8589934591             // (1<<33)-1, masks a >>31
+
+function mix64(x) {
+    x = (x ^ ((x >> 30) & MIX_M34)) * MIX_A
+    x = (x ^ ((x >> 27) & MIX_M37)) * MIX_B
+    return x ^ ((x >> 31) & MIX_M33)
+}
+
 
 //FOR CONSEQUENCES
 global EROSION_NO_POISON = 0.05

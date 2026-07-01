@@ -47,6 +47,7 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
 
     // TEMP instrumentation (BFS scoring split) — remove after measuring.
     INSTR_GBA = 0 ; INSTR_ENUM_CALLS = 0 ; INSTR_ENUM_SCORES = 0 ; INSTR_EXPAND_SCORES = 0
+    BASEHASH_COLLISION_TEST = [: ]   // TEMP (Phase 1 hash self-test)
 }
 
 // TEMP instrumentation globals (BFS scoring split). Remove after measuring.
@@ -54,6 +55,7 @@ global INSTR_GBA = 0
 global INSTR_ENUM_CALLS = 0
 global INSTR_ENUM_SCORES = 0
 global INSTR_EXPAND_SCORES = 0
+global BASEHASH_COLLISION_TEST = [: ]   // TEMP (Phase 1 hash self-test)
 
 // STATE
 
