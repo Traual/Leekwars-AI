@@ -15,7 +15,7 @@
  *    new BaseHash and cache it -- catches opportunities created by
  *    relocate plays while still saving work across branches that pass
  *    through the same derived BaseHash.
- *  - All nodes (every depth) are pushed into Tree_Array.
+ *  - Each base action is greedily unrolled by a recursive DFS (unroll), tracking the best node.
  *  - A no-play node (score = initial) acts as a floor.
  *  - The best-scored node wins; we return its first ancestor's action.
  *
@@ -46,39 +46,24 @@ class ActionSuite {
 		ScoredCache[BaseHash] = rootEntries
 		debugC("--- Evaluating " + count(rootEntries) + " actions ---", COLOR_BLUE)
 
-		// === Step 2 : build Tree_Array (base nodes + greedy expansions) ===
-		var Tree_Array = []
+		// === Step 2 : no-play floor (hide) = initial best, then recursively unroll each base action ===
+		// The BFS_DELTA_EPSILON margin keeps float residue (e.g. heal on a full-HP target, Δ≈2.9e-11)
+		// from outranking the floor / other candidates. DFS order + epsilon == the old array scan.
+		var noPlay = new NodeClass(null, State, null)
+		noPlay.SCORE = initialScore
+		BFS_BEST_NODE = noPlay
+
 		for (var entry in rootEntries) {
 			var baseNode = entry[2]
 			baseNode.SCORE = entry[3]
 			baseNode.BASE_HASH = entry[4]
-			push(Tree_Array, baseNode)
+			if (baseNode.SCORE > BFS_BEST_NODE.SCORE + BFS_DELTA_EPSILON) BFS_BEST_NODE = baseNode
 			debug("[Base] " + ITEMINFO[baseNode.ACTION.Item].NAME + " " + baseNode.ACTION.From + "->" + baseNode.ACTION.To + " | Δ=" + entry[1] + " | Score=" + entry[3])
 			if (entry[1] <= BFS_DELTA_EPSILON) continue   // no-op / negative-delta bases : skip expansion
-			var current = baseNode
-			var depth = 1
-			while (true) {
-				var next = findBestNextNode(current, ScoredCache, MySide)
-				if (next == null) break
-				push(Tree_Array, next)
-				debug("  [+" + depth + "] " + ITEMINFO[next.ACTION.Item].NAME + " " + next.ACTION.From + "->" + next.ACTION.To + " | Δ=" + (next.SCORE - current.SCORE) + " | Score=" + next.SCORE)
-				current = next
-				depth++
-			}
+			unroll(baseNode, ScoredCache, MySide, 1)
 		}
 
-		// === Step 3 : no-play floor (hide, no action) ===
-		var noPlay = new NodeClass(null, State, null)
-		noPlay.SCORE = initialScore
-		push(Tree_Array, noPlay)
-
-		// === Step 4 : find best by absolute SCORE ===
-		// Use BFS_DELTA_EPSILON margin so float residue (e.g. heal on full-HP target
-		// producing Δ≈2.9e-11) doesn't outrank the noPlay floor or other candidates.
-		var best = noPlay
-		for (var nod in Tree_Array) {
-			if (nod.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = nod
-		}
+		var best = BFS_BEST_NODE
 		BenchOps.Stop("BFS")
 
 		if (best.ACTION == null) return null
@@ -86,6 +71,18 @@ class ActionSuite {
 		while (ancestor.PARENT != null) ancestor = ancestor.PARENT
 		debug("Best: " + ITEMINFO[ancestor.ACTION.Item].NAME + " | From: " + ancestor.ACTION.From + " | To: " + ancestor.ACTION.To + " | Delta: " + (best.SCORE - initialScore))
 		return ancestor.ACTION
+	}
+
+	/* Greedy recursive branch unroll (replaces the Tree_Array + while loop). Descends the single best
+	 * next action, tracking the global BFS_BEST_NODE by absolute SCORE (same DFS order + epsilon margin
+	 * as the old array scan -> behaviour-identical). No node storage. This recursion is the home for the
+	 * future incremental score (Phase 4): carry the parent score down and patch it per child. */
+	static unroll(node, ScoredCache, MySide, depth) {
+		var next = findBestNextNode(node, ScoredCache, MySide)
+		if (next == null) return
+		if (next.SCORE > BFS_BEST_NODE.SCORE + BFS_DELTA_EPSILON) BFS_BEST_NODE = next
+		debug("  [+" + depth + "] " + ITEMINFO[next.ACTION.Item].NAME + " " + next.ACTION.From + "->" + next.ACTION.To + " | Δ=" + (next.SCORE - node.SCORE) + " | Score=" + next.SCORE)
+		unroll(next, ScoredCache, MySide, depth + 1)
 	}
 
 	/**
