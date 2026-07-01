@@ -110,7 +110,7 @@ class ActionSuite {
 		if (BaseHash in ScoredCache) {
 			Entries = ScoredCache[BaseHash]
 		} else {
-			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide)
+			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE)
 			ScoredCache[BaseHash] = Entries
 		}
 
