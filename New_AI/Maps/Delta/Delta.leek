@@ -34,11 +34,10 @@ class DeltaClass {
         var healFp = 0
         var healCasters = []
         for (var e: var stat in State) {
-            if (stat.LIFE <= 0 || e == Me || stat.SIDE != mySide) continue
-            if (HealClass.hasHealItem(stat)) {
-                healFp ^= addValueToBinHash(OFFSET_BASIS ^ e, (stat.WISDOM << 32) | (stat.TOTAL_TP << 22) | (stat.TOTAL_MP << 12) | stat.CELL)
-                push(healCasters, e)
-            }
+            if (e == Me || stat.LIFE <= 0 || stat.SIDE != mySide) continue   // my-side alive non-Me only
+            if (!HealClass.hasHealItem(stat)) continue
+            healFp ^= HealClass.healerContribution(stat, e)
+            push(healCasters, e)
         }
 
         // getHealMap builds the per-side healers fingerprint (id + cell/mp/wis/tp, XOR-combined,

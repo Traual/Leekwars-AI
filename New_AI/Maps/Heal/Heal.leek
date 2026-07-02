@@ -26,18 +26,26 @@ include("../../includes.leek")
 
 class HealClass {
 
+    /* One healer's contribution to the my-side healers fingerprint (XOR-fold, order-independent).
+     * SINGLE SOURCE OF TRUTH: this exact formula keys HEAL_MAP_CACHE and salts NETDAMAGE_CACHE.
+     * Both fold sites use it (the no-arg getHealMap below, and DeltaClass.getNetDamageMap's inline
+     * fold) — never inline it again, a divergence silently splits the caches. */
+    static healerContribution(stat, id) {
+        return addValueToBinHash(OFFSET_BASIS ^ id, (stat.WISDOM << 32) | (stat.TOTAL_TP << 22) | (stat.TOTAL_MP << 12) | stat.CELL)
+    }
+
     /* No-arg entry: scans State to build the healers fingerprint + caster list, then delegates.
-     * For callers that don't already walk State (FinalCell, debug). */
+     * For callers that don't already walk State (FinalCell, debug). Keep this loop structurally
+     * IDENTICAL to the fold in DeltaClass.getNetDamageMap. */
     static getHealMap(State) {
         var mySide = getSide(Me)
         var fp = 0
         var casters = []
-        for (var caster: var casterStats in State) {
-            if (caster == Me || casterStats.LIFE <= 0) continue
-            if (casterStats.SIDE != mySide) continue        // only my-side healers (an enemy won't heal me)
-            if (!hasHealItem(casterStats)) continue
-            fp ^= addValueToBinHash(OFFSET_BASIS ^ caster, (casterStats.WISDOM << 32) | (casterStats.TOTAL_TP << 22) | (casterStats.TOTAL_MP << 12) | casterStats.CELL)
-            push(casters, caster)
+        for (var e: var stat in State) {
+            if (e == Me || stat.LIFE <= 0 || stat.SIDE != mySide) continue   // my-side alive non-Me only
+            if (!hasHealItem(stat)) continue
+            fp ^= healerContribution(stat, e)
+            push(casters, e)
         }
         return getHealMapPrecomputed(State, fp, casters)
     }
