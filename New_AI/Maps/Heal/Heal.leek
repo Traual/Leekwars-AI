@@ -18,8 +18,9 @@
  *  - value(item) = eff[1] · (1 + WISDOM/100) · (1 − 0.2·aoeDist).   (mirrors Consequences EFFECT_HEAL)
  *  - combo = greedy heal/TP within TOTAL_TP + MAX_USES (no target dependence → per-caster only).
  *
- * Reuses DangerClass geometry (getMapAoeForItem) + WalkCells. RAW potential (no missing-life
- * cap — that happens at the net-HP step). Not yet wired into getStateScore.
+ * Reuses DangerClass geometry (getMapAoeForItem) + WalkCells. RAW potential — the missing-life
+ * cap and turn-order sequencing happen in DeltaClass.netDamage. Consumed per node by
+ * DeltaClass.getNetDamageMap (hot path: getHealMapPrecomputed) and by FinalCell (no-arg getHealMap).
  **/
 
 include("../../includes.leek")

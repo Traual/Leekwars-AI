@@ -86,7 +86,8 @@ class DeltaClass {
     /* Min net delta Me takes this turn = MIN over my reachable cells of the net damage AT that cell
      * (danger there sequenced with heal there + turn order). Returned directly — no post-processing.
      * Heal-aware (danger & heal at the SAME flee cell) and gradient-preserving (net is uncapped, so
-     * overkill cells stay distinguishable). Not cached yet — caching is the next step. */
+     * overkill cells stay distinguishable). Two-level cached: outer = the whole MIN by reachable-set
+     * fingerprint, inner = the net at one flee cell (see Cache.leek). */
     static minDeltaForMe(MeStats, State, BaseHash, statsHash, hfp, healMap) {
         // seed = everything that fixes net(cell) EXCEPT the cell: enemy context + my shields
         // (statsHash), my-side healers (hfp), my current+max life (heal cap + the life<=0 cut). The
@@ -146,9 +147,8 @@ class DeltaClass {
 
     /* Full rebuild of the per-side opposing-team context (a side's context = every alive non-Me
      * entity NOT on that side). COMPOSABLE XOR-fold via contextContribution -> the incremental Node
-     * patch and this MUST share the same contribution formula (single source of truth, else the
-     * patched==full self-test would false-mismatch). Used at the BFS root, as the summon/resurrect
-     * fallback, and as the Phase-2 self-test reference. */
+     * patch and this MUST share the same contribution formula (single source of truth, else patched
+     * and rebuilt hashes silently diverge). Used at the BFS root and as the summon/resurrect fallback. */
     static buildContextBySide(State) {
         var sides = [: ]
         for (var e: var stat in State) if (stat.LIFE > 0) sides[stat.SIDE] = true

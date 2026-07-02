@@ -16,14 +16,16 @@ class DangerClass {
 		this.EndValueDamage = TmpValueDamage
 	}
 
-	/* Gives me the danger of an entity from its own ennemies in its state (shields, cell etc) (if entity is me i take into account that i will move to the safest cell in my actual position)
+	/* Per-caster danger an entity takes AT ITS CURRENT CELL from opposing casters. Uniform for every
+	 * entity — Me's min-delta flee search lives in DeltaClass.minDeltaForMe, not here.
 	 *
 	 * @param entity_state State Class of ID
 	 * @param state Map <Id : Class state of Id>
 	 * @param entity_id ID of entity
 	 * @param base_hash : Hash <id : cell> of every alive entities
+	 * @param thisStatsHashForDanger Stats hash of the entity (opposing context + own shields) — cache key
 	 *
-	 * @return danger that entity will take
+	 * @return Map [casterId -> damage] at the entity's cell
 	 */
 
 	static getEntityDanger(entity_state, state, entity_id, base_hash, thisStatsHashForDanger) {

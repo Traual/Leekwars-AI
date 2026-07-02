@@ -17,11 +17,14 @@ class NodeClass {
 		this.PARENT = Parent
 	}
 
-	/* It is a simplified version with less parameters of ActionToNodeInATree. It is used in Action Suite in Loading Base Nodes
+	/* Simplified entry (fewer params) of ActionToNodeInTree: derives walkcells + cost, then delegates.
+	 * Used by enumerateAndSort (base nodes) and findBestNextNode (expansion candidates).
 	 *
-	 * @param Act Action that i want to transform into a node
-	 * @param State Map <Id : Class Stats of Id>
-	 * @param BaseHash Hash of Id:Cell of EveryOne
+	 * @param Action Action to turn into a node
+	 * @param State Map <Id : Class Stats of Id> (the PARENT state)
+	 * @param BaseHash BaseHash of the parent State
+	 * @param Parent Parent node (null for base nodes)
+	 * @param ParentContext Parent's CONTEXT_BY_SIDE (patched incrementally onto the child)
 	 *
 	 * @return New Node Class
 	 */
@@ -63,7 +66,9 @@ class NodeClass {
 	 * @param Info Class ItemInfo of (Item)
 	 * @param Item : Item to use (Act.ITEM)
 	 * @param To : Cell To (Act.TO)
-	 * @param BaseHash Hash of Id:Cell of EveryOne
+	 * @param BaseHash BaseHash of the parent State
+	 * @param Parent Parent node (null for base nodes)
+	 * @param ParentContext Parent's CONTEXT_BY_SIDE (cloned + patched incrementally onto the child)
 	 *
 	 * @return New Node Class
 	 */

@@ -190,7 +190,7 @@ global HEAL_MAP_CACHE = [: ]
 global HEALERS_FINGERPRINT_BY_SIDE = [: ]
 
 // ============================================================================
-// WalkCells (packed-couple bitmap BFS — see Maps/WalkCells/Class.leek)
+// WalkCells (packed-couple bitmap BFS — see Maps/WalkCells.leek)
 // ============================================================================
 // Layout: 1 int per COUPLE of lines (18 couples total).
 //   bits 0-17  : even line 2c   (18 cells)
