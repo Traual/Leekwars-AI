@@ -47,31 +47,6 @@ class DangerClass {
 		return tmp
 	}
 
-	/* Sum the per-caster damages of a danger map -> scalar total (back-compat for scoring / FinalCell). */
-	static sumDamages(dangerMap) {
-		var total = 0
-		for (var caster: var damage in dangerMap) total += damage
-		return total
-	}
-
-	/* Whole-board danger map, symmetric to HealClass.getHealMap: [casterId -> [cell -> damage]].
-	 * Per target, getEntityDanger gives per-caster danger at the target's current cell; transposed by
-	 * caster. A target only takes damage from opposite-side casters, so
-	 * danger_received(T) = Σ K with K.SIDE != T.SIDE of dangerMap[K][T.CELL]. */
-	static getDangerMap(State, BaseHash) {
-		var _final = [: ]
-		for (var target: var targetStats in State) {
-			if (targetStats.LIFE <= 0) continue
-			var statsHash = getStatsHashForDanger(targetStats, State)
-			var perCaster = getEntityDanger(targetStats, State, target, BaseHash, statsHash)
-			for (var caster: var damage in perCaster) {
-				if (!(caster in _final)) _final[caster] = [: ]
-				_final[caster][targetStats.CELL] = damage
-			}
-		}
-		return _final
-	}
-
 
 	/* Gives me a map of every entity's ennemies walkable cells (used for danger loading)
 	 *
@@ -542,22 +517,4 @@ class DangerClass {
 		EFFECT_VULNERABILITY: true
 	]
 
-	/* Returns a Hash ItemAoe Map, MyStats and CasterStats
-	 *
-	 * @param ItemAoeMap Map <Item : MinAoeDist>
-	 * @param CasterStats Class Stats of Caster
-	 * @param TargetStats Class Stats of Target
-	 *
-	 * @return Int Hash
-	 */
-
-	static HashMapItemUseAoe(MapItemAoe, CurrentHash) {
-		for (var i: var dist in MapItemAoe) {
-			CurrentHash =
-				(CurrentHash * MAX_ITEM * MAX_AOE_DIST) +
-				(i * MAX_AOE_DIST) +
-				dist
-		}
-		return CurrentHash
-	}
 }

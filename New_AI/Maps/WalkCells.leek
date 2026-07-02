@@ -7,8 +7,6 @@
  *   - WalkCellsClass.getMaxLayer(state, e, bh)              : returns the maximal reachability map
  *                                                              (TPJ > TELE > JUMP > WALK). Use when
  *                                                              the caller only needs ".MAX".
- *   - WalkCellsClass.getMaxWalkOrJump(state, e, bh)         : maximal map ignoring teleport. Used
- *                                                              for enemy danger evaluation.
  *   - WalkCellsClass.getAllLayers(state, e, bh)             : returns a LayersClass with the four
  *                                                              layers + .MAX. Use when the caller
  *                                                              needs to know which layer each cell
@@ -157,19 +155,6 @@ class WalkCellsClass {
 		else if (canTele(stats)) r = getTele(state, entity, base_hash)
 		else if (canJump(stats)) r = getJump(state, entity, base_hash)
 		else                     r = getWalk(state, entity, base_hash)
-		BenchOps.Stop("WalkCells")
-		return r
-	}
-
-	/**
-	 * Returns the maximal reachability map between Walk and Jump (no teleport).
-	 * Used for enemy danger evaluation: we don't model their teleport for cost reasons.
-	 */
-	static getMaxWalkOrJump(state, entity, base_hash) {
-		BenchOps.Start("WalkCells")
-		var r = canJump(state[entity])
-			? getJump(state, entity, base_hash)
-			: getWalk(state, entity, base_hash)
 		BenchOps.Stop("WalkCells")
 		return r
 	}

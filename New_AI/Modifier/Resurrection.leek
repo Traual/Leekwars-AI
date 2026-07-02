@@ -24,11 +24,6 @@ class ResurrectionClass {
 		State[Resurrect_ID].CELL = To
 	}
 
-	static getAliveStatsFromDeadStats(ClonedDeadStats) {
-		ClonedDeadStats.TOTAL_LIFE /= 2
-		ClonedDeadStats.LIFE = ClonedDeadStats.TOTAL_LIFE / 2
-	}
-
 	static ScoringWichId(State) {
 		var _final_id
 		var top_score = 0
@@ -43,9 +38,5 @@ class ResurrectionClass {
 		}
 		debugC("Best Resurrect ID : " + _final_id + " (Score: " + top_score + ")", COLOR_GREEN)
 		return new ResurrectionClass(_final_id, top_score)
-	}
-
-	static HashEveryScores(EntityId, EntityMaxLife) { //This the hash for caching Resurrects Scores
-		return EntityId * MAX_LIFE + EntityMaxLife
 	}
 }

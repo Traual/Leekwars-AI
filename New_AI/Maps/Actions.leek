@@ -10,7 +10,6 @@ include("../includes.leek")
 
 class ActionsClass {
 	//TODO add Shoot allies for lazers to go through
-	//TODO : Summons Actions / Actions On Me / Actions on Nobody
 
 	static ToSkipItems = [
 		CHIP_TELEPORTATION: true,
@@ -387,12 +386,6 @@ class ActionsClass {
 		for (var e: var stat in State) {
 			if (stat.SIDE == MySide) NumberOfSumms += count(stat.SUMMONS)
 		}
-		/*if (item != CHIP_RESURRECTION && NumberOfSumms < SUMMON_LIMIT) return true
-		if (item == CHIP_RESURRECTION && NumberOfSumms < SUMMON_LIMIT) {
-			return true
-		} else {//TODO : Resu Leeks Ally if Already got 8 bulbs ?
-			return false
-		}*/
 		return NumberOfSumms < SUMMON_LIMIT
 	}
 

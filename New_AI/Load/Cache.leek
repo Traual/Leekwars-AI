@@ -11,7 +11,6 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     COMBO_FROM_ITEM_AOE_CACHE = [: ]
     HAVE_AN_HITTABLE_ITEM_CACHE = [: ]
     TO_SKIP_MAP_CACHE = [: ]
-    ENEMIES_BASE_HASH_CACHE = [: ]
     ENTITY_DELTA_CACHE_FOR_ME = [: ]
     CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
@@ -98,7 +97,6 @@ global INVERTED_STAR_WITH_LOS_CACHE = [: ]
 global POINTS_INVERTED_STAR_WITH_LOS_CACHE = [: ]
 
 global LASERS = [: ]
-global FIRST_INLINE = [: ]
 
 // For Item Class
 
@@ -127,9 +125,8 @@ global DANGER_ENTITY_CACHE = [: ]
 global DANGER_ENTITY_INVENTORY = [: ]
 global EVERY_ENEMIES_WALKABLES = [: ]
 
-//Theses two are weird, they are optimisations from BaseHash (if baseHash is the same then theses results will also be the same)
+// BaseHash-keyed optimisation: same BaseHash -> same skip map (reset per turn).
 global TO_SKIP_MAP_CACHE = [: ]
-global ENEMIES_BASE_HASH_CACHE = [: ]
 
 //Branch Danger Cache :
 

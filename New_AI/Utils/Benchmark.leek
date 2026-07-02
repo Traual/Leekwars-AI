@@ -17,9 +17,6 @@
  *   stop A) — the timing reported for the outer category will include the
  *   inner, like a flame graph self+children. If you want EXCLUSIVE timing,
  *   stop the outer before starting the inner.
- *
- * BenchmarkClass, BenchmarkRamClass : legacy single-shot timers (kept for
- *   backwards compatibility).
 **/
 
 class BenchOps {
@@ -74,26 +71,5 @@ class BenchOps {
 		debug("  ----")
 		debug("  Tracked sum : " + floor(total / 1000) + "k ops (note: overlapping when nested)")
 		debug("  Full turn : " + floor(fullTurn / 1000) + "k ops")
-	}
-}
-
-// === Legacy single-shot timer (unchanged API) ===
-class BenchmarkClass {
-	static DEBUGOP
-	static StartOp() {
-		DEBUGOP = getOperations()
-	}
-	static StopOp(name) {
-		debug(name + " opés " + ((getOperations() - DEBUGOP - 17) / 1000) + " k")
-	}
-}
-
-class BenchmarkRamClass {
-	static RAM
-	static Start() {
-		RAM = getUsedRAM()
-	}
-	static Stop(name) {
-		debug(name + " Ram : " + (((getUsedRAM() - RAM) / getMaxRAM()) * 100) + " %")
 	}
 }

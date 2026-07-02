@@ -101,30 +101,6 @@ class StateClass {
 		return stat.LIFE > 0 ? mix64((id << 32) | stat.CELL) : 0
 	}
 
-	/* Hash Function for having an Hash of every Enemy Entities positions in Game (Used in cell Danger)
-	 *
-	 * @param State Map <Id : Class Stats of Id>
-	 *
-	 * @return Hash id:Entity Cell of alive enemies
-	 */
-	/*
-		static getEnemiesBaseHash(State, BaseHash) { //This is the Enemies BaseHash (For enemies walkcells in Final Cell Loading)
-			if (BaseHash in ENEMIES_BASE_HASH_CACHE) return ENEMIES_BASE_HASH_CACHE[BaseHash] //Its an optimisation of a hash function (weird but working)
-
-			var hash_value = OFFSET_BASIS
-
-			for (var id: var stat in State) {
-				if (stat.ALLY || stat.LIFE <= 0) continue
-				// combining id (32 bits haut) and CELL (32 bits bas) in a 64 bits word to then put the word to the hash
-	       		var combined = (id << 32) | stat.CELL
-				hash_value = addValueToBinHash(hash_value, combined)
-			}
-
-			ENEMIES_BASE_HASH_CACHE[BaseHash] = hash_value
-
-			return hash_value
-		}*/
-
 	static getEntityCellsMap(State) {
 		var _final = [: ]
 		for (var e: var stat in State) {

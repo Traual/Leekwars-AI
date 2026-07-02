@@ -41,22 +41,8 @@ class ItemClass {
 			this.AREA_MAX = AreaMax(id, this.AREA)
 			this.IS_WEAPON = isWeapon(id)
 			this.STACKABLE = this.EFFECTS[0][5] & EFFECT_MODIFIER_STACKABLE //Ugly but works at 09/2024
-			/*if (ShouldAreaMinRangeMeanItems(id, this.EFFECTS) && this.MINRANGE < this.AREA_MAX + 1 && AREA_MAX + 1 <= this.MAXRANGE) {
-				//debug(this.NAME + "'s minrange have been edited from " + this.MINRANGE + " to " + (this.AREA_MAX + 1))
-				this.MINRANGE = this.AREA_MAX + 1
-			}*/
 		}
 	}
-	/*
-	static ShouldAreaMinRangeMeanItems(id, ItemEffects) {
-		if (id == CHIP_LIGHTNING) return false //Bad Fix
-		for (var eff in ItemEffects) {
-			if (Target.TargetType[eff[0]] == Target.ENEMY) {
-				return true
-			}
-		}
-		return false
-	}*/
 
 	static MaxUses(id) {
 		return isChip(id) ? getChipMaxUses(id) : getWeaponMaxUses(id)
@@ -91,33 +77,4 @@ class ItemClass {
 		]
 		return MapReturn[Area]
 	}
-    /*
-	static ShouldCasterGetAoeHit(Infos, MinRange) {
-		//First let's see if i can go to the area of effect :
-		if (MinRange <= Infos.AREA_MAX && Infos.AREA_MAX > 0) {
-			//Now there is 2 situations where i would want to put myself into the aoe :
-			for (var eff in Infos.EFFECTS) {
-
-				if (!(eff[4] & EFFECT_TARGET_CASTER) || !(eff[4] & EFFECT_TARGET_ALLIES)) continue
-
-				//Item have a positive effect for me so i can put it on myself
-				var TmpTargetType = Target.TargetType[eff[0]]
-				if (TmpTargetType == Target.ALLY || TmpTargetType == Target.ALL) {
-					return true
-				}
-				//Item have a multiplier so i can add myself as a multiplier
-				if (eff[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) return true
-			}
-		}
-		return false
-	}*/
-    /*
-	static Init() {
-		for (var i = 0; i < 500; i++) {
-			ITEMINFO[i] = [: ]
-			var Iinfo = new ItemClass(i)
-			ITEMINFO[i] = Iinfo
-			//ITEMINFO[i].SHOULD_CASTER_GET_HIT = ShouldCasterGetAoeHit(Iinfo, Iinfo.MINRANGE)
-		}
-	}*/
 }

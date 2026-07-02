@@ -351,11 +351,6 @@ class CellClass {
 		var Hash = from + (to * 1000) + (minrange * 100000) + (maxrange * 10000000)
 		if (Hash in LASERS) return LASERS[Hash]
 		var _final = [: ]
-		/*if (from == to) {//Its a quick fix for Consequence on Lasers Without Knowing where it'll be from
-			debug("Hey wtf ?")
-			LASERS[Hash] = [from : true]
-			return [from : true]
-		}*/
 		var FromX = CELL_X[from]
 		var FromY = CELL_Y[from]
 		var ToX = CELL_X[to]
@@ -396,10 +391,6 @@ class CellClass {
 	
 	static getFirstInlineAoe(from, to, minrange, maxrange, EntityMap) {
 		var _final = [: ]
-		/*if (from == to) {//Its a quick fix for Consequence on Lasers Without Knowing where it'll be from
-			debug("Hey wtf ?")
-			return [from : true]
-		}*/
 		var FromX = CELL_X[from]
 		var FromY = CELL_Y[from]
 		var ToX = CELL_X[to]
