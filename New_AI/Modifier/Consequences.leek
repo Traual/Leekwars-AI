@@ -321,7 +321,7 @@ class ConsequencesClass {
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.TP -= calculatedValue
 					targetStats.TOTAL_TP -= calculatedValue
-					targetStats.TO_SAVE_SHACKLE_TOTAL_MP += calculatedValue
+					targetStats.TO_SAVE_SHACKLE_TOTAL_TP += calculatedValue // was _TOTAL_MP (copy-paste): REMOVE_SHACKLES refunded the TP shackle as MOVEMENT
 				}
 				break
 			case EFFECT_SHACKLE_WISDOM:
@@ -708,7 +708,7 @@ class ConsequencesClass {
 			case AREA_FIRST_INLINE:
 				var MapEntity = [: ]
 				for (var e: var stat in EveryStats)
-					if (e != Me && stat.LIFE >= 0) MapEntity[stat.CELL] = true
+					if (e != Me && stat.LIFE > 0) MapEntity[stat.CELL] = true // STRICT: corpses don't block shots in the engine (LIFE >= 0 made a 0-HP corpse a blocker AND poisoned the persistent CONSEQUENCE_TARGET_CACHE whose key only pins ALIVE positions)
 				var MapAoe = From == To ? [From: true] : CellClass.getFirstInlineAoe(From, To, ITEMINFO[Item].MINRANGE, ITEMINFO[Item].MAXRANGE, MapEntity)
 				for (var e: var stat in EveryStats)
 					if (MapAoe[stat.CELL]) _final[e] = 0

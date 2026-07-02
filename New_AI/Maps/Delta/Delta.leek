@@ -106,7 +106,7 @@ class DeltaClass {
         if (outerKey in ENTITY_DELTA_CACHE_FOR_ME) return ENTITY_DELTA_CACHE_FOR_ME[outerKey]
 
         var toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
-        var enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash)
+        var enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash, statsHash)
         var myWalkCells    = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
         var castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
 

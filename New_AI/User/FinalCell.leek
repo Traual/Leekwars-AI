@@ -39,7 +39,7 @@ class FinalCell {
         // Danger context (same setup the danger module uses everywhere else).
         var thisStatsHashForDanger      = DangerClass.getStatsHashForDanger(MyState, State)
         var thisToSkipMap               = DangerClass.EntitiesToSkip(MyState, State, BaseHash)
-        var thisEnemiesWalkableCellsMap = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, thisToSkipMap, BaseHash)
+        var thisEnemiesWalkableCellsMap = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, thisToSkipMap, BaseHash, thisStatsHashForDanger)
         var thisCastersInOrder          = StateClass.getEntitiesInTurnOrderAfterEntity(State, myId)
 
         var bestCell = MyState.CELL

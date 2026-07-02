@@ -41,7 +41,7 @@ class DangerClass {
 		var thisToSkipMap = clone(DangerClass.EntitiesToSkip(entity_state, state, base_hash))
 		thisToSkipMap[Me] = true
 		//Loading entity's enemies walk cells
-		var thisEnemiesWalkableCellsMap = LoadEnemiesWalkableCellsMap(state, entity_id, thisToSkipMap, base_hash)
+		var thisEnemiesWalkableCellsMap = LoadEnemiesWalkableCellsMap(state, entity_id, thisToSkipMap, base_hash, thisStatsHashForDanger)
 		var thisCastersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(state, entity_state.ID)
 		var tmp = DangerClass.get(entity_state.CELL, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
 		ENTITY_DANGER_CACHE_FOR_OTHERS[Hash] = tmp
@@ -56,12 +56,18 @@ class DangerClass {
 	 * @param entity_id ID of entity
 	 * @param toSkipMap map <id : true> of entities not to load walkcells for
 	 * @param base_hash : Hash <id : cell> of every alive entities
+	 * @param statsHash : stats hash of the TARGET (opposing-team context + shields) — pins every
+	 *                    opposing caster's TOTAL_MP/TP, which the walkcells depend on
 	 *
-	 * @return danger that entity will take
+	 * @return Map [casterId -> walkcells]
 	 */
 
-	static LoadEnemiesWalkableCellsMap(state, entity_id, toSkipMap, base_hash) {
-		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ base_hash), entity_id)
+	static LoadEnemiesWalkableCellsMap(state, entity_id, toSkipMap, base_hash, statsHash) {
+		// statsHash folded into the key: an MP/TP shackle simulated in-branch changes the caster's
+		// mobility but NOT base_hash — keyed by base_hash alone this cache kept serving the FULL
+		// pre-shackle walkcells, so mobility shackles scored ~0 danger reduction all turn. Reassembly
+		// on a miss is cheap (the per-caster NoEnt maps stay fight-wide cached by (cell, mp)).
+		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ base_hash ^ statsHash), entity_id)
 		if (ThisHash in EVERY_ENEMIES_WALKABLES) return EVERY_ENEMIES_WALKABLES[ThisHash]
 		var EnemiesWalkCells = [: ]
 		for (var e: var stat in state) {
