@@ -141,15 +141,29 @@ class StateClass {
 		return _final
 	}
 
-	static CloneOnlyTargetsAndMe(Targets, EveryStats) {
+	static CloneOnlyTargetsAndMe(Targets, EveryStats, clonedIds) {
 		var _final = [: ]
 		for (var tar: var dist in Targets + [Me: 0]) {
 			_final[tar] = clone(EveryStats[tar], 2)
+			clonedIds[tar] = true
 		}
 		for (var tar: var stats in EveryStats) { //No need to clone them
 			if (!(tar in _final)) _final[tar] = stats
 		}
 		return _final
+	}
+
+	/* Clone-on-write for the kill-path side effects (summon cascade, buff unwind, weapon procs):
+	 * those mutate entities OUTSIDE the pre-cloned Targets+Me set, i.e. objects SHARED with the
+	 * parent State — mutating them in place corrupts the whole search (audit bug A). Clones the
+	 * entity into EveryStats on first touch and records it in clonedIds, which thereby stays the
+	 * EXACT set of possibly-mutated entities (Node's incremental hash patch iterates it). */
+	static ensureCloned(EveryStats, id, clonedIds) {
+		if (!(id in clonedIds)) {
+			EveryStats[id] = clone(EveryStats[id], 2)
+			clonedIds[id] = true
+		}
+		return EveryStats[id]
 	}
 
 	/* Gives me the average distance of an entity from its own allies (0 if no allies) (its not weighted, every ally is valued the same : from a puny bulb to a leek)

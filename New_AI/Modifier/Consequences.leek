@@ -7,7 +7,7 @@ include("../includes.leek")
 
 class ConsequencesClass {
 
-	static applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats) {
+	static applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds) {
 		var isEffectStackable = Effect[5] & EFFECT_MODIFIER_STACKABLE
 		var baseEffectValue = Effect[1] * Multiplier
 		switch (EffectType) {
@@ -156,7 +156,7 @@ class ConsequencesClass {
 				break
 			case EFFECT_DAMAGE:
 				var casterStatMultiplier = baseEffectValue * (1 + CastStats.STRENGTH / 100) * (1 + CastStats.POWER / 100)
-				for (var targetId: var aoeDistance in RealTargets) getEntityDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State)
+				for (var targetId: var aoeDistance in RealTargets) getEntityDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
 				break
 			case EFFECT_DEBUFF:
 				for (var targetId: var aoeDistance in RealTargets) getEntityDebuffConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster)
@@ -170,11 +170,11 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_KILL:
-				for (var targetId: var aoeDistance in RealTargets) getKillConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster, State, true)
+				for (var targetId: var aoeDistance in RealTargets) getKillConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster, State, true, clonedIds)
 				break
 			case EFFECT_LIFE_DAMAGE:
 				var casterStatMultiplier = baseEffectValue * (CastStats.LIFE / 100) * (1 + CastStats.POWER / 100)
-				for (var targetId: var aoeDistance in RealTargets) getEntityLifeDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State)
+				for (var targetId: var aoeDistance in RealTargets) getEntityLifeDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
 				break
 			case EFFECT_NOVA_DAMAGE:
 				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
@@ -348,7 +348,7 @@ class ConsequencesClass {
 		}
 	}
 
-	static getConsequences(State, Item, From, To, Caster, BaseHash) { //Need from for lasers
+	static getConsequences(State, Item, From, To, Caster, BaseHash, clonedIds) { //Need from for lasers
 		BenchOps.Start("Consequences")
 		var Targets = ConsequenceTargets(Item, From, To, State, Caster, BaseHash)
 		var CastStats = State[Caster]
@@ -368,7 +368,7 @@ class ConsequencesClass {
 			var Multiplier = (Effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) ? mapSize(TmpTargets) : 1 //Saving Multiplier
 			if (CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) Multiplier *= CRITICAL_FACTOR
 			var RealTargets = Effect[5] & EFFECT_MODIFIER_ON_CASTER ? [Caster: 0] : TmpTargets
-			applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats)
+			applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds)
 		}
 		BenchOps.Stop("Consequences")
 	}
@@ -503,8 +503,21 @@ class ConsequencesClass {
 		}
 	}
 
-	static RemoveCastedEffects(EveryStats, Caster) {
+	static RemoveCastedEffects(EveryStats, Caster, clonedIds) {
+		// Clone-on-write: an entity carrying an effect cast by the killed can be OUTSIDE the
+		// pre-cloned Targets+Me set (= SHARED with the parent State). Collect first, then
+		// clone+mutate — ensureCloned replaces map values, never mutate a map while iterating it.
+		var touched = []
 		for (var e: var stat in EveryStats) {
+			for (var eff in stat.EFFECTS) {
+				if (eff[2] == Caster) {
+					push(touched, e)
+					break
+				}
+			}
+		}
+		for (var e in touched) {
+			var stat = StateClass.ensureCloned(EveryStats, e, clonedIds)
 			for (var eff in stat.EFFECTS) {
 				if (eff[2] == Caster) {
 					removeCastedEffect(eff[0], stat, eff[1], eff[3])
@@ -513,19 +526,33 @@ class ConsequencesClass {
 		}
 	}
 
-	static getKillConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster, EveryStats, AddTpEnhancedLightninger) {
+	static getKillConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster, EveryStats, AddTpEnhancedLightninger, clonedIds) {
 		TarStats.LIFE = 0
 		var Killed = TarStats.ID
-		RemoveCastedEffects(EveryStats, Killed)
+		RemoveCastedEffects(EveryStats, Killed, clonedIds)
+		// Clone-on-write: cascade victims (summons of the killed) and special-weapon holders can be
+		// OUTSIDE the pre-cloned Targets+Me set (= SHARED with the parent State). Collect first, then
+		// clone+mutate — ensureCloned replaces map values, never mutate a map while iterating it.
+		var cascadeIds = []
+		var procIds = []
 		for (var e: var stat in EveryStats) {
-			if (stat.SUMMONER == Killed) {
-				getKillConsequences(Dist, Multiplier, Effect, stat, CastStats, TarIsCaster, EveryStats, false)
-			}
+			if (stat.SUMMONER == Killed) push(cascadeIds, e)
 			if (stat.SPECIAL_WEAPON == WEAPON_ENHANCED_LIGHTNINGER && AddTpEnhancedLightninger) {
+				push(procIds, e)
+			} else {
+				if (stat.SPECIAL_WEAPON == WEAPON_DARK_KATANA) push(procIds, e)
+			}
+		}
+		for (var e in cascadeIds) {
+			getKillConsequences(Dist, Multiplier, Effect, StateClass.ensureCloned(EveryStats, e, clonedIds), CastStats, TarIsCaster, EveryStats, false, clonedIds)
+		}
+		for (var e in procIds) {
+			var stat = StateClass.ensureCloned(EveryStats, e, clonedIds)
+			if (stat.SPECIAL_WEAPON == WEAPON_ENHANCED_LIGHTNINGER) {
 				stat.TOTAL_TP++
 				stat.TP++
 			} else {
-				if (stat.SPECIAL_WEAPON == WEAPON_DARK_KATANA) stat.AGILITY += 100
+				stat.AGILITY += 100
 			}
 		}
 
@@ -549,13 +576,13 @@ class ConsequencesClass {
 		}
 	}
 
-	static getEntityDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats) {
+	static getEntityDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, clonedIds) {
 		var BaseDamages = base * (1 - Dist * 0.2)
 		var DamagesWithShield = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
 		var TargetLife = TarStats.LIFE
 		var Damage = min(DamagesWithShield, TargetLife)
 		if (Damage >= TargetLife && TargetLife > 0) {
-			getKillConsequences(Dist, 0, Effect, TarStats, CastStats, TarIsCaster, EveryStats, true)
+			getKillConsequences(Dist, 0, Effect, TarStats, CastStats, TarIsCaster, EveryStats, true, clonedIds)
 		} else {
 			TarStats.LIFE -= Damage
 		}
@@ -626,13 +653,13 @@ class ConsequencesClass {
 		TarStats.TO_SAVE_SHACKLE_WISDOM = 0
 	}
 
-	static getEntityLifeDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats) {
+	static getEntityLifeDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, clonedIds) {
 		var BaseDamages = base * (1 - Dist * 0.2)
 		var InitialDamages = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
 		var TargetLife = TarStats.LIFE
 		var Damage = min(InitialDamages, TargetLife)
 		if (Damage >= TargetLife && TargetLife > 0) {
-			getKillConsequences(Dist, 0, Effect, TarStats, CastStats, TarIsCaster, EveryStats, true)
+			getKillConsequences(Dist, 0, Effect, TarStats, CastStats, TarIsCaster, EveryStats, true, clonedIds)
 		} else {
 			TarStats.LIFE -= Damage
 		}

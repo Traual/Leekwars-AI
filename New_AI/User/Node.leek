@@ -70,7 +70,11 @@ class NodeClass {
 
 	static ActionToNodeInTree(Act, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, ParentContext) {
 		var Targets = ConsequencesClass.ConsequenceTargets(Item, From, To, State, Me, BaseHash)
-		var ThisActionStats = StateClass.CloneOnlyTargetsAndMe(Targets, State)
+		// clonedIds = the EXACT set of possibly-mutated entities: Targets+Me pre-cloned here, plus every
+		// kill-path side-victim (summon cascade, buff unwind, weapon procs) cloned-on-write by
+		// StateClass.ensureCloned inside getConsequences. Local, threaded as a parameter (no global).
+		var clonedIds = [: ]
+		var ThisActionStats = StateClass.CloneOnlyTargetsAndMe(Targets, State, clonedIds)
 
 		// FIX RESURRECTION : Les entités mortes alliées doivent être clonées 
 		// car ResurrectionClass.Update va modifier leurs stats (LIFE, CELL, etc.)
@@ -78,6 +82,7 @@ class NodeClass {
 			for (var e: var stat in State) {
 				if (stat.LIFE <= 0 && stat.SIDE == State[Me].SIDE && !(e in Targets)) {
 					ThisActionStats[e] = clone(stat, 2)
+					clonedIds[e] = true
 				}
 			}
 		}
@@ -94,7 +99,7 @@ class NodeClass {
 		}
 		ThisActionStats[Me].TP -= Cost //We Remove TP
 		if (Info.IS_WEAPON) ThisActionStats[Me].WEAPON = Item //Change Entity Weapon
-		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash) //Changing item consequences
+		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash, clonedIds) //Changing item consequences
 		ThisActionStats[Me].COOLDOWNS[Item] = Info.COOLDOWN //Adding the cooldown
 		ThisActionStats[Me].USES[Item]++ //Adding the uses
 		if (!(From in MyWalkCells.WALK)) { //Adding the moving item cooldown
@@ -116,11 +121,13 @@ class NodeClass {
 			result.BASE_HASH = StateClass.getBaseHash(ThisActionStats)
 			result.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(ThisActionStats)
 		} else {
-			// Only Targets (+Me) were cloned/mutated -> patch just those from the parent's hashes.
+			// Patch over clonedIds — the EXACT set of possibly-mutated entities (Targets+Me pre-cloned
+			// + kill-path side-victims cloned-on-write). Covers cascade/unwind/procs by construction;
+			// the parent State keeps the pristine old values (it is never mutated anymore).
 			var bh = BaseHash                    // parent State's BaseHash
 			var ctx = clone(ParentContext, 1)    // copy so we never mutate the parent's context
 			var ctxSides = mapKeys(ctx)          // hoisted: the side set never changes inside the patch loop
-			for (var tar: var _d in Targets) {
+			for (var tar: var _c in clonedIds) {
 				if (tar == Me) continue          // Me excluded from both hashes
 				var oldStat = State[tar]
 				var newStat = ThisActionStats[tar]
@@ -133,6 +140,16 @@ class NodeClass {
 			}
 			result.BASE_HASH = bh
 			result.CONTEXT_BY_SIDE = ctx
+		}
+
+		// TEMP self-test (remove once validated on a fight WITH summoner/buff-caster kills — a plain
+		// fight does not exercise the kill path): patched MUST equal a full recompute. Tolerates the
+		// patched ctx keeping a wiped side's key (benign: only read for LIVING entities).
+		var fullBase = StateClass.getBaseHash(ThisActionStats)
+		if (result.BASE_HASH != fullBase) debugC("[PATCHTEST] BASE_HASH " + result.BASE_HASH + " != full " + fullBase + " item=" + Item, COLOR_RED)
+		var fullCtx = DeltaClass.buildContextBySide(ThisActionStats)
+		for (var side: var h in fullCtx) {
+			if (!(side in result.CONTEXT_BY_SIDE) || result.CONTEXT_BY_SIDE[side] != h) debugC("[PATCHTEST] CONTEXT side=" + side + " item=" + Item, COLOR_RED)
 		}
 
 		return result
