@@ -51,7 +51,10 @@ class DeltaClass {
         var _final = [: ]
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
-            var statsHash = addValueToBinHash(contextBySide[stat.SIDE], (stat.ABSOLUTE_SHIELD << 30) | (stat.RELATIVE_SHIELD << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
+            // Shields MASKED to their slots: vulnerability = NEGATIVE shield, and an unmasked negative
+            // sign-extends through << and OR-absorbs every higher field (same hazard the SURVIVAL_CACHE
+            // key documents for POISON). REL & 0x7FFF keeps negatives distinct in 15 bits; ABS & 0xFFFFF.
+            var statsHash = addValueToBinHash(contextBySide[stat.SIDE], ((stat.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((stat.RELATIVE_SHIELD & 0x7FFF) << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
 
             if (e == Me) {
                 // Me MOVES this turn: MIN net delta over my reachable flee cells (danger AND heal at

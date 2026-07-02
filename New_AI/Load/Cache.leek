@@ -44,6 +44,12 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     DANGER_ENTITY_INVENTORY = [: ]
     DANGER_ENTITY_CACHE = [: ]
 
+    // Same cooldown reason, one layer UP: this outer per-(statsHash, cell) danger memo carries no
+    // cooldown info in its key, so a cross-turn hit would serve pre-cooldown-refresh danger AND
+    // bypass the two freshly-reset caches above entirely (static standoffs: an enemy's big chip
+    // coming off cooldown would stay invisible). Reset it with them.
+    ENTITY_DANGER_CACHE_FOR_OTHERS = [: ]
+
     // TEMP instrumentation (BFS scoring split) — remove after measuring.
     INSTR_GBA = 0 ; INSTR_ENUM_CALLS = 0 ; INSTR_ENUM_SCORES = 0 ; INSTR_EXPAND_SCORES = 0
 }

@@ -298,10 +298,13 @@ class ActionsClass {
 			for (var from: var MapToHash in LoadMapFromAoeForAnEntity(Item, EntityState.CELL, Infos, LaunchFct)) {
 				var Tmp = from in _final ? _final[from] : _final[from] = [: ] //Used to optimize acces costs to _final[from]
 				for (var to: var TmpHash in MapToHash) {
+					// Packing: ENTITY in the high bits, aoe-DIST in the 3-bit slot (dist <= 6 fits; ids don't).
+					// The old (dist << 3) | entity had the fields SWAPPED: ids >= 8 bled into the dist slot,
+					// distinct target-sets collided in DoneHashs and real attack actions were silently dropped.
 					if (to in Tmp) {
-						Tmp[to] = addValueToBinHash(Tmp[to], (TmpHash << MAX_AOE_DIST_BINARY) | entity)
+						Tmp[to] = addValueToBinHash(Tmp[to], (entity << MAX_AOE_DIST_BINARY) | TmpHash)
 					} else {
-						Tmp[to] = addValueToBinHash(OFFSET_BASIS, (TmpHash << MAX_AOE_DIST_BINARY) | entity)
+						Tmp[to] = addValueToBinHash(OFFSET_BASIS, (entity << MAX_AOE_DIST_BINARY) | TmpHash)
 					}
 				}
 			}
@@ -313,7 +316,7 @@ class ActionsClass {
 				var MapAoeCellsOfFrom = AoeDistItem(Item, from)
 				for (var to: var TmpHash in MapToHash) {
 					if (to in MapAoeCellsOfFrom) { //If i'm in the area, i add myself to hash :
-						Tmp[to] = addValueToBinHash(Tmp[to], (MapAoeCellsOfFrom[to] << MAX_AOE_DIST_BINARY) | Me)
+						Tmp[to] = addValueToBinHash(Tmp[to], (Me << MAX_AOE_DIST_BINARY) | MapAoeCellsOfFrom[to]) // same entity-high / dist-low packing as above
 					}
 				}
 			}
