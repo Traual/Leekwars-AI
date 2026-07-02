@@ -34,6 +34,7 @@ global MeanBulbs = [
 
 // Cheapest item TP cost across my inventory (used to short-circuit expansion when TP is too low).
 global MINIMUM_COST_ITEM
+global SUMMON_ID_BASE = 0   // turn-start max REAL entity id; virtual bulb id = base + type offset (set in Preload.InitStateClass)
 
 global MAP_TO_TENSOR
 // Dimensions de la map LeekWars

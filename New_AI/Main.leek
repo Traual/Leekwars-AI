@@ -1,5 +1,6 @@
 include("includes.leek")
 //TODO : Covid propagation in final cell ?
+//TODO : A modifier si un jour un chip de bulbe a 0 CD : id virtuel = SUMMON_ID_BASE + typeOffset (Consequences EFFECT_SUMMON) -> un resummon meme-type dans une branche ecraserait le premier bulbe (meme id).
 //TODO : Fix Enhanced Lightninger firing on allies
 //TODO (Scoring v2 - future precision): split `danger` into {physical, poison} inside Maps/Danger/.
 //  - Currently DR contribution uses an approximation: physical_ratio = STR_team / (STR_team + MAG_team).

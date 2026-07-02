@@ -91,5 +91,12 @@ class Preload {
 			if (c < cheapest) cheapest = c
 		}
 		MINIMUM_COST_ITEM = cheapest
+		// Base id for VIRTUAL summons this turn = the max REAL entity id, captured once at turn start.
+		// Bulb id = SUMMON_ID_BASE + getTypeOffset(chip): a given id maps to ONE bulb type for the whole
+		// turn, whatever the summon ORDER across branches/chains (the old branch-local getMaxUsedID sums
+		// commuted: M+4+5 == M+5+4 -> two types shared an id and the id-only inventory caches collided).
+		var maxRealId = 0
+		for (var i in getAllies() + getEnemies()) if (i > maxRealId) maxRealId = i
+		SUMMON_ID_BASE = maxRealId
 	}
 }
