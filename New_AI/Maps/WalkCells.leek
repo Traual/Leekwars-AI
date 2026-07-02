@@ -199,9 +199,11 @@ class WalkCellsClass {
 		var TeleportationCost = ITEMINFO[CHIP_TELEPORTATION].COST
 		var CanJump = (JumpCooldown == 0 || Entity != Me && JumpCooldown <= 1) && Tp >= JumpCost
 		var CanTeleport = (TeleportationCooldown == 0 || Entity != Me && TeleportationCooldown <= 1) && Tp >= TeleportationCost
-		var BaseValue = CanJump ?
-						CanTeleport ? 4 : 2 :
-						CanTeleport ? 3 : 1
+		// 3rd threshold: the TPJ layer needs the SUMMED cost of both chips (canTPJ). Without this bit,
+		// a TP >= jump+tele state and a tele <= TP < jump+tele state shared a key while their reachable
+		// DOMAINS differ (TPJ vs TELE) -> the flee-min cache served a min over unreachable cells.
+		var CanBoth = CanJump && CanTeleport && Tp >= JumpCost + TeleportationCost
+		var BaseValue = (CanJump ? 1 : 0) | (CanTeleport ? 2 : 0) | (CanBoth ? 4 : 0)
 		return addValueToBinHash((OFFSET_BASIS ^ BaseValue), (entity_state.CELL << 32) | entity_state.MP)
 	}
 
