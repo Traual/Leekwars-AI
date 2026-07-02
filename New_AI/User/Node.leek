@@ -142,16 +142,6 @@ class NodeClass {
 			result.CONTEXT_BY_SIDE = ctx
 		}
 
-		// TEMP self-test (remove once validated on a fight WITH summoner/buff-caster kills — a plain
-		// fight does not exercise the kill path): patched MUST equal a full recompute. Tolerates the
-		// patched ctx keeping a wiped side's key (benign: only read for LIVING entities).
-		var fullBase = StateClass.getBaseHash(ThisActionStats)
-		if (result.BASE_HASH != fullBase) debugC("[PATCHTEST] BASE_HASH " + result.BASE_HASH + " != full " + fullBase + " item=" + Item, COLOR_RED)
-		var fullCtx = DeltaClass.buildContextBySide(ThisActionStats)
-		for (var side: var h in fullCtx) {
-			if (!(side in result.CONTEXT_BY_SIDE) || result.CONTEXT_BY_SIDE[side] != h) debugC("[PATCHTEST] CONTEXT side=" + side + " item=" + Item, COLOR_RED)
-		}
-
 		return result
 	}
 }
