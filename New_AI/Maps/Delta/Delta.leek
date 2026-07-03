@@ -108,10 +108,13 @@ class DeltaClass {
         var outerKey = rotSeed ^ addValueToBinHash(BaseHash, WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MeStats))
         if (outerKey in ENTITY_DELTA_CACHE_FOR_ME) return ENTITY_DELTA_CACHE_FOR_ME[outerKey]
 
-        var toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
-        var enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash, statsHash)
-        var myWalkCells    = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
-        var castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
+        var myWalkCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
+        // Danger setup built LAZILY on the first inner-cache MISS: on fully-warm nodes (every
+        // reachable cell already cached) we skip EntitiesToSkip + LoadEnemiesWalkableCellsMap + the
+        // (deliberately uncached) turn-order rebuild entirely.
+        var toSkipMap = null
+        var enemyWalkCells = null
+        var castersInOrder = null
 
         var minDelta = MAX_VALUE
         for (var cell: var mp in myWalkCells) {
@@ -121,6 +124,11 @@ class DeltaClass {
             if (innerKey in CELL_NETDAMAGE_FOR_ME_CACHE) {
                 delta = CELL_NETDAMAGE_FOR_ME_CACHE[innerKey]
             } else {
+                if (toSkipMap == null) { // first miss -> build the danger setup once
+                    toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
+                    enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash, statsHash)
+                    castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
+                }
                 var dangerAtCell = DangerClass.get(cell, State, MeStats, enemyWalkCells, toSkipMap, statsHash, castersInOrder)
                 delta = netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
                 CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta

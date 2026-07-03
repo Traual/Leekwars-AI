@@ -40,10 +40,8 @@ class ActionsClass {
 		pushAll(_final, getEveryActionsInVoid(MyCell, MY_INVENTORY_ON_VOID, State, LeekCells, BaseHash))
 		//Adding Summon Actions :
 		pushAll(_final, getEverySummonActions(MyCell, MY_INVENTORY_SUMMON, State, LeekCells, BaseHash))
-		var MyState = State[Me]
-		var MaxDist = CHIP_JUMP in MyState.COOLDOWNS && MyState.COOLDOWNS[CHIP_JUMP] == 0 ? MyState.MP + ITEMINFO[CHIP_JUMP].MAXRANGE : MyState.MP
 		//Adding Actions on EveryOne Else
-		pushAll(_final, getEveryActionsOnEveryOne(MyState.CELL, MY_INVENTORY_ON_EVERYONE, State, MaxDist, WalkCells, BaseHash))
+		pushAll(_final, getEveryActionsOnEveryOne(State[Me].CELL, MY_INVENTORY_ON_EVERYONE, State, WalkCells, BaseHash))
 		BenchOps.Stop("Actions")
 		return _final
 	}
@@ -165,7 +163,7 @@ class ActionsClass {
 		return _final
 	}
 
-	static getEveryActionsOnEveryOne(MyCell, Inventory, State, MaxDist, WalkCells, BaseHash) {
+	static getEveryActionsOnEveryOne(MyCell, Inventory, State, WalkCells, BaseHash) { // MaxDist param removed: it was computed by the caller and never used here
 		var combined = (State[Me].MP << 20) | MyCell
 		var Hash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), combined)
 		if (Hash in ENTITY_ACTIONS_CACHE) return ENTITY_ACTIONS_CACHE[Hash]

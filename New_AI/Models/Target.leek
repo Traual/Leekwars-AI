@@ -57,9 +57,10 @@ class Target {
 			}
 		}
 
+		TARGETABLECACHE[Hash] = false // cache the negative too: never-targetable (item, flags) combos used to re-scan all effects on every call
 		return false
 	}
-	
+
 	static ImTargetable(itemEffects) {
 		for (var eff in itemEffects) {
 			if (!(eff[5] & EFFECT_MODIFIER_ON_CASTER) || !(eff[4] & EFFECT_TARGET_ALLIES) || TargetType[eff[0]] != Target.ALLY) continue

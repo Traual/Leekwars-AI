@@ -68,13 +68,14 @@ class StateClass {
 	 */
 
 	static getHashedEntities(State) {
-
-		var hash_value = (OFFSET_BASIS)
-
+		// ORDER-INDEPENDENT XOR-fold: map iteration order is unstable across clone paths, so the old
+		// chained fold produced SEVERAL keys for the SAME id set and fragmented
+		// ENTITY_SORTED_BY_TURN_ORDER_CACHE (duplicate sorts + memory). (id+1: keep the 0 id from
+		// mapping to mix64(0) = 0, same convention as baseContribution.)
+		var hash_value = OFFSET_BASIS
 		for (var e: var stat in State) {
-			hash_value = addValueToBinHash(hash_value, e)
+			hash_value ^= mix64(e + 1)
 		}
-
 		return hash_value
 	}
 
