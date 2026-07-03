@@ -90,7 +90,7 @@ class StateClass {
 		for (var id: var stat in State) {
 			if (id == Me || stat.LIFE <= 0) continue
 			// combining id (32 bits haut) and CELL (32 bits bas) in a 64 bits word to then put the word to the hash
-			hash_value ^= mix64((id << 32) | stat.CELL)   // COMPOSABLE XOR-fold (mix64 = non-linear -> collision-safe)
+			hash_value ^= baseContribution(stat, id)   // COMPOSABLE XOR-fold — SINGLE SOURCE with the incremental Node patch
 		}
 		return hash_value
 	}
@@ -98,7 +98,10 @@ class StateClass {
 	/* One entity's contribution to the BaseHash (0 if dead). SINGLE SOURCE OF TRUTH shared with the
 	 * incremental Node patch (Phase 2) so patched == full recompute. Same formula as getBaseHash. */
 	static baseContribution(stat, id) {
-		return stat.LIFE > 0 ? mix64((id << 32) | stat.CELL) : 0
+		// (id + 1): mix64(0) = 0, so entity id 0 standing on cell 0 would contribute 0 = the DEAD
+		// sentinel -> "alive at (0,0)" and "dead" would share a BaseHash. Shifting the input keeps it
+		// nonzero for every real (id, cell).
+		return stat.LIFE > 0 ? mix64(((id + 1) << 32) | stat.CELL) : 0
 	}
 
 	static getEntityCellsMap(State) {
@@ -160,6 +163,7 @@ class StateClass {
 		for (var entity: var thisState in state) {
 			if (entity_side == thisState.SIDE) {
 				if (entity == entity_id || entity == Me) continue //Don't want to count myself in it cuz i will move before the end of the turn
+				if (thisState.LIFE <= 0) continue // corpses don't pull the average (the BaseHash key only pins ALIVE positions)
 				Total += CellClass.getDist(thisState.CELL, entity_cell)
 				Divide++
 			}
@@ -188,6 +192,7 @@ class StateClass {
 		for (var entity: var thisState in state) {
 			if (entity_side != thisState.SIDE) {
 				if (entity == Me) continue //Don't want to count myself in it cuz i will move before the end of the turn
+				if (thisState.LIFE <= 0) continue // corpses don't pull the average (the BaseHash key only pins ALIVE positions)
 				Total += CellClass.getDist(thisState.CELL, entity_cell)
 				Divide++
 			}
