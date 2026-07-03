@@ -68,13 +68,14 @@ class StateClass {
 	 */
 
 	static getHashedEntities(State) {
-		// ORDER-INDEPENDENT XOR-fold: map iteration order is unstable across clone paths, so the old
-		// chained fold produced SEVERAL keys for the SAME id set and fragmented
-		// ENTITY_SORTED_BY_TURN_ORDER_CACHE (duplicate sorts + memory). (id+1: keep the 0 id from
-		// mapping to mix64(0) = 0, same convention as baseContribution.)
-		var hash_value = OFFSET_BASIS
+		// BIT-SET exact du set d'ids (vecteur caractéristique) : order-independent (la défrag de
+		// ENTITY_SORTED_BY_TURN_ORDER_CACHE), ZÉRO collision par construction, et ~2 opés/entité —
+		// moins cher que l'ancienne chaîne ET que mix64 (cette fonction est sur le hot path via
+		// getEntitiesInTurnOrderAfterEntity). Valide tant que les ids < 64 : réels ~<50 et bulbes
+		// virtuels = SUMMON_ID_BASE + 1..10.
+		var hash_value = 0
 		for (var e: var stat in State) {
-			hash_value ^= mix64(e + 1)
+			hash_value |= 1 << e
 		}
 		return hash_value
 	}
