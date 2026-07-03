@@ -18,10 +18,12 @@
  *
  * Two op-caches:
  *  - survivalValue() is cached in SURVIVAL_CACHE (reset per turn) by a single packed 64-bit
- *    key: LIFE (bits 48-63) | POISON (32-47) | POT (16-31) | danger (0-15). Bit-ops truncate
- *    the floats to int (verified), so no round() is needed. POISON / POT are masked with
- *    & 0xFFFF because they can be NEGATIVE (net heal) — a raw negative would sign-extend and
- *    erase the LIFE field through the OR. LIFE and danger are always ≥ 0 and fit in 16 bits.
+ *    key: LIFE (bits 48-63, 16b) | POISON (bits 34-47, 14b) | POT (bits 17-33, 17b) |
+ *    danger (bits 0-16, 17b). Bit-ops truncate the floats to int (verified), so no round()
+ *    is needed. POISON / POT are masked because they can be NEGATIVE (net heal) — a raw
+ *    negative would sign-extend and erase the higher fields through the OR. danger is masked
+ *    to its slot too: overkill nets are uncapped and can exceed 16 bits (17 bits = 131k
+ *    covers any realistic focus); POT gets 17 bits (documented up to 100k > 16 bits).
  *  - the danger "opposing-team context" hash is precomputed once PER SIDE (contextBySide,
  *    supports any number of teams: a side's context = every entity NOT on that side); each
  *    entity then only adds its own shields to its side's context.
@@ -56,7 +58,7 @@ class ScoringClass {
      * the floats to int (no round needed). POISON / POT masked because they can be negative.
      */
     static survivalValue(stat, danger) {
-        var key = (stat.LIFE << 48) | ((stat.POISON & 0xFFFF) << 32) | ((stat.POISON_OVER_TIME & 0xFFFF) << 16) | danger
+        var key = (stat.LIFE << 48) | ((stat.POISON & 0x3FFF) << 34) | ((stat.POISON_OVER_TIME & 0x1FFFF) << 17) | (danger & 0x1FFFF)
         if (key in SURVIVAL_CACHE) return SURVIVAL_CACHE[key]
 
         var afterPoison = max(0, stat.LIFE - COEF_POISON * stat.POISON)
