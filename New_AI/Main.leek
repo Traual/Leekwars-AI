@@ -1,6 +1,7 @@
 include("includes.leek")
 //TODO : Covid propagation in final cell ?
 //TODO : A modifier si un jour un chip de bulbe a 0 CD : id virtuel = SUMMON_ID_BASE + typeOffset (Consequences EFFECT_SUMMON) -> un resummon meme-type dans une branche ecraserait le premier bulbe (meme id).
+//ABANDONNE (trop couteux en hits de cache) : le danger EFFECT_LIFE_DAMAGE scale avec la LIFE du CASTER mais aucune cle de cache danger ne l'encode (contextContribution ne packe que STR/MAG/TOTAL_MP/TOTAL_TP/POWER) -> blesser un porteur d'item life-damage ne reduit pas sa menace percue dans le tour. Fix si besoin un jour : folder la vie du caster (quantisee) dans contextContribution.
 //TODO : Fix Enhanced Lightninger firing on allies
 //TODO (Scoring v2 - future precision): split `danger` into {physical, poison} inside Maps/Danger/.
 //  - Currently DR contribution uses an approximation: physical_ratio = STR_team / (STR_team + MAG_team).

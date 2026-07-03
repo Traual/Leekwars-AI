@@ -371,10 +371,12 @@ class DangerClass {
 
 	static getMapCellItemAoe(EntityStats, EntityWalkCells) {
 		var EntityStartCell = EntityStats.CELL
-		// With NoEntities walkcells the result is fully determined by the entity's (cell, mp)
-		// — no more mapSize-as-proxy needed. (cell × 1024 | mp, mp fits in 10 bits easily.)
-		// TOTAL_MP : same rationale — danger uses max-mobility walkcells which we feed in.
-		var TmpHash = (EntityStartCell << 10) | EntityStats.TOTAL_MP
+		// Keyed (ID, cell, TOTAL_MP) — the ID is REQUIRED: the value embeds the caster's item list
+		// (getItemsList is id-keyed), so two different enemies displaced onto the same cell in
+		// different branches (attract/push/invert) with equal TOTAL_MP must not share an entry.
+		// Direct pack, no hash needed: cell <= 612 (10 bits), TOTAL_MP < 1024 (10 bits), id small
+		// -> injective. Per-turn cache + id<->type for virtual bulbs => id pins the inventory.
+		var TmpHash = (EntityStats.ID << 20) | (EntityStartCell << 10) | EntityStats.TOTAL_MP
 		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
 		var _final = [: ]
 		for (var Item in EntityDangerClass.getItemsList(EntityStats)) {
