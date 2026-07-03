@@ -61,7 +61,11 @@ class EntityStateClass extends EntityClass {
 		this.USES = [: ]
 		for (var i in this.INVENTORY) {
 			this.COOLDOWNS[i] = ItemClass.Cooldown(i, id)
-			this.USES[i] = getItemUses(i)
+			// getItemUses est un builtin ENTITE COURANTE (1 arg) : l'appeler pour un AUTRE id stockait MES
+			// compteurs chez tout le monde -> pour un item partage (meme chip), apres mon cast la simu
+			// cappait a tort le potentiel next-turn de l'ennemi (uses < MAX_USES). Le moteur clear les
+			// uses au endTurn de CHAQUE entite -> pendant mon tour, les autres sont toujours a 0.
+			this.USES[i] = id == Me ? getItemUses(i) : 0
 		}
 		this.EFFECTS = getEffects(id)
 		//this.EFFECTS_ITEM_MAP = getEffectsMapItem(this.EFFECTS)
