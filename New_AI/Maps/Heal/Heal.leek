@@ -32,7 +32,7 @@ class HealClass {
      * Both fold sites use it (the no-arg getHealMap below, and DeltaClass.getNetDamageMap's inline
      * fold) — never inline it again, a divergence silently splits the caches. */
     static healerContribution(stat, id) {
-        return addValueToBinHash(OFFSET_BASIS ^ id, (stat.WISDOM << 32) | (stat.TOTAL_TP << 22) | (stat.TOTAL_MP << 12) | stat.CELL)
+        return addValueToBinHash(OFFSET_BASIS ^ id, (max(0, stat.WISDOM) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | stat.CELL) // clamped: negative shackled stats == 0 at use, and unclamped they OR-absorb the higher fields
     }
 
     /* No-arg entry: scans State to build the healers fingerprint + caster list, then delegates.
@@ -77,8 +77,8 @@ class HealClass {
     /* [cell -> heal] : the instant heal this caster can land on a same-side target per cell.
      * Cached by (id, cell, mp, wisdom, tp) — constant per turn for a non-Me caster. */
     static getCasterCoverage(casterStats) {
-        var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, (casterStats.CELL << 10) | casterStats.TOTAL_MP)
-        key = addValueToBinHash(key, (casterStats.WISDOM << 15) | casterStats.TOTAL_TP)
+        var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, (casterStats.CELL << 10) | max(0, casterStats.TOTAL_MP))
+        key = addValueToBinHash(key, (max(0, casterStats.WISDOM) << 15) | max(0, casterStats.TOTAL_TP)) // clamped: negative shackled stats == 0 at use
         if (key in HEAL_COVERAGE_CACHE) return HEAL_COVERAGE_CACHE[key]
 
         var walkCells = WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(casterStats)
@@ -140,7 +140,7 @@ class HealClass {
     /* Instant heal of one item on a target at AoE distance (eff MIN, WIS-scaled, no shields). */
     static getItemHeal(item, casterStats, distance) {
         var distFactor = 1 - distance * 0.2
-        var wisdomFactor = 1 + casterStats.WISDOM / 100
+        var wisdomFactor = 1 + max(0, casterStats.WISDOM) / 100 // floor-at-use, like the engine (wisdom shackle can store a negative)
         var _final = 0
         for (var eff in ITEMINFO[item].EFFECTS) {
             if (eff[0] == EFFECT_HEAL && eff[3] == 0) {        // instant heal only (duration 0)

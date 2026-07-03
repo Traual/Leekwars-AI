@@ -141,7 +141,8 @@ global ENTITY_DANGER_CACHE_FOR_OTHERS = [: ]
 // Me's flee search caches (net delta, two levels). CELL_NETDAMAGE_FOR_ME_CACHE = net at ONE flee
 // cell; ENTITY_DELTA_CACHE_FOR_ME = the whole MIN over my reachable set. Both keyed by the same
 // seed = addValueToBinHash(statsHash ^ healersFP, pack(LIFE,TOTAL_LIFE)) — folded with the cell,
-// resp. the reachable-set fingerprint (walkcellsHash). Both reset per turn. (Replaces the retired
+// resp. BaseHash + the reachable-set fingerprint (the outer MIN's domain depends on obstacles:
+// an ally/bulb move shrinks my reachable cells — P2-15). Both reset per turn. (Replaces the retired
 // ENTITY_DANGER_CACHE_FOR_ME — the Me danger min is now a net-delta min, computed in DeltaClass.)
 global CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
 global ENTITY_DELTA_CACHE_FOR_ME = [: ]

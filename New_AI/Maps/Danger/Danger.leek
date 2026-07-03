@@ -221,7 +221,7 @@ class DangerClass {
 
 			// TOTAL_MP/TOTAL_TP : danger is "max next-turn potential", stable across BFS steps.
 			// Routine MP/TP consumption from my own plays doesn't invalidate this cache.
-			var Hiscombined = (stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER
+			var Hiscombined = (max(0, stat.STRENGTH) << 48) | (max(0, stat.MAGIC) << 36) | (max(0, stat.TOTAL_MP) << 24) | (max(0, stat.TOTAL_TP) << 12) | stat.POWER // clamped: negative shackled stats == 0 at use, and unclamped they OR-absorb the higher fields
 			hash_value = addValueToBinHash(hash_value, Hiscombined)
 			hash_value = addValueToBinHash(hash_value, (e << 10) | stat.CELL)
 
@@ -252,7 +252,7 @@ class DangerClass {
 		// ——— Caster stats ———
 
 		// TOTAL_TP : align with getStatsHashForDanger above — cache stable across BFS steps.
-		var Hiscombined = (CasterStats.STRENGTH << 45) | (CasterStats.MAGIC << 30) | (CasterStats.TOTAL_TP << 15) | CasterStats.POWER
+		var Hiscombined = (max(0, CasterStats.STRENGTH) << 45) | (max(0, CasterStats.MAGIC) << 30) | (max(0, CasterStats.TOTAL_TP) << 15) | CasterStats.POWER // clamped: see getStatsHashForDanger
 		hash_value = addValueToBinHash(hash_value, Hiscombined)
 
 		return hash_value
@@ -376,7 +376,7 @@ class DangerClass {
 		// different branches (attract/push/invert) with equal TOTAL_MP must not share an entry.
 		// Direct pack, no hash needed: cell <= 612 (10 bits), TOTAL_MP < 1024 (10 bits), id small
 		// -> injective. Per-turn cache + id<->type for virtual bulbs => id pins the inventory.
-		var TmpHash = (EntityStats.ID << 20) | (EntityStartCell << 10) | EntityStats.TOTAL_MP
+		var TmpHash = (EntityStats.ID << 20) | (EntityStartCell << 10) | max(0, EntityStats.TOTAL_MP) // mp clamped (negative shackled mp == 0)
 		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
 		var _final = [: ]
 		for (var Item in EntityDangerClass.getItemsList(EntityStats)) {

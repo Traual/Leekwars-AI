@@ -117,17 +117,22 @@ class WalkCellsClass {
 	// ============================================================================
 
 	static getWalkNoEntitiesFull(stats) {
-		var key = (stats.CELL << 32) | stats.TOTAL_MP
+		// mp clamped at 0: a shackle can store TOTAL_MP negative; unclamped it sign-extends and ERASES
+		// the CELL field of this FIGHT-PERSISTENT key (every mp=-k entity would share one walk map).
+		// mp < 0 walks exactly like mp = 0, so key and computation agree.
+		var mp = max(0, stats.TOTAL_MP)
+		var key = (stats.CELL << 32) | mp
 		if (key in WALKABLE_CACHE_NOENT) return WALKABLE_CACHE_NOENT[key]
-		var r = WalkableCells(stats.CELL, [], stats.TOTAL_MP)
+		var r = WalkableCells(stats.CELL, [], mp)
 		WALKABLE_CACHE_NOENT[key] = r
 		return r
 	}
 
 	static getJumpNoEntitiesFull(stats) {
-		var key = (stats.CELL << 32) | stats.TOTAL_MP
+		var mp = max(0, stats.TOTAL_MP) // clamped: see getWalkNoEntitiesFull
+		var key = (stats.CELL << 32) | mp
 		if (key in JUMP_CACHE_NOENT) return JUMP_CACHE_NOENT[key]
-		var r = WalkableCellsWithJump(stats.CELL, [], stats.TOTAL_MP)
+		var r = WalkableCellsWithJump(stats.CELL, [], mp)
 		JUMP_CACHE_NOENT[key] = r
 		return r
 	}

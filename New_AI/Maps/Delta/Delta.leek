@@ -101,8 +101,11 @@ class DeltaClass {
         // (bit-identical to addValueToBinHash -> same cache keys, same result).
         var rotSeed = (seed << SHIFT) | ((seed >> HIGH_SHIFT) & MASK_HIGH)
 
-        // OUTER: revisiting the exact same Me-state (stats + reachable set) -> whole search skipped.
-        var outerKey = rotSeed ^ WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MeStats)
+        // OUTER: revisiting the exact same Me-state (stats + capabilities) on the same BOARD -> whole
+        // search skipped. BaseHash folded in (P2-15): the min's DOMAIN = my reachable cells, which
+        // depend on OBSTACLES — an ally/bulb appearing or moving shrinks it without touching seed or
+        // walkHash. Enemy moves already changed the seed (context), so this only ADDS the ally case.
+        var outerKey = rotSeed ^ addValueToBinHash(BaseHash, WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MeStats))
         if (outerKey in ENTITY_DELTA_CACHE_FOR_ME) return ENTITY_DELTA_CACHE_FOR_ME[outerKey]
 
         var toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
@@ -172,6 +175,10 @@ class DeltaClass {
      * entities never cancel. */
     static contextContribution(stat, id) {
         if (stat.LIFE <= 0) return 0
-        return mix64(mix64((id << 10) | stat.CELL) ^ ((stat.STRENGTH << 48) | (stat.MAGIC << 36) | (stat.TOTAL_MP << 24) | (stat.TOTAL_TP << 12) | stat.POWER))
+        // Stats CLAMPED at 0 in the key: the engine stores shackled stats negative but FLOORS them at
+        // use, so every negative value produces the SAME danger as 0 — clamping both prevents the
+        // sign-extension OR-absorption (a negative MAGIC<<36 erased the STRENGTH field) AND dedups
+        // equivalent states. (POWER can't go negative — no shackle-power.)
+        return mix64(mix64((id << 10) | stat.CELL) ^ ((max(0, stat.STRENGTH) << 48) | (max(0, stat.MAGIC) << 36) | (max(0, stat.TOTAL_MP) << 24) | (max(0, stat.TOTAL_TP) << 12) | stat.POWER))
     }
 }

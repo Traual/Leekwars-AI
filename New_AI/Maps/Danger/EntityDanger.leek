@@ -85,7 +85,7 @@ class EntityDangerClass { //TODO : Remove Libe From It To Avoid Losing Opés
 		hash_value = addValueToBinHash(hash_value, combinedMe)
 
 		// TOTAL_TP for cache stability — danger represents max next-turn potential.
-		var combinedEnemy = (EntityStats.TOTAL_TP << 45) | (EntityStats.STRENGTH << 30) | (EntityStats.MAGIC << 15) | EntityStats.POWER
+		var combinedEnemy = (max(0, EntityStats.TOTAL_TP) << 45) | (max(0, EntityStats.STRENGTH) << 30) | (max(0, EntityStats.MAGIC) << 15) | EntityStats.POWER // clamped: negative shackled stats == 0 at use, and unclamped they OR-absorb the higher fields
 		hash_value = addValueToBinHash(hash_value, combinedEnemy)
 
 		return hash_value
