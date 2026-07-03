@@ -516,11 +516,13 @@ class CellClass {
 	}
 
 	static getLos(cell1, cell2) { //Caching average los to save opés, check later if real Los (no leeks)
-		var Hash =  cell1 << MAX_CELL_BINARY | cell2
+		// Clé CANONIQUE (min, max) : LOS(A,B) == LOS(B,A) -> une seule entrée sert les deux sens.
+		// Économise l'écriture inverse par miss (~4 opés) et divise la map par 2 (persistante tout le
+		// combat) ; coût : +1 comparaison par appel. Même schéma que getLosWithBaseHash.
+		var Hash = cell1 < cell2 ? (cell1 << MAX_CELL_BINARY | cell2) : (cell2 << MAX_CELL_BINARY | cell1)
 		if (Hash in LOS_CACHE) return LOS_CACHE[Hash]
 		var TmpLos = lineOfSight(cell1, cell2, EVERYONE)
 		LOS_CACHE[Hash] = TmpLos
-		LOS_CACHE[cell2 << MAX_CELL_BINARY | cell1] = TmpLos//Reverse is the same value
 		return TmpLos
 	}
 
