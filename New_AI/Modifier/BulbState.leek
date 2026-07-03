@@ -95,7 +95,12 @@ class BulbState {
 		this.POISON_OVER_TIME = 0
 		this.JUST_POISON = 0
 		this.JUST_POISON_OVER_TIME = 0
-		this.TURN_ORDER = getEntityTurnOrder(Summoner) + 1
+		// +0.5 (fractionnaire) : le moteur INSERE le summon juste apres son invocateur (Order.addSummon
+		// decale tout le monde derriere). L'ancien +1 ENTIER dupliquait l'ordre d'une entite existante
+		// -> tri a egalite departage par l'ordre d'iteration de map (instable) -> sequencage netDamage
+		// aleatoire autour d'un summon. +0.5 ne collisionne jamais avec les ordres entiers reels et ne
+		// demande de decaler personne, tout en restant fidele au moteur ("joue juste apres l'invocateur").
+		this.TURN_ORDER = getEntityTurnOrder(Summoner) + 0.5
 
 		// === Leek Stats (interpolation min + (max - min) * SummonerLevelTimes) ===
 		this.LIFE = stats[STAT_LIFE][0] + (stats[STAT_LIFE][1] - stats[STAT_LIFE][0]) * SummonerLevelTimes
