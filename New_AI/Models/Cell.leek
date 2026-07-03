@@ -525,14 +525,13 @@ class CellClass {
 	}
 
 	static getLosWithBaseHash(cell1, cell2, State, BaseHash) { //Caching average los to save opés, check later if real Los (no leeks)
-		var Combined =  cell1 << MAX_CELL_BINARY | cell2
-		var Hash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), Combined)
+		// Clé CANONIQUE (min, max) : LOS(A,B) == LOS(B,A) -> une seule entrée sert les deux sens.
+		// (L'ancien store inverse utilisait une clé brute sans fold BaseHash : jamais relue légitimement,
+		// RAM/opés perdues + collision accidentelle possible.)
+		var Hash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), cell1 < cell2 ? (cell1 << MAX_CELL_BINARY | cell2) : (cell2 << MAX_CELL_BINARY | cell1))
 		if (Hash in LOS_WITH_BASE_HASH_CACHE) return LOS_WITH_BASE_HASH_CACHE[Hash]
-
 		var TmpLos = getLosWithoutCache(cell1, cell2, State, BaseHash)
-
 		LOS_WITH_BASE_HASH_CACHE[Hash] = TmpLos
-		LOS_WITH_BASE_HASH_CACHE[cell2 << MAX_CELL_BINARY | cell1] = TmpLos//Reverse is the same value
 		return TmpLos
 	}
 
