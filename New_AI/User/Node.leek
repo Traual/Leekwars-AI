@@ -161,14 +161,6 @@ class NodeClass {
 			result.FULL_REBUILD = false
 		}
 
-		// TEMP 4a.0 self-test (remove once validated): the patched HFP must equal a full rebuild.
-		// Compare VALUES with a 0-default (the builder omits the key when fp == 0, the patch may keep it).
-		var fullHfp = HealClass.buildHfpBySide(ThisActionStats)
-		var msT = ThisActionStats[Me].SIDE
-		var hfpPatched = (msT in result.HFP_BY_SIDE) ? result.HFP_BY_SIDE[msT] : 0
-		var hfpFull = (msT in fullHfp) ? fullHfp[msT] : 0
-		if (hfpPatched != hfpFull) debugC("[HFPTEST] " + hfpPatched + " != " + hfpFull + " item=" + Item, COLOR_RED)
-
 		return result
 	}
 }
