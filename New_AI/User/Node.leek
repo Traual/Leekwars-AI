@@ -141,7 +141,6 @@ class NodeClass {
 			var ctx = clone(ParentContext, 1)    // copy so we never mutate the parent's context
 			var ctxSides = mapKeys(ctx)          // hoisted: the side set never changes inside the patch loop
 			var hfpMap = clone(ParentHfp, 1)     // Phase 4a: healers fingerprint, patched like the context
-			var mySide = ThisActionStats[Me].SIDE
 			for (var tar: var _c in clonedIds) {
 				if (tar == Me) continue          // Me excluded from all three hashes
 				var oldStat = State[tar]
@@ -152,8 +151,11 @@ class NodeClass {
 					var side = newStat.SIDE      // side doesn't change
 					for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx
 				}
-				var deltaHfp = HealClass.healerContributionOf(oldStat, tar, mySide) ^ HealClass.healerContributionOf(newStat, tar, mySide)
-				if (deltaHfp != 0) hfpMap[mySide] = ((mySide in hfpMap) ? hfpMap[mySide] : 0) ^ deltaHfp
+				var deltaHfp = HealClass.healerContributionOf(oldStat, tar) ^ HealClass.healerContributionOf(newStat, tar)
+				if (deltaHfp != 0) {             // patched into the entity's OWN side (enemy heals modeled)
+					var hfpSide = newStat.SIDE
+					hfpMap[hfpSide] = ((hfpSide in hfpMap) ? hfpMap[hfpSide] : 0) ^ deltaHfp
+				}
 			}
 			result.BASE_HASH = bh
 			result.CONTEXT_BY_SIDE = ctx

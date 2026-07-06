@@ -92,9 +92,11 @@ class ScoringClass {
         var cloned = node.CLONED
         var hfpMap = node.HFP_BY_SIDE
 
-        // Child heal map by the carried fingerprint (hit unless a healer changed on this branch).
-        var myHfp = (MySide in hfpMap) ? hfpMap[MySide] : 0
-        var healMap = HealClass.getHealMapByFp(State, myHfp, MySide)
+        // Child heal map by the carried fingerprints (hit unless a healer changed on this branch).
+        // HEAL_MAP_CACHE is keyed by the COMBINED all-sides fold (enemy heals modeled).
+        var combinedHfp = 0
+        for (var s: var h in hfpMap) combinedHfp ^= h
+        var healMap = HealClass.getHealMapByFp(State, combinedHfp)
 
         // Which sides' danger inputs changed vs the parent?
         var dangerChanged = null   // null = none (the common case: Me moved / self-buff / non-lethal hit)
@@ -104,13 +106,27 @@ class ScoringClass {
                 dangerChanged[s] = true
             }
         }
-        // Did my side's heal inputs change? (hfp maps hold only mySide today, 0-defaulted reads.)
-        var healChanged = myHfp != ((MySide in ParentHfp) ? ParentHfp[MySide] : 0)
+        // Which sides' heal inputs changed? Union compare, 0-defaulted (a side with no healers is
+        // ABSENT from its map). The patch only ever ADDS keys, so the child map ⊇ the parent map —
+        // the reverse loop is a cheap guard for future canonical-removal edits.
+        var healChanged = null
+        for (var s: var h in hfpMap) {
+            if (((s in ParentHfp) ? ParentHfp[s] : 0) != h) {
+                if (healChanged == null) healChanged = [: ]
+                healChanged[s] = true
+            }
+        }
+        for (var s: var h in ParentHfp) {
+            if (!(s in hfpMap)) {
+                if (healChanged == null) healChanged = [: ]
+                healChanged[s] = true
+            }
+        }
 
         var delta = 0
         var terms = clone(ParentTerms, 1)
 
-        if (dangerChanged == null && !healChanged) {
+        if (dangerChanged == null && healChanged == null) {
             // Common case: only the cloned entities can have a changed term.
             for (var e: var _c in cloned) {
                 delta += termDelta(e, State, node, terms, healMap, MySide)
@@ -121,7 +137,7 @@ class ScoringClass {
             for (var e: var stat in State) {
                 if ((e in cloned)
                     || (dangerChanged != null && stat.SIDE in dangerChanged)
-                    || (healChanged && stat.SIDE == MySide)) {
+                    || (healChanged != null && stat.SIDE in healChanged)) {
                     delta += termDelta(e, State, node, terms, healMap, MySide)
                 }
             }

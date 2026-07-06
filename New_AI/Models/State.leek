@@ -68,14 +68,18 @@ class StateClass {
 	 */
 
 	static getHashedEntities(State) {
-		// BIT-SET exact du set d'ids (vecteur caractéristique) : order-independent (la défrag de
-		// ENTITY_SORTED_BY_TURN_ORDER_CACHE), ZÉRO collision par construction, et ~2 opés/entité —
+		// BIT-SET exact du set d'ids VIVANTS (vecteur caractéristique) : order-independent (la défrag
+		// de ENTITY_SORTED_BY_TURN_ORDER_CACHE), ZÉRO collision par construction, et ~3 opés/entité —
 		// moins cher que l'ancienne chaîne ET que mix64 (cette fonction est sur le hot path via
 		// getEntitiesInTurnOrderAfterEntity). Valide tant que les ids < 64 : réels ~<50 et bulbes
 		// virtuels = SUMMON_ID_BASE + 1..10.
+		// VIVANTS seulement : le seul TURN_ORDER qui puisse changer sous une même clé est celui d'un
+		// ressuscité (ResurrectionClass.Update le calcule au cast, fonction PURE de l'ordre initial +
+		// du set des vivants) — or le revive flippe justement son bit ici -> même clé <=> même tri.
+		// Les morts (TURN_ORDER = 0 du Virtualize, inertes partout) trient en tête, ties sans effet.
 		var hash_value = 0
 		for (var e: var stat in State) {
-			hash_value |= 1 << e
+			if (stat.LIFE > 0) hash_value |= 1 << e
 		}
 		return hash_value
 	}

@@ -9,7 +9,23 @@ class Preload {
         InitItemInfo()
 		InitCellClass()
 		InitStateClass()
+		InitInitialTurnOrder()
     }
+
+	/* Engine initialOrder proxy (turn-1 capture, fight-persistent). State.java resurrect() walks
+	 * initialOrder = the FIGHT-START entities in boot order — never mutated by deaths, summons
+	 * never added. getEntityTurnOrder at turn 1 yields exactly those ranks (a bulb summoned before
+	 * my first turn shifts the values but not the relative order, and is excluded here like the
+	 * engine excludes it from initialOrder). An entity already dead AND removed before this capture
+	 * (order 0) stays unknown -> its resurrection falls back to append-at-end (ultra-rare).
+	 * Consumed by ResurrectionClass.Update. */
+	static InitInitialTurnOrder() {
+		for (var e in getAllies() + getEnemies()) {
+			if (isSummon(e)) continue
+			var o = getEntityTurnOrder(e)
+			if (o > 0) INITIAL_TURN_ORDER[e] = o
+		}
+	}
 
     static InitItemInfo() {
 		for (var i = 0; i < 500; i++) {

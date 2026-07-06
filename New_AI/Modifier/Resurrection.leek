@@ -19,9 +19,38 @@ class ResurrectionClass {
 	static Update(To, State) {
 		var Resurrect_ID = ScoringWichId(State).ID
 		if (Resurrect_ID == null) return;
-		State[Resurrect_ID].TOTAL_LIFE /= 2
-		State[Resurrect_ID].LIFE = State[Resurrect_ID].TOTAL_LIFE / 2
-		State[Resurrect_ID].CELL = To
+		var revived = State[Resurrect_ID]
+		revived.TOTAL_LIFE /= 2
+		revived.LIFE = revived.TOTAL_LIFE / 2
+		revived.CELL = To
+
+		// Engine-faithful turn order (State.java resurrect(), verified): the revived is reinserted
+		// just BEFORE the next LIVING entity that follows it in initialOrder (in-branch deaths count
+		// — this walk reads the CURRENT branch State), else APPENDED at the END (also the summon and
+		// unknown-slot cases: summons are never in the engine's initialOrder, and an entity dead
+		// before our turn-1 capture has no INITIAL_TURN_ORDER entry). Without this the revived kept
+		// TURN_ORDER = 0 (captured dead) and "played first" in the netDamage sequencing.
+		// -0.25 (not -0.5) so the slot never ties a virtual bulb (owner + 0.5) and stays on the
+		// engine's side of it: a bulb inserted at indexOf(owner)+1 acts BEFORE a revived placed at
+		// indexOf(follower). Cache coherence: ENTITY_SORTED_BY_TURN_ORDER_CACHE is keyed by the
+		// ALIVE bit-set, which this revive flips — and this order is a PURE function of
+		// (INITIAL_TURN_ORDER, alive set), so same key <=> same sort.
+		var myInit = (Resurrect_ID in INITIAL_TURN_ORDER) ? INITIAL_TURN_ORDER[Resurrect_ID] : null
+		var followerInit = null
+		var followerOrder = null
+		var maxOrder = 0
+		for (var o: var ostat in State) {
+			if (ostat.LIFE <= 0 || o == Resurrect_ID) continue
+			if (ostat.TURN_ORDER > maxOrder) maxOrder = ostat.TURN_ORDER
+			if (myInit != null && (o in INITIAL_TURN_ORDER)) {
+				var oInit = INITIAL_TURN_ORDER[o]
+				if (oInit > myInit && (followerInit == null || oInit < followerInit)) {
+					followerInit = oInit
+					followerOrder = ostat.TURN_ORDER
+				}
+			}
+		}
+		revived.TURN_ORDER = (followerOrder != null) ? followerOrder - 0.25 : maxOrder + 1
 	}
 
 	static ScoringWichId(State) {

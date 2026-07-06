@@ -1,5 +1,7 @@
 /**
- * HEAL MAP — symmetric to the danger map, but for ALLIED healing instead of enemy damage.
+ * HEAL MAP — symmetric to the danger map, but for healing instead of damage. BOTH sides'
+ * healers are modeled (enemy heals cushion enemy net damage — my kill pressure on a target
+ * its healer can patch back up is worth less).
  *
  *   getHealMap(State) -> [ casterId -> [ cell -> heal ] ]
  *
@@ -8,7 +10,8 @@
  * cell, given where the caster can move + cast. Kept per-caster (not summed) so the net-HP
  * step can sequence heals/damage in TURN ORDER (can't blindly add X heal if the target died
  * or is already full life before the heal lands). heal_received(target) =
- *   Σ over casters K with K.SIDE == target.SIDE of coverage[K][target.CELL].
+ *   Σ over casters K with K.SIDE == target.SIDE of coverage[K][target.CELL]
+ * (the side gate lives in DeltaClass.netDamage — the map itself is side-agnostic).
  *
  * SIMPLER than danger:
  *  - only EFFECT_HEAL with duration 0 (instant). duration>0 = "negative poison" (vaccine/serum,
@@ -27,58 +30,57 @@ include("../../includes.leek")
 
 class HealClass {
 
-    /* One healer's contribution to the my-side healers fingerprint (XOR-fold, order-independent).
-     * SINGLE SOURCE OF TRUTH: this exact formula keys HEAL_MAP_CACHE and salts NETDAMAGE_CACHE.
-     * Both fold sites use it (the no-arg getHealMap below, and DeltaClass.getNetDamageMap's inline
-     * fold) — never inline it again, a divergence silently splits the caches. */
+    /* One healer's contribution to its side's healers fingerprint (XOR-fold, order-independent).
+     * SINGLE SOURCE OF TRUTH: the per-side folds salt NETDAMAGE_CACHE and the COMBINED (all-sides)
+     * fold keys HEAL_MAP_CACHE. Every fold site uses it (getHealMap, getNetDamageMap, buildHfpBySide,
+     * the Node HFP patch) — never inline it again, a divergence silently splits the caches. */
     static healerContribution(stat, id) {
         return addValueToBinHash(OFFSET_BASIS ^ id, (max(0, stat.WISDOM) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | stat.CELL) // clamped: negative shackled stats == 0 at use, and unclamped they OR-absorb the higher fields
     }
 
-    /* GATED composable variant: the entity's contribution to its side's healers fingerprint, 0
-     * unless it qualifies (alive, non-Me, my side — enemy heals not modeled yet — with a heal item).
-     * SINGLE SOURCE for every fold site (getHealMap, getNetDamageMap, buildHfpBySide, and the
-     * incremental Node patch of HFP_BY_SIDE — Phase 4a, same pattern as contextContribution). */
-    static healerContributionOf(stat, id, mySide) {
-        if (id == Me || stat.LIFE <= 0 || stat.SIDE != mySide) return 0
+    /* GATED composable variant: the entity's contribution to ITS side's healers fingerprint, 0
+     * unless it qualifies (alive, non-Me — my heals are the BFS's job — with a heal item). BOTH
+     * sides qualify (enemy heals modeled). SINGLE SOURCE for every fold site (getHealMap,
+     * getNetDamageMap, buildHfpBySide, and the incremental Node patch of HFP_BY_SIDE — Phase 4a,
+     * same pattern as contextContribution). */
+    static healerContributionOf(stat, id) {
+        if (id == Me || stat.LIFE <= 0) return 0
         if (!hasHealItem(stat)) return 0
         return healerContribution(stat, id)
     }
 
-    /* Heal map lookup by an ALREADY-KNOWN fingerprint (the node carries it — Phase 4a). Cache hit
-     * unless a healer changed on this branch; on a miss the casters list is rebuilt with one scan. */
-    static getHealMapByFp(State, fp, mySide) {
+    /* Heal map lookup by an ALREADY-KNOWN combined fingerprint (XOR of the node's HFP_BY_SIDE
+     * values — Phase 4a). Cache hit unless a healer changed on this branch; on a miss the casters
+     * list is rebuilt with one scan. */
+    static getHealMapByFp(State, fp) {
         if (fp in HEAL_MAP_CACHE) return HEAL_MAP_CACHE[fp]
         var casters = []
         for (var e: var stat in State) {
-            if (healerContributionOf(stat, e, mySide) != 0) push(casters, e)
+            if (healerContributionOf(stat, e) != 0) push(casters, e)
         }
         return getHealMapPrecomputed(State, fp, casters)
     }
 
-    /* Full rebuild of the per-side healers fingerprint map (only mySide populated today). Used at
-     * the BFS root and as the Node summon/resurrect fallback — the incremental HFP patch must stay
-     * bit-consistent with this. */
+    /* Full rebuild of the per-side healers fingerprint map (sides without healers stay ABSENT —
+     * every read is 0-defaulted). Used at the BFS root and as the Node summon/resurrect fallback —
+     * the incremental HFP patch must stay bit-consistent with this. */
     static buildHfpBySide(State) {
-        var mySide = getSide(Me)
-        var fp = 0
-        for (var e: var stat in State) {
-            fp ^= healerContributionOf(stat, e, mySide)
-        }
         var _final = [: ]
-        if (fp != 0) _final[mySide] = fp
+        for (var e: var stat in State) {
+            var c = healerContributionOf(stat, e)
+            if (c != 0) _final[stat.SIDE] = ((stat.SIDE in _final) ? _final[stat.SIDE] : 0) ^ c
+        }
         return _final
     }
 
-    /* No-arg entry: scans State to build the healers fingerprint + caster list, then delegates.
-     * For callers that don't already walk State (FinalCell, debug). Keep this loop structurally
-     * IDENTICAL to the fold in DeltaClass.getNetDamageMap. */
+    /* No-arg entry: scans State to build the combined healers fingerprint + caster list, then
+     * delegates. For callers that don't already walk State (FinalCell, debug). Keep this loop
+     * structurally IDENTICAL to the fold in DeltaClass.getNetDamageMap. */
     static getHealMap(State) {
-        var mySide = getSide(Me)
         var fp = 0
         var casters = []
         for (var e: var stat in State) {
-            var c = healerContributionOf(stat, e, mySide)   // single-source gates + formula
+            var c = healerContributionOf(stat, e)   // single-source gates + formula
             if (c != 0) {
                 fp ^= c
                 push(casters, e)
@@ -87,15 +89,11 @@ class HealClass {
         return getHealMapPrecomputed(State, fp, casters)
     }
 
-    /* Hot path: `fp` (XOR healers fingerprint, ORDER-INDEPENDENT) + `casters` are already built by the
-     * caller's own State scan — DeltaClass folds them into its `sides` pass, so State isn't walked a
-     * second time here. Bit-identical to the inline scan in getHealMap (same XOR fold, order-free).
-     * Publishes HEALERS_FINGERPRINT_BY_SIDE (salts NETDAMAGE_CACHE) + returns the heal map BY REFERENCE. */
+    /* Hot path: `fp` (COMBINED all-sides fingerprint, ORDER-INDEPENDENT) + `casters` are already
+     * built by the caller's own State scan, so State isn't walked a second time here. Bit-identical
+     * to the inline scan in getHealMap (same XOR fold, order-free). Returns the heal map BY REFERENCE. */
     static getHealMapPrecomputed(State, fp, casters) {
         BenchOps.Start("Heal")
-        HEALERS_FINGERPRINT_BY_SIDE = [: ]
-        if (fp != 0) HEALERS_FINGERPRINT_BY_SIDE[getSide(Me)] = fp
-
         if (fp in HEAL_MAP_CACHE) {                          // unchanged healers across BFS nodes -> hit
             BenchOps.Stop("Heal")
             return HEAL_MAP_CACHE[fp]                        // BY REFERENCE — read-only downstream

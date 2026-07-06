@@ -27,27 +27,24 @@ class DeltaClass {
     static getNetDamageMap(State, BaseHash, contextBySide) {   // contextBySide is PATCHED on the Node (Phase 2) — no rebuild here
         BenchOps.Start("Delta")
 
-        // Healers fingerprint, folded in one scan (Phase 1 heal fold) so getHealMap doesn't rescan
-        // State. The per-side opposing-team context is now PASSED IN (incrementally patched at node
-        // creation, Node.leek) instead of rebuilt O(sides*N) here — see buildContextBySide below.
-        var mySide = getSide(Me)
-        var healFp = 0
+        // Healers fingerprints, folded in one scan (Phase 1 heal fold) so getHealMap doesn't rescan
+        // State. ALL sides' healers are folded (enemy heals modeled): the PER-SIDE split salts
+        // NETDAMAGE_CACHE below (a buff/shackle/move/death on a healer flips exactly its side's
+        // entries — touching MY healer doesn't invalidate the enemies' cache and vice-versa), the
+        // COMBINED fold keys HEAL_MAP_CACHE. The per-side opposing-team context is PASSED IN
+        // (incrementally patched at node creation, Node.leek) — see buildContextBySide below.
+        var healersFingerprintBySide = [: ]
+        var combinedFp = 0
         var healCasters = []
         for (var e: var stat in State) {
-            var c = HealClass.healerContributionOf(stat, e, mySide)   // single-source gates + formula
+            var c = HealClass.healerContributionOf(stat, e)   // single-source gates + formula
             if (c != 0) {
-                healFp ^= c
+                combinedFp ^= c
+                healersFingerprintBySide[stat.SIDE] = ((stat.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[stat.SIDE] : 0) ^ c
                 push(healCasters, e)
             }
         }
-
-        // getHealMap builds the per-side healers fingerprint (id + cell/mp/wis/tp, XOR-combined,
-        // order-independent) while scanning State and publishes it here. The SAME fingerprint keys
-        // both HEAL_MAP_CACHE (inside getHealMap) and the per-entity NETDAMAGE_CACHE below -> a
-        // buff/shackle/move/death on a healer flips it. Per side so touching MY healer doesn't
-        // invalidate the enemies' cache (and vice-versa once enemy heals are added).
-        var healMap = HealClass.getHealMapPrecomputed(State, healFp, healCasters)
-        var healersFingerprintBySide = HEALERS_FINGERPRINT_BY_SIDE
+        var healMap = HealClass.getHealMapPrecomputed(State, combinedFp, healCasters)
 
         var _final = [: ]
         for (var e: var stat in State) {

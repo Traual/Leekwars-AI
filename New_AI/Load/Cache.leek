@@ -20,7 +20,6 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     HEAL_ENTITY_INVENTORY = [: ]
     NETDAMAGE_CACHE = [: ]
     HEAL_MAP_CACHE = [: ]
-    HEALERS_FINGERPRINT_BY_SIDE = [: ]
     ENTITY_ACTIONS_CACHE = [: ]
     ACTIONS_ON_ME_CACHE = [: ]
     ACTIONS_SUMMON_CACHE = [: ]
@@ -53,7 +52,14 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
 
 // STATE
 
+// Keyed by the ALIVE bit-set (getHashedEntities): a resurrect flips the revived's bit, and its
+// assigned order is a pure function of (INITIAL_TURN_ORDER, alive set) -> coherent by construction.
 global ENTITY_SORTED_BY_TURN_ORDER_CACHE = [: ]
+
+// Engine initialOrder proxy: fight-start entity -> its turn-1 order rank. FIGHT-PERSISTENT,
+// captured once in Preload.InitInitialTurnOrder (summons excluded, like the engine's initialOrder).
+// Consumed by ResurrectionClass.Update for the revived's turn order.
+global INITIAL_TURN_ORDER = [: ]
 
 // CELL CLASS
 
@@ -180,12 +186,12 @@ global HEAL_ENTITY_INVENTORY = [: ]
 // Reset per turn. Lets unchanged entities skip the danger query + heal + turn-order sequencing.
 global NETDAMAGE_CACHE = [: ]
 
-// Heal map: the whole [casterId -> coverage] outer map, keyed by the my-side healers fingerprint
-// (XOR-fold of each healer's id+wis+tp+mp+cell). Returned BY REFERENCE (read-only downstream).
-// HEALERS_FINGERPRINT_BY_SIDE is the side-output: the SAME fingerprint salts NETDAMAGE_CACHE's key,
-// so this key is ~free. Both reset per turn.
+// Heal map: the whole [casterId -> coverage] outer map (ALL sides' healers — enemy heals modeled),
+// keyed by the COMBINED healers fingerprint (XOR-fold of every healer's id+wis+tp+mp+cell, all
+// sides). Returned BY REFERENCE (read-only downstream). The PER-SIDE split of the same fold salts
+// NETDAMAGE_CACHE — built locally by DeltaClass.getNetDamageMap / carried on nodes as HFP_BY_SIDE
+// (no global). Reset per turn.
 global HEAL_MAP_CACHE = [: ]
-global HEALERS_FINGERPRINT_BY_SIDE = [: ]
 
 // ============================================================================
 // WalkCells (packed-couple bitmap BFS — see Maps/WalkCells.leek)
