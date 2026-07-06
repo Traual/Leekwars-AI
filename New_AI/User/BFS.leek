@@ -107,6 +107,19 @@ class ActionSuite {
 		} else {
 			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent.TERMS)
 			ScoredCache[BaseHash] = Entries
+
+			// 4a.2 FRESH-PATH shortcut: this list was enumerated AND scored for THIS exact parent
+			// state (getBaseActions filters cooldown/uses/reachability/cost for it, ReferenceScore ==
+			// Parent.SCORE), so the best next node is simply the first positive entry of the sorted
+			// list — no re-simulation, no re-scoring, no re-filtering. The candidate loop below only
+			// serves STALE reuses (same BaseHash reached again from a DIFFERENT state).
+			if (count(Entries) == 0) return null
+			var top = Entries[0]
+			if (top[1] <= BFS_DELTA_EPSILON) return null
+			var fresh = top[2]
+			fresh.PARENT = Parent   // was created with PARENT=null inside enumerateAndSort
+			fresh.SCORE = top[3]
+			return fresh
 		}
 
 		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
