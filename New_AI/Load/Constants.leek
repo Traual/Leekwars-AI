@@ -84,6 +84,11 @@ global MAX_USEFUL_RELATIVE_SHIELD = 100
 global MIN_AGILITY_TO_FULLY_CRIT = 950
 global FIGHT_TYPE = getFightType() //Used to compute power in consequences
 
+// Phase 4a A/B (bench then keep the winner): incremental scoring mode.
+//   2 = carried terms map (node.TERMS cloned ~12 ops + patched; old terms read from the map)
+//   1 = delta-only (no carried map; old terms recomputed on demand from the pristine parent State)
+global INCR_SCORE_MODE = 2
+
 //BFS :
 // Δ-threshold below which a base action is treated as a no-op (skip greedy expansion + early-exit in chains).
 // Catches floating-point residue from chips like Antidote / Liberation / Remission when no relevant effect applies.

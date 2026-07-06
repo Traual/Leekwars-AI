@@ -53,6 +53,115 @@ class ScoringClass {
         return _score
     }
 
+    /* Full terms map [entityId -> SIGNED term] (sign folded in: +ally / -enemy — SIDE is
+     * fight-constant). score == sumTerms(map). Used at the BFS root and on FULL_REBUILD nodes. */
+    static buildTermsMap(State, MySide, BaseHash, contextBySide) {
+        BenchOps.Start("Scoring")
+        var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash, contextBySide)
+        var terms = [: ]
+        for (var e: var stat in State) {
+            if (stat.LIFE <= 0) continue
+            var sign = (stat.SIDE == MySide) ? 1 : -1
+            terms[e] = sign * ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e])
+        }
+        BenchOps.Stop("Scoring")
+        return terms
+    }
+
+    static sumTerms(terms) {
+        var s = 0
+        for (var e: var t in terms) s += t
+        return s
+    }
+
+    /* Phase 4a — INCREMENTAL score: score(child) = score(parent) + Δ over the recompute set R.
+     * R = node.CLONED (the exact mutated set, always contains Me) ∪ every alive entity of a side
+     * whose DANGER inputs (CONTEXT_BY_SIDE[side]) or HEAL inputs (HFP_BY_SIDE[side]) changed vs the
+     * parent — detection is purely DATA-driven (hash compares), no effect table.
+     * Two A/B modes (INCR_SCORE_MODE): 2 = carried terms map, 1 = delta-only (see Constants.leek). */
+    static getStateScoreFromParent(node, ParentState, ParentScore, ParentTerms, ParentContext, ParentHfp, ParentBaseHash, MySide) {
+        if (node.FULL_REBUILD) {
+            // Summon / resurrect: turn order + entity set changed -> classic full scoring.
+            var terms = buildTermsMap(node.END_STATS, MySide, node.BASE_HASH, node.CONTEXT_BY_SIDE)
+            node.TERMS = terms
+            return sumTerms(terms)
+        }
+        BenchOps.Start("Scoring")
+        var State = node.END_STATS
+        var cloned = node.CLONED
+        var hfpMap = node.HFP_BY_SIDE
+
+        // Child heal map by the carried fingerprint (hit unless a healer changed on this branch).
+        var myHfp = (MySide in hfpMap) ? hfpMap[MySide] : 0
+        var healMap = HealClass.getHealMapByFp(State, myHfp, MySide)
+
+        // Which sides' danger inputs changed vs the parent?
+        var dangerChanged = null   // null = none (the common case: Me moved / self-buff / non-lethal hit)
+        for (var s: var h in node.CONTEXT_BY_SIDE) {
+            if (ParentContext[s] != h) {
+                if (dangerChanged == null) dangerChanged = [: ]
+                dangerChanged[s] = true
+            }
+        }
+        // Did my side's heal inputs change? (hfp maps hold only mySide today, 0-defaulted reads.)
+        var healChanged = myHfp != ((MySide in ParentHfp) ? ParentHfp[MySide] : 0)
+
+        var delta = 0
+        var terms = (INCR_SCORE_MODE == 2) ? clone(ParentTerms, 1) : null
+
+        if (dangerChanged == null && !healChanged) {
+            // Common case: only the cloned entities can have a changed term.
+            for (var e: var _c in cloned) {
+                delta += termDelta(e, State, ParentState, node, terms, healMap, ParentContext, ParentHfp, ParentBaseHash, MySide)
+            }
+        } else {
+            // Cascade: entities of an affected side are recomputed too (their ndKey misses anyway —
+            // that recompute is REAL work that exists today as well; only the detection is new).
+            for (var e: var stat in State) {
+                if ((e in cloned)
+                    || (dangerChanged != null && stat.SIDE in dangerChanged)
+                    || (healChanged && stat.SIDE == MySide)) {
+                    delta += termDelta(e, State, ParentState, node, terms, healMap, ParentContext, ParentHfp, ParentBaseHash, MySide)
+                }
+            }
+        }
+        if (INCR_SCORE_MODE == 2) node.TERMS = terms
+        BenchOps.Stop("Scoring")
+
+        var incr = ParentScore + delta
+        // TEMP 4a.1 SCORETEST (remove once validated): incremental MUST equal the full recompute.
+        // Epsilon compare, NOT equality: parent+Δ accumulates float drift (~1e-12/step) over a chain —
+        // harmless vs BFS_DELTA_EPSILON (0.01) but nonzero.
+        var full = getStateScore(State, MySide, node.BASE_HASH, node.CONTEXT_BY_SIDE)
+        if (abs(incr - full) > 0.000001) debugC("[SCORETEST] incr " + incr + " != full " + full + " (mode " + INCR_SCORE_MODE + ")", COLOR_RED)
+
+        return incr
+    }
+
+    /* newTerm(e) − oldTerm(e). Mode 2 reads the old term from the carried map (then overwrites it);
+     * mode 1 recomputes it from the pristine parent State — every lookup on the parent side is a
+     * guaranteed cache HIT (the parent was scored just before), so the parent healMap is never read. */
+    static termDelta(e, State, ParentState, node, terms, healMap, ParentContext, ParentHfp, ParentBaseHash, MySide) {
+        var stat = State[e]
+        var newTerm = 0
+        if (stat.LIFE > 0) {
+            var sign = (stat.SIDE == MySide) ? 1 : -1
+            newTerm = sign * ImportanceClass.get(stat) * survivalValue(stat, DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap))
+        }
+        var oldTerm = 0
+        if (INCR_SCORE_MODE == 2) {
+            oldTerm = (e in terms) ? terms[e] : 0
+            terms[e] = newTerm
+        } else {
+            var oldStat = ParentState[e]
+            if (oldStat.LIFE > 0) {
+                var sign = (oldStat.SIDE == MySide) ? 1 : -1
+                oldTerm = sign * ImportanceClass.get(oldStat) * survivalValue(oldStat, DeltaClass.netOf(e, oldStat, ParentState, ParentBaseHash, ParentContext, ParentHfp, healMap))
+            }
+        }
+        return newTerm - oldTerm
+    }
+
     /**
      * Survival value of one entity, cached by a single packed 64-bit key. Bit-ops truncate
      * the floats to int (no round needed). POISON / POT masked because they can be negative.

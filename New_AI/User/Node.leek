@@ -14,6 +14,7 @@ class NodeClass {
 	HFP_BY_SIDE       // Phase 4a: per-side healers fingerprint, patched incrementally at creation
 	CLONED            // Phase 4a: the clonedIds map = the EXACT set of possibly-mutated entities
 	FULL_REBUILD      // Phase 4a: true on the summon/resurrect fallback -> incremental scoring must full-rescore
+	TERMS             // Phase 4a mode 2: [entityId -> SIGNED term], cloned from the parent + patched (null in mode 1)
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction

@@ -45,6 +45,17 @@ class HealClass {
         return healerContribution(stat, id)
     }
 
+    /* Heal map lookup by an ALREADY-KNOWN fingerprint (the node carries it — Phase 4a). Cache hit
+     * unless a healer changed on this branch; on a miss the casters list is rebuilt with one scan. */
+    static getHealMapByFp(State, fp, mySide) {
+        if (fp in HEAL_MAP_CACHE) return HEAL_MAP_CACHE[fp]
+        var casters = []
+        for (var e: var stat in State) {
+            if (healerContributionOf(stat, e, mySide) != 0) push(casters, e)
+        }
+        return getHealMapPrecomputed(State, fp, casters)
+    }
+
     /* Full rebuild of the per-side healers fingerprint map (only mySide populated today). Used at
      * the BFS root and as the Node summon/resurrect fallback — the incremental HFP patch must stay
      * bit-consistent with this. */
