@@ -779,7 +779,13 @@ class ConsequencesClass {
 	}
 
 	static ConsequenceTargetsHash(BaseHash, Item, From, To) {
-		return addValueToBinHash(OFFSET_BASIS ^ BaseHash, (Item << 30) | (From << 15) | To)
+		// Me folded in (bits 40-45, ids < 64): the cache is FIGHT-PERSISTENT and its VALUE embeds
+		// the caster (_final[Me] is computed from From — in simulation Me stands at From, not at its
+		// captured cell), while the owner and its bulbs share the same VM -> without the caster in
+		// the key, a bulb's BFS could hit the owner's target maps (and vice versa) on any
+		// (BaseHash, item, from, to) both explored. BaseHash (the seed) already pins every ALIVE
+		// position — a target moving flips the key. Pack: To bits 0-14 | From 15-29 | Item 30-39.
+		return addValueToBinHash(OFFSET_BASIS ^ BaseHash, (Me << 40) | (Item << 30) | (From << 15) | To)
 	}
 
 	static RealConsequenceTargets(AllTargets, Effect, State, CastStats, Caster) {

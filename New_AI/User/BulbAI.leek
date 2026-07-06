@@ -6,7 +6,12 @@ include("../includes.leek")
 
 class Bulb {
 	static AI() {
-		//I play
+		// Reset FIRST, then InitStateClass — the same load-bearing order as Main.leek. The bulb runs
+		// in the SUMMONER'S VM (summon(chip, cell, Bulb.AI) passes a function of the owner's AI), so
+		// every per-turn cache still holds the OWNER'S-turn entries when the bulb starts. Without
+		// this reset the bulb consumed the owner's action lists (ACTIONS_ON_ME_CACHE, MyCell-only
+		// key) and tried to cast the owner's chips ("Cette puce n'est pas équipée" — real crash).
+		ReloadCacheNewTurn()
 		Preload.InitStateClass()
 		new Play()
 	}
