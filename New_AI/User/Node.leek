@@ -185,28 +185,8 @@ class NodeClass {
 		result.BASE_HASH = bh
 		result.CONTEXT_BY_SIDE = ctx
 		result.HFP_BY_SIDE = hfpMap
-
-		// TEMP SUMMONTEST — Phase 4b validation, REMOVE after one clean fight. Summon/resurrect
-		// nodes only. Reference = INDEPENDENT full rebuilds (non-circular — never compare against
-		// the node's own hashes). Shape-tolerant: the patched maps keep root-era buckets forever
-		// while the rebuilds derive theirs from the child (raw compares would false-positive on
-		// kill-the-last-healer / last-of-side branches): ctx compared over the REBUILD's keys
-		// (= sides alive in the child), hfp compared 0-defaulted over the union of keys.
-		if (entityAdded || Item == CHIP_RESURRECTION) {
-			var refBh = StateClass.getBaseHash(ThisActionStats)
-			if (refBh != bh) debugE("[SUMMONTEST] BASE_HASH patched=" + bh + " rebuilt=" + refBh + " item=" + Item)
-			var refCtx = DeltaClass.buildContextBySide(ThisActionStats)
-			for (var s: var h in refCtx) {
-				if (((s in ctx) ? ctx[s] : null) != h) debugE("[SUMMONTEST] CTX side " + s + " patched=" + ((s in ctx) ? ctx[s] : null) + " rebuilt=" + h + " item=" + Item)
-			}
-			var refHfp = HealClass.buildHfpBySide(ThisActionStats)
-			for (var s: var h in refHfp) {
-				if (((s in hfpMap) ? hfpMap[s] : 0) != h) debugE("[SUMMONTEST] HFP side " + s + " patched=" + ((s in hfpMap) ? hfpMap[s] : 0) + " rebuilt=" + h + " item=" + Item)
-			}
-			for (var s: var h in hfpMap) {
-				if (!(s in refHfp) && h != 0) debugE("[SUMMONTEST] HFP side " + s + " patched=" + h + " rebuilt=ABSENT item=" + Item)
-			}
-		}
+		// (Phase 4b validated in a live fight: summon AND resurrect nodes, patched hashes
+		// bit-identical to independent full rebuilds — the TEMP SUMMONTEST was removed.)
 
 		return result
 	}
