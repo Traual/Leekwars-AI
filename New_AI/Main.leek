@@ -1,4 +1,5 @@
 include("includes.leek")
+//TODO CHECK : Caches avec Me qui change pour les Bulbes — si cette IA tourne un jour sur un bulbe, Me = le bulbe : verifier (1) les caches fight-persistants supposant Me implicitement (famille WALKABLE_CACHE : "sound car tous les callers passent entity=Me", BFS_CELL_DANGER_CACHE, MY_INVENTORY_*...), (2) le gate d'init `if (getTurn() == 1)` — getTurn() = tour du COMBAT, jamais 1 pour un bulbe invoque en cours de partie -> InitEverything ne tournerait jamais (ITEMINFO vide).
 //TODO : Covid propagation in final cell ?
 //TODO : A modifier si un jour un chip de bulbe a 0 CD : id virtuel = SUMMON_ID_BASE + typeOffset (Consequences EFFECT_SUMMON) -> un resummon meme-type dans une branche ecraserait le premier bulbe (meme id).
 //TODO : Double summon du MEME invocateur dans une meme branche : les 2 bulbes virtuels partagent TURN_ORDER = invocateur + 0.5 (egalite residuelle, tri instable ; le moteur met le plus RECENT en premier). Rare — tie-break par id dans le comparateur en backstop si besoin.
