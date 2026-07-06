@@ -36,8 +36,11 @@ class FinalCell {
         // Best placement first.
         var cells = arraySort(mapKeys(possibleCells), function(a, b) { return gravityMap[b] - gravityMap[a] })
 
-        // Danger context (same setup the danger module uses everywhere else).
-        var thisStatsHashForDanger      = DangerClass.getStatsHashForDanger(MyState, State)
+        // Danger context — SAME key family as the BFS (DeltaClass.statsHashFor over the per-side
+        // context): FinalCell inherits the search-warmed CELL_DANGER_GET_CACHE / EVERY_ENEMIES_
+        // WALKABLES entries instead of recomputing them under a second key family. buildContextBySide
+        // is O(sides·N), once per turn here.
+        var thisStatsHashForDanger      = DeltaClass.statsHashFor(MyState, DeltaClass.buildContextBySide(State))
         var thisToSkipMap               = DangerClass.EntitiesToSkip(MyState, State, BaseHash)
         var thisEnemiesWalkableCellsMap = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, thisToSkipMap, BaseHash, thisStatsHashForDanger)
         var thisCastersInOrder          = StateClass.getEntitiesInTurnOrderAfterEntity(State, myId)

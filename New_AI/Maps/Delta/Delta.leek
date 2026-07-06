@@ -56,14 +56,24 @@ class DeltaClass {
         return _final
     }
 
+    /* THE danger-cache seed for one TARGET: its side's opposing context + its own shields/antidote.
+     * SINGLE SOURCE OF TRUTH for every consumer (netOf below, FinalCell) — CELL_DANGER_GET_CACHE
+     * and EVERY_ENEMIES_WALKABLES are keyed from it, so a second key-building path would fragment
+     * (or cross-collide) those caches. Replaces the retired getStatsHashForDanger, which pinned the
+     * SAME semantic inputs through a separate order-DEPENDENT addValueToBinHash chain (the Phase-1a
+     * hazard class) and made FinalCell recompute everything the BFS had just warmed.
+     * Shields MASKED to their slots: vulnerability = NEGATIVE shield, and an unmasked negative
+     * sign-extends through << and OR-absorbs every higher field (same hazard the SURVIVAL_CACHE
+     * key documents for POISON). REL & 0x7FFF keeps negatives distinct in 15 bits; ABS & 0xFFFFF. */
+    static statsHashFor(stat, contextBySide) {
+        return addValueToBinHash(contextBySide[stat.SIDE], ((stat.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((stat.RELATIVE_SHIELD & 0x7FFF) << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
+    }
+
     /* Net damage of ONE entity — the per-entity body of getNetDamageMap, extracted so the
      * incremental scoring (Phase 4a) can recompute a single entity's term through the exact same
      * machinery. Cached: NETDAMAGE_CACHE for others, the two-level flee caches for Me. */
     static netOf(e, stat, State, BaseHash, contextBySide, healersFingerprintBySide, healMap) {
-        // Shields MASKED to their slots: vulnerability = NEGATIVE shield, and an unmasked negative
-        // sign-extends through << and OR-absorbs every higher field (same hazard the SURVIVAL_CACHE
-        // key documents for POISON). REL & 0x7FFF keeps negatives distinct in 15 bits; ABS & 0xFFFFF.
-        var statsHash = addValueToBinHash(contextBySide[stat.SIDE], ((stat.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((stat.RELATIVE_SHIELD & 0x7FFF) << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
+        var statsHash = statsHashFor(stat, contextBySide)
         var hfp = (stat.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[stat.SIDE] : 0
 
         if (e == Me) {

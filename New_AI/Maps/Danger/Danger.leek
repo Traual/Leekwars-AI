@@ -98,6 +98,9 @@ class DangerClass {
 		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), Cell)
 		if (ThisHash in CELL_DANGER_GET_CACHE) return CELL_DANGER_GET_CACHE[ThisHash]
 		var _final = [: ] // [casterId -> damage] : per-caster instead of a summed scalar (for net-HP turn ordering)
+		// DELIBERATE sharing across the caster loop (turn-ordered): one caster's vulné mutations
+		// amplify the NEXT casters' combos = real vulné CHAINS (user-validated design). Do NOT
+		// lazy-clone per caster — that would break the stacking.
 		var TargetStatsCloned = clone(TargetStats, 3)
 		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
@@ -190,46 +193,6 @@ class DangerClass {
 		return _final
 	}
 
-	/* get Me An Hash For Danger for every casters (taking into account my shield and antidote cooldown, and caster's strength, magic, tp and mp (cuz used in hashing final cell))
-	 *
-	 * @param TargetStats Class Stats of Target
-	 * @param State Map <Id: Class Stats>
-	 * @param Initial Hash to add here (generally basehash)
-	 *
-	 * @return Hashed Stats
-	 */
-
-	static getStatsHashForDanger(TargetStats, State) {
-
-		// No BaseHash dependency: with NoEntities walkcells, danger depends only on
-		// opposing enemies' (stats, cell, mp) + target's shields/antidote-CD.
-		// Allies / bulbes / target position don't influence the result — moves that
-		// don't touch an opposing enemy keep CELL_DANGER_GET_CACHE entries valid.
-
-		var hash_value = OFFSET_BASIS
-
-		// ——— Shields + Target's antidote Cooldown ———
-
-		var Mycombined = ((TargetStats.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((TargetStats.RELATIVE_SHIELD & 0x7FFF) << 15) | TargetStats.COOLDOWNS[CHIP_ANTIDOTE] // masked: negative shields (vulnerability) must not OR-absorb the higher fields
-		hash_value = addValueToBinHash(hash_value, Mycombined)
-
-		// ——— Opposing enemies: stats + position ———
-		var target_side = TargetStats.SIDE
-		for (var e: var stat in State) {
-
-			if (stat.LIFE <= 0 || stat.SIDE == target_side) continue
-
-			// TOTAL_MP/TOTAL_TP : danger is "max next-turn potential", stable across BFS steps.
-			// Routine MP/TP consumption from my own plays doesn't invalidate this cache.
-			var Hiscombined = (max(0, stat.STRENGTH) << 48) | (max(0, stat.MAGIC) << 36) | (max(0, stat.TOTAL_MP) << 24) | (max(0, stat.TOTAL_TP) << 12) | stat.POWER // clamped: negative shackled stats == 0 at use, and unclamped they OR-absorb the higher fields
-			hash_value = addValueToBinHash(hash_value, Hiscombined)
-			hash_value = addValueToBinHash(hash_value, (e << 10) | stat.CELL)
-
-		}
-
-		return hash_value
-	}
-
 	/* get Me An Hash For Danger from only one caster (taking into account my shield and antidote cooldown, and caster's strength, magic and tp (not mp cuz used only in combo generation))
 	 *
 	 * @param TargetStats Class Stats of Target
@@ -251,7 +214,7 @@ class DangerClass {
 
 		// ——— Caster stats ———
 
-		// TOTAL_TP : align with getStatsHashForDanger above — cache stable across BFS steps.
+		// TOTAL_TP : "max next-turn potential" like DeltaClass.statsHashFor's context — cache stable across BFS steps.
 		var Hiscombined = (max(0, CasterStats.STRENGTH) << 45) | (max(0, CasterStats.MAGIC) << 30) | (max(0, CasterStats.TOTAL_TP) << 15) | CasterStats.POWER // clamped: see getStatsHashForDanger
 		hash_value = addValueToBinHash(hash_value, Hiscombined)
 

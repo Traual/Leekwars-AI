@@ -12,7 +12,10 @@ class Play {
 	 */
 
 	constructor() {
-		ReloadCacheNewTurn()
+		// No ReloadCacheNewTurn here: Main.leek runs it BEFORE Preload.InitStateClass, and that
+		// order is load-bearing — InitStateClass populates whole-turn globals (MY_INVENTORY_ON_ME
+		// via Target.Targetable/TARGETABLECACHE) that must not be derived from last turn's cache
+		// entries. A second reset here only threw away the entries InitStateClass had just warmed.
 		while (true) {
 			var State = StateClass.Virtualize()
 			var Action = ActionSuite.getBestAction(State)

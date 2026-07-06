@@ -54,12 +54,11 @@ class ActionSuite {
 		noPlay.SCORE = initialScore
 		var best = noPlay
 
-		for (var entry in rootEntries) {
+		for (var entry in rootEntries) {   // all entries have delta > epsilon (enumerateAndSort invariant)
 			var baseNode = entry[2]
 			baseNode.SCORE = entry[3]   // BASE_HASH / CONTEXT_BY_SIDE already set at node creation (Phase 2)
 			if (baseNode.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = baseNode
 			debug("[Base] " + ITEMINFO[baseNode.ACTION.Item].NAME + " " + baseNode.ACTION.From + "->" + baseNode.ACTION.To + " | Δ=" + entry[1] + " | Score=" + entry[3])
-			if (entry[1] <= BFS_DELTA_EPSILON) continue   // no-op / negative-delta bases : skip expansion
 			best = unroll(baseNode, ScoredCache, MySide, 1, best)
 		}
 		BenchOps.Stop("BFS")
@@ -109,12 +108,12 @@ class ActionSuite {
 
 			// 4a.2 FRESH-PATH shortcut: this list was enumerated AND scored for THIS exact parent
 			// state (getBaseActions filters cooldown/uses/reachability/cost for it, ReferenceScore ==
-			// Parent.SCORE), so the best next node is simply the first positive entry of the sorted
-			// list — no re-simulation, no re-scoring, no re-filtering. The candidate loop below only
-			// serves STALE reuses (same BaseHash reached again from a DIFFERENT state).
+			// Parent.SCORE), so the best next node is simply the first entry of the sorted list
+			// (all entries are positive — enumerateAndSort invariant) — no re-simulation, no
+			// re-scoring, no re-filtering. The candidate loop below only serves STALE reuses
+			// (same BaseHash reached again from a DIFFERENT state).
 			if (count(Entries) == 0) return null
 			var top = Entries[0]
-			if (top[1] <= BFS_DELTA_EPSILON) return null
 			var fresh = top[2]
 			fresh.PARENT = Parent   // was created with PARENT=null inside enumerateAndSort
 			fresh.SCORE = top[3]
@@ -134,9 +133,8 @@ class ActionSuite {
 		var BestDeltaFromParent = 0
 		var BestNode = null
 
-		for (var entry in Entries) {
+		for (var entry in Entries) {   // all entries have delta > epsilon (enumerateAndSort invariant)
 			var initialDelta = entry[1]
-			if (initialDelta <= BFS_DELTA_EPSILON) break
 			if (BestDeltaFromParent >= initialDelta) break
 
 			var act = entry[0]
@@ -175,6 +173,11 @@ class ActionSuite {
 	 * Enumerates baseActions, applies+scores each, sorts by delta-vs-ReferenceScore desc.
 	 * Returns entries [act, delta, node, nodeScore] (BASE_HASH / CONTEXT_BY_SIDE live on the node).
 	 * The node has PARENT=null (caller sets if needed).
+	 * INVARIANT: every returned entry has delta > BFS_DELTA_EPSILON. Sub-epsilon actions are
+	 * unselectable EVERYWHERE downstream (root: can't beat the noPlay floor; fresh path: rejected;
+	 * stale loop: the sorted bound breaks first) — dropping them here skips their sort work and
+	 * releases their node (+ cloned state) immediately instead of pinning it in ScoredCache
+	 * for the whole search. The downstream epsilon re-checks were removed as dead code.
 	 */
 	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTerms) {
 		var baseActions = getBaseActions(State, BaseHash)
@@ -183,7 +186,9 @@ class ActionSuite {
 			var node = NodeClass.ActionToNode(act, State, BaseHash, null, ParentContext, ParentHfp)
 			if (node == null) continue
 			var nodeScore = ScoringClass.getStateScoreFromParent(node, ReferenceScore, ParentTerms, ParentContext, ParentHfp, MySide)   // Phase 4a: incremental
-			push(Entries, [act, nodeScore - ReferenceScore, node, nodeScore])
+			var delta = nodeScore - ReferenceScore
+			if (delta <= BFS_DELTA_EPSILON) continue
+			push(Entries, [act, delta, node, nodeScore])
 		}
 		// arraySort RETURNS the sorted array (per LS doc) -- must capture.
 		// Comparator returns negative / 0 / positive : here descending by delta.
