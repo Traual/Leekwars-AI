@@ -78,8 +78,9 @@ class ScoringClass {
      * R = node.CLONED (the exact mutated set, always contains Me) ∪ every alive entity of a side
      * whose DANGER inputs (CONTEXT_BY_SIDE[side]) or HEAL inputs (HFP_BY_SIDE[side]) changed vs the
      * parent — detection is purely DATA-driven (hash compares), no effect table.
-     * Two A/B modes (INCR_SCORE_MODE): 2 = carried terms map, 1 = delta-only (see Constants.leek). */
-    static getStateScoreFromParent(node, ParentState, ParentScore, ParentTerms, ParentContext, ParentHfp, ParentBaseHash, MySide) {
+     * Old terms come from the parent's carried node.TERMS (cloned ~12 ops + patched) — benched
+     * +5.7% Scoring CHEAPER than recomputing them on demand (the retired delta-only variant). */
+    static getStateScoreFromParent(node, ParentScore, ParentTerms, ParentContext, ParentHfp, MySide) {
         if (node.FULL_REBUILD) {
             // Summon / resurrect: turn order + entity set changed -> classic full scoring.
             var terms = buildTermsMap(node.END_STATS, MySide, node.BASE_HASH, node.CONTEXT_BY_SIDE)
@@ -107,12 +108,12 @@ class ScoringClass {
         var healChanged = myHfp != ((MySide in ParentHfp) ? ParentHfp[MySide] : 0)
 
         var delta = 0
-        var terms = (INCR_SCORE_MODE == 2) ? clone(ParentTerms, 1) : null
+        var terms = clone(ParentTerms, 1)
 
         if (dangerChanged == null && !healChanged) {
             // Common case: only the cloned entities can have a changed term.
             for (var e: var _c in cloned) {
-                delta += termDelta(e, State, ParentState, node, terms, healMap, ParentContext, ParentHfp, ParentBaseHash, MySide)
+                delta += termDelta(e, State, node, terms, healMap, MySide)
             }
         } else {
             // Cascade: entities of an affected side are recomputed too (their ndKey misses anyway —
@@ -121,37 +122,26 @@ class ScoringClass {
                 if ((e in cloned)
                     || (dangerChanged != null && stat.SIDE in dangerChanged)
                     || (healChanged && stat.SIDE == MySide)) {
-                    delta += termDelta(e, State, ParentState, node, terms, healMap, ParentContext, ParentHfp, ParentBaseHash, MySide)
+                    delta += termDelta(e, State, node, terms, healMap, MySide)
                 }
             }
         }
-        if (INCR_SCORE_MODE == 2) node.TERMS = terms
+        node.TERMS = terms
         BenchOps.Stop("Scoring")
 
         return ParentScore + delta
     }
 
-    /* newTerm(e) − oldTerm(e). Mode 2 reads the old term from the carried map (then overwrites it);
-     * mode 1 recomputes it from the pristine parent State — every lookup on the parent side is a
-     * guaranteed cache HIT (the parent was scored just before), so the parent healMap is never read. */
-    static termDelta(e, State, ParentState, node, terms, healMap, ParentContext, ParentHfp, ParentBaseHash, MySide) {
+    /* newTerm(e) − oldTerm(e); the old term is read from the carried map, then overwritten. */
+    static termDelta(e, State, node, terms, healMap, MySide) {
         var stat = State[e]
         var newTerm = 0
         if (stat.LIFE > 0) {
             var sign = (stat.SIDE == MySide) ? 1 : -1
             newTerm = sign * ImportanceClass.get(stat) * survivalValue(stat, DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap))
         }
-        var oldTerm = 0
-        if (INCR_SCORE_MODE == 2) {
-            oldTerm = (e in terms) ? terms[e] : 0
-            terms[e] = newTerm
-        } else {
-            var oldStat = ParentState[e]
-            if (oldStat.LIFE > 0) {
-                var sign = (oldStat.SIDE == MySide) ? 1 : -1
-                oldTerm = sign * ImportanceClass.get(oldStat) * survivalValue(oldStat, DeltaClass.netOf(e, oldStat, ParentState, ParentBaseHash, ParentContext, ParentHfp, healMap))
-            }
-        }
+        var oldTerm = (e in terms) ? terms[e] : 0
+        terms[e] = newTerm
         return newTerm - oldTerm
     }
 
