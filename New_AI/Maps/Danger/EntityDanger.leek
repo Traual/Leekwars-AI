@@ -81,7 +81,8 @@ class EntityDangerClass { //TODO : Remove Libe From It To Avoid Losing Opés
 
 		// ——— Shields + Target's antidote Cooldown ———
 
-		var combinedMe = ((MyStats.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((MyStats.RELATIVE_SHIELD & 0x7FFF) << 15) | MyStats.COOLDOWNS[CHIP_ANTIDOTE] // masked: negative shields (vulnerability) must not OR-absorb the higher fields
+		var antidoteCdMe = (CHIP_ANTIDOTE in MyStats.COOLDOWNS) ? MyStats.COOLDOWNS[CHIP_ANTIDOTE] : 99 // 99 = pas d'antidote (plus de null coercé)
+		var combinedMe = ((MyStats.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((MyStats.RELATIVE_SHIELD & 0x7FFF) << 15) | antidoteCdMe // masked: negative shields (vulnerability) must not OR-absorb the higher fields
 		hash_value = addValueToBinHash(hash_value, combinedMe)
 
 		// TOTAL_TP for cache stability — danger represents max next-turn potential.

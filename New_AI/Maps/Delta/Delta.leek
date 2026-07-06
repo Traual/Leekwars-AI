@@ -66,7 +66,8 @@ class DeltaClass {
      * sign-extends through << and OR-absorbs every higher field (same hazard the SURVIVAL_CACHE
      * key documents for POISON). REL & 0x7FFF keeps negatives distinct in 15 bits; ABS & 0xFFFFF. */
     static statsHashFor(stat, contextBySide) {
-        return addValueToBinHash(contextBySide[stat.SIDE], ((stat.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((stat.RELATIVE_SHIELD & 0x7FFF) << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
+        var antidoteCd = (CHIP_ANTIDOTE in stat.COOLDOWNS) ? stat.COOLDOWNS[CHIP_ANTIDOTE] : 99   // 99 = pas d'antidote — distinct d'un antidote prêt (0), plus de null coercé
+        return addValueToBinHash(contextBySide[stat.SIDE], ((stat.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((stat.RELATIVE_SHIELD & 0x7FFF) << 15) | antidoteCd)
     }
 
     /* Net damage of ONE entity — the per-entity body of getNetDamageMap, extracted so the

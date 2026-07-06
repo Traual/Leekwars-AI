@@ -7,9 +7,16 @@ include("../includes.leek")
 
 class ConsequencesClass {
 
-	static applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds) {
+	static applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds, PrevEffectTotal) {
 		var isEffectStackable = Effect[5] & EFFECT_MODIFIER_STACKABLE
 		var baseEffectValue = Effect[1] * Multiplier
+		// STEALS (moteur vérifié, Attack.java) : chaque effet RETOURNE son total appliqué (somme sur
+		// ses cibles) et l'effet SUIVANT du même item le reçoit en PrevEffectTotal — les STEAL_* sont
+		// indexés dessus ("voler" le total du DERNIER effet : [vulné, steal_abs_shield], [dégâts,
+		// steal_life]...). Seuls les cas à valeur naturelle alimentent le total (dégâts, vulnés,
+		// poison, nova, aftereffect) ; les autres laissent 0 — à étendre si un item associe un jour
+		// un steal à autre chose.
+		var effectTotal = 0
 		switch (EffectType) {
 			case EFFECT_ABSOLUTE_SHIELD:
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.RESISTANCE) / 100)
@@ -20,7 +27,11 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_ABSOLUTE_VULNERABILITY:
-				for (var targetId: var aoeDistance in RealTargets) State[targetId].ABSOLUTE_SHIELD -= baseEffectValue * (1 - aoeDistance * 0.2)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					State[targetId].ABSOLUTE_SHIELD -= calculatedValue
+					effectTotal += calculatedValue
+				}
 				break
 			case EFFECT_AFTEREFFECT:
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
@@ -43,6 +54,7 @@ class ConsequencesClass {
 					targetStats.TOTAL_LIFE -= appliedDamage * EROSION_NO_POISON
 					targetStats.POISON += calculatedValue
 					targetStats.POISON_OVER_TIME += calculatedValue * effectDuration
+					effectTotal += appliedDamage
 				}
 				break
 			case EFFECT_ANTIDOTE:
@@ -154,6 +166,7 @@ class ConsequencesClass {
 					targetStats.JUST_POISON += calculatedValue
 					targetStats.POISON_OVER_TIME += calculatedValue * effectDuration
 					targetStats.JUST_POISON_OVER_TIME += calculatedValue * effectDuration
+					effectTotal += calculatedValue
 				}
 				break
 			case EFFECT_RELATIVE_SHIELD:
@@ -166,7 +179,7 @@ class ConsequencesClass {
 				break
 			case EFFECT_DAMAGE:
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.STRENGTH) / 100) * (1 + CastStats.POWER / 100) // engine floors STRENGTH at use but NOT power (verified in EffectDamage.java)
-				for (var targetId: var aoeDistance in RealTargets) getEntityDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
+				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
 				break
 			case EFFECT_DEBUFF:
 				for (var targetId: var aoeDistance in RealTargets) getEntityDebuffConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster)
@@ -184,7 +197,7 @@ class ConsequencesClass {
 				break
 			case EFFECT_LIFE_DAMAGE:
 				var casterStatMultiplier = baseEffectValue * (CastStats.LIFE / 100) * (1 + CastStats.POWER / 100)
-				for (var targetId: var aoeDistance in RealTargets) getEntityLifeDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
+				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityLifeDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
 				break
 			case EFFECT_NOVA_DAMAGE:
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
@@ -194,6 +207,7 @@ class ConsequencesClass {
 					var damageAmount = min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
 					targetStats.TOTAL_LIFE -= damageAmount
 					if (targetId != Caster && targetStats.SPECIAL_WEAPON == WEAPON_UNBRIDLED_GAZOR) targetStats.MAGIC += damageAmount * 0.2
+					effectTotal += damageAmount
 				}
 				break
 			case EFFECT_NOVA_VITALITY:
@@ -344,24 +358,39 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_STEAL_ABSOLUTE_SHIELD:
-				for (var targetId: var aoeDistance in RealTargets) State[targetId].ABSOLUTE_SHIELD += baseEffectValue * (1 - aoeDistance * 0.2)
+				// Moteur (EffectStealAbsoluteShield.java) : le CASTER gagne un bouclier absolu égal
+				// au TOTAL de l'effet PRÉCÉDENT de l'item (rien n'est retiré à la cible ICI — le
+				// "vol" vient de l'effet d'avant, typiquement une vulné absolue). L'ancien code
+				// blindait la CIBLE avec la valeur de base — faux.
+				CastStats.ABSOLUTE_SHIELD += PrevEffectTotal
+				effectTotal = PrevEffectTotal
 				break
 			case EFFECT_STEAL_LIFE:
-				//TODO :
+				// Moteur (EffectStealLife.java) : le CASTER récupère le TOTAL de l'effet PRÉCÉDENT,
+				// cappé à sa vie manquante. (L'état UNHEALABLE n'est pas modélisé dans la simu.)
+				var stolen = min(PrevEffectTotal, CastStats.TOTAL_LIFE - CastStats.LIFE)
+				CastStats.LIFE += stolen
+				effectTotal = stolen
 				break
 			case EFFECT_TELEPORT:
 				State[Caster].CELL = To
 				break
 			case EFFECT_VULNERABILITY:
-				for (var targetId: var aoeDistance in RealTargets) State[targetId].RELATIVE_SHIELD -= baseEffectValue * (1 - aoeDistance * 0.2)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					State[targetId].RELATIVE_SHIELD -= calculatedValue
+					effectTotal += calculatedValue
+				}
 				break
 		}
+		return effectTotal
 	}
 
 	static getConsequences(State, Item, From, To, Caster, BaseHash, clonedIds) { //Need from for lasers
 		BenchOps.Start("Consequences")
 		var Targets = ConsequenceTargets(Item, From, To, State, Caster, BaseHash)
 		var CastStats = State[Caster]
+		var prevEffectTotal = 0   // STEALS : total appliqué de l'effet précédent de CE cast (contrat Attack.java)
 		for (var Effect in ITEMINFO[Item].EFFECTS) {
 			var EffectType = Effect[0]
 			switch (EffectType) {
@@ -380,7 +409,7 @@ class ConsequencesClass {
 			var Multiplier = (Effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) ? mapSize(TmpTargets) : 1 //Saving Multiplier
 			if (CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) Multiplier *= CRITICAL_FACTOR
 			var RealTargets = Effect[5] & EFFECT_MODIFIER_ON_CASTER ? [Caster: 0] : TmpTargets
-			applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds)
+			prevEffectTotal = applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds, prevEffectTotal)
 		}
 		BenchOps.Stop("Consequences")
 	}
@@ -615,6 +644,7 @@ class ConsequencesClass {
 				TarStats.ABSOLUTE_SHIELD += Damage * 0.05
 				break
 		}
+		return Damage   // STEALS : les dégâts réellement infligés alimentent PrevEffectTotal
 	}
 
 	static getEntityDebuffConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
@@ -692,6 +722,7 @@ class ConsequencesClass {
 				TarStats.ABSOLUTE_SHIELD += Damage * 0.05
 				break
 		}
+		return Damage   // STEALS : les dégâts réellement infligés alimentent PrevEffectTotal
 	}
 
 	static ApplyAreaConsequence(AreaType, _final, Item, From, To, EveryStats, Me) {
@@ -766,6 +797,10 @@ class ConsequencesClass {
 		var powerFactor = 1 + casterstats.POWER / 100
 		var strengthFactor = 1 + max(0, casterstats.STRENGTH) / 100 // floor-at-use, like the engine
 		var shieldFactor = 1 - targetstats.RELATIVE_SHIELD / 100
+		// 99 = pas d'antidote dans l'inventaire (jamais de cure -> le poison compte sa durée PLEINE).
+		// Avant, la lecture null se coerçait en 0 : une cible SANS antidote était valorisée comme une
+		// cible avec antidote PRÊT (1 tick) -> danger poison systématiquement sous-évalué contre elle.
+		var antidoteCd = (CHIP_ANTIDOTE in targetstats.COOLDOWNS) ? targetstats.COOLDOWNS[CHIP_ANTIDOTE] : 99
 		for (var eff in Info.EFFECTS) {
 			if (eff[5] & EFFECT_MODIFIER_ON_CASTER) continue
 			switch (eff[0]) {
@@ -776,7 +811,7 @@ class ConsequencesClass {
 					_final += (eff[2] * powerFactor * (casterstats.LIFE / 100) * shieldFactor - targetstats.ABSOLUTE_SHIELD)
 					break
 				case EFFECT_POISON:
-					_final += eff[2] * powerFactor * distFactor * (1 + max(0, casterstats.MAGIC) / 100) * min(eff[3], targetstats.COOLDOWNS[CHIP_ANTIDOTE] + 1)
+					_final += eff[2] * powerFactor * distFactor * (1 + max(0, casterstats.MAGIC) / 100) * min(eff[3], antidoteCd + 1)
 					break
 			}
 		}
