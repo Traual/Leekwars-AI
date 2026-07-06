@@ -9,7 +9,7 @@
  *   pressure    = (DANGER_WEIGHT·danger + COEF_POT·POISON_OVER_TIME)        // relative threats
  *               / (afterPoison + BUFFER)
  *   effLife     = afterPoison / (1 + pressure)                              // >0, threats never drowned
- *   value       = BASE_ALIVE + W_LIFE · sqrt(effLife)                       // concave: low life matters more
+ *   value       = BASE_ALIVE + W_LIFE · sqrt(effLife) + W_TOTAL_LIFE · sqrt(TOTAL_LIFE)
  * score = Σ sign·value. Dead (LIFE=0, skipped) = 0 → kill always worth ≥ BASE_ALIVE.
  **/
 
@@ -24,6 +24,13 @@ global BASE_ALIVE = 1000
 // sqrt returns smaller numbers than pow(.,0.7), so W_LIFE is scaled up to keep the life term
 // meaningful vs BASE_ALIVE. (Want ~0.75 concavity instead? use sqrt(effLife·sqrt(effLife)).)
 global W_LIFE = 14.0
+
+// Max-life term: W_TOTAL_LIFE · sqrt(TOTAL_LIFE) — the entity's DURABLE capital. The only score
+// channel for erosion/nova (max-life chip is permanent: no heal ever refunds it, and a chipped
+// max makes later one-shots trivial) and for vitality buffs' max-life half. 3× HEAVIER than the
+// life term by design (user call): erosion is strategically dominant over healable damage.
+// Sits OUTSIDE SURVIVAL_CACHE (its 64-bit key is full) — added after the cache read, ~10 ops.
+global W_TOTAL_LIFE = 3 * W_LIFE
 
 // Immediate poison tick: certain damage next turn → subtracted directly from life.
 global COEF_POISON = 0.5

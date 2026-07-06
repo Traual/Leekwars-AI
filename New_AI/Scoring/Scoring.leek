@@ -6,7 +6,7 @@
  *   pressure    = (DANGER_WEIGHT·danger + COEF_POT·POISON_OVER_TIME) // relative threats (never drowned)
  *               / (afterPoison + BUFFER)
  *   effLife     = afterPoison / (1 + pressure)                       // >0, monotone, threat-scaled (cheap)
- *   value       = BASE_ALIVE + W_LIFE · sqrt(effLife)                // concave → low life matters more
+ *   value       = BASE_ALIVE + W_LIFE·sqrt(effLife) + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)   // concave × 2
  * score = Σ sign(e) · value(e).  sign = +1 my side, −1 enemy. Dead entities contribute 0.
  * Same treatment for both sides (sign flips it).
  *
@@ -164,10 +164,13 @@ class ScoringClass {
     /**
      * Survival value of one entity, cached by a single packed 64-bit key. Bit-ops truncate
      * the floats to int (no round needed). POISON / POT masked because they can be negative.
+     * The max-life term (W_TOTAL_LIFE·sqrt) lives OUTSIDE the cache: the key is full (16+14+
+     * 17+17 bits) and has no TOTAL_LIFE slot — added after the read, sqrt ≈ 8 ops. It is the
+     * erosion/nova channel: permanent, heal-proof, so a max-life chip scores on both sides.
      */
     static survivalValue(stat, danger) {
         var key = (stat.LIFE << 48) | ((stat.POISON & 0x3FFF) << 34) | ((stat.POISON_OVER_TIME & 0x1FFFF) << 17) | (danger & 0x1FFFF)
-        if (key in SURVIVAL_CACHE) return SURVIVAL_CACHE[key]
+        if (key in SURVIVAL_CACHE) return SURVIVAL_CACHE[key] + W_TOTAL_LIFE * sqrt(max(0, stat.TOTAL_LIFE))
 
         var afterPoison = max(0, stat.LIFE - COEF_POISON * stat.POISON)
         var pressure = (DANGER_WEIGHT * danger + COEF_POT * stat.POISON_OVER_TIME) / (afterPoison + BUFFER)
@@ -175,7 +178,7 @@ class ScoringClass {
         var value = BASE_ALIVE + W_LIFE * sqrt(effLife)
 
         SURVIVAL_CACHE[key] = value
-        return value
+        return value + W_TOTAL_LIFE * sqrt(max(0, stat.TOTAL_LIFE))
     }
 
     /**
