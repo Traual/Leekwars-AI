@@ -53,7 +53,9 @@ class Play {
 			if (ItemEffects[0][0] != EFFECT_RESURRECT) {
 				summon(Item, To, Bulb.AI) //If its a summon
 			} else {
-				resurrect(ResurrectionClass.ScoringWichId(State).ID, To) //if its a resurrection
+				var resuId = ResurrectionClass.ScoringWichId(State).ID
+				debugC("Resurrecting entity " + resuId, COLOR_GREEN)
+				resurrect(resuId, To) //if its a resurrection
 			}
 		}
 	}

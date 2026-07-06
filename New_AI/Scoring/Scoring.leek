@@ -54,7 +54,8 @@ class ScoringClass {
     }
 
     /* Full terms map [entityId -> SIGNED term] (sign folded in: +ally / -enemy — SIDE is
-     * fight-constant). score == sumTerms(map). Used at the BFS root and on FULL_REBUILD nodes. */
+     * fight-constant). score == sumTerms(map). Used at the BFS root (and the Node summon-patch
+     * assert fallback rebuilds hashes only — its terms go through the incremental path). */
     static buildTermsMap(State, MySide, BaseHash, contextBySide) {
         BenchOps.Start("Scoring")
         var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash, contextBySide)
@@ -74,19 +75,17 @@ class ScoringClass {
         return s
     }
 
-    /* Phase 4a — INCREMENTAL score: score(child) = score(parent) + Δ over the recompute set R.
-     * R = node.CLONED (the exact mutated set, always contains Me) ∪ every alive entity of a side
-     * whose DANGER inputs (CONTEXT_BY_SIDE[side]) or HEAL inputs (HFP_BY_SIDE[side]) changed vs the
-     * parent — detection is purely DATA-driven (hash compares), no effect table.
+    /* Phase 4a/4b — INCREMENTAL score: score(child) = score(parent) + Δ over the recompute set R.
+     * R = node.CLONED (the exact mutated set, always contains Me — and the newborn bulb / revived
+     * entity since Phase 4b) ∪ every alive entity of a side whose DANGER inputs
+     * (CONTEXT_BY_SIDE[side]) or HEAL inputs (HFP_BY_SIDE[side]) changed vs the parent — detection
+     * is purely DATA-driven (hash compares), no effect table. Summon/resurrect nodes take this very
+     * path too (the retired FULL_REBUILD fallback is gone): a summon flips the OPPOSING sides'
+     * context -> all their alive entities recompute (real work: the bulb genuinely adds threat),
+     * allies are skipped, termDelta 0-defaults the newborn's old term.
      * Old terms come from the parent's carried node.TERMS (cloned ~12 ops + patched) — benched
      * +5.7% Scoring CHEAPER than recomputing them on demand (the retired delta-only variant). */
     static getStateScoreFromParent(node, ParentScore, ParentTerms, ParentContext, ParentHfp, MySide) {
-        if (node.FULL_REBUILD) {
-            // Summon / resurrect: turn order + entity set changed -> classic full scoring.
-            var terms = buildTermsMap(node.END_STATS, MySide, node.BASE_HASH, node.CONTEXT_BY_SIDE)
-            node.TERMS = terms
-            return sumTerms(terms)
-        }
         BenchOps.Start("Scoring")
         var State = node.END_STATS
         var cloned = node.CLONED
@@ -106,18 +105,12 @@ class ScoringClass {
                 dangerChanged[s] = true
             }
         }
-        // Which sides' heal inputs changed? Union compare, 0-defaulted (a side with no healers is
-        // ABSENT from its map). The patch only ever ADDS keys, so the child map ⊇ the parent map —
-        // the reverse loop is a cheap guard for future canonical-removal edits.
+        // Which sides' heal inputs changed? 0-defaulted compare (a side with no healers is ABSENT
+        // from its map). INVARIANT: the patch only ever ADDS keys, never removes them, so the child
+        // map ⊇ the parent map — iterating the child covers every possible change.
         var healChanged = null
         for (var s: var h in hfpMap) {
             if (((s in ParentHfp) ? ParentHfp[s] : 0) != h) {
-                if (healChanged == null) healChanged = [: ]
-                healChanged[s] = true
-            }
-        }
-        for (var s: var h in ParentHfp) {
-            if (!(s in hfpMap)) {
                 if (healChanged == null) healChanged = [: ]
                 healChanged[s] = true
             }

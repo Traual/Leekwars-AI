@@ -12,9 +12,8 @@ class NodeClass {
 	BASE_HASH   // BaseHash of END_STATS (filled by BFS for cache lookup)
 	CONTEXT_BY_SIDE   // Phase 2: per-side opposing-team context, patched incrementally at creation
 	HFP_BY_SIDE       // Phase 4a: per-side healers fingerprint, patched incrementally at creation
-	CLONED            // Phase 4a: the clonedIds map = the EXACT set of possibly-mutated entities
-	FULL_REBUILD      // Phase 4a: true on the summon/resurrect fallback -> incremental scoring must full-rescore
-	TERMS             // Phase 4a mode 2: [entityId -> SIGNED term], cloned from the parent + patched (null in mode 1)
+	CLONED            // Phase 4a: the clonedIds map = the EXACT set of possibly-mutated entities (+ the newborn bulb / revived — Phase 4b)
+	TERMS             // Phase 4a: [entityId -> SIGNED term], cloned from the parent + patched
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction
@@ -123,44 +122,90 @@ class NodeClass {
 		}
 		var result = new NodeClass(Act, ThisActionStats, Parent) //Creating Node
 
-		result.CLONED = clonedIds
-
-		// === Phase 2 + 4a: incremental hash patch (BASE_HASH + CONTEXT_BY_SIDE + HFP_BY_SIDE) ===
-		if (Item == CHIP_RESURRECTION || mapSize(ThisActionStats) != mapSize(State)) {
-			// Summon / resurrect ADD entities -> full recompute for now.
-			// TODO Phase 2+: patch the born/revived entities incrementally instead of a full rebuild.
-			result.BASE_HASH = StateClass.getBaseHash(ThisActionStats)
-			result.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(ThisActionStats)
-			result.HFP_BY_SIDE = HealClass.buildHfpBySide(ThisActionStats)
-			result.FULL_REBUILD = true
-		} else {
-			// Patch over clonedIds — the EXACT set of possibly-mutated entities (Targets+Me pre-cloned
-			// + kill-path side-victims cloned-on-write). Covers cascade/unwind/procs by construction;
-			// the parent State keeps the pristine old values (it is never mutated anymore).
-			var bh = BaseHash                    // parent State's BaseHash
-			var ctx = clone(ParentContext, 1)    // copy so we never mutate the parent's context
-			var ctxSides = mapKeys(ctx)          // hoisted: the side set never changes inside the patch loop
-			var hfpMap = clone(ParentHfp, 1)     // Phase 4a: healers fingerprint, patched like the context
-			for (var tar: var _c in clonedIds) {
-				if (tar == Me) continue          // Me excluded from all three hashes
-				var oldStat = State[tar]
-				var newStat = ThisActionStats[tar]
-				bh ^= StateClass.baseContribution(oldStat, tar) ^ StateClass.baseContribution(newStat, tar)
-				var deltaCtx = DeltaClass.contextContribution(oldStat, tar) ^ DeltaClass.contextContribution(newStat, tar)
-				if (deltaCtx != 0) {
-					var side = newStat.SIDE      // side doesn't change
-					for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx
-				}
-				var deltaHfp = HealClass.healerContributionOf(oldStat, tar) ^ HealClass.healerContributionOf(newStat, tar)
-				if (deltaHfp != 0) {             // patched into the entity's OWN side (enemy heals modeled)
-					var hfpSide = newStat.SIDE
-					hfpMap[hfpSide] = ((hfpSide in hfpMap) ? hfpMap[hfpSide] : 0) ^ deltaHfp
-				}
+		// === Phase 2 + 4a + 4b: incremental hash patch (BASE_HASH + CONTEXT_BY_SIDE + HFP_BY_SIDE) ===
+		// ONE single path since Phase 4b — summon and resurrect nodes patch like everyone else:
+		//  - RESURRECT: the revived is pre-cloned into clonedIds (loop above, LOAD-BEARING); its OLD
+		//    contributions are 0 (all three contribution fns are LIFE-gated and it was dead in the
+		//    parent), the NEW ones come from its post-Update stats (life, cell, engine-faithful
+		//    fractional TURN_ORDER). Non-picked corpses patch as harmless no-ops (0 ^ 0).
+		//  - SUMMON (mapSize grew): the bulb is BORN in the branch (absent from the parent), so the
+		//    old^new patch can't see it — its contributions are ADDED explicitly after the loop.
+		// Patch over clonedIds — the EXACT set of possibly-mutated entities (Targets+Me pre-cloned
+		// + kill-path side-victims cloned-on-write). Covers cascade/unwind/procs by construction;
+		// the parent State keeps the pristine old values (it is never mutated anymore).
+		var bh = BaseHash                    // parent State's BaseHash
+		var ctx = clone(ParentContext, 1)    // copy so we never mutate the parent's context
+		var ctxSides = mapKeys(ctx)          // hoisted: the side set never changes inside the patch loop
+		var hfpMap = clone(ParentHfp, 1)     // Phase 4a: healers fingerprint, patched like the context
+		for (var tar: var _c in clonedIds) {
+			if (tar == Me) continue          // Me excluded from all three hashes
+			var oldStat = State[tar]
+			var newStat = ThisActionStats[tar]
+			bh ^= StateClass.baseContribution(oldStat, tar) ^ StateClass.baseContribution(newStat, tar)
+			var deltaCtx = DeltaClass.contextContribution(oldStat, tar) ^ DeltaClass.contextContribution(newStat, tar)
+			if (deltaCtx != 0) {
+				var side = newStat.SIDE      // side doesn't change
+				for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx
 			}
-			result.BASE_HASH = bh
-			result.CONTEXT_BY_SIDE = ctx
-			result.HFP_BY_SIDE = hfpMap
-			result.FULL_REBUILD = false
+			var deltaHfp = HealClass.healerContributionOf(oldStat, tar) ^ HealClass.healerContributionOf(newStat, tar)
+			if (deltaHfp != 0) {             // patched into the entity's OWN side (enemy heals modeled)
+				var hfpSide = newStat.SIDE
+				hfpMap[hfpSide] = ((hfpSide in hfpMap) ? hfpMap[hfpSide] : 0) ^ deltaHfp
+			}
+		}
+
+		var entityAdded = mapSize(ThisActionStats) != mapSize(State)   // only summons ADD an id
+		if (entityAdded) {
+			// SUMMON add-on: the bulb's id is derivable from the Item (same formula as Consequences
+			// EFFECT_SUMMON). ASSERT it was really BORN in this branch — if the id scheme ever
+			// diverges (0-CD TODO) or a REAL bulb summoned this turn collides with SUMMON_ID_BASE+k
+			// (pre-existing silent hole, now LOUD), fall back to full rebuilds for this node.
+			var newId = SUMMON_ID_BASE + BulbState.getTypeOffset(Item)
+			if (!(newId in ThisActionStats) || (newId in State)) {
+				debugE("[SUMMON PATCH] id " + newId + " not born in this branch (item " + Item + ") -> full rebuild fallback")
+				if (newId in ThisActionStats) clonedIds[newId] = true   // best effort: its term recomputes
+				result.CLONED = clonedIds
+				result.BASE_HASH = StateClass.getBaseHash(ThisActionStats)
+				result.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(ThisActionStats)
+				result.HFP_BY_SIDE = HealClass.buildHfpBySide(ThisActionStats)
+				return result
+			}
+			var newStat = ThisActionStats[newId]
+			bh ^= StateClass.baseContribution(newStat, newId)
+			var addCtx = DeltaClass.contextContribution(newStat, newId)
+			if (addCtx != 0) {
+				for (var s in ctxSides) if (s != newStat.SIDE) ctx[s] ^= addCtx
+			}
+			var addHfp = HealClass.healerContributionOf(newStat, newId)
+			if (addHfp != 0) hfpMap[newStat.SIDE] = ((newStat.SIDE in hfpMap) ? hfpMap[newStat.SIDE] : 0) ^ addHfp
+			clonedIds[newId] = true   // the bulb's term enters the scoring recompute set (termDelta 0-defaults its old term)
+		}
+
+		result.CLONED = clonedIds
+		result.BASE_HASH = bh
+		result.CONTEXT_BY_SIDE = ctx
+		result.HFP_BY_SIDE = hfpMap
+
+		// TEMP SUMMONTEST — Phase 4b validation, REMOVE after one clean fight. Summon/resurrect
+		// nodes only. Reference = INDEPENDENT full rebuilds (non-circular — never compare against
+		// the node's own hashes). Shape-tolerant: the patched maps keep root-era buckets forever
+		// while the rebuilds derive theirs from the child (raw compares would false-positive on
+		// kill-the-last-healer / last-of-side branches): ctx compared over the REBUILD's keys
+		// (= sides alive in the child), hfp compared 0-defaulted over the union of keys.
+		if (entityAdded || Item == CHIP_RESURRECTION) {
+			var refBh = StateClass.getBaseHash(ThisActionStats)
+			if (refBh != bh) debugE("[SUMMONTEST] BASE_HASH patched=" + bh + " rebuilt=" + refBh + " item=" + Item)
+			var refCtx = DeltaClass.buildContextBySide(ThisActionStats)
+			for (var s: var h in refCtx) {
+				if (((s in ctx) ? ctx[s] : null) != h) debugE("[SUMMONTEST] CTX side " + s + " patched=" + ((s in ctx) ? ctx[s] : null) + " rebuilt=" + h + " item=" + Item)
+			}
+			var refHfp = HealClass.buildHfpBySide(ThisActionStats)
+			for (var s: var h in refHfp) {
+				if (((s in hfpMap) ? hfpMap[s] : 0) != h) debugE("[SUMMONTEST] HFP side " + s + " patched=" + ((s in hfpMap) ? hfpMap[s] : 0) + " rebuilt=" + h + " item=" + Item)
+			}
+			for (var s: var h in hfpMap) {
+				if (!(s in refHfp) && h != 0) debugE("[SUMMONTEST] HFP side " + s + " patched=" + h + " rebuilt=ABSENT item=" + Item)
+			}
 		}
 
 		return result

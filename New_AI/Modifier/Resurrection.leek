@@ -65,7 +65,7 @@ class ResurrectionClass {
 				top_score = Score
 			}
 		}
-		debugC("Best Resurrect ID : " + _final_id + " (Score: " + top_score + ")", COLOR_GREEN)
+		// (No debug here: this runs on EVERY resurrection node of the BFS — the real cast logs in Play.)
 		return new ResurrectionClass(_final_id, top_score)
 	}
 }
