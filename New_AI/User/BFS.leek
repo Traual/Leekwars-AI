@@ -35,6 +35,7 @@ class ActionSuite {
 		var MySide = State[Me].SIDE
 		var BaseHash = StateClass.getBaseHash(State)
 		var RootContext = DeltaClass.buildContextBySide(State)   // Phase 2: root context, patched down the tree
+		var RootHfp = HealClass.buildHfpBySide(State)            // Phase 4a: root healers fingerprint, patched down the tree
 		var initialScore = ScoringClass.getStateScore(State, MySide, BaseHash, RootContext)
 
 		// Per-call cache : BaseHash -> sorted ScoredEntries
@@ -42,7 +43,7 @@ class ActionSuite {
 		var ScoredCache = [:]
 
 		// === Step 1 : enumerate, clone+apply+score+sort base actions ===
-		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext)
+		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp)
 		ScoredCache[BaseHash] = rootEntries
 		debugC("--- Evaluating " + count(rootEntries) + " actions ---", COLOR_BLUE)
 
@@ -103,7 +104,7 @@ class ActionSuite {
 		if (BaseHash in ScoredCache) {
 			Entries = ScoredCache[BaseHash]
 		} else {
-			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE)
+			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE)
 			ScoredCache[BaseHash] = Entries
 		}
 
@@ -142,7 +143,7 @@ class ActionSuite {
 			}
 			if (cost > MyTp) continue
 
-			var candidate = NodeClass.ActionToNode(act, State, BaseHash, Parent, Parent.CONTEXT_BY_SIDE)
+			var candidate = NodeClass.ActionToNode(act, State, BaseHash, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE)
 			if (candidate == null) continue
 			var candidateScore = ScoringClass.getStateScore(candidate.END_STATS, MySide, candidate.BASE_HASH, candidate.CONTEXT_BY_SIDE)   // hashes patched at creation (Phase 2)
 			INSTR_EXPAND_SCORES++   // TEMP instrumentation
@@ -163,12 +164,12 @@ class ActionSuite {
 	 * Returns entries [act, delta, node, nodeScore] (BASE_HASH / CONTEXT_BY_SIDE live on the node).
 	 * The node has PARENT=null (caller sets if needed).
 	 */
-	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext) {
+	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp) {
 		INSTR_ENUM_CALLS++   // TEMP instrumentation
 		var baseActions = getBaseActions(State, BaseHash)
 		var Entries = []
 		for (var act in baseActions) {
-			var node = NodeClass.ActionToNode(act, State, BaseHash, null, ParentContext)
+			var node = NodeClass.ActionToNode(act, State, BaseHash, null, ParentContext, ParentHfp)
 			if (node == null) continue
 			var nodeScore = ScoringClass.getStateScore(node.END_STATS, MySide, node.BASE_HASH, node.CONTEXT_BY_SIDE)   // hashes patched at creation (Phase 2)
 			INSTR_ENUM_SCORES++   // TEMP instrumentation

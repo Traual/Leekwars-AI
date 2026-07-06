@@ -34,10 +34,11 @@ class DeltaClass {
         var healFp = 0
         var healCasters = []
         for (var e: var stat in State) {
-            if (e == Me || stat.LIFE <= 0 || stat.SIDE != mySide) continue   // my-side alive non-Me only
-            if (!HealClass.hasHealItem(stat)) continue
-            healFp ^= HealClass.healerContribution(stat, e)
-            push(healCasters, e)
+            var c = HealClass.healerContributionOf(stat, e, mySide)   // single-source gates + formula
+            if (c != 0) {
+                healFp ^= c
+                push(healCasters, e)
+            }
         }
 
         // getHealMap builds the per-side healers fingerprint (id + cell/mp/wis/tp, XOR-combined,
@@ -51,39 +52,41 @@ class DeltaClass {
         var _final = [: ]
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
-            // Shields MASKED to their slots: vulnerability = NEGATIVE shield, and an unmasked negative
-            // sign-extends through << and OR-absorbs every higher field (same hazard the SURVIVAL_CACHE
-            // key documents for POISON). REL & 0x7FFF keeps negatives distinct in 15 bits; ABS & 0xFFFFF.
-            var statsHash = addValueToBinHash(contextBySide[stat.SIDE], ((stat.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((stat.RELATIVE_SHIELD & 0x7FFF) << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
-
-            if (e == Me) {
-                // Me MOVES this turn: MIN net delta over my reachable flee cells (danger AND heal at
-                // the SAME cell). Two-level cached inside (per-cell net + the whole min by reachable set).
-                var hfp = (stat.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[stat.SIDE] : 0
-                _final[e] = minDeltaForMe(stat, State, BaseHash, statsHash, hfp, healMap)
-                continue
-            }
-
-            // Others don't move on my turn -> net damage at their CURRENT cell. Cache it: an entity
-            // untouched by my action keeps the same key across BFS nodes -> hit -> skip danger + heal
-            // + turn-order build + sequencing.
-            var hfp = (stat.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[stat.SIDE] : 0
-            var ndKey = addValueToBinHash(statsHash ^ hfp, (stat.CELL << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE)
-            if (ndKey in NETDAMAGE_CACHE) {
-                _final[e] = NETDAMAGE_CACHE[ndKey]
-                continue
-            }
-
-            var dangerToT = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
-            // Casters hit T in the order they act AFTER T this round (X-Y-Z with T=Y -> Z then X).
-            var afterOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, e)
-            var nd = netDamage(stat, dangerToT, healMap, State, afterOrder, stat.CELL)
-            NETDAMAGE_CACHE[ndKey] = nd
-            _final[e] = nd
+            _final[e] = netOf(e, stat, State, BaseHash, contextBySide, healersFingerprintBySide, healMap)
         }
 
         BenchOps.Stop("Delta")
         return _final
+    }
+
+    /* Net damage of ONE entity — the per-entity body of getNetDamageMap, extracted so the
+     * incremental scoring (Phase 4a) can recompute a single entity's term through the exact same
+     * machinery. Cached: NETDAMAGE_CACHE for others, the two-level flee caches for Me. */
+    static netOf(e, stat, State, BaseHash, contextBySide, healersFingerprintBySide, healMap) {
+        // Shields MASKED to their slots: vulnerability = NEGATIVE shield, and an unmasked negative
+        // sign-extends through << and OR-absorbs every higher field (same hazard the SURVIVAL_CACHE
+        // key documents for POISON). REL & 0x7FFF keeps negatives distinct in 15 bits; ABS & 0xFFFFF.
+        var statsHash = addValueToBinHash(contextBySide[stat.SIDE], ((stat.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((stat.RELATIVE_SHIELD & 0x7FFF) << 15) | stat.COOLDOWNS[CHIP_ANTIDOTE])
+        var hfp = (stat.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[stat.SIDE] : 0
+
+        if (e == Me) {
+            // Me MOVES this turn: MIN net delta over my reachable flee cells (danger AND heal at
+            // the SAME cell). Two-level cached inside (per-cell net + the whole min by reachable set).
+            return minDeltaForMe(stat, State, BaseHash, statsHash, hfp, healMap)
+        }
+
+        // Others don't move on my turn -> net damage at their CURRENT cell. Cache it: an entity
+        // untouched by my action keeps the same key across BFS nodes -> hit -> skip danger + heal
+        // + turn-order build + sequencing.
+        var ndKey = addValueToBinHash(statsHash ^ hfp, (stat.CELL << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE)
+        if (ndKey in NETDAMAGE_CACHE) return NETDAMAGE_CACHE[ndKey]
+
+        var dangerToT = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
+        // Casters hit T in the order they act AFTER T this round (X-Y-Z with T=Y -> Z then X).
+        var afterOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, e)
+        var nd = netDamage(stat, dangerToT, healMap, State, afterOrder, stat.CELL)
+        NETDAMAGE_CACHE[ndKey] = nd
+        return nd
     }
 
     /* Min net delta Me takes this turn = MIN over my reachable cells of the net damage AT that cell

@@ -11,6 +11,9 @@ class NodeClass {
 	SCORE       // Absolute state score of END_STATS (cached, filled by BFS)
 	BASE_HASH   // BaseHash of END_STATS (filled by BFS for cache lookup)
 	CONTEXT_BY_SIDE   // Phase 2: per-side opposing-team context, patched incrementally at creation
+	HFP_BY_SIDE       // Phase 4a: per-side healers fingerprint, patched incrementally at creation
+	CLONED            // Phase 4a: the clonedIds map = the EXACT set of possibly-mutated entities
+	FULL_REBUILD      // Phase 4a: true on the summon/resurrect fallback -> incremental scoring must full-rescore
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction
@@ -29,7 +32,7 @@ class NodeClass {
 	 * @return New Node Class
 	 */
 
-	static ActionToNode(Action, State, BaseHash, Parent, ParentContext) {
+	static ActionToNode(Action, State, BaseHash, Parent, ParentContext, ParentHfp) {
 		if (Action == null) return;
 		BenchOps.Start("Node")
 		var MyState = State[Me]
@@ -51,7 +54,7 @@ class NodeClass {
 				Cost += ITEMINFO[CHIP_TELEPORTATION].COST + ITEMINFO[CHIP_JUMP].COST
 			}
 		}
-		var result = ActionToNodeInTree(Action, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, ParentContext)
+		var result = ActionToNodeInTree(Action, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, ParentContext, ParentHfp)
 		BenchOps.Stop("Node")
 		return result
 	}
@@ -73,7 +76,7 @@ class NodeClass {
 	 * @return New Node Class
 	 */
 
-	static ActionToNodeInTree(Act, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, ParentContext) {
+	static ActionToNodeInTree(Act, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, ParentContext, ParentHfp) {
 		var Targets = ConsequencesClass.ConsequenceTargets(Item, From, To, State, Me, BaseHash)
 		// clonedIds = the EXACT set of possibly-mutated entities: Targets+Me pre-cloned here, plus every
 		// kill-path side-victim (summon cascade, buff unwind, weapon procs) cloned-on-write by
@@ -119,12 +122,16 @@ class NodeClass {
 		}
 		var result = new NodeClass(Act, ThisActionStats, Parent) //Creating Node
 
-		// === Phase 2: incremental hash patch (BASE_HASH + CONTEXT_BY_SIDE) ===
+		result.CLONED = clonedIds
+
+		// === Phase 2 + 4a: incremental hash patch (BASE_HASH + CONTEXT_BY_SIDE + HFP_BY_SIDE) ===
 		if (Item == CHIP_RESURRECTION || mapSize(ThisActionStats) != mapSize(State)) {
 			// Summon / resurrect ADD entities -> full recompute for now.
 			// TODO Phase 2+: patch the born/revived entities incrementally instead of a full rebuild.
 			result.BASE_HASH = StateClass.getBaseHash(ThisActionStats)
 			result.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(ThisActionStats)
+			result.HFP_BY_SIDE = HealClass.buildHfpBySide(ThisActionStats)
+			result.FULL_REBUILD = true
 		} else {
 			// Patch over clonedIds — the EXACT set of possibly-mutated entities (Targets+Me pre-cloned
 			// + kill-path side-victims cloned-on-write). Covers cascade/unwind/procs by construction;
@@ -132,8 +139,10 @@ class NodeClass {
 			var bh = BaseHash                    // parent State's BaseHash
 			var ctx = clone(ParentContext, 1)    // copy so we never mutate the parent's context
 			var ctxSides = mapKeys(ctx)          // hoisted: the side set never changes inside the patch loop
+			var hfpMap = clone(ParentHfp, 1)     // Phase 4a: healers fingerprint, patched like the context
+			var mySide = ThisActionStats[Me].SIDE
 			for (var tar: var _c in clonedIds) {
-				if (tar == Me) continue          // Me excluded from both hashes
+				if (tar == Me) continue          // Me excluded from all three hashes
 				var oldStat = State[tar]
 				var newStat = ThisActionStats[tar]
 				bh ^= StateClass.baseContribution(oldStat, tar) ^ StateClass.baseContribution(newStat, tar)
@@ -142,10 +151,22 @@ class NodeClass {
 					var side = newStat.SIDE      // side doesn't change
 					for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx
 				}
+				var deltaHfp = HealClass.healerContributionOf(oldStat, tar, mySide) ^ HealClass.healerContributionOf(newStat, tar, mySide)
+				if (deltaHfp != 0) hfpMap[mySide] = ((mySide in hfpMap) ? hfpMap[mySide] : 0) ^ deltaHfp
 			}
 			result.BASE_HASH = bh
 			result.CONTEXT_BY_SIDE = ctx
+			result.HFP_BY_SIDE = hfpMap
+			result.FULL_REBUILD = false
 		}
+
+		// TEMP 4a.0 self-test (remove once validated): the patched HFP must equal a full rebuild.
+		// Compare VALUES with a 0-default (the builder omits the key when fp == 0, the patch may keep it).
+		var fullHfp = HealClass.buildHfpBySide(ThisActionStats)
+		var msT = ThisActionStats[Me].SIDE
+		var hfpPatched = (msT in result.HFP_BY_SIDE) ? result.HFP_BY_SIDE[msT] : 0
+		var hfpFull = (msT in fullHfp) ? fullHfp[msT] : 0
+		if (hfpPatched != hfpFull) debugC("[HFPTEST] " + hfpPatched + " != " + hfpFull + " item=" + Item, COLOR_RED)
 
 		return result
 	}

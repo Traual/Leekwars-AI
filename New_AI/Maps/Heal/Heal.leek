@@ -35,6 +35,30 @@ class HealClass {
         return addValueToBinHash(OFFSET_BASIS ^ id, (max(0, stat.WISDOM) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | stat.CELL) // clamped: negative shackled stats == 0 at use, and unclamped they OR-absorb the higher fields
     }
 
+    /* GATED composable variant: the entity's contribution to its side's healers fingerprint, 0
+     * unless it qualifies (alive, non-Me, my side — enemy heals not modeled yet — with a heal item).
+     * SINGLE SOURCE for every fold site (getHealMap, getNetDamageMap, buildHfpBySide, and the
+     * incremental Node patch of HFP_BY_SIDE — Phase 4a, same pattern as contextContribution). */
+    static healerContributionOf(stat, id, mySide) {
+        if (id == Me || stat.LIFE <= 0 || stat.SIDE != mySide) return 0
+        if (!hasHealItem(stat)) return 0
+        return healerContribution(stat, id)
+    }
+
+    /* Full rebuild of the per-side healers fingerprint map (only mySide populated today). Used at
+     * the BFS root and as the Node summon/resurrect fallback — the incremental HFP patch must stay
+     * bit-consistent with this. */
+    static buildHfpBySide(State) {
+        var mySide = getSide(Me)
+        var fp = 0
+        for (var e: var stat in State) {
+            fp ^= healerContributionOf(stat, e, mySide)
+        }
+        var _final = [: ]
+        if (fp != 0) _final[mySide] = fp
+        return _final
+    }
+
     /* No-arg entry: scans State to build the healers fingerprint + caster list, then delegates.
      * For callers that don't already walk State (FinalCell, debug). Keep this loop structurally
      * IDENTICAL to the fold in DeltaClass.getNetDamageMap. */
@@ -43,10 +67,11 @@ class HealClass {
         var fp = 0
         var casters = []
         for (var e: var stat in State) {
-            if (e == Me || stat.LIFE <= 0 || stat.SIDE != mySide) continue   // my-side alive non-Me only
-            if (!hasHealItem(stat)) continue
-            fp ^= healerContribution(stat, e)
-            push(casters, e)
+            var c = healerContributionOf(stat, e, mySide)   // single-source gates + formula
+            if (c != 0) {
+                fp ^= c
+                push(casters, e)
+            }
         }
         return getHealMapPrecomputed(State, fp, casters)
     }
