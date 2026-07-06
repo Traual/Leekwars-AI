@@ -31,7 +31,6 @@ class ActionSuite {
 	 */
 	static getBestAction(State) {
 		BenchOps.Start("BFS")
-		INSTR_GBA++   // TEMP instrumentation
 		var MySide = State[Me].SIDE
 		var BaseHash = StateClass.getBaseHash(State)
 		var RootContext = DeltaClass.buildContextBySide(State)   // Phase 2: root context, patched down the tree
@@ -160,7 +159,6 @@ class ActionSuite {
 			var candidate = NodeClass.ActionToNode(act, State, BaseHash, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE)
 			if (candidate == null) continue
 			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, ParentScore, Parent.TERMS, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, MySide)   // Phase 4a: incremental
-			INSTR_EXPAND_SCORES++   // TEMP instrumentation
 			var deltaFromParent = candidateScore - ParentScore
 
 			if (deltaFromParent > BestDeltaFromParent) {
@@ -179,14 +177,12 @@ class ActionSuite {
 	 * The node has PARENT=null (caller sets if needed).
 	 */
 	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTerms) {
-		INSTR_ENUM_CALLS++   // TEMP instrumentation
 		var baseActions = getBaseActions(State, BaseHash)
 		var Entries = []
 		for (var act in baseActions) {
 			var node = NodeClass.ActionToNode(act, State, BaseHash, null, ParentContext, ParentHfp)
 			if (node == null) continue
 			var nodeScore = ScoringClass.getStateScoreFromParent(node, ReferenceScore, ParentTerms, ParentContext, ParentHfp, MySide)   // Phase 4a: incremental
-			INSTR_ENUM_SCORES++   // TEMP instrumentation
 			push(Entries, [act, nodeScore - ReferenceScore, node, nodeScore])
 		}
 		// arraySort RETURNS the sorted array (per LS doc) -- must capture.

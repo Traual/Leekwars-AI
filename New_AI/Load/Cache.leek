@@ -49,16 +49,7 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     // bypass the two freshly-reset caches above entirely (static standoffs: an enemy's big chip
     // coming off cooldown would stay invisible). Reset it with them.
     ENTITY_DANGER_CACHE_FOR_OTHERS = [: ]
-
-    // TEMP instrumentation (BFS scoring split) — remove after measuring.
-    INSTR_GBA = 0 ; INSTR_ENUM_CALLS = 0 ; INSTR_ENUM_SCORES = 0 ; INSTR_EXPAND_SCORES = 0
 }
-
-// TEMP instrumentation globals (BFS scoring split). Remove after measuring.
-global INSTR_GBA = 0
-global INSTR_ENUM_CALLS = 0
-global INSTR_ENUM_SCORES = 0
-global INSTR_EXPAND_SCORES = 0
 
 // STATE
 
