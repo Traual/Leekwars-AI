@@ -8,9 +8,11 @@
  *               enemy) / steep when far (urgency to regroup); plus an anti-AOE cluster penalty
  *               (don't get wiped by a single AOE / a teleporting enemy).
  *   - center  : tiny pull toward the map center.
- *   - COVID block (gated by myCovidValue > 0): within contagion range, REWARD being near enemies
- *               (spread it) and PENALISE being near allies (don't infect them). Dormant until
- *               myCovidValue is wired to the real covid effect.
+ *   - COVID block (gated by myCovidValue > 0): within the REAL contagion range of the chip,
+ *               REWARD being near enemies (spread it) and PENALISE being near allies (don't
+ *               infect them), scaled by the REAL spread value (engine-exact, see myCovidValue).
+ *               The spread fires at the END of my turn (Entity.endTurn) -> FinalCell, which
+ *               consumes this map, is exactly the decision point.
  **/
 
 include("../../includes.leek")
@@ -22,8 +24,13 @@ global GRAV_W_ALLY      = 0.79
 global GRAV_ALLY_POWER  = 3       // convexité cohésion : plus haut = plus plat près / plus pentu loin
 global GRAV_AOE_RADIUS  = 2       // anti-cluster (rayon)
 global GRAV_AOE_PENALTY = 0.3
-global GRAV_COVID_W     = 2.0     // covid : très important mais borné (vs allié 0.79)
-global GRAV_COVID_RANGE = 2       // rayon de contagion
+global GRAV_COVID_W_PER_HP = 0.007 // covid : poids PAR HP de valeur de spread (≈ l'ancien 2.0 binaire pour un covid ~300)
+
+// Constantes du chip COVID, lues une fois depuis ITEMINFO (lazy, dans myCovidValue). Moteur vérifié
+// (Attack.java) : le rayon = value1 de l'effet TYPE_PROPAGATION, stampé sur le poison au cast ;
+// la base = value1 du poison (roll MIN, pessimiste — même convention que la Heal Map).
+global COVID_RANGE = null
+global COVID_BASE  = null
 
 // Map constant (NOT a tunable score)
 global GRAV_MAXDIST     = 34      // distance max sur la carte, pour normaliser
@@ -53,10 +60,10 @@ class GravityClass {
                 if (en[2]) {                                                                  // ALLIÉ
                     g += GRAV_W_ALLY * imp * (1 - pow(d / GRAV_MAXDIST, GRAV_ALLY_POWER))      // cohésion convexe sommée
                     if (d < GRAV_AOE_RADIUS) g -= GRAV_AOE_PENALTY                             // anti-cluster
-                    if (covid > 0 && d <= GRAV_COVID_RANGE) g -= GRAV_COVID_W * imp            // épargner l'allié
+                    if (covid > 0 && d <= COVID_RANGE) g -= GRAV_COVID_W_PER_HP * covid * imp  // épargner l'allié (mes bulbes inclus)
                 } else {                                                                       // ENNEMI
                     g += GRAV_W_ENEMY * imp * (1 - d / GRAV_MAXDIST)                          // approche linéaire sommée
-                    if (covid > 0 && d <= GRAV_COVID_RANGE) g += GRAV_COVID_W * imp            // contaminer l'ennemi
+                    if (covid > 0 && d <= COVID_RANGE) g += GRAV_COVID_W_PER_HP * covid * imp  // contaminer l'ennemi
                 }
             }
             _final[cell] = g
@@ -65,9 +72,29 @@ class GravityClass {
         return _final
     }
 
-    /* Magnitude of my covid effect (contagious poison on Me). 0 = no covid -> the covid block stays
-     * dormant. TODO: read it from my effects once we have the covid effect type/constant. */
+    /* REAL spread value of my covid (0 = not infected -> the covid block stays dormant).
+     * Engine-exact (Entity.endTurn -> Effect.createEffect FROM THE CHIP'S BASE PARAMS, verified):
+     * what a neighbour receives = base · (1 + max(0, casterMagic)/100) · (1 + max(0, casterPower)/100)
+     * · crit, recomputed at EVERY spread with the ORIGINAL caster's CURRENT stats (aoe = 1 in
+     * propagation, the crit flag of my effect is carried). Deliberately NOT my local effect value:
+     * a Liberation that shrinks MY value changes NOTHING to the spreads — and if the effect is
+     * fully removed, getEffects stops returning it -> 0 here (gate closes). */
     static myCovidValue() {
+        if (COVID_RANGE == null) {   // lazy chip constants (once per fight)
+            for (var ceff in ITEMINFO[CHIP_COVID].EFFECTS) {
+                if (ceff[0] == EFFECT_PROPAGATION) COVID_RANGE = ceff[1]
+                if (ceff[0] == EFFECT_POISON) COVID_BASE = ceff[1]   // roll MIN (pessimiste)
+            }
+        }
+        // getEffects layout: [0]=type, [1]=value, [2]=caster, [3]=turns, [4]=critical, [5]=item.
+        for (var eff in getEffects(Me)) {
+            if (eff[5] != CHIP_COVID || eff[0] != EFFECT_POISON) continue
+            var m = getMagic(eff[2])   // caster D'ORIGINE, stats ACTUELLES (mort -> null -> 0)
+            var p = getPower(eff[2])
+            var value = COVID_BASE * (1 + max(0, m == null ? 0 : m) / 100) * (1 + max(0, p == null ? 0 : p) / 100) * (eff[4] ? CRITICAL_FACTOR : 1)
+            debug("[COVID] value=" + value + " range=" + COVID_RANGE + " | raw effect=" + eff)   // TEMP validation (layout getEffects + valeurs) — à retirer après un combat covidé
+            return value
+        }
         return 0
     }
 

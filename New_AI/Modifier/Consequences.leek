@@ -29,8 +29,18 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					targetStats.LIFE -= calculatedValue
-					targetStats.TOTAL_LIFE -= calculatedValue * EROSION_NO_POISON
+					// Léthal (doping suicidaire...) : même cascade que les dégâts — LIFE=0 + déroulé
+					// des buffs du mort + procs on-kill (AddTpEnhancedLightninger=true comme les
+					// autres routes de kill). Avant, LIFE partait négatif SANS cascade : les buffs
+					// castés par le mort restaient appliqués aux survivants. Érosion sur les dégâts
+					// réellement encaissés (cap à la vie restante), comme getEntityDamageConsequences.
+					var appliedDamage = min(calculatedValue, targetStats.LIFE)
+					if (appliedDamage >= targetStats.LIFE && targetStats.LIFE > 0) {
+						getKillConsequences(aoeDistance, 0, Effect, targetStats, CastStats, targetId == Caster, State, true, clonedIds)
+					} else {
+						targetStats.LIFE -= appliedDamage
+					}
+					targetStats.TOTAL_LIFE -= appliedDamage * EROSION_NO_POISON
 					targetStats.POISON += calculatedValue
 					targetStats.POISON_OVER_TIME += calculatedValue * effectDuration
 				}
