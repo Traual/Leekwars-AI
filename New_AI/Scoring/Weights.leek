@@ -26,11 +26,11 @@ global BASE_ALIVE = 1000
 global W_LIFE = 14.0
 
 // Max-life term: W_TOTAL_LIFE · sqrt(TOTAL_LIFE) — the entity's DURABLE capital. The only score
-// channel for erosion/nova (max-life chip is permanent: no heal ever refunds it, and a chipped
-// max makes later one-shots trivial) and for vitality buffs' max-life half. 3× HEAVIER than the
-// life term by design (user call): erosion is strategically dominant over healable damage.
+// channel for erosion/nova (max-life chip is permanent: no heal ever refunds it) and for vitality
+// buffs' max-life half. Tuned DOWN from 3×W_LIFE to 0.5× (user call 2026-07-06: the 3× floor made
+// alive-values too max-life-dominated; revisit after live fights).
 // Sits OUTSIDE SURVIVAL_CACHE (its 64-bit key is full) — added after the cache read, ~10 ops.
-global W_TOTAL_LIFE = 3 * W_LIFE
+global W_TOTAL_LIFE = 0.5 * W_LIFE
 
 // Immediate poison tick: certain damage next turn → subtracted directly from life.
 global COEF_POISON = 0.5
@@ -46,8 +46,9 @@ global DANGER_WEIGHT = 0.7
 global COEF_POT = 0.2
 global BUFFER = 500
 
-// Heal offsets incoming danger before it enters the pressure formula (heal map summed per
-// entity): danger = max(0, DANGER_COEF·danger − HEAL_COEF·heal). Poison/POT/formula untouched.
-// (DANGER_WEIGHT can be bumped a bit since danger drops slightly once heal is subtracted.)
+// Heal cushions incoming danger in the turn-order-sequenced netDamage (DeltaClass): each same-side
+// caster's heal lands at HEAL_COEF of its potential (a heal is less CERTAIN than damage — the
+// healer may be dead/shackled/out of position by then). Lowered 0.8 → 0.6 (user call 2026-07-06:
+// the AI trusted heals too much).
 global DANGER_COEF = 1.0
-global HEAL_COEF = 0.8
+global HEAL_COEF = 0.6
