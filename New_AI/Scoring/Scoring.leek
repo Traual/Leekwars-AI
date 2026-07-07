@@ -165,8 +165,16 @@ class ScoringClass {
      * erosion/nova channel: permanent, heal-proof, so a max-life chip scores on both sides.
      */
     static survivalValue(stat, danger) {
+        // Max-life term memoized on the stat object (TLSQ_MEMO, nulled at the clone sites) —
+        // the SURVIVAL_CACHE key is full, so this term lives outside it; the memo turns the
+        // per-call sqrt (~10 ops) into a field read for every unmutated entity.
+        var tlTerm = stat.TLSQ_MEMO
+        if (tlTerm == null) {
+            tlTerm = W_TOTAL_LIFE * sqrt(max(0, stat.TOTAL_LIFE))
+            stat.TLSQ_MEMO = tlTerm
+        }
         var key = (stat.LIFE << 48) | ((stat.POISON & 0x3FFF) << 34) | ((stat.POISON_OVER_TIME & 0x1FFFF) << 17) | (danger & 0x1FFFF)
-        if (key in SURVIVAL_CACHE) return SURVIVAL_CACHE[key] + W_TOTAL_LIFE * sqrt(max(0, stat.TOTAL_LIFE))
+        if (key in SURVIVAL_CACHE) return SURVIVAL_CACHE[key] + tlTerm
 
         var afterPoison = max(0, stat.LIFE - COEF_POISON * stat.POISON)
         var pressure = (DANGER_WEIGHT * danger + COEF_POT * stat.POISON_OVER_TIME) / (afterPoison + BUFFER)
@@ -174,7 +182,7 @@ class ScoringClass {
         var value = BASE_ALIVE + W_LIFE * sqrt(effLife)
 
         SURVIVAL_CACHE[key] = value
-        return value + W_TOTAL_LIFE * sqrt(max(0, stat.TOTAL_LIFE))
+        return value + tlTerm
     }
 
     /**

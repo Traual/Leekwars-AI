@@ -28,6 +28,8 @@ class BulbState {
 	SPECIAL_WEAPON
 	EFFECTS
 	EFFECTS_ITEM_MAP
+	CAP_MEMO    // derived-field memos, same contract as EntityState (null = compute lazily)
+	TLSQ_MEMO
 	POISON
 	POISON_OVER_TIME
 	JUST_POISON

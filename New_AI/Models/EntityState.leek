@@ -15,6 +15,12 @@ class EntityStateClass extends EntityClass {
 	USES
 	EFFECTS
 	EFFECTS_ITEM_MAP
+	// Derived-field MEMOS (scoring): computed lazily, valid while the stats don't change —
+	// guaranteed by clone-on-write: stats only ever mutate on FRESH clones, and the clone sites
+	// (CloneOnlyTargetsAndMe / ensureCloned / the Node resurrection pre-clone) null these two.
+	// Writing a memo on a SHARED object is safe: sharing implies identical stats -> same value.
+	CAP_MEMO    // ImportanceClass.capability(stat)
+	TLSQ_MEMO   // W_TOTAL_LIFE * sqrt(max(0, TOTAL_LIFE)) (survivalValue's out-of-cache term)
 	POISON
 	POISON_OVER_TIME
 	JUST_POISON

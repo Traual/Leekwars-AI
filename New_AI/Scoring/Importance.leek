@@ -89,9 +89,12 @@ class ImportanceClass {
     /**
      * LIVE additive buff/debuff channel (see header). Quadratic: marginal value ∝ current
      * stat → useless-stat buffs pay ~nothing, main-stat buffs pay ~10, all > epsilon.
+     * MEMOIZED on the stat object (CAP_MEMO): stats only mutate on fresh clones and the clone
+     * sites null the memo — a shared object's memo is valid for every sharer by construction.
      * TODO (v2): per-stat best item combos with cooldowns instead of the blind square.
      */
     static capability(stat) {
+        if (stat.CAP_MEMO != null) return stat.CAP_MEMO
         var s  = max(0, stat.STRENGTH)
         var m  = max(0, stat.MAGIC)
         var w  = max(0, stat.WISDOM)
@@ -100,6 +103,8 @@ class ImportanceClass {
         var r  = max(0, stat.RESISTANCE)
         var tp = max(0, stat.TOTAL_TP)
         var mp = max(0, stat.TOTAL_MP)
-        return CAP_SCALE * (CAP_W_STAT * (s*s + m*m + w*w + sc*sc + a*a + r*r) + CAP_W_TP * tp*tp + CAP_W_MP * mp*mp)
+        var v = CAP_SCALE * (CAP_W_STAT * (s*s + m*m + w*w + sc*sc + a*a + r*r) + CAP_W_TP * tp*tp + CAP_W_MP * mp*mp)
+        stat.CAP_MEMO = v
+        return v
     }
 }

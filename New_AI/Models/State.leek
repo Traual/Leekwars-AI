@@ -129,7 +129,10 @@ class StateClass {
 	static CloneOnlyTargetsAndMe(Targets, EveryStats, clonedIds) {
 		var _final = [: ]
 		for (var tar: var dist in Targets + [Me: 0]) {
-			_final[tar] = clone(EveryStats[tar], 2)
+			var c = clone(EveryStats[tar], 2)
+			c.CAP_MEMO = null   // derived-field memos: clones are the ONLY mutable objects -> dirty them
+			c.TLSQ_MEMO = null  // at the clone chokepoints (never at the effect sites)
+			_final[tar] = c
 			clonedIds[tar] = true
 		}
 		for (var tar: var stats in EveryStats) { //No need to clone them
@@ -145,7 +148,10 @@ class StateClass {
 	 * EXACT set of possibly-mutated entities (Node's incremental hash patch iterates it). */
 	static ensureCloned(EveryStats, id, clonedIds) {
 		if (!(id in clonedIds)) {
-			EveryStats[id] = clone(EveryStats[id], 2)
+			var c = clone(EveryStats[id], 2)
+			c.CAP_MEMO = null   // derived-field memos: dirty on clone (see CloneOnlyTargetsAndMe)
+			c.TLSQ_MEMO = null
+			EveryStats[id] = c
 			clonedIds[id] = true
 		}
 		return EveryStats[id]
