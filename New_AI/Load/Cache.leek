@@ -17,6 +17,8 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
     SURVIVAL_CACHE = [: ]
     HEAL_COVERAGE_CACHE = [: ]
+    HEAL_CELL_ITEM_AOE_CACHE = [: ]
+    HEAL_COMBO_CACHE = [: ]
     HEAL_ENTITY_INVENTORY = [: ]
     IMPORTANCE_BY_ID = [: ]
     NETDAMAGE_CACHE = [: ]
@@ -184,9 +186,23 @@ global SURVIVAL_CACHE = [: ]
 // turn (covers the bulb turns too — shared VM).
 global IMPORTANCE_BY_ID = [: ]
 
-// Heal map: per-caster coverage [cell -> heal] keyed by (id,cell,mp,wis,tp); and the per-caster
-// heal-item list keyed by id. Both reset per turn (cooldowns/positions change).
+// Heal map, three layers mirroring the danger map (the fix for Heal = 31-37% of every turn):
+//  - HEAL_COVERAGE_CACHE: the full per-caster coverage [cell -> heal], keyed (id,cell,mp,wis,tp)
+//    — the fast path, unchanged.
+//  - HEAL_CELL_ITEM_AOE_CACHE: the GEOMETRY layer [cell -> [item -> aoeDist]], keyed
+//    (id<<20)|(cell<<10)|max(0,mp) like danger's MAP_CELL_ITEM_AOE_CACHE — position-only, so a
+//    WIS/TP shackle or buff on a healer no longer rebuilds the expensive geometry (~65% of a
+//    cold coverage build), only the cheap combo layer. (canJump is pinned by id within a turn:
+//    non-Me cooldowns never change in-sim, and the cache resets per turn.)
+//  - HEAL_COMBO_CACHE: the VALUE layer, comboAtCell memoized by CONTENT (fold of the cell's
+//    [item -> aoeDist] entries + wis/tp) like danger's COMBO_FROM_ITEM_AOE_CACHE — a coverage
+//    build has ~350 cells but only ~10 distinct item/dist contents, shared across casters and
+//    rebuilds. (USES need not be in the key: every heal caster has USES = 0 — others reset each
+//    engine turn (P2-18), virtual bulbs start at 0, and Me is excluded from the map.)
+// Plus the per-caster heal-item list keyed by id. All reset per turn (cooldowns/positions).
 global HEAL_COVERAGE_CACHE = [: ]
+global HEAL_CELL_ITEM_AOE_CACHE = [: ]
+global HEAL_COMBO_CACHE = [: ]
 global HEAL_ENTITY_INVENTORY = [: ]
 
 // Delta: per-entity net damage keyed by (statsHash ^ healersFP[side], packed cell/life/totallife).

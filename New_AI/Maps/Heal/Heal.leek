@@ -109,14 +109,26 @@ class HealClass {
     }
 
     /* [cell -> heal] : the instant heal this caster can land on a same-side target per cell.
-     * Cached by (id, cell, mp, wisdom, tp) — constant per turn for a non-Me caster. */
+     * Cached by (id, cell, mp, wisdom, tp) — constant per turn for a non-Me caster.
+     * SPLIT below (mirrors the danger map): the GEOMETRY (which cells each item reaches — NoEnt
+     * walkcells + AoE expansion, ~65% of a cold build) only depends on (id, cell, mp) and is
+     * cached separately, so WIS/TP changes (shackles, buffs) rebuild only the cheap combo layer. */
     static getCasterCoverage(casterStats) {
         var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, (casterStats.CELL << 10) | max(0, casterStats.TOTAL_MP))
         key = addValueToBinHash(key, (max(0, casterStats.WISDOM) << 15) | max(0, casterStats.TOTAL_TP)) // clamped: negative shackled stats == 0 at use
         if (key in HEAL_COVERAGE_CACHE) return HEAL_COVERAGE_CACHE[key]
 
-        var walkCells = WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(casterStats)
-        var mapCellItemAoe = getMapCellItemAoe(casterStats, walkCells)
+        // GEOMETRY layer — position-only key, same pack as danger's MAP_CELL_ITEM_AOE_CACHE.
+        var geomKey = (casterStats.ID << 20) | (casterStats.CELL << 10) | max(0, casterStats.TOTAL_MP)
+        var mapCellItemAoe
+        if (geomKey in HEAL_CELL_ITEM_AOE_CACHE) {
+            mapCellItemAoe = HEAL_CELL_ITEM_AOE_CACHE[geomKey]
+        } else {
+            var walkCells = WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(casterStats)
+            mapCellItemAoe = getMapCellItemAoe(casterStats, walkCells)
+            HEAL_CELL_ITEM_AOE_CACHE[geomKey] = mapCellItemAoe
+        }
+
         var _final = [: ]
         for (var cell: var itemAoeMap in mapCellItemAoe) {
             _final[cell] = comboAtCell(itemAoeMap, casterStats)
@@ -142,8 +154,18 @@ class HealClass {
         return _final
     }
 
-    /* Greedy heal combo on one cell: stack the best heal/TP items within TOTAL_TP + MAX_USES. */
+    /* Greedy heal combo on one cell: stack the best heal/TP items within TOTAL_TP + MAX_USES.
+     * MEMOIZED BY CONTENT (mirrors danger's COMBO_FROM_ITEM_AOE_CACHE): the result is a pure
+     * function of the cell's [item -> aoeDist] entries + the caster's (WIS, TOTAL_TP) — a
+     * coverage build has ~350 cells but only ~10 distinct contents, and the same contents recur
+     * across casters and rebuilds all turn. USES is deliberately NOT in the key: every heal
+     * caster has USES = 0 (see Cache.leek). Reuses DangerClass.getHashFromItemAoeMap (the fold
+     * is order-dependent over map iteration — same-object iteration is stable, two same-content
+     * maps built in different orders only FRAGMENT, never collide). */
     static comboAtCell(itemAoeMap, casterStats) {
+        var comboKey = addValueToBinHash(OFFSET_BASIS ^ DangerClass.getHashFromItemAoeMap(itemAoeMap), (max(0, casterStats.WISDOM) << 15) | max(0, casterStats.TOTAL_TP))
+        if (comboKey in HEAL_COMBO_CACHE) return HEAL_COMBO_CACHE[comboKey]
+
         var items = []
         for (var item: var aoeDist in itemAoeMap) {
             var heal = getItemHeal(item, casterStats, aoeDist)
@@ -151,7 +173,10 @@ class HealClass {
             var cost = ITEMINFO[item].COST
             push(items, [item, heal, cost])
         }
-        if (count(items) == 0) return 0
+        if (count(items) == 0) {
+            HEAL_COMBO_CACHE[comboKey] = 0
+            return 0
+        }
         items = arraySort(items, function(a, b) { return (b[1] / b[2]) - (a[1] / a[2]) })  // heal/TP desc
 
         var remainingTp = casterStats.TOTAL_TP
@@ -168,6 +193,7 @@ class HealClass {
                 uses[item]++
             }
         }
+        HEAL_COMBO_CACHE[comboKey] = total
         return total
     }
 

@@ -45,7 +45,6 @@ class ActionSuite {
 		// === Step 1 : enumerate, clone+apply+score+sort base actions ===
 		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, RootTerms)
 		ScoredCache[BaseHash] = rootEntries
-		debugC("--- Evaluating " + count(rootEntries) + " actions ---", COLOR_BLUE)
 
 		// === Step 2 : no-play floor (hide) = initial best, then recursively unroll each base action ===
 		// The BFS_DELTA_EPSILON margin keeps float residue (e.g. heal on a full-HP target, Δ≈2.9e-11)
@@ -54,11 +53,13 @@ class ActionSuite {
 		noPlay.SCORE = initialScore
 		var best = noPlay
 
+		// (No per-entry debug here: the [Base]/[+depth] lines cost real ops (string concat per node
+		// chain) AND saturated LeekWars' per-fight debug budget — the late-turn bench dumps were
+		// getting cut. The decision trace is the single "Best:" line below + Play's "Using:".)
 		for (var entry in rootEntries) {   // all entries have delta > epsilon (enumerateAndSort invariant)
 			var baseNode = entry[2]
 			baseNode.SCORE = entry[3]   // BASE_HASH / CONTEXT_BY_SIDE already set at node creation (Phase 2)
 			if (baseNode.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = baseNode
-			debug("[Base] " + ITEMINFO[baseNode.ACTION.Item].NAME + " " + baseNode.ACTION.From + "->" + baseNode.ACTION.To + " | Δ=" + entry[1] + " | Score=" + entry[3])
 			best = unroll(baseNode, ScoredCache, MySide, 1, best)
 		}
 		BenchOps.Stop("BFS")
@@ -78,7 +79,6 @@ class ActionSuite {
 		var next = findBestNextNode(node, ScoredCache, MySide)
 		if (next == null) return best
 		if (next.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = next
-		debug("  [+" + depth + "] " + ITEMINFO[next.ACTION.Item].NAME + " " + next.ACTION.From + "->" + next.ACTION.To + " | Δ=" + (next.SCORE - node.SCORE) + " | Score=" + next.SCORE)
 		return unroll(next, ScoredCache, MySide, depth + 1, best)
 	}
 
