@@ -7,7 +7,9 @@
  *               / (afterPoison + BUFFER)
  *   effLife     = afterPoison / (1 + pressure)                       // >0, monotone, threat-scaled (cheap)
  *   value       = BASE_ALIVE + W_LIFE·sqrt(effLife) + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)   // concave × 2
- * score = Σ sign(e) · value(e).  sign = +1 my side, −1 enemy. Dead entities contribute 0.
+ * term(e) = sign · (importance(e)·value(e) + capability(e)) — importance FROZEN per turn (tier
+ * ranking), capability = the small LIVE quadratic buff/debuff channel (see Importance.leek).
+ * score = Σ term(e).  sign = +1 my side, −1 enemy. Dead entities contribute 0.
  * Same treatment for both sides (sign flips it).
  *
  * Properties: value ≥ BASE_ALIVE > 0, dead = 0 → kill always worth ≥ BASE_ALIVE (monotone);
@@ -37,8 +39,9 @@ include("../includes.leek")
 class ScoringClass {
 
     /**
-     * State value : Σ sign · importance(e) · survivalValue(e, netDamage). The per-entity net damage
-     * (danger cushioned by heal, sequenced by turn order) is owned by DeltaClass.
+     * State value : Σ sign · (importance(e)·survivalValue(e, netDamage) + capability(e)). The
+     * per-entity net damage (danger cushioned by heal, sequenced by turn order) is owned by
+     * DeltaClass; importance is frozen per turn, capability is the live buff channel.
      */
     static getStateScore(State, MySide, BaseHash, contextBySide) {
         BenchOps.Start("Scoring")
@@ -47,7 +50,7 @@ class ScoringClass {
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            _score += sign * ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e])
+            _score += sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e]) + ImportanceClass.capability(stat))
         }
         BenchOps.Stop("Scoring")
         return _score
@@ -63,7 +66,7 @@ class ScoringClass {
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            terms[e] = sign * ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e])
+            terms[e] = sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e]) + ImportanceClass.capability(stat))
         }
         BenchOps.Stop("Scoring")
         return terms
@@ -147,7 +150,7 @@ class ScoringClass {
         var newTerm = 0
         if (stat.LIFE > 0) {
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            newTerm = sign * ImportanceClass.get(stat) * survivalValue(stat, DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap))
+            newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)) + ImportanceClass.capability(stat))
         }
         var oldTerm = (e in terms) ? terms[e] : 0
         terms[e] = newTerm

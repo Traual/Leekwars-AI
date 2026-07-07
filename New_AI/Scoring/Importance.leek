@@ -1,40 +1,43 @@
 /**
- * #1 ENTITY IMPORTANCE — a per-entity MULTIPLIER in [0,1] on the survival value.
+ * TWO SEPARATE FUNCTIONS (the buff-farm fix — form and level DECOUPLED):
  *
- *   value(e) = importance(e) · (BASE_ALIVE + W_LIFE·sqrt(effLife))     (+ #2 efficacy, later)
+ *   term(e) = sign · ( importance(e) · survival(e)  +  capability(e) )
  *
- * GOAL: rank entities so the AI protects / focuses the ones that matter and does NOT
- * over-invest on weak ones (a summon, a low leek). Read from the raw STATS (level is
- * unreliable via components). TOTAL_TP / TOTAL_MP count too (small numbers but impactful;
- * TP ≫ MP, MP off-meta). A summon needs no special flag — its weak stats put it low on
- * their own (a bulb lands ≈ 1/3 of a real leek here).
+ * #1 IMPORTANCE — the TIER multiplier in [0,1], FROZEN AT TURN START (memo by id, first
+ *    computed at the BFS root on the real stats; reset per turn in ReloadCacheNewTurn).
+ *    Its only job: rank WHO matters (focus/protect — a bulb ≈ 1/3 of a real leek). Frozen ⇒
+ *    in-turn buffs move it by exactly ZERO — the old live version paid ~90 score per self-buff
+ *    (importance × ~2000 survival) and the AI spent entire endgames buff-farming instead of
+ *    attacking. Stat changes pay through capability + the REAL channels (danger context,
+ *    damage formulas, heal map).
  *
- * raw — weighted sum with a per-stat SLIGHT CONVEXITY  W[S]·stat[S]·(1 + IMP_CONVEX·stat[S]):
- *   (a) a high single stat is superlinear (700 STR partially bypasses absolute shields vs
- *   200), and (b) concentration > spread (x(1+kx) is superadditive: 800 > 400+400).
+ * #2 CAPABILITY — the additive, LIVE, deliberately SMALL buff/debuff channel:
+ *      capability = CAP_SCALE · Σ CAP_W[s] · max(0, stat_s)²
+ *    QUADRATIC on purpose: the marginal value of +1 stat is ∝ the CURRENT stat — buffing a
+ *    stat the build actually uses (STR 600→750 ≈ +10) pays, buffing a useless stat
+ *    (MAG 0→150 ≈ +1) pays almost nothing but stays > epsilon (never hard-pruned, still
+ *    chainable). Because the channel is ADDITIVE with its own tiny CAP_SCALE, the convex
+ *    shape can't inflate deltas the way it did inside the multiplicative importance.
+ *    max(0,·): a shackle pushing a stat negative must not RAISE capability via the square.
+ *    Debuffs pay symmetrically (shackle STR 700→400 on an enemy ≈ −16 for it).
+ *    Killing an entity frees its capability too (~30-60) — the buffed one is worth slightly
+ *    more dead, coherent and negligible vs BASE_ALIVE.
  *
- * SHAPE — LINEAR then clamped:  importance = min(1, raw / IMP_SCALE).  Kept simple on
- * purpose: linear ~doubles the weak/strong separation vs the old concave saturation
- * (bulb 1/3 of a top build vs 1/1.7). Note it can't push the bulb below ~1/3 because the
- * TP/MP "floor" (~1.15 raw, near-constant for everyone) dominates a bulb's raw; if more
- * separation is needed, raise IMP_CONVEX, lower the TP weight, or go to a power (raw^1.5).
+ * TODO (capability v2, user request): replace the raw square with a per-stat evaluation of
+ * the entity's best ITEM COMBOS with COOLDOWNS — the value of a stat = what the entity's
+ * items can actually DO with it this turn / the coming turns (cooldown-aware), instead of
+ * a blind quadratic proxy.
  *
- * DELIBERATELY COARSE: a single buff (+50) barely moves importance, so it RANKS entities
- * WITHOUT meaningfully scoring buffs — buffs are scored by #2 (item efficacy, RES/SCI/AGI)
- * and the payoff action via Consequences (STR/MAG/WIS, in the danger/heal maps).
- *
- * SYMMETRIC: applied to every alive entity (sign-flipped in getStateScore) ⇒ nerfing an
- * enemy's STR lowers its importance → a small positive delta even out of danger range.
- *
- * LIFE is NOT included (already in the survival term). Cheap (~35 ops/entity) → no cache.
+ * LIFE is in neither function (survival term owns it). importance ≈ 5 ops (memo hit),
+ * capability ≈ 30 ops.
  **/
 
 include("../includes.leek")
 
 // ============================================================================
-// TUNE HERE.   raw = Σ W[S]·stat[S]·(1 + IMP_CONVEX·stat[S]) ;  importance = min(1, raw/IMP_SCALE)
+// TUNE HERE — #1 IMPORTANCE.   raw = Σ W[S]·stat[S]·(1 + IMP_CONVEX·stat[S]) ;
+// importance = min(1, raw/IMP_SCALE), FROZEN per turn.
 //   - SCIENCE highest (team value); other combat stats equal; TP ≫ MP.
-//   - IMP_CONVEX: 0 = linear stats, higher = more reward for high/concentrated stats.
 //   - IMP_SCALE: raw value that maps to importance 1. Raise to make everyone lower.
 // ============================================================================
 global IMP_W_STRENGTH   = 0.002
@@ -48,13 +51,28 @@ global IMP_W_TOTAL_MP   = 0.05
 global IMP_CONVEX       = 0.0003
 global IMP_SCALE        = 9.0
 
+// ============================================================================
+// TUNE HERE — #2 CAPABILITY.   CAP_SCALE · Σ CAP_W·max(0,stat)²  (additive, live, small)
+// Calibrated so a main-stat buff ≈ +10, adrenaline (+4 TP at ~28) ≈ +8, +2 MP ≈ +3:
+// TP/MP are small numbers, squared even smaller → their weights look big, that's expected.
+// CAP_SCALE is the master dial: the whole buff economy scales with it.
+// ============================================================================
+global CAP_W_STAT  = 1.0
+global CAP_W_TP    = 650
+global CAP_W_MP    = 1800
+global CAP_SCALE   = 0.00005
+
 class ImportanceClass {
 
     /**
-     * Importance multiplier of one entity, in [0,1]. Low for weak entities (a bulb ≈ 1/3
-     * of a real leek), 1 for a maxed build.
+     * Importance multiplier of one entity, in [0,1] — FROZEN at its first computation of
+     * the turn (the BFS root scores every real entity from the pristine State before any
+     * branch; a virtual bulb freezes at its constructor stats). Low for weak entities
+     * (a bulb ≈ 1/3 of a real leek), 1 for a maxed build.
      */
     static get(stat) {
+        var id = stat.ID
+        if (id in IMPORTANCE_BY_ID) return IMPORTANCE_BY_ID[id]
         var raw = IMP_W_STRENGTH   * stat.STRENGTH   * (1 + IMP_CONVEX * stat.STRENGTH)
                 + IMP_W_MAGIC      * stat.MAGIC      * (1 + IMP_CONVEX * stat.MAGIC)
                 + IMP_W_WISDOM     * stat.WISDOM     * (1 + IMP_CONVEX * stat.WISDOM)
@@ -63,6 +81,25 @@ class ImportanceClass {
                 + IMP_W_RESISTANCE * stat.RESISTANCE * (1 + IMP_CONVEX * stat.RESISTANCE)
                 + IMP_W_TOTAL_TP   * stat.TOTAL_TP   * (1 + IMP_CONVEX * stat.TOTAL_TP)
                 + IMP_W_TOTAL_MP   * stat.TOTAL_MP   * (1 + IMP_CONVEX * stat.TOTAL_MP)
-        return min(1, raw / IMP_SCALE)
+        var imp = min(1, raw / IMP_SCALE)
+        IMPORTANCE_BY_ID[id] = imp
+        return imp
+    }
+
+    /**
+     * LIVE additive buff/debuff channel (see header). Quadratic: marginal value ∝ current
+     * stat → useless-stat buffs pay ~nothing, main-stat buffs pay ~10, all > epsilon.
+     * TODO (v2): per-stat best item combos with cooldowns instead of the blind square.
+     */
+    static capability(stat) {
+        var s  = max(0, stat.STRENGTH)
+        var m  = max(0, stat.MAGIC)
+        var w  = max(0, stat.WISDOM)
+        var sc = max(0, stat.SCIENCE)
+        var a  = max(0, stat.AGILITY)
+        var r  = max(0, stat.RESISTANCE)
+        var tp = max(0, stat.TOTAL_TP)
+        var mp = max(0, stat.TOTAL_MP)
+        return CAP_SCALE * (CAP_W_STAT * (s*s + m*m + w*w + sc*sc + a*a + r*r) + CAP_W_TP * tp*tp + CAP_W_MP * mp*mp)
     }
 }

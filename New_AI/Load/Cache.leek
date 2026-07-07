@@ -18,6 +18,7 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     SURVIVAL_CACHE = [: ]
     HEAL_COVERAGE_CACHE = [: ]
     HEAL_ENTITY_INVENTORY = [: ]
+    IMPORTANCE_BY_ID = [: ]
     NETDAMAGE_CACHE = [: ]
     HEAL_MAP_CACHE = [: ]
     ENTITY_ACTIONS_CACHE = [: ]
@@ -176,6 +177,12 @@ global AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
 
 // Scoring: survival value keyed by round(LIFE, POISON, POISON_OVER_TIME, danger). Reset per turn.
 global SURVIVAL_CACHE = [: ]
+
+// Importance FROZEN per turn: [id -> importance], first computed at the BFS ROOT (real turn-start
+// stats) and served frozen down the whole tree — in-turn stat changes pay through the CAPABILITY
+// channel + the real maps (danger/heal), never through importance (the buff-farm fix). Reset per
+// turn (covers the bulb turns too — shared VM).
+global IMPORTANCE_BY_ID = [: ]
 
 // Heal map: per-caster coverage [cell -> heal] keyed by (id,cell,mp,wis,tp); and the per-caster
 // heal-item list keyed by id. Both reset per turn (cooldowns/positions change).
