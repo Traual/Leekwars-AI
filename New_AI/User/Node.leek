@@ -56,10 +56,7 @@ class NodeClass {
 		if (Item == CHIP_RESURRECTION) {
 			for (var e: var stat in State) {
 				if (stat.LIFE <= 0 && stat.SIDE == State[Me].SIDE && !(e in Targets)) {
-					var c = clone(stat, 2)
-					c.CAP_MEMO = null   // derived-field memos: dirty on clone (Update halves TOTAL_LIFE)
-					c.TLSQ_MEMO = null
-					ThisActionStats[e] = c
+					ThisActionStats[e] = StateClass.cloneEntityForSim(stat, false)   // Update only writes scalars (LIFE/TOTAL_LIFE/CELL/TURN_ORDER)
 					clonedIds[e] = true
 				}
 			}

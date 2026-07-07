@@ -126,13 +126,28 @@ class StateClass {
 		return _final
 	}
 
+	/* THE simulation clone — single source. Containers are SHARED by default: during the whole
+	 * sim NOBODY writes INVENTORY / EFFECTS / SUMMONS / EFFECTS_ITEM_MAP (read-only data — the
+	 * heal/danger combo machineries clone(USES) themselves before mutating), and COOLDOWNS /
+	 * USES are written for ME ONLY (the cast bookkeeping in ActionToNodeInTree) — write census
+	 * grep-verified. If a future effect ever mutates a TARGET's containers (e.g. a real
+	 * cooldown-setting effect), deep-clone them HERE (single chokepoint) — never patch it at
+	 * the effect site. Derived-field memos (CAP_MEMO/TLSQ_MEMO) are dirtied here too. */
+	static cloneEntityForSim(stat, isMe) {
+		var c = clone(stat, 1)                    // scalars copied, containers shared
+		if (isMe) {
+			c.COOLDOWNS = clone(stat.COOLDOWNS)   // the only two containers the sim writes — Me only
+			c.USES = clone(stat.USES)
+		}
+		c.CAP_MEMO = null
+		c.TLSQ_MEMO = null
+		return c
+	}
+
 	static CloneOnlyTargetsAndMe(Targets, EveryStats, clonedIds) {
 		var _final = [: ]
 		for (var tar: var dist in Targets + [Me: 0]) {
-			var c = clone(EveryStats[tar], 2)
-			c.CAP_MEMO = null   // derived-field memos: clones are the ONLY mutable objects -> dirty them
-			c.TLSQ_MEMO = null  // at the clone chokepoints (never at the effect sites)
-			_final[tar] = c
+			_final[tar] = cloneEntityForSim(EveryStats[tar], tar == Me)
 			clonedIds[tar] = true
 		}
 		for (var tar: var stats in EveryStats) { //No need to clone them
@@ -148,10 +163,7 @@ class StateClass {
 	 * EXACT set of possibly-mutated entities (Node's incremental hash patch iterates it). */
 	static ensureCloned(EveryStats, id, clonedIds) {
 		if (!(id in clonedIds)) {
-			var c = clone(EveryStats[id], 2)
-			c.CAP_MEMO = null   // derived-field memos: dirty on clone (see CloneOnlyTargetsAndMe)
-			c.TLSQ_MEMO = null
-			EveryStats[id] = c
+			EveryStats[id] = cloneEntityForSim(EveryStats[id], id == Me)
 			clonedIds[id] = true
 		}
 		return EveryStats[id]
