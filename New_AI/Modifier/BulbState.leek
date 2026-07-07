@@ -70,7 +70,7 @@ class BulbState {
 	CELL
 	STATIC
 
-	constructor(id, SummonerLevelTimes, Chip, To, Summoner, SummonerStats) {
+	constructor(id, SummonerLevelTimes, Chip, To, Summoner, SummonerStats, NPriorVirtuals) {
 		// Charger les stats dynamiques via l'API
 		var stats = getBulbStats(Chip)
 
@@ -97,12 +97,14 @@ class BulbState {
 		this.POISON_OVER_TIME = 0
 		this.JUST_POISON = 0
 		this.JUST_POISON_OVER_TIME = 0
-		// +0.5 (fractionnaire) : le moteur INSERE le summon juste apres son invocateur (Order.addSummon
-		// decale tout le monde derriere). L'ancien +1 ENTIER dupliquait l'ordre d'une entite existante
-		// -> tri a egalite departage par l'ordre d'iteration de map (instable) -> sequencage netDamage
-		// aleatoire autour d'un summon. +0.5 ne collisionne jamais avec les ordres entiers reels et ne
-		// demande de decaler personne, tout en restant fidele au moteur ("joue juste apres l'invocateur").
-		this.TURN_ORDER = getEntityTurnOrder(Summoner) + 0.5
+		// Fractionnaire : le moteur INSERE le summon juste apres son invocateur (Order.addSummon,
+		// indexOf(owner)+1) — donc le summon LE PLUS RECENT joue EN PREMIER parmi ceux du meme
+		// invocateur (chaque insertion pousse les precedents d'un cran). 0.5/(1+n) reproduit ca
+		// exactement : 1er bulbe +0.5, 2e +0.25, 3e +0.166... (le plus recent = le plus petit offset)
+		// sans jamais collisionner avec les ordres entiers reels ni les slots x.75 des ressuscites.
+		// TURN_ORDER lu depuis SummonerStats (l'etat de BRANCHE) et non le builtin live : moins cher,
+		// et coherent si l'invocateur porte un ordre fractionnaire de branche.
+		this.TURN_ORDER = SummonerStats.TURN_ORDER + 0.5 / (1 + NPriorVirtuals)
 
 		// === Leek Stats (interpolation min + (max - min) * SummonerLevelTimes) ===
 		this.LIFE = stats[STAT_LIFE][0] + (stats[STAT_LIFE][1] - stats[STAT_LIFE][0]) * SummonerLevelTimes

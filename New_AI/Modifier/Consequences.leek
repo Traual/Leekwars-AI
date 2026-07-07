@@ -398,7 +398,12 @@ class ConsequencesClass {
 					// Fixed id per bulb TYPE this turn (chips have cooldowns -> a type can't be summoned
 					// twice in a branch) -> same id <=> same type, order-independent across branches.
 					var Id = SUMMON_ID_BASE + BulbState.getTypeOffset(Item)
-					var EntityStats = new BulbState(Id, SUMMONER_LEVEL_TIMES, Item, To, Caster, CastStats)
+					// Engine-exact tie-break (Order.addSummon inserts at indexOf(owner)+1): the MOST
+					// RECENT summon plays FIRST among the owner's summons. Count this branch's earlier
+					// virtual bulbs of this summoner (dead included: deterministic offsets).
+					var nPriorVirtuals = 0
+					for (var vid: var vstat in State) if (vid > SUMMON_ID_BASE && vstat.SUMMONER == Caster) nPriorVirtuals++
+					var EntityStats = new BulbState(Id, SUMMONER_LEVEL_TIMES, Item, To, Caster, CastStats, nPriorVirtuals)
 					State[Id] = EntityStats
 					break
 				case EFFECT_RESURRECT:
