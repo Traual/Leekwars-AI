@@ -24,6 +24,11 @@
 
 include("../includes.leek")
 
+// Compteur de steps d'expansion du getBestAction courant (les [+N] d'avant, en une ligne).
+// En greedy récursif, leafs == bases (une chaîne par action de base) -> le signal de forme
+// d'arbre restant = le nombre total de steps déroulés.
+global BFS_CHAIN_STEPS = 0
+
 class ActionSuite {
 
 	/**
@@ -45,6 +50,8 @@ class ActionSuite {
 		// === Step 1 : enumerate, clone+apply+score+sort base actions ===
 		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, RootTerms)
 		ScoredCache[BaseHash] = rootEntries
+		BFS_CHAIN_STEPS = 0
+		debugC("--- " + count(rootEntries) + " base actions ---", COLOR_BLUE)
 
 		// === Step 2 : no-play floor (hide) = initial best, then recursively unroll each base action ===
 		// The BFS_DELTA_EPSILON margin keeps float residue (e.g. heal on a full-HP target, Δ≈2.9e-11)
@@ -67,7 +74,7 @@ class ActionSuite {
 		if (best.ACTION == null) return null
 		var ancestor = best
 		while (ancestor.PARENT != null) ancestor = ancestor.PARENT
-		debug("Best: " + ITEMINFO[ancestor.ACTION.Item].NAME + " | From: " + ancestor.ACTION.From + " | To: " + ancestor.ACTION.To + " | Delta: " + (best.SCORE - initialScore))
+		debug("Best: " + ITEMINFO[ancestor.ACTION.Item].NAME + " | From: " + ancestor.ACTION.From + " | To: " + ancestor.ACTION.To + " | Delta: " + (best.SCORE - initialScore) + " | " + count(rootEntries) + " bases, " + BFS_CHAIN_STEPS + " steps")
 		return ancestor.ACTION
 	}
 
@@ -79,6 +86,7 @@ class ActionSuite {
 		var next = findBestNextNode(node, ScoredCache, MySide)
 		if (next == null) return best
 		if (next.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = next
+		BFS_CHAIN_STEPS++
 		return unroll(next, ScoredCache, MySide, depth + 1, best)
 	}
 
