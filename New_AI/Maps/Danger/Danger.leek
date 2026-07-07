@@ -98,39 +98,46 @@ class DangerClass {
 		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), Cell)
 		if (ThisHash in CELL_DANGER_GET_CACHE) return CELL_DANGER_GET_CACHE[ThisHash]
 		var _final = [: ] // [casterId -> damage] : per-caster instead of a summed scalar (for net-HP turn ordering)
-		// DELIBERATE sharing across the caster loop (turn-ordered): one caster's vulné mutations
-		// amplify the NEXT casters' combos = real vulné CHAINS (user-validated design). Do NOT
-		// lazy-clone per caster — that would break the stacking.
-		var TargetStatsCloned = clone(TargetStats, 3)
+		// CROSS-CASTER VULNÉ CHAIN (real since this commit — before, the sharing existed but nobody
+		// ever WROTE the shared object: parameter rebinds are local in LeekScript and every mutation
+		// path clones first, so each caster saw the ORIGINAL shields). Casters run in TURN ORDER;
+		// each receives the target as the PREVIOUS ones left it (vulnés/debuffs applied) — A's vulné
+		// amplifies B and C. chainTarget is NEVER mutated in place (the combo machinery clones
+		// before writing) -> no defensive clone needed (the old clone(TargetStats, 3) protected an
+		// object nobody wrote). The endStates come from the combo cache — READ-ONLY by contract.
+		var chainTarget = TargetStats
 		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
 			var CasterStats = State[Caster]
 			var MapCellItemAoe = getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster])
 			var MapThisCellItemAoe = Cell in MapCellItemAoe ? MapCellItemAoe[Cell] : [: ]
-			var thisCombo = getComboFromItemAoe(MapThisCellItemAoe, CasterStats, TargetStatsCloned)
-			if (thisCombo > 0) _final[Caster] = thisCombo
+			var combo = getComboFromItemAoe(MapThisCellItemAoe, CasterStats, chainTarget)
+			if (combo[0] > 0) {
+				_final[Caster] = combo[0]
+				chainTarget = combo[1]           // le caster suivant voit la cible post-vulné/debuff
+			}
 		}
 		CELL_DANGER_GET_CACHE[ThisHash] = _final
 		return _final
 	}
 
-	/* Loads Combo From an ItemAoe Map, MyStats and CasterStats
+	/* Loads Combo From an ItemAoe Map, MyStats and CasterStats.
 	 *
 	 * @param ItemAoeMap Map <Item : MinAoeDist>
 	 * @param CasterStats Class Stats of Caster
-	 * @param TargetStats Class Stats of Target /!\ it will be changed so clone it /!\
+	 * @param TargetStats Class Stats of Target — NEVER mutated (every mutation path clones first)
 	 *
-	 * @return Int : Damages output of combo
+	 * @return the cache ENTRY [comboDamage, targetEndState] — READ-ONLY for callers (shared with
+	 *         the cache). endState = the target AFTER this caster's best combo (vulné/debuff shield
+	 *         mutations included; == the INPUT TargetStats when no vulné improves the combo). It
+	 *         feeds the NEXT caster of DangerClass.get's turn-ordered loop (cross-caster chains).
 	 */
 
 	static getComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats) {
-		if (mapIsEmpty(ItemAoeMap)) return 0 //Can't use item on me so can't do damages
+		if (mapIsEmpty(ItemAoeMap)) return [0, TargetStats] //Can't use item on me so can't do damages -> target unchanged
 		var HashedItemAoeMap = getHashFromItemAoeMap(ItemAoeMap)
 		var HashWithShield = getStatsHashForDangerOneCaster(TargetStats, CasterStats, HashedItemAoeMap)
-		if (HashWithShield in COMBO_FROM_ITEM_AOE_CACHE) {
-			TargetStats = COMBO_FROM_ITEM_AOE_CACHE[HashWithShield][1]
-			return COMBO_FROM_ITEM_AOE_CACHE[HashWithShield][0]
-		}
+		if (HashWithShield in COMBO_FROM_ITEM_AOE_CACHE) return COMBO_FROM_ITEM_AOE_CACHE[HashWithShield]
 		// Use TOTAL_TP : danger represents max single-turn damage potential next turn,
 		// not current-turn remaining TP. Stable across BFS steps (no chip-cast invalidation).
 		var BaseTp = CasterStats.TOTAL_TP
@@ -144,8 +151,9 @@ class DangerClass {
 			BaseTp = ComboWithVulne.EndTp
 			ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
 		}
-		COMBO_FROM_ITEM_AOE_CACHE[HashWithShield] = [_final, TargetStats]
-		return _final
+		var entry = [_final, TargetStats]   // TargetStats = le local rebindé = l'état post-combo
+		COMBO_FROM_ITEM_AOE_CACHE[HashWithShield] = entry
+		return entry
 	}
 
 	/* get Me An Hash For ItemAoe
