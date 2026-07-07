@@ -154,8 +154,9 @@ class ActionSuite {
 			}
 			if (cost > MyTp) continue
 
-			var candidate = NodeClass.ActionToNode(act, State, BaseHash, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE)
-			if (candidate == null) continue
+			// Direct ActionToNodeInTree call: this loop ALREADY computed MyWalkCells (above), Info
+			// and the exact same cost formula for its own filtering — no re-derivation per node.
+			var candidate = NodeClass.ActionToNodeInTree(act, State, from, MyWalkCells, cost, Info, item, act.To, BaseHash, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE)
 			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, ParentScore, Parent.TERMS, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, MySide)   // Phase 4a: incremental
 			var deltaFromParent = candidateScore - ParentScore
 
@@ -180,11 +181,13 @@ class ActionSuite {
 	 * for the whole search. The downstream epsilon re-checks were removed as dead code.
 	 */
 	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTerms) {
-		var baseActions = getBaseActions(State, BaseHash)
+		var basePairs = getBaseActions(State, BaseHash)   // [ [act, cost], ... ] — the filter's cost, REUSED (it was thrown away before)
+		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)   // once per enumeration (was once per NODE via the deleted ActionToNode wrapper)
 		var Entries = []
-		for (var act in baseActions) {
-			var node = NodeClass.ActionToNode(act, State, BaseHash, null, ParentContext, ParentHfp)
-			if (node == null) continue
+		for (var pair in basePairs) {
+			var act = pair[0]
+			var Item = act.Item
+			var node = NodeClass.ActionToNodeInTree(act, State, act.From, MyWalkCells, pair[1], ITEMINFO[Item], Item, act.To, BaseHash, null, ParentContext, ParentHfp)
 			var nodeScore = ScoringClass.getStateScoreFromParent(node, ReferenceScore, ParentTerms, ParentContext, ParentHfp, MySide)   // Phase 4a: incremental
 			var delta = nodeScore - ReferenceScore
 			if (delta <= BFS_DELTA_EPSILON) continue
@@ -198,7 +201,9 @@ class ActionSuite {
 	}
 
 	/**
-	 * Lists every playable action from the current state (no scoring here).
+	 * Lists every playable action from the current state (no scoring here) as [act, cost] PAIRS —
+	 * the TP cost is needed by the filter anyway and enumerateAndSort feeds it straight to
+	 * ActionToNodeInTree instead of recomputing it per node.
 	 * Filtering: cooldown, MAX_USES, TP cost (incl. weapon-swap and move-item cost).
 	 */
 	static getBaseActions(State, BaseHash) {
@@ -222,7 +227,7 @@ class ActionSuite {
 				else continue
 			}
 
-			if (Cost <= MyStats.TP) push(_final, Action)
+			if (Cost <= MyStats.TP) push(_final, [Action, Cost])
 		}
 		return _final
 	}

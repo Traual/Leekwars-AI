@@ -20,63 +20,30 @@ class NodeClass {
 		this.PARENT = Parent
 	}
 
-	/* Simplified entry (fewer params) of ActionToNodeInTree: derives walkcells + cost, then delegates.
-	 * Used by enumerateAndSort (base nodes) and findBestNextNode (expansion candidates).
-	 *
-	 * @param Action Action to turn into a node
-	 * @param State Map <Id : Class Stats of Id> (the PARENT state)
-	 * @param BaseHash BaseHash of the parent State
-	 * @param Parent Parent node (null for base nodes)
-	 * @param ParentContext Parent's CONTEXT_BY_SIDE (patched incrementally onto the child)
-	 *
-	 * @return New Node Class
-	 */
-
-	static ActionToNode(Action, State, BaseHash, Parent, ParentContext, ParentHfp) {
-		if (Action == null) return;
-		BenchOps.Start("Node")
-		var MyState = State[Me]
-		var MyCell = MyState.CELL
-		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
-		var Item = Action.Item
-		var From = Action.From
-		var To = Action.To
-		var Info = ITEMINFO[Item]
-		var Cost = Info.IS_WEAPON && MyState.WEAPON != Item ?
-			Info.COST + 1 :
-			Info.COST
-		if (!(From in MyWalkCells.WALK)) { //I need to add the item to move to the cost
-			if (From in MyWalkCells.JUMP) {
-				Cost += ITEMINFO[CHIP_JUMP].COST
-			} else if (From in MyWalkCells.TELEPORTATION) {
-				Cost += ITEMINFO[CHIP_TELEPORTATION].COST
-			} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
-				Cost += ITEMINFO[CHIP_TELEPORTATION].COST + ITEMINFO[CHIP_JUMP].COST
-			}
-		}
-		var result = ActionToNodeInTree(Action, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, ParentContext, ParentHfp)
-		BenchOps.Stop("Node")
-		return result
-	}
-
-	/* It is a complicated version with more parameters of ActionToNode to avoid reloading informations that i already have. It is used in Action Suite in using the best play to expand the existing base nodes
+	/* THE node factory: applies the action's consequences on a clone-on-write state and patches
+	 * the incremental hashes. Its two callers (enumerateAndSort and findBestNextNode) supply the
+	 * walkcells and the TP cost they ALREADY computed for their own filtering — the old
+	 * ActionToNode wrapper re-derived both per node (getAllLayers + the cost formula, ~150 ops
+	 * × ~2300 nodes/turn) and was deleted.
 	 *
 	 * @param Act Action that i want to transform into a node
-	 * @param State Map <Id : Class Stats of Id>
-	 * @param From : Cell From (Act.FROM)
-	 * @param MyWalkCells Class WalkCells of my entity
-	 * @param Cost Total cost of the action including weapon changes, jump etc
+	 * @param State Map <Id : Class Stats of Id> (the PARENT state)
+	 * @param From : Cell From (Act.From)
+	 * @param MyWalkCells Class WalkCells of my entity (caller already holds it)
+	 * @param Cost Total TP cost incl. weapon swap + jump/teleport move items (caller already computed it)
 	 * @param Info Class ItemInfo of (Item)
-	 * @param Item : Item to use (Act.ITEM)
-	 * @param To : Cell To (Act.TO)
+	 * @param Item : Item to use (Act.Item)
+	 * @param To : Cell To (Act.To)
 	 * @param BaseHash BaseHash of the parent State
 	 * @param Parent Parent node (null for base nodes)
 	 * @param ParentContext Parent's CONTEXT_BY_SIDE (cloned + patched incrementally onto the child)
+	 * @param ParentHfp Parent's HFP_BY_SIDE (idem)
 	 *
 	 * @return New Node Class
 	 */
 
 	static ActionToNodeInTree(Act, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, ParentContext, ParentHfp) {
+		BenchOps.Start("Node")
 		var Targets = ConsequencesClass.ConsequenceTargets(Item, From, To, State, Me, BaseHash)
 		// clonedIds = the EXACT set of possibly-mutated entities: Targets+Me pre-cloned here, plus every
 		// kill-path side-victim (summon cascade, buff unwind, weapon procs) cloned-on-write by
@@ -171,6 +138,7 @@ class NodeClass {
 				result.BASE_HASH = StateClass.getBaseHash(ThisActionStats)
 				result.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(ThisActionStats)
 				result.HFP_BY_SIDE = HealClass.buildHfpBySide(ThisActionStats)
+				BenchOps.Stop("Node")
 				return result
 			}
 			var newStat = ThisActionStats[newId]
@@ -191,6 +159,7 @@ class NodeClass {
 		// (Phase 4b validated in a live fight: summon AND resurrect nodes, patched hashes
 		// bit-identical to independent full rebuilds — the TEMP SUMMONTEST was removed.)
 
+		BenchOps.Stop("Node")
 		return result
 	}
 }
