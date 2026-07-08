@@ -21,6 +21,7 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     HEAL_COMBO_CACHE = [: ]
     HEAL_ENTITY_INVENTORY = [: ]
     IMPORTANCE_BY_ID = [: ]
+    CAPABILITY_T_BY_ID = [: ]
     NETDAMAGE_CACHE = [: ]
     HEAL_MAP_CACHE = [: ]
     ENTITY_ACTIONS_CACHE = [: ]
@@ -185,6 +186,15 @@ global SURVIVAL_CACHE = [: ]
 // channel + the real maps (danger/heal), never through importance (the buff-farm fix). Reset per
 // turn (covers the bulb turns too — shared VM).
 global IMPORTANCE_BY_ID = [: ]
+
+// Capability v2 throughput vectors: KEY = the ENTITY ID, reset per turn. [id -> [tStr, tMag,
+// tWis, tSci, tAgi, tRes]] = HP of item-output per point of each stat, from the turn-start best
+// combo (greedy HP-value/TP over items with turn-start cooldown <= 1, within TOTAL_TP). The id
+// alone is a SOUND key because every input is turn-frozen ON PURPOSE: INVENTORY is fight-constant
+// per id, non-Me COOLDOWNS never mutate in-sim (write census), and Me's T deliberately measures
+// TURN-START potential (same stability convention as the danger map's TOTAL_TP) — in-branch
+// TP/stat changes pay through the LIVE factors of capability(), not through T.
+global CAPABILITY_T_BY_ID = [: ]
 
 // Heal map, three layers mirroring the danger map (the fix for Heal = 31-37% of every turn):
 //  - HEAL_COVERAGE_CACHE: the full per-caster coverage [cell -> heal], keyed (id,cell,mp,wis,tp)
