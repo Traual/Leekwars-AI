@@ -41,8 +41,8 @@ class CellClass {
 		this.CIRCLE_ONE = getDisc(cell, 0, 1)
 		this.CIRCLE_TWO = getDisc(cell, 0, 2)
 		this.CIRCLE_THREE = getDisc(cell, 0, 3)
-		this.SQUARE_ONE = getSquareOne(cell)
-		this.SQUARE_TWO = getSquareTwo(cell)
+		this.SQUARE_ONE = getSquare(cell, 1)
+		this.SQUARE_TWO = getSquare(cell, 2)
 		this.PLUS_TWO = getLine(cell, 0, 2)
 		this.PLUS_THREE = getLine(cell, 0, 3)
 		this.X_ONE = getDiagonal(cell, 0, 2)
@@ -62,7 +62,7 @@ class CellClass {
 	}
 
 	static getDisc(cell, minradius, radius) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE * MAX_POSSIBLE_RANGE) + (minradius * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 14) | (minradius << 7) | radius
 		if (TmpHash in DISK_CACHE) return DISK_CACHE[TmpHash]
 
 		var _final = [: ]
@@ -76,7 +76,7 @@ class CellClass {
 	}
 
 	static getCircle(cell, radius) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 7) | radius
 		if (TmpHash in CIRCLE_CACHE) return CIRCLE_CACHE[TmpHash]
 		var _final = [: ]
 		var BaseX = CELL_X[cell]
@@ -103,7 +103,7 @@ class CellClass {
 	}
 	
 	static getDiscWithLos(cell, minradius, radius) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE * MAX_POSSIBLE_RANGE) + (minradius * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 14) | (minradius << 7) | radius
 		if (TmpHash in DISC_WITH_LOS_CACHE) return DISC_WITH_LOS_CACHE[TmpHash]
 		var _final = [: ]
 		for (var d = minradius; d <= radius; d++) {
@@ -115,7 +115,7 @@ class CellClass {
 
 	
 	static getCircleWithLos(cell, radius) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 7) | radius
 		if (TmpHash in CIRCLE_WITH_LOS_CACHE) return CIRCLE_WITH_LOS_CACHE[TmpHash]
 		var _final = [: ]
 		for (var testingCell:var bool in getCircle(cell, radius)) {
@@ -128,7 +128,7 @@ class CellClass {
 	}
 
 	static getLine(cell, minradius, radius) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE * MAX_POSSIBLE_RANGE) + (minradius * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 14) | (minradius << 7) | radius
 		if (TmpHash in LINE_CACHE) return LINE_CACHE[TmpHash]
 		var _final = [: ]
 		var BaseX = CELL_X[cell]
@@ -141,7 +141,7 @@ class CellClass {
 	}
 
 	static getPointsLine(cell, radius, BaseX, BaseY) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 7) | radius
 		if (TmpHash in POINTS_LINE_CACHE) return POINTS_LINE_CACHE[TmpHash]
 		var _final = [: ]
 		var Cell1 = getCellFromXY(BaseX + radius, BaseY)
@@ -157,7 +157,7 @@ class CellClass {
 	}
 
 	static getLineWithLos(cell, minradius, radius) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE * MAX_POSSIBLE_RANGE) + (minradius * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 14) | (minradius << 7) | radius
 		if (TmpHash in LINE_WITH_LOS_CACHE) return LINE_WITH_LOS_CACHE[TmpHash]
 		var _final = [: ]
 		var BaseX = CELL_X[cell]
@@ -171,7 +171,7 @@ class CellClass {
 
 	
 	static getPointsLineWithLos(cell, radius, BaseX, BaseY) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 7) | radius
 		if (TmpHash in POINTS_LINE_WITH_LOS_CACHE) return POINTS_LINE_WITH_LOS_CACHE[TmpHash]
 		var _final = [: ]
 		for (var testingCell:var bool in getPointsLine(cell, radius, BaseX, BaseY)) {
@@ -184,7 +184,7 @@ class CellClass {
 	}
 
 	static getDiagonal(cell, minradius, radius) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE * MAX_POSSIBLE_RANGE) + (minradius * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 14) | (minradius << 7) | radius
 		if (TmpHash in DIAGONAL_CACHE) return DIAGONAL_CACHE[TmpHash]
 		var _final = [: ]
 		var BaseX = CELL_X[cell]
@@ -197,7 +197,7 @@ class CellClass {
 	}
 
 	static getDiagonalPoints(cell, radius, BaseX, BaseY) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 7) | radius
 		if (TmpHash in POINTS_DIAGONAL_CACHE) return POINTS_DIAGONAL_CACHE[TmpHash]
 		var _final = [: ]
 		var Cell1 = getCellFromXY(BaseX + radius, BaseY + radius)
@@ -213,7 +213,7 @@ class CellClass {
 	}
 	
 	static getDiagonalWithLos(cell, minradius, radius) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE * MAX_POSSIBLE_RANGE) + (minradius * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 14) | (minradius << 7) | radius
 		if (TmpHash in DIAGONAL_WITH_LOS_CACHE) return DIAGONAL_WITH_LOS_CACHE[TmpHash]
 		var _final = [: ]
 		var BaseX = CELL_X[cell]
@@ -227,7 +227,7 @@ class CellClass {
 
 	
 	static getDiagonalPointsWithLos(cell, radius, BaseX, BaseY) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 7) | radius
 		if (TmpHash in POINTS_DIAGONAL_WITH_LOS_CACHE) return POINTS_DIAGONAL_WITH_LOS_CACHE[TmpHash]
 		var _final = [: ]
 		for (var testingCell:var bool in getDiagonalPoints(cell, radius, BaseX, BaseY)) {
@@ -240,7 +240,7 @@ class CellClass {
 	}
 
 	static getStar(cell, minradius, radius) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE * MAX_POSSIBLE_RANGE) + (minradius * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 14) | (minradius << 7) | radius
 		if (TmpHash in STAR_CACHE) return STAR_CACHE[TmpHash]
 		var _final = [: ]
 		var BaseX = CELL_X[cell]
@@ -253,7 +253,7 @@ class CellClass {
 	}
 
 	static getStarPoints(cell, radius, BaseX, BaseY) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 7) | radius
 		if (TmpHash in POINTS_STAR_CACHE) return POINTS_STAR_CACHE[TmpHash]
 		var _final = [: ]
 		if (!(radius % 2)) {
@@ -266,7 +266,7 @@ class CellClass {
 	}
 	
 	static getStarWithLos(cell, minradius, radius) { //Special case, no need points maps cuz already saved in cache of Diagonals and Lines
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE * MAX_POSSIBLE_RANGE) + (minradius * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 14) | (minradius << 7) | radius
 		if (TmpHash in STAR_WITH_LOS_CACHE) return STAR_WITH_LOS_CACHE[TmpHash]
 		var _final = [: ]
 		var BaseX = CELL_X[cell]
@@ -279,7 +279,7 @@ class CellClass {
 	}
 
 	static getStarPointsWithLos(cell, radius, BaseX, BaseY) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 7) | radius
 		if (TmpHash in POINTS_STAR_WITH_LOS_CACHE) return POINTS_STAR_WITH_LOS_CACHE[TmpHash]
 		var _final = [: ]
 		for (var testingCell:var bool in getStarPoints(cell, radius, BaseX, BaseY)) {
@@ -292,7 +292,7 @@ class CellClass {
 	}
 
 	static getInvertedStar(cell, minradius, radius) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE * MAX_POSSIBLE_RANGE) + (minradius * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 14) | (minradius << 7) | radius
 		if (TmpHash in INVERTED_STAR_CACHE) return INVERTED_STAR_CACHE[TmpHash]
 		var _final = [: ]
 		var BaseX = CELL_X[cell]
@@ -308,7 +308,7 @@ class CellClass {
 	}
 
 	static getInvertedStarPoints(cell, radius, BaseX, BaseY) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 7) | radius
 		if (TmpHash in POINTS_INVERTED_STAR_CACHE) return POINTS_INVERTED_STAR_CACHE[TmpHash]
 		var _final = [: ]
 		var CircleForThisRadius = getCircle(cell, radius)
@@ -321,7 +321,7 @@ class CellClass {
 	}
 
 	static getInvertedStarWithLos(cell, minradius, radius) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE * MAX_POSSIBLE_RANGE) + (minradius * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 14) | (minradius << 7) | radius
 		if (TmpHash in INVERTED_STAR_WITH_LOS_CACHE) return INVERTED_STAR_WITH_LOS_CACHE[TmpHash]
 		var _final = [: ]
 		var BaseX = CELL_X[cell]
@@ -335,7 +335,7 @@ class CellClass {
 
 	
 	static getInvertedStarPointsWithLos(cell, radius, BaseX, BaseY) {
-		var TmpHash = (cell * MAX_POSSIBLE_RANGE) + radius
+		var TmpHash = (cell << 7) | radius
 		if (TmpHash in POINTS_INVERTED_STAR_WITH_LOS_CACHE) return POINTS_INVERTED_STAR_WITH_LOS_CACHE[TmpHash]
 		var _final = [: ]
 		for (var testingCell:var bool in getInvertedStarPoints(cell, radius, BaseX, BaseY)) {
@@ -347,92 +347,42 @@ class CellClass {
 		return _final
 	}
 
+	/* Laser AoE : la ligne de cellules de from vers to (axe X ou Y exactement), coupée au premier
+	 * obstacle. Le vecteur (stepX, stepY) remplace les 4 branches copiées-collées d'avant. */
 	static getLaserAoe(from, to, minrange, maxrange) {
-		var Hash = from + (to * 1000) + (minrange * 100000) + (maxrange * 10000000)
+		var Hash = (maxrange << 27) | (minrange << 20) | (to << 10) | from
 		if (Hash in LASERS) return LASERS[Hash]
 		var _final = [: ]
 		var FromX = CELL_X[from]
 		var FromY = CELL_Y[from]
-		var ToX = CELL_X[to]
-		var ToY = CELL_Y[to]
-		if (FromX == ToX) { //On The Y Line
-			if (ToY > FromY) {
-				for (var d = minrange; d <= maxrange; d++) {
-					var Cell = getCellFromXY(FromX, FromY + d)
-					if (Cell == null || TMPOBSTACLES[Cell]) break
-					_final[Cell] = true
-				}
-			} else {
-				for (var d = minrange; d <= maxrange; d++) {
-					var Cell = getCellFromXY(FromX, FromY - d)
-					if (Cell == null || TMPOBSTACLES[Cell]) break
-					_final[Cell] = true
-				}
-			}
-		} else if (FromY == ToY) { //On The X Line
-			if (ToX > FromX) {
-				for (var d = minrange; d <= maxrange; d++) {
-					var Cell = getCellFromXY(FromX + d, FromY)
-					if (Cell == null || TMPOBSTACLES[Cell]) break
-					_final[Cell] = true
-				}
-			} else {
-				for (var d = minrange; d <= maxrange; d++) {
-					var Cell = getCellFromXY(FromX - d, FromY)
-					if (Cell == null || TMPOBSTACLES[Cell]) break
-					_final[Cell] = true
-				}
+		var stepX = CELL_X[to] > FromX ? 1 : (CELL_X[to] < FromX ? -1 : 0)
+		var stepY = CELL_Y[to] > FromY ? 1 : (CELL_Y[to] < FromY ? -1 : 0)
+		if ((stepX == 0) != (stepY == 0)) {   // aligné sur exactement UN axe (from == to et diagonales -> vide, comme avant)
+			for (var d = minrange; d <= maxrange; d++) {
+				var Cell = getCellFromXY(FromX + d * stepX, FromY + d * stepY)
+				if (Cell == null || TMPOBSTACLES[Cell]) break
+				_final[Cell] = true
 			}
 		}
-		
 		LASERS[Hash] = _final
 		return _final
 	}
-	
+
+	/* Comme getLaserAoe mais s'arrête sur la PREMIÈRE entité rencontrée (AREA_FIRST_INLINE) :
+	 * retourne au plus une cellule. Non caché (EntityMap dépend de la branche). */
 	static getFirstInlineAoe(from, to, minrange, maxrange, EntityMap) {
 		var _final = [: ]
 		var FromX = CELL_X[from]
 		var FromY = CELL_Y[from]
-		var ToX = CELL_X[to]
-		var ToY = CELL_Y[to]
-		if (FromX == ToX) { //On The Y Line
-			if (ToY > FromY) {
-				for (var d = minrange; d <= maxrange; d++) {
-					var Cell = getCellFromXY(FromX, FromY + d)
-					if (Cell == null || TMPOBSTACLES[Cell]) break
-					if (EntityMap[Cell]) {
-						_final[Cell] = true
-						break
-					}
-				}
-			} else {
-				for (var d = minrange; d <= maxrange; d++) {
-					var Cell = getCellFromXY(FromX, FromY - d)
-					if (Cell == null || TMPOBSTACLES[Cell]) break
-					if (EntityMap[Cell]) {
-						_final[Cell] = true
-						break
-					}
-				}
-			}
-		} else if (FromY == ToY) { //On The X Line
-			if (ToX > FromX) {
-				for (var d = minrange; d <= maxrange; d++) {
-					var Cell = getCellFromXY(FromX + d, FromY)
-					if (Cell == null || TMPOBSTACLES[Cell]) break
-					if (EntityMap[Cell]) {
-						_final[Cell] = true
-						break
-					}
-				}
-			} else {
-				for (var d = minrange; d <= maxrange; d++) {
-					var Cell = getCellFromXY(FromX - d, FromY)
-					if (Cell == null || TMPOBSTACLES[Cell]) break
-					if (EntityMap[Cell]) {
-						_final[Cell] = true
-						break
-					}
+		var stepX = CELL_X[to] > FromX ? 1 : (CELL_X[to] < FromX ? -1 : 0)
+		var stepY = CELL_Y[to] > FromY ? 1 : (CELL_Y[to] < FromY ? -1 : 0)
+		if ((stepX == 0) != (stepY == 0)) {
+			for (var d = minrange; d <= maxrange; d++) {
+				var Cell = getCellFromXY(FromX + d * stepX, FromY + d * stepY)
+				if (Cell == null || TMPOBSTACLES[Cell]) break
+				if (EntityMap[Cell]) {
+					_final[Cell] = true
+					break
 				}
 			}
 		}
@@ -447,61 +397,18 @@ class CellClass {
 		return _final
 	}
 
-	static getSquareOne(cell) { //Return Square 1 (no obstacle) //TODO : Redo less ugly (please)
+	/* Carré de Chebyshev (toutes les cellules avec max(|dx|,|dy|) <= radius), obstacles exclus,
+	 * centre inclus — les formes AREA_SQUARE_*. Remplace les deux anciennes listes hardcodées
+	 * de 9 et 25 appels (getSquareOne/getSquareTwo). */
+	static getSquare(cell, radius) {
 		var _final = [: ]
 		var BaseX = CELL_X[cell]
 		var BaseY = CELL_Y[cell]
-		var Cells = [ //CLASS 1
-			getCellFromXY(BaseX + 1, BaseY),
-			getCellFromXY(BaseX - 1, BaseY),
-			getCellFromXY(BaseX, BaseY + 1),
-			getCellFromXY(BaseX, BaseY - 1),
-			getCellFromXY(BaseX + 1, BaseY + 1),
-			getCellFromXY(BaseX - 1, BaseY - 1),
-			getCellFromXY(BaseX - 1, BaseY + 1),
-			getCellFromXY(BaseX + 1, BaseY - 1),
-			cell
-		]
-		for (var c in Cells) {
-			if (c != null && !TMPOBSTACLES[c]) _final[c] = true
-		}
-		return _final
-	}
-
-	static getSquareTwo(cell) { //Return Square 2 (no obstacle) //TODO : Redo less ugly (please)
-		var _final = [: ]
-		var BaseX = CELL_X[cell]
-		var BaseY = CELL_Y[cell]
-		var Cells = [ //CLASS 1
-			getCellFromXY(BaseX + 1, BaseY),
-			getCellFromXY(BaseX - 1, BaseY),
-			getCellFromXY(BaseX, BaseY + 1),
-			getCellFromXY(BaseX, BaseY - 1),
-			getCellFromXY(BaseX + 1, BaseY + 1),
-			getCellFromXY(BaseX + 1, BaseY - 1),
-			getCellFromXY(BaseX - 1, BaseY + 1),
-			getCellFromXY(BaseX - 1, BaseY - 1),
-			cell,
-			//CLASS 2
-			getCellFromXY(BaseX + 2, BaseY),
-			getCellFromXY(BaseX - 2, BaseY),
-			getCellFromXY(BaseX, BaseY + 2),
-			getCellFromXY(BaseX, BaseY - 2),
-			getCellFromXY(BaseX + 2, BaseY + 1),
-			getCellFromXY(BaseX + 2, BaseY - 1),
-			getCellFromXY(BaseX - 2, BaseY + 1),
-			getCellFromXY(BaseX - 2, BaseY - 1),
-			getCellFromXY(BaseX + 1, BaseY + 2),
-			getCellFromXY(BaseX + 1, BaseY - 2),
-			getCellFromXY(BaseX - 1, BaseY + 2),
-			getCellFromXY(BaseX - 1, BaseY - 2),
-			getCellFromXY(BaseX - 2, BaseY - 2),
-			getCellFromXY(BaseX - 2, BaseY + 2),
-			getCellFromXY(BaseX + 2, BaseY - 2),
-			getCellFromXY(BaseX + 2, BaseY + 2)
-		]
-		for (var c in Cells) {
-			if (c != null && !TMPOBSTACLES[c]) _final[c] = true
+		for (var dx = -radius; dx <= radius; dx++) {
+			for (var dy = -radius; dy <= radius; dy++) {
+				var c = getCellFromXY(BaseX + dx, BaseY + dy)
+				if (c != null && !TMPOBSTACLES[c]) _final[c] = true
+			}
 		}
 		return _final
 	}

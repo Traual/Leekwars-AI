@@ -34,7 +34,6 @@ global SUMMON_ID_BASE = 0   // turn-start max REAL entity id; virtual bulb id = 
 
 //FOR HASH
 
-global MAX_POSSIBLE_RANGE = 17
 global MAX_ITEM = 500
 global MAX_AOE_DIST = 10 //To be safe, but i may make it smaller
 
