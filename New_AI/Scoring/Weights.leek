@@ -52,3 +52,8 @@ global BUFFER = 500
 // the AI trusted heals too much).
 global DANGER_COEF = 1.0
 global HEAL_COEF = 0.6
+
+// DR deterrence: a carrier's term gains DR_RETURN_EXPECT · physRatio(opposing) · min(net, LIFE)
+// · DR/100 — the threat arriving on it converts into returns its attackers will bleed
+// (ScoringClass.drDeterrence). Confidence factor, same philosophy as HEAL_COEF.
+global DR_RETURN_EXPECT = 0.4

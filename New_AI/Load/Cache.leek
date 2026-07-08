@@ -53,7 +53,13 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     // bypass the two freshly-reset caches above entirely (static standoffs: an enemy's big chip
     // coming off cooldown would stay invisible). Reset it with them.
     ENTITY_DANGER_CACHE_FOR_OTHERS = [: ]
+
+    DR_PHYSRATIO_BY_SIDE = null
 }
+
+// [side -> opposing-team STR/(STR+MAG)] for the DR-deterrence bonus — frozen per turn, built
+// lazily at the first evaluation of a DR carrier (ScoringClass.buildDrPhysRatios). null = unbuilt.
+global DR_PHYSRATIO_BY_SIDE = null
 
 // STATE
 

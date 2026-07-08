@@ -7,8 +7,9 @@
  *               / (afterPoison + BUFFER)
  *   effLife     = afterPoison / (1 + pressure)                       // >0, monotone, threat-scaled (cheap)
  *   value       = BASE_ALIVE + W_LIFE·sqrt(effLife) + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)   // concave × 2
- * term(e) = sign · (importance(e)·value(e) + capability(e)) — importance FROZEN per turn (tier
- * ranking), capability = the small LIVE quadratic buff/debuff channel (see Importance.leek).
+ * term(e) = sign · (importance(e)·value(e) + capability(e) + drDeterrence(e)) — importance FROZEN
+ * per turn (tier ranking), capability = the small LIVE quadratic buff/debuff channel (see
+ * Importance.leek), drDeterrence = the DR carrier's deterrence bonus (0 for non-carriers).
  * score = Σ term(e).  sign = +1 my side, −1 enemy. Dead entities contribute 0.
  * Same treatment for both sides (sign flips it).
  *
@@ -50,7 +51,7 @@ class ScoringClass {
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            _score += sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e]) + ImportanceClass.capability(stat))
+            _score += sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e]) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
         }
         BenchOps.Stop("Scoring")
         return _score
@@ -66,7 +67,7 @@ class ScoringClass {
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            terms[e] = sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e]) + ImportanceClass.capability(stat))
+            terms[e] = sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e]) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
         }
         BenchOps.Stop("Scoring")
         return terms
@@ -150,7 +151,8 @@ class ScoringClass {
         var newTerm = 0
         if (stat.LIFE > 0) {
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)) + ImportanceClass.capability(stat))
+            var net = DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)
+            newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, net) + ImportanceClass.capability(stat) + drDeterrence(stat, net, State))
         }
         var oldTerm = (e in terms) ? terms[e] : 0
         terms[e] = newTerm
@@ -183,6 +185,47 @@ class ScoringClass {
 
         SURVIVAL_CACHE[key] = value
         return value + tlTerm
+    }
+
+    /* DR deterrence bonus, in the CARRIER's own term: the threat arriving on it (its net, already
+     * in hand) converts into value at DR/100 — its attackers will bleed on it. Team-level
+     * physRatio (poison triggers no return), frozen per turn; net capped at LIFE (returns stop at
+     * death); post-shield + heal-cushioned net kept DELIBERATELY (a shielded/healed carrier
+     * attracts smaller hits -> deters less — user call 2026-07-08).
+     * Lives in the carrier's term ON PURPOSE: its inputs (net, own DR, frozen ratio) are exactly
+     * the term's EXISTING recompute triggers (ndKey/context for net, CLONED for DR) -> no new
+     * trigger channel, patched terms stay pure. My own attacks pay their return exactly in the
+     * sim (Consequences applies it to my LIFE at cast time) and are absent from every net (Me
+     * skipped as caster everywhere) — no overlap between the sim and this projection. */
+    static drDeterrence(stat, net, State) {
+        if (stat.DAMAGE_RETURN <= 0) return 0
+        if (DR_PHYSRATIO_BY_SIDE == null) buildDrPhysRatios(State)
+        return DR_RETURN_EXPECT * DR_PHYSRATIO_BY_SIDE[stat.SIDE] * min(net, stat.LIFE) * (stat.DAMAGE_RETURN / 100)
+    }
+
+    /* [side -> physical ratio of the OPPOSING team], STR/(STR+MAG) with clamped stats — the share
+     * of the incoming danger that actually triggers returns. Me excluded (the nets exclude Me as
+     * caster too). FROZEN per turn at its first DR evaluation (lazy: no-DR fights never build it):
+     * a per-turn constant keeps patched terms pure; the dominant live signal (the net itself)
+     * already moves with every shackle/kill through the existing machinery. */
+    static buildDrPhysRatios(State) {
+        var strBySide = [: ], magBySide = [: ], strAll = 0, magAll = 0
+        var sides = [: ]
+        for (var e: var stat in State) {
+            sides[stat.SIDE] = true
+            if (stat.LIFE <= 0 || e == Me) continue
+            var s = max(0, stat.STRENGTH), m = max(0, stat.MAGIC)
+            strBySide[stat.SIDE] = ((stat.SIDE in strBySide) ? strBySide[stat.SIDE] : 0) + s
+            magBySide[stat.SIDE] = ((stat.SIDE in magBySide) ? magBySide[stat.SIDE] : 0) + m
+            strAll += s
+            magAll += m
+        }
+        DR_PHYSRATIO_BY_SIDE = [: ]
+        for (var side: var _ in sides) {
+            var s = strAll - ((side in strBySide) ? strBySide[side] : 0)
+            var m = magAll - ((side in magBySide) ? magBySide[side] : 0)
+            DR_PHYSRATIO_BY_SIDE[side] = (s + m > 0) ? s / (s + m) : 1   // no stats -> bare base damage, physical
+        }
     }
 
     /**
