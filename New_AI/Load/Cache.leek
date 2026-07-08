@@ -21,7 +21,8 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     HEAL_COMBO_CACHE = [: ]
     HEAL_ENTITY_INVENTORY = [: ]
     IMPORTANCE_BY_ID = [: ]
-    CAPABILITY_T_BY_ID = [: ]
+    CAPABILITY_ITEMS_BY_ID = [: ]
+    CAPABILITY_COMBO_CACHE = [: ]
     NETDAMAGE_CACHE = [: ]
     HEAL_MAP_CACHE = [: ]
     ENTITY_ACTIONS_CACHE = [: ]
@@ -187,14 +188,18 @@ global SURVIVAL_CACHE = [: ]
 // turn (covers the bulb turns too — shared VM).
 global IMPORTANCE_BY_ID = [: ]
 
-// Capability v2 throughput vectors: KEY = the ENTITY ID, reset per turn. [id -> [tStr, tMag,
-// tWis, tSci, tAgi, tRes]] = HP of item-output per point of each stat, from the turn-start best
-// combo (greedy HP-value/TP over items with turn-start cooldown <= 1, within TOTAL_TP). The id
-// alone is a SOUND key because every input is turn-frozen ON PURPOSE: INVENTORY is fight-constant
-// per id, non-Me COOLDOWNS never mutate in-sim (write census), and Me's T deliberately measures
-// TURN-START potential (same stability convention as the danger map's TOTAL_TP) — in-branch
-// TP/stat changes pay through the LIVE factors of capability(), not through T.
-global CAPABILITY_T_BY_ID = [: ]
+// Capability v2 caches, reset per turn:
+//  - CAPABILITY_ITEMS_BY_ID: KEY = the ENTITY ID -> its sorted castable item list
+//    [[item, hpValue, cost], ...] (turn-start cooldown <= 1 gate, HP-valued via CAP_HP_W,
+//    sorted HP/TP desc). Sound on id alone: INVENTORY is fight-constant per id and non-Me
+//    COOLDOWNS never mutate in-sim (write census); Me's list is deliberately its TURN-START
+//    potential (same convention as the danger inventory).
+//  - CAPABILITY_COMBO_CACHE: KEY = (id << 10) | max(0, TOTAL_TP) -> the greedy combo's per-stat
+//    HP buckets [STAT_X -> HP of X-scaled output]. TP is IN the key: an in-branch TP buff/shackle
+//    re-runs the greedy at the new budget, so the TP delta is EMERGENT (a bulb that can't use
+//    the extra TP scores 0, a loaded build gains a real extra cast) instead of a flat tp2 term.
+global CAPABILITY_ITEMS_BY_ID = [: ]
+global CAPABILITY_COMBO_CACHE = [: ]
 
 // Heal map, three layers mirroring the danger map (the fix for Heal = 31-37% of every turn):
 //  - HEAL_COVERAGE_CACHE: the full per-caster coverage [cell -> heal], keyed (id,cell,mp,wis,tp)
