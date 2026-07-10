@@ -1,6 +1,6 @@
-/**
- * Game constants
- **/
+/*
+ * Constantes du jeu et primitives de hash.
+ */
 
 include("../includes.leek")
 
@@ -16,9 +16,9 @@ global MY_INVENTORY_ON_VOID// = Actions.getInventoryOnVoid(BASE_INVENTORY)
 global MY_INVENTORY_SUMMON// = Actions.getInventorySummon(BASE_INVENTORY)
 global MY_INVENTORY_ON_EVERYONE// = Actions.getInventoryOnEveryOne(BASE_INVENTORY)
 
-// Offensive ("mean") bulbs : summoned NEAR enemies (cell minimizing avg dist to
-// enemies) in Actions.getSummonAction. Any summon NOT in this list (gentle bulbs
-// / resurrect) is placed NEAR allies instead.
+// Bulbes offensifs : invoqués PRÈS des ennemis (cellule minimisant la distance moyenne aux
+// ennemis, Actions.getSummonAction). Tout summon hors de cette liste (bulbes doux /
+// résurrection) est placé près des alliés.
 global MeanBulbs = [
 	CHIP_ROCKY_BULB,
 	CHIP_ICED_BULB,
@@ -28,21 +28,17 @@ global MeanBulbs = [
 	CHIP_LIGHTNING_BULB
 ]
 
-// Cheapest item TP cost across my inventory (used to short-circuit expansion when TP is too low).
+// Coût TP minimal de l'inventaire (court-circuite l'expansion quand il ne reste plus assez).
 global MINIMUM_COST_ITEM
-global SUMMON_ID_BASE = 0   // turn-start max REAL entity id; virtual bulb id = base + type offset (set in Preload.InitStateClass)
+global SUMMON_ID_BASE = 0   // max des ids RÉELS au début du tour ; id de bulbe virtuel = base + offset de type (Preload.InitStateClass)
 
-//FOR HASH
+// HASH
 
 global MAX_ITEM = 500
-global MAX_AOE_DIST = 10 //To be safe, but i may make it smaller
-
-//For Hash But Binary
+global MAX_AOE_DIST = 10
 
 global MAX_CELL_BINARY = 11
 global MAX_AOE_DIST_BINARY = 3
-
-//For Every Stats Hash
 
 global MAX_VALUE = 9223372036854775807
 global OFFSET_BASIS = 1469598103934665603
@@ -50,20 +46,23 @@ global SHIFT = 13
 global HIGH_SHIFT = 64 - SHIFT
 global MASK_HIGH = (1 << SHIFT) - 1
 
+/* Chaînage de hash : rotation 13 bits + XOR de la nouvelle valeur. LINÉAIRE — pour un fold
+ * XOR composable, passer par mix64 ci-dessous. */
 function addValueToBinHash(BaseHashValue, AddedValue) {
     return ((BaseHashValue << SHIFT) | ((BaseHashValue >> HIGH_SHIFT) & MASK_HIGH)) ^ AddedValue
 }
 
-// mix64 : non-linear 64-bit mixer (splitmix64-style finalizer) for COMPOSABLE XOR-fold hashes.
-// addValueToBinHash is LINEAR (rotate+XOR) -> a plain XOR-fold of its outputs collides on swaps
-// (two entities exchanging cells give the same hash). The MULTIPLY here breaks that linearity.
-// Constraints, all verified on LeekWars: literals > 2^63 become FLOATs -> keep constants < 2^63;
-// `*` wraps mod 2^64 (good); `>>` is ARITHMETIC (sign-extends) -> mask each shift to emulate logical.
-global MIX_A   = 6364136223846793005    // 0x5851F42D4C957F2D, odd, < 2^63 (MMIX/Knuth multiplier)
-global MIX_B   = 2685821657736338717    // 0x2545F4914F6CDD1D, odd, < 2^63
-global MIX_M34 = 17179869183            // (1<<34)-1, masks a >>30
-global MIX_M37 = 137438953471           // (1<<37)-1, masks a >>27
-global MIX_M33 = 8589934591             // (1<<33)-1, masks a >>31
+// mix64 : mixeur 64 bits non linéaire (finaliseur type splitmix64) pour les folds XOR
+// COMPOSABLES. addValueToBinHash est linéaire -> un fold XOR de ses sorties collisionne sur
+// les échanges (deux entités qui permutent leurs cellules donnent le même hash) ; la
+// MULTIPLICATION ici casse cette linéarité. Contraintes vérifiées sur LeekWars : les
+// littéraux > 2^63 deviennent des FLOATS -> constantes < 2^63 ; `*` wrap mod 2^64 ; `>>` est
+// ARITHMÉTIQUE (étend le signe) -> chaque shift est masqué pour émuler le logique.
+global MIX_A   = 6364136223846793005    // 0x5851F42D4C957F2D, impair, < 2^63 (multiplicateur MMIX/Knuth)
+global MIX_B   = 2685821657736338717    // 0x2545F4914F6CDD1D, impair, < 2^63
+global MIX_M34 = 17179869183            // (1<<34)-1, masque un >>30
+global MIX_M37 = 137438953471           // (1<<37)-1, masque un >>27
+global MIX_M33 = 8589934591             // (1<<33)-1, masque un >>31
 
 function mix64(x) {
     x = (x ^ ((x >> 30) & MIX_M34)) * MIX_A
@@ -72,18 +71,19 @@ function mix64(x) {
 }
 
 
-//FOR CONSEQUENCES
+// CONSEQUENCES
 global EROSION_NO_POISON = 0.05
 global EROSION_POISON = 0.10
 //TODO: Effects like % of Mysterious elec / Revoked M_LASER and Fix Gazor at 20%
 
-//GAME : 
+// JEU
 
 global MAX_USEFUL_RELATIVE_SHIELD = 100
 global MIN_AGILITY_TO_FULLY_CRIT = 950
-global FIGHT_TYPE = getFightType() //Used to compute power in consequences
+global FIGHT_TYPE = getFightType() // sert au calcul du power dans Consequences
 
-//BFS :
-// Δ-threshold below which a base action is treated as a no-op (skip greedy expansion + early-exit in chains).
-// Catches floating-point residue from chips like Antidote / Liberation / Remission when no relevant effect applies.
+// BFS :
+// Seuil de Δ sous lequel une action de base est traitée comme un no-op (skip de l'expansion
+// gloutonne + early-exit des chaînes). Attrape les résidus float des chips type Antidote /
+// Libération / Rémission quand aucun effet pertinent ne s'applique.
 global BFS_DELTA_EPSILON = 0.01

@@ -1,10 +1,6 @@
-/** Exporté le 19/07/2025 19:55:40 **/
-
-/** Effects/Target **/
-
-/**
- * Class that define what to aim for (ally or enemy or both or neither)
- **/
+/*
+ * Target : sur qui un item se vise (allié, ennemi, les deux, personne).
+ */
 
 include("../includes.leek")
 
@@ -33,7 +29,7 @@ class Target {
 			if (EntitySide != CasterSide) {
 				TARGETABLECACHE[Hash] = true
 				return true
-			} else { //Should not return true on allies otherwise i will want to come by to take aoe of Covetousness
+			} else { // jamais true sur un allié : sinon on viendrait se prendre l'AoE de Covetousness
 				TARGETABLECACHE[Hash] = false
 				return false
 			}
@@ -57,7 +53,7 @@ class Target {
 			}
 		}
 
-		TARGETABLECACHE[Hash] = false // cache the negative too: never-targetable (item, flags) combos used to re-scan all effects on every call
+		TARGETABLECACHE[Hash] = false   // le négatif se cache aussi (sinon re-scan des effets à chaque appel)
 		return false
 	}
 
@@ -118,7 +114,7 @@ class Target {
 		EFFECT_PUSH: Target.ALL,
 		EFFECT_STEAL_ABSOLUTE_SHIELD: Target.ALL,
 
-		EFFECT_AFTEREFFECT: Target.NONE, //Because it is mean but only hittable on allies
+		EFFECT_AFTEREFFECT: Target.NONE, // néfaste mais castable seulement sur les alliés
 		EFFECT_PROPAGATION: Target.NONE,
 		EFFECT_TELEPORT: Target.NONE,
 		EFFECT_SUMMON: Target.NONE

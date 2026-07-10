@@ -1,6 +1,7 @@
-/**
- * Class Entity : Doesn't move during a turn
-**/
+/*
+ * Entity : les champs constants d'une entité pendant le tour (identité, camp, inventaire,
+ * ordre de tour). EntityState hérite d'ici pour les champs qui bougent.
+ */
 
 include("../includes.leek")
 

@@ -1,6 +1,7 @@
-/**
- * Item Class
-**/
+/*
+ * Item : toutes les caractéristiques d'un chip ou d'une arme, lues une fois du moteur
+ * (peuplé pour les 500 ids dans Preload.InitItemInfo -> ITEMINFO).
+ */
 
 
 include("../includes.leek")
@@ -40,7 +41,7 @@ class ItemClass {
 			this.NEEDLOS = isChip(id) ? chipNeedLos(id) : weaponNeedLos(id)
 			this.AREA_MAX = AreaMax(id, this.AREA)
 			this.IS_WEAPON = isWeapon(id)
-			this.STACKABLE = this.EFFECTS[0][5] & EFFECT_MODIFIER_STACKABLE //Ugly but works at 09/2024
+			this.STACKABLE = this.EFFECTS[0][5] & EFFECT_MODIFIER_STACKABLE   // flag du premier effet
 		}
 	}
 
@@ -58,7 +59,8 @@ class ItemClass {
 		}
 	}
 
-	AreaMax(item, Area) { //return either max possible aoe dist coverage (3 for circle 3)
+	/* Distance d'AoE maximale couverte par le type de zone (3 pour un cercle 3). */
+	AreaMax(item, Area) {
 		var MapReturn = [
 			AREA_CIRCLE_1: 1,
 			AREA_CIRCLE_2: 2,

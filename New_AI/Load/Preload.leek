@@ -1,6 +1,6 @@
-/**
- * Preload Class (turn 1)
-**/
+/*
+ * Préchargements : constantes d'items/cellules au tour 1, et l'init d'état de chaque tour.
+ */
 
 include("../includes.leek")
 
@@ -12,13 +12,13 @@ class Preload {
 		InitInitialTurnOrder()
     }
 
-	/* Engine initialOrder proxy (turn-1 capture, fight-persistent). State.java resurrect() walks
-	 * initialOrder = the FIGHT-START entities in boot order — never mutated by deaths, summons
-	 * never added. getEntityTurnOrder at turn 1 yields exactly those ranks (a bulb summoned before
-	 * my first turn shifts the values but not the relative order, and is excluded here like the
-	 * engine excludes it from initialOrder). An entity already dead AND removed before this capture
-	 * (order 0) stays unknown -> its resurrection falls back to append-at-end (ultra-rare).
-	 * Consumed by ResurrectionClass.Update. */
+	/*
+	 * Proxy de l'initialOrder du moteur, capturé au tour 1 et persistant tout le combat :
+	 * le resurrect du moteur parcourt les entités de DÉBUT de combat dans l'ordre de boot
+	 * (jamais muté par les morts, summons exclus). Une entité déjà morte et retirée avant
+	 * cette capture reste inconnue -> sa résurrection retombe sur l'ajout en fin d'ordre.
+	 * Consommé par ResurrectionClass.Update.
+	 */
 	static InitInitialTurnOrder() {
 		for (var e in getAllies() + getEnemies()) {
 			if (isSummon(e)) continue
@@ -41,10 +41,10 @@ class Preload {
 			CELL_Y[c] = getCellY(c)
 			CELL_X[c] = getCellX(c)
 		}
-		// Pre-compute (couple, bitmask) for every cell. Layout:
+		// (couple, bitmask) précalculés pour chaque cellule. Layout :
 		//   couple = floor(cell / 35) ; rem = cell % 35
-		//   rem < 18  -> even line, bit = rem        (bits 0-17)
-		//   rem >= 18 -> odd  line, bit = 24+rem-18  (bits 24-40)
+		//   rem < 18  -> ligne paire,   bit = rem        (bits 0-17)
+		//   rem >= 18 -> ligne impaire, bit = 24+rem-18  (bits 24-40)
 		for (var c = 0; c < 613; c++) {
 			var rem = c % 35
 			var oddLine = rem >= 18 ? 1 : 0
@@ -52,14 +52,14 @@ class Preload {
 			push(MAP_CELL_TO_COUPLE, floor(c / 35))
 			push(MAP_CELL_TO_BITMASK, 1 << (oddLine == 0 ? pos : (24 + pos)))
 		}
-		// MAP_OBSTACLES_CACHE = obstacle-only baseline (no entities). 18 ints packed-couple.
-		// Per-call BFS clones this and subtracts the live leekcells.
+		// MAP_OBSTACLES_CACHE = baseline obstacles seuls (18 ints packés). Les BFS clonent
+		// cette base et y soustraient les cellules occupées.
 		for (var i = 0; i < 17; i++) MAP_OBSTACLES_CACHE[i] = 262143 | (131071 << 24)
 		MAP_OBSTACLES_CACHE[17] = 262143
 		for (var x in OBSTACLES_ARRAY) MAP_OBSTACLES_CACHE[MAP_CELL_TO_COUPLE[x]] -= MAP_CELL_TO_BITMASK[x]
 
-		// CELL_BY_LSB[couple][lsb_value] = cell id (single-bit -> cell decode for bit-iteration emit).
-		// 18 + 17 = 35 bits per couple; couple 17 only has the even half.
+		// CELL_BY_LSB[couple][valeur du bit] = id de cellule (décodage bit -> cellule).
+		// 18 + 17 = 35 bits par couple ; le couple 17 n'a que la moitié paire.
 		for (var c = 0; c < 18; c++) {
 			var m = [:]
 			var base = c * 35
@@ -96,21 +96,21 @@ class Preload {
 		MY_INVENTORY_ON_VOID = ActionsClass.getInventoryOnVoid(BASE_INVENTORY)
 		MY_INVENTORY_SUMMON = ActionsClass.getInventorySummon(BASE_INVENTORY)
 		MY_INVENTORY_ON_EVERYONE = ActionsClass.getInventoryOnEveryOne(BASE_INVENTORY)
-		// Cheapest USABLE (off-cooldown) item TP cost — ActionSuite.findBestNextNode bails out early
-		// when remaining TP is below it. Cooldown-aware: an item on cooldown can't be played this turn
-		// (my cooldowns only RISE during my turn, never tick down), so excluding it tightens the bound
-		// -> more early-outs, and the start-of-turn value stays a valid floor for the whole search.
+		// Coût TP de l'item jouable le moins cher — le BFS coupe court quand les TP restants
+		// passent dessous. Cooldown-aware : mes cooldowns ne font que MONTER pendant mon tour,
+		// donc exclure les items en cooldown resserre la borne et reste valide toute la
+		// recherche.
 		var cheapest = 100
 		for (var i in BASE_INVENTORY) {
-			if (myStateOnMe.COOLDOWNS[i] > 0) continue   // on cooldown this turn -> unplayable -> skip
+			if (myStateOnMe.COOLDOWNS[i] > 0) continue
 			var c = isChip(i) ? getChipCost(i) : getWeaponCost(i)
 			if (c < cheapest) cheapest = c
 		}
 		MINIMUM_COST_ITEM = cheapest
-		// Base id for VIRTUAL summons this turn = the max REAL entity id, captured once at turn start.
-		// Bulb id = SUMMON_ID_BASE + getTypeOffset(chip): a given id maps to ONE bulb type for the whole
-		// turn, whatever the summon ORDER across branches/chains (the old branch-local getMaxUsedID sums
-		// commuted: M+4+5 == M+5+4 -> two types shared an id and the id-only inventory caches collided).
+		// Base des ids VIRTUELS du tour = max des ids RÉELS, capturé une fois. Id de bulbe =
+		// SUMMON_ID_BASE + offset de type : un id donné correspond à UN type de bulbe pour tout
+		// le tour, quel que soit l'ordre des summons entre branches (les caches clés par id
+		// seul ne peuvent pas collisionner entre types).
 		var maxRealId = 0
 		for (var i in getAllies() + getEnemies()) if (i > maxRealId) maxRealId = i
 		SUMMON_ID_BASE = maxRealId

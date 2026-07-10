@@ -1,6 +1,6 @@
-/**
- * The Action Class : To Then Manipulate the object better
-**/
+/*
+ * Action : un triplet (item, cellule de lancement, cellule cible).
+ */
 
 include("../includes.leek")
 
