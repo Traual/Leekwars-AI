@@ -1,26 +1,18 @@
-/**
- * WalkCells API
+/*
+ * WalkCells : les cellules accessibles d'une entité, par "layer" de mobilité
+ * (marche / +jump / +télépo / +les deux), calculées par un BFS bitmap.
  *
- * Public surface :
- *   - WalkCellsClass.getWalk / getJump / getTele / getTPJ   : per-layer fetchers (cache-or-compute)
- *   - WalkCellsClass.canJump / canTele / canTPJ             : capacity checks
- *   - WalkCellsClass.getMaxLayer(state, e, bh)              : returns the maximal reachability map
- *                                                              (TPJ > TELE > JUMP > WALK). Use when
- *                                                              the caller only needs ".MAX".
- *   - WalkCellsClass.getAllLayers(state, e, bh)             : returns a LayersClass with the four
- *                                                              layers + .MAX. Use when the caller
- *                                                              needs to know which layer each cell
- *                                                              belongs to (BFS, Node, MoveTo).
- *
- * All fetchers reuse the existing caches (WALKABLE_CACHE / JUMP_CACHE / TELEPORTATION_CACHE /
- * TELEPORTATION_AND_JUMP_CACHE), keyed by HashWalkCells(cell, mp, base_hash).
-**/
+ *   - getWalk / getJump / getTele / getTPJ : fetchers par layer (cache ou calcul)
+ *   - canJump / canTele / canTPJ           : checks de capacité
+ *   - getMaxLayer(state, e, bh)            : la map d'accessibilité maximale
+ *   - getAllLayers(state, e, bh)           : les quatre layers + .MAX (LayersClass)
+ */
 
 include("../includes.leek")
 
-/**
- * Container for the four reachability layers + the max layer. Returned by getAllLayers.
- * Each layer is a Map<cell : mp_cost>. Disabled layers are [:] (empty map).
+/*
+ * Conteneur des quatre layers d'accessibilité + la layer max. Chaque layer est une
+ * map [cellule -> coût MP] ; une layer désactivée est [:].
  */
 class LayersClass {
 	WALK
@@ -112,25 +104,16 @@ class WalkCellsClass {
 	}
 
 	// ============================================================================
-	// "NoEntities" fetchers — ignore all dynamic entities as obstacles.
-	// Only static map obstacles count. Used by danger evaluation to enable
-	// fight-wide caching keyed only by (cell, mp) — no base_hash dependency.
-	// Tradeoff: imprecision (an ally that plays before won't actually block
-	// the entity's path, so over-modelling reachability is acceptable).
-	// ============================================================================
-
-	// ============================================================================
-	// "Full" variants : use TOTAL_MP instead of current MP.
-	// Used by danger evaluation : enemy danger reflects max-mobility next-turn
-	// threat, stable across BFS steps (no MP-driven cache invalidation).
-	// Only callers in the codebase use the *Full variants ; the current-MP
-	// versions were removed (unused after V1.3 danger refactor).
+	// Fetchers "NoEntities" + "Full" (pour le danger) : les entités ne comptent pas
+	// comme obstacles et le budget est TOTAL_MP — le danger représente la menace
+	// max du prochain tour, stable d'un step à l'autre, contre un cache persistant
+	// tout le combat clé (cellule, mp). Approximation assumée : un allié qui joue
+	// avant ne bloquera pas réellement le chemin.
 	// ============================================================================
 
 	static getWalkNoEntitiesFull(stats) {
-		// mp clamped at 0: a shackle can store TOTAL_MP negative; unclamped it sign-extends and ERASES
-		// the CELL field of this FIGHT-PERSISTENT key (every mp=-k entity would share one walk map).
-		// mp < 0 walks exactly like mp = 0, so key and computation agree.
+		// mp clampé à 0 : un shackle peut stocker TOTAL_MP négatif — non clampé, le signe
+		// s'étend et ÉCRASE le champ CELL de cette clé persistante. mp < 0 marche comme mp = 0.
 		var mp = max(0, stats.TOTAL_MP)
 		var key = (stats.CELL << 32) | mp
 		if (key in WALKABLE_CACHE_NOENT) return WALKABLE_CACHE_NOENT[key]
@@ -142,7 +125,7 @@ class WalkCellsClass {
 	}
 
 	static getJumpNoEntitiesFull(stats) {
-		var mp = max(0, stats.TOTAL_MP) // clamped: see getWalkNoEntitiesFull
+		var mp = max(0, stats.TOTAL_MP) // clampé : voir getWalkNoEntitiesFull
 		var key = (stats.CELL << 32) | mp
 		if (key in JUMP_CACHE_NOENT) return JUMP_CACHE_NOENT[key]
 		BenchOps.Start("WalkCells")
@@ -157,12 +140,12 @@ class WalkCellsClass {
 	}
 
 	// ============================================================================
-	// Composeurs : pick the right fetcher(s) based on capacities.
+	// Composeurs : choisissent le(s) bon(s) fetcher(s) selon les capacités.
 	// ============================================================================
 
-	/**
-	 * Returns the maximal reachability map (TPJ > TELE > JUMP > WALK).
-	 * Use when the caller only needs the set of reachable cells, regardless of layer.
+	/*
+	 * La map d'accessibilité maximale (TPJ > TELE > JUMP > WALK). Pour les appelants
+	 * qui ne veulent que l'ensemble des cellules, sans savoir par quelle layer.
 	 */
 	static getMaxLayer(state, entity, base_hash) {
 		var stats = state[entity]
@@ -172,10 +155,9 @@ class WalkCellsClass {
 		return getWalk(state, entity, base_hash)
 	}
 
-	/**
-	 * Returns all four layers + .MAX in a LayersClass instance.
-	 * Use when the caller needs to know which layer each cell belongs to
-	 * (BFS for action cost, Node for cost+cooldown, MoveTo for runtime routing).
+	/*
+	 * Les quatre layers + .MAX dans un LayersClass. Pour les appelants qui doivent savoir
+	 * de quelle layer vient chaque cellule (coût d'action du BFS, cooldowns du nœud, MoveTo).
 	 */
 	static getAllLayers(state, entity, base_hash) {
 		var stats = state[entity]
@@ -195,10 +177,10 @@ class WalkCellsClass {
 	// ============================================================================
 
 	static HashWalkCells(Cell, Mp, BaseHash) {
-		return addValueToBinHash((OFFSET_BASIS ^ BaseHash), (Cell << 32) | Mp) // hash of (Cell, Mp) under BaseHash
+		return addValueToBinHash((OFFSET_BASIS ^ BaseHash), (Cell << 32) | Mp) // clé (cellule, mp) sous BaseHash
 	}
 
-	// Very specific function of hashing teleportation items and cell/mp of entity but /!\ doesn't take basehash into account /!\
+	/* Fingerprint (cellule, mp, capacités jump/télépo) d'une entité — SANS BaseHash. */
 	static HashWalkCellsWithItemsWithoutBaseHash(entity_state) {
 		var Entity = entity_state.ID
 		var Tp = entity_state.TP
@@ -209,18 +191,19 @@ class WalkCellsClass {
 		var TeleportationCost = ITEMINFO[CHIP_TELEPORTATION].COST
 		var CanJump = (JumpCooldown == 0 || Entity != Me && JumpCooldown <= 1) && Tp >= JumpCost
 		var CanTeleport = (TeleportationCooldown == 0 || Entity != Me && TeleportationCooldown <= 1) && Tp >= TeleportationCost
-		// 3rd threshold: the TPJ layer needs the SUMMED cost of both chips (canTPJ). Without this bit,
-		// a TP >= jump+tele state and a tele <= TP < jump+tele state shared a key while their reachable
-		// DOMAINS differ (TPJ vs TELE) -> the flee-min cache served a min over unreachable cells.
+		// 3e seuil : la layer TPJ exige le coût CUMULÉ des deux chips. Sans ce bit, deux états
+		// aux DOMAINES accessibles différents (TPJ vs TELE) partageaient une clé -> le cache de
+		// fuite servait un min sur des cellules inaccessibles.
 		var CanBoth = CanJump && CanTeleport && Tp >= JumpCost + TeleportationCost
 		var BaseValue = (CanJump ? 1 : 0) | (CanTeleport ? 2 : 0) | (CanBoth ? 4 : 0)
 		return addValueToBinHash((OFFSET_BASIS ^ BaseValue), (entity_state.CELL << 32) | entity_state.MP)
 	}
 
 	// ============================================================================
-	// Sorting / coefficient helpers (consumed by Actions module)
+	// Helpers de tri / coefficients (consommés par le module Actions)
 	// ============================================================================
 
+	/* Cellules de MAX triées par coût croissant, layers pénalisées (walk < jump < télépo < les deux). */
 	static LoadSortedWalkCells(layers) {
 		var TmpArray = []
 		var TmpMapScoring = [: ]
@@ -240,8 +223,8 @@ class WalkCellsClass {
 		})
 	}
 
-	//Soon Obselete :
-	static LoadCoeffedCellsFromWalkCellsClass(layers) {//Used for Action Map Loading (Should i walk or jump and save mp ...) No need to cache cuz its already cached only by BaseHash in Action Map
+	// Bientôt obsolète (candidat code mort) :
+	static LoadCoeffedCellsFromWalkCellsClass(layers) { // [cellule -> coût pénalisé par layer], pour l'Action Map
 		var _final = [: ]
 		var Walk = layers.WALK
 		var Jump = layers.JUMP
@@ -262,9 +245,10 @@ class WalkCellsClass {
 	}
 
 	// ============================================================================
-	// Runtime helpers (executed once per turn at action emission time)
+	// Helpers d'exécution (une fois par action réelle, à l'émission)
 	// ============================================================================
 
+	/* Se déplace réellement vers `cell`, en jouant les jump/télépos nécessaires. */
 	static MoveTo(cell, State, BaseHash) {
 		var layers = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 		var ActionsToGet = getActionsToGet(State[Me].CELL, cell, layers.TELEPORTATION_AND_JUMP, layers.TELEPORTATION, layers.JUMP, layers.WALK)
@@ -370,19 +354,16 @@ class WalkCellsClass {
 	}
 
 	// ============================================================================
-	// Bitmap BFS (packed-couple, 18 ints of 35 bits each)
+	// BFS bitmap (couples packés, 18 ints de 35 bits)
 	// ============================================================================
-	// Bitmap layout per couple: bits 0-17 = even row, bits 24-40 = odd row, gap
-	// 18-23 acts as a cross-row contamination barrier (max shift used is 6).
-	// Each function clones MAP_OBSTACLES_CACHE (populated once in
-	// Preload.InitCellClass) and subtracts `leekcells` locally — no global
-	// pollution. ACC* are local 19-int arrays (18 couples + sentinel) cloned
-	// from ACC_TEMPLATE so the BFS can read ACC[c+1] without a bound check.
-	//
-	// Returns: map { cell_id => mp_required } including the start cell at mp=0.
-	// Bench (seed=1, mp=12): 4691 / 16708 / 24641 / 61803 ops.
+	// Layout par couple : bits 0-17 = ligne paire, bits 24-40 = ligne impaire ; le trou
+	// 18-23 bloque la contamination inter-lignes (shift max utilisé : 6).
+	// Chaque fonction clone MAP_OBSTACLES_CACHE et y soustrait `leekcells` localement.
+	// Les ACC* sont des tableaux locaux de 19 ints (18 couples + sentinelle pour lire
+	// ACC[c+1] sans garde), clonés d'ACC_TEMPLATE.
+	// Retour : map { cellule => mp requis }, cellule de départ incluse à 0.
 
-	// Reachable cells with N walks.
+	/* Cellules accessibles en N pas de marche. */
 	static WalkableCells(from, leekcells, mp) {
 		var _final = [from : 0]
 		if (mp == 0) return _final
@@ -423,7 +404,7 @@ class WalkCellsClass {
 		return _final
 	}
 
-	// Reachable cells with N walks + at most 1 jump (chebyshev ≤ 3) on ANY path.
+	/* Cellules accessibles en N pas + au plus 1 jump (chebyshev <= 3) n'importe où sur le chemin. */
 	static WalkableCellsWithJump(from, leekcells, mp) {
 		var _final = [from : 0]
 		var OBS = clone(MAP_OBSTACLES_CACHE, 1)
@@ -588,7 +569,7 @@ class WalkCellsClass {
 		return _final
 	}
 
-	// Reachable cells with N walks + at most 1 teleport (chebyshev ≤ 12).
+	/* Cellules accessibles en N pas + au plus 1 télépo (chebyshev <= 12). */
 	static WalkableCellsWithTeleportation(from, leekcells, mp) {
 		var _final = [from : 0]
 		var OBS = clone(MAP_OBSTACLES_CACHE, 1)
@@ -740,9 +721,9 @@ class WalkCellsClass {
 		return _final
 	}
 
-	// Reachable cells with N walks + at most 1 jump + at most 1 teleport, any order.
-	// Tracks 4 sets (acc, acct, accj, acctj). Only acctj emits to _final
-	// (all 3 other sets are subsumed by acctj).
+	/* Cellules accessibles en N pas + au plus 1 jump + au plus 1 télépo, dans n'importe quel
+	 * ordre. Suit 4 ensembles (acc, acct, accj, acctj) ; seul acctj émet dans _final
+	 * (les 3 autres y sont inclus). */
 	static WalkableCellsWithTeleportationAndJump(from, leekcells, mp) {
 		var _final = [from : 0]
 		var OBS = clone(MAP_OBSTACLES_CACHE, 1)
