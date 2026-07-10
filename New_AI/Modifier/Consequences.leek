@@ -1,6 +1,7 @@
-/**
- * Class that change State from the consequences of an action (Not SUMM/RESU Type) : Item To X From Y (For Lasers)
- **/
+/*
+ * Consequences : la simulation des effets d'un item sur l'état — la vérité moteur de l'IA
+ * (multiplicateurs de stats, shields, kills en cascade, steals, débuffs...).
+ */
 
 //TODO : Add Special Weapons Effects on Kill (Here and in Action Fitness)
 include("../includes.leek")
@@ -40,11 +41,9 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					// Léthal (doping suicidaire...) : même cascade que les dégâts — LIFE=0 + déroulé
-					// des buffs du mort + procs on-kill (AddTpEnhancedLightninger=true comme les
-					// autres routes de kill). Avant, LIFE partait négatif SANS cascade : les buffs
-					// castés par le mort restaient appliqués aux survivants. Érosion sur les dégâts
-					// réellement encaissés (cap à la vie restante), comme getEntityDamageConsequences.
+					// Léthal : même cascade que les dégâts — LIFE=0 + déroulé des buffs du mort +
+					// procs on-kill. Érosion sur les dégâts réellement encaissés (cap à la vie
+					// restante), comme getEntityDamageConsequences.
 					var appliedDamage = min(calculatedValue, targetStats.LIFE)
 					if (appliedDamage >= targetStats.LIFE && targetStats.LIFE > 0) {
 						getKillConsequences(aoeDistance, 0, Effect, targetStats, CastStats, targetId == Caster, State, true, clonedIds)
@@ -156,7 +155,7 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_POISON:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // floor-at-use, like the engine (stats CAN be stored negative)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
 				var effectDuration = Effect[3]
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
@@ -178,7 +177,7 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_DAMAGE:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.STRENGTH) / 100) * (1 + CastStats.POWER / 100) // engine floors STRENGTH at use but NOT power (verified in EffectDamage.java)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.STRENGTH) / 100) * (1 + CastStats.POWER / 100) // le moteur plancher STRENGTH à l'usage mais PAS power
 				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
 				break
 			case EFFECT_DEBUFF:
@@ -301,7 +300,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) getEntityRemoveShacklesConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster)
 				break
 			case EFFECT_SHACKLE_AGILITY:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // floor-at-use, like the engine (stats CAN be stored negative)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
@@ -310,7 +309,7 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_SHACKLE_MAGIC:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // floor-at-use, like the engine (stats CAN be stored negative)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
@@ -319,7 +318,7 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_SHACKLE_MP:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // floor-at-use, like the engine (stats CAN be stored negative)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
@@ -329,7 +328,7 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_SHACKLE_STRENGTH:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // floor-at-use, like the engine (stats CAN be stored negative)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
@@ -338,18 +337,18 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_SHACKLE_TP:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // floor-at-use, like the engine (stats CAN be stored negative)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.TP -= calculatedValue
 					targetStats.TOTAL_TP -= calculatedValue
-					targetStats.TO_SAVE_SHACKLE_TOTAL_TP += calculatedValue // was _TOTAL_MP (copy-paste): REMOVE_SHACKLES refunded the TP shackle as MOVEMENT
+					targetStats.TO_SAVE_SHACKLE_TOTAL_TP += calculatedValue
 				}
 				break
 			case EFFECT_SHACKLE_WISDOM:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // floor-at-use, like the engine (stats CAN be stored negative)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
@@ -358,16 +357,15 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_STEAL_ABSOLUTE_SHIELD:
-				// Moteur (EffectStealAbsoluteShield.java) : le CASTER gagne un bouclier absolu égal
-				// au TOTAL de l'effet PRÉCÉDENT de l'item (rien n'est retiré à la cible ICI — le
-				// "vol" vient de l'effet d'avant, typiquement une vulné absolue). L'ancien code
-				// blindait la CIBLE avec la valeur de base — faux.
+				// Moteur : le CASTER gagne un bouclier absolu égal au TOTAL de l'effet PRÉCÉDENT
+				// de l'item (rien n'est retiré à la cible ici — le "vol" vient de l'effet d'avant,
+				// typiquement une vulné absolue).
 				CastStats.ABSOLUTE_SHIELD += PrevEffectTotal
 				effectTotal = PrevEffectTotal
 				break
 			case EFFECT_STEAL_LIFE:
-				// Moteur (EffectStealLife.java) : le CASTER récupère le TOTAL de l'effet PRÉCÉDENT,
-				// cappé à sa vie manquante. (L'état UNHEALABLE n'est pas modélisé dans la simu.)
+				// Moteur : le CASTER récupère le TOTAL de l'effet PRÉCÉDENT, cappé à sa vie
+				// manquante. (L'état UNHEALABLE n'est pas modélisé dans la simu.)
 				var stolen = min(PrevEffectTotal, CastStats.TOTAL_LIFE - CastStats.LIFE)
 				CastStats.LIFE += stolen
 				effectTotal = stolen
@@ -386,7 +384,8 @@ class ConsequencesClass {
 		return effectTotal
 	}
 
-	static getConsequences(State, Item, From, To, Caster, BaseHash, clonedIds) { //Need from for lasers
+	/* Applique tous les effets de l'item sur l'état (From nécessaire pour les lasers). */
+	static getConsequences(State, Item, From, To, Caster, BaseHash, clonedIds) {
 		BenchOps.Start("Consequences")
 		var Targets = ConsequenceTargets(Item, From, To, State, Caster, BaseHash)
 		var CastStats = State[Caster]
@@ -549,10 +548,11 @@ class ConsequencesClass {
 		}
 	}
 
+	/* Déroule tous les effets castés par une entité (à sa mort). */
 	static RemoveCastedEffects(EveryStats, Caster, clonedIds) {
-		// Clone-on-write: an entity carrying an effect cast by the killed can be OUTSIDE the
-		// pre-cloned Targets+Me set (= SHARED with the parent State). Collect first, then
-		// clone+mutate — ensureCloned replaces map values, never mutate a map while iterating it.
+		// Clone-on-write : un porteur d'effet peut être HORS du set pré-cloné (= partagé avec
+		// l'état parent). Collecter d'abord, puis cloner+muter — ensureCloned remplace des
+		// valeurs de map, ne jamais muter une map en l'itérant.
 		var touched = []
 		for (var e: var stat in EveryStats) {
 			for (var eff in stat.EFFECTS) {
@@ -576,9 +576,8 @@ class ConsequencesClass {
 		TarStats.LIFE = 0
 		var Killed = TarStats.ID
 		RemoveCastedEffects(EveryStats, Killed, clonedIds)
-		// Clone-on-write: cascade victims (summons of the killed) and special-weapon holders can be
-		// OUTSIDE the pre-cloned Targets+Me set (= SHARED with the parent State). Collect first, then
-		// clone+mutate — ensureCloned replaces map values, never mutate a map while iterating it.
+		// Clone-on-write : les victimes de cascade (summons du mort) et les porteurs d'armes
+		// spéciales peuvent être HORS du set pré-cloné. Collecter d'abord, puis cloner+muter.
 		var cascadeIds = []
 		var procIds = []
 		for (var e: var stat in EveryStats) {
@@ -754,7 +753,7 @@ class ConsequencesClass {
 			case AREA_FIRST_INLINE:
 				var MapEntity = [: ]
 				for (var e: var stat in EveryStats)
-					if (e != Me && stat.LIFE > 0) MapEntity[stat.CELL] = true // STRICT: corpses don't block shots in the engine (LIFE >= 0 made a 0-HP corpse a blocker AND poisoned the persistent CONSEQUENCE_TARGET_CACHE whose key only pins ALIVE positions)
+					if (e != Me && stat.LIFE > 0) MapEntity[stat.CELL] = true // STRICT : les cadavres ne bloquent pas les tirs (et la clé du cache ne pinne que les vivants)
 				var MapAoe = From == To ? [From: true] : CellClass.getFirstInlineAoe(From, To, ITEMINFO[Item].MINRANGE, ITEMINFO[Item].MAXRANGE, MapEntity)
 				for (var e: var stat in EveryStats)
 					if (MapAoe[stat.CELL]) _final[e] = 0
@@ -784,12 +783,11 @@ class ConsequencesClass {
 	}
 
 	static ConsequenceTargetsHash(BaseHash, Item, From, To) {
-		// Me folded in (bits 40-45, ids < 64): the cache is FIGHT-PERSISTENT and its VALUE embeds
-		// the caster (_final[Me] is computed from From — in simulation Me stands at From, not at its
-		// captured cell), while the owner and its bulbs share the same VM -> without the caster in
-		// the key, a bulb's BFS could hit the owner's target maps (and vice versa) on any
-		// (BaseHash, item, from, to) both explored. BaseHash (the seed) already pins every ALIVE
-		// position — a target moving flips the key. Pack: To bits 0-14 | From 15-29 | Item 30-39.
+		// Me dans la clé (bits 40-45) : le cache est PERSISTANT et sa valeur embarque le caster
+		// (_final[Me] est calculé depuis From), or le propriétaire et ses bulbes partagent la
+		// même VM — sans le caster dans la clé, le BFS d'un bulbe pouvait relire les maps de
+		// cibles du proprio. BaseHash pinne déjà toutes les positions vivantes.
+		// Pack : To bits 0-14 | From 15-29 | Item 30-39.
 		return addValueToBinHash(OFFSET_BASIS ^ BaseHash, (Me << 40) | (Item << 30) | (From << 15) | To)
 	}
 
@@ -800,17 +798,17 @@ class ConsequencesClass {
 		return _final
 	}
 
+	/* Dégâts estimés d'UN item du caster sur la cible à une distance d'AoE (pour la danger map). */
 	static getItemDanger(item, casterstats, targetstats, Distance, Multiplier) {
 		var Info = ITEMINFO[item]
 		if (!isHitable(Info.EFFECTS[0], targetstats, casterstats, false)) return 0
 		var _final = 0
 		var distFactor = 1 - (Distance * 0.2)
 		var powerFactor = 1 + casterstats.POWER / 100
-		var strengthFactor = 1 + max(0, casterstats.STRENGTH) / 100 // floor-at-use, like the engine
+		var strengthFactor = 1 + max(0, casterstats.STRENGTH) / 100 // plancher à l'usage, comme le moteur
 		var shieldFactor = 1 - targetstats.RELATIVE_SHIELD / 100
-		// 99 = pas d'antidote dans l'inventaire (jamais de cure -> le poison compte sa durée PLEINE).
-		// Avant, la lecture null se coerçait en 0 : une cible SANS antidote était valorisée comme une
-		// cible avec antidote PRÊT (1 tick) -> danger poison systématiquement sous-évalué contre elle.
+		// 99 = pas d'antidote dans l'inventaire (jamais de cure -> le poison compte sa durée
+		// PLEINE), distinct d'un antidote prêt (0).
 		var antidoteCd = (CHIP_ANTIDOTE in targetstats.COOLDOWNS) ? targetstats.COOLDOWNS[CHIP_ANTIDOTE] : 99
 		for (var eff in Info.EFFECTS) {
 			if (eff[5] & EFFECT_MODIFIER_ON_CASTER) continue
