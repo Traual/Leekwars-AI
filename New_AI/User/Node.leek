@@ -1,69 +1,67 @@
-/**
- * Here we have the Node Class ! Used in action Suite to keep track of EndStats
- **/
+/*
+ * Nœud de l'arbre de recherche : l'état complet après une action, avec les hashs
+ * incrémentaux du scoring (patchés depuis le parent, jamais reconstruits).
+ */
 
 include("../includes.leek")
 
 class NodeClass {
 	ACTION
 	END_STATS
-	PARENT      // Node we came from (null for root / base / no-play)
-	SCORE       // Absolute state score of END_STATS (cached, filled by BFS)
-	BASE_HASH   // BaseHash of END_STATS (filled by BFS for cache lookup)
-	CONTEXT_BY_SIDE   // Phase 2: per-side opposing-team context, patched incrementally at creation
-	HFP_BY_SIDE       // Phase 4a: per-side healers fingerprint, patched incrementally at creation
-	CLONED            // Phase 4a: the clonedIds map = the EXACT set of possibly-mutated entities (+ the newborn bulb / revived — Phase 4b)
-	TERMS             // Phase 4a: [entityId -> SIGNED term], cloned from the parent + patched
+	PARENT            // nœud d'origine (null pour une action de base)
+	SCORE             // score absolu de END_STATS (rempli par le BFS)
+	BASE_HASH         // BaseHash de END_STATS
+	CONTEXT_BY_SIDE   // par side : hash de l'équipe adverse (clé des caches danger)
+	HFP_BY_SIDE       // par side : fingerprint des healers (clé de la heal map)
+	CLONED            // [id -> true] : ensemble EXACT des entités possiblement mutées par l'action
+	TERMS             // [id -> terme signé] : termes du scoring, clonés du parent puis patchés
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction
 		this.PARENT = Parent
 	}
 
-	/* THE node factory: applies the action's consequences on a clone-on-write state and patches
-	 * the incremental hashes. Its two callers (enumerateAndSort and findBestNextNode) supply the
-	 * walkcells and the TP cost they ALREADY computed for their own filtering — the old
-	 * ActionToNode wrapper re-derived both per node (getAllLayers + the cost formula, ~150 ops
-	 * × ~2300 nodes/turn) and was deleted.
+	/*
+	 * Fabrique LE nœud : applique les conséquences de l'action sur un état clone-on-write,
+	 * puis patche les hashs incrémentaux (base, contextes, healers) depuis le parent.
 	 *
-	 * @param Act Action that i want to transform into a node
-	 * @param State Map <Id : Class Stats of Id> (the PARENT state)
-	 * @param From : Cell From (Act.From)
-	 * @param MyWalkCells Class WalkCells of my entity (caller already holds it)
-	 * @param Cost Total TP cost incl. weapon swap + jump/teleport move items (caller already computed it)
-	 * @param Info Class ItemInfo of (Item)
-	 * @param Item : Item to use (Act.Item)
-	 * @param To : Cell To (Act.To)
-	 * @param BaseHash BaseHash of the parent State
-	 * @param Parent Parent node (null for base nodes)
-	 * @param ParentContext Parent's CONTEXT_BY_SIDE (cloned + patched incrementally onto the child)
-	 * @param ParentHfp Parent's HFP_BY_SIDE (idem)
+	 * @param Act Action à transformer en nœud
+	 * @param State état PARENT [id -> stats]
+	 * @param From cellule de lancement (Act.From)
+	 * @param MyWalkCells layers de déplacement de Me (déjà calculés par l'appelant)
+	 * @param Cost coût TP total : item + swap d'arme + jump/télépo (déjà calculé par l'appelant)
+	 * @param Info ItemInfo de Item
+	 * @param Item item utilisé (Act.Item)
+	 * @param To cellule cible (Act.To)
+	 * @param BaseHash BaseHash de l'état parent
+	 * @param Parent nœud parent (null pour une action de base)
+	 * @param ParentContext CONTEXT_BY_SIDE du parent
+	 * @param ParentHfp HFP_BY_SIDE du parent
 	 *
-	 * @return New Node Class
+	 * @return le nouveau nœud, hashs remplis
 	 */
-
 	static ActionToNodeInTree(Act, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, ParentContext, ParentHfp) {
 		BenchOps.Start("Node")
 		var Targets = ConsequencesClass.ConsequenceTargets(Item, From, To, State, Me, BaseHash)
-		// clonedIds = the EXACT set of possibly-mutated entities: Targets+Me pre-cloned here, plus every
-		// kill-path side-victim (summon cascade, buff unwind, weapon procs) cloned-on-write by
-		// StateClass.ensureCloned inside getConsequences. Local, threaded as a parameter (no global).
+		// clonedIds = l'ensemble exact des entités possiblement mutées : cibles + Me pré-clonés ici,
+		// victimes des cascades de kill clonées-on-write dans getConsequences.
 		var clonedIds = [: ]
 		var ThisActionStats = StateClass.CloneOnlyTargetsAndMe(Targets, State, clonedIds)
 
-		// FIX RESURRECTION : Les entités mortes alliées doivent être clonées 
-		// car ResurrectionClass.Update va modifier leurs stats (LIFE, CELL, etc.)
+		// Résurrection : les cadavres alliés sont pré-clonés car Update écrit leurs scalaires
+		// (LIFE, TOTAL_LIFE, CELL, TURN_ORDER).
 		if (Item == CHIP_RESURRECTION) {
 			for (var e: var stat in State) {
 				if (stat.LIFE <= 0 && stat.SIDE == State[Me].SIDE && !(e in Targets)) {
-					ThisActionStats[e] = StateClass.cloneEntityForSim(stat, false)   // Update only writes scalars (LIFE/TOTAL_LIFE/CELL/TURN_ORDER)
+					ThisActionStats[e] = StateClass.cloneEntityForSim(stat, false)
 					clonedIds[e] = true
 				}
 			}
 		}
 
+		// Déplacement : retire les MP de la layer utilisée.
 		ThisActionStats[Me].CELL = From
-		if (From in MyWalkCells.WALK) { //Removing Mps
+		if (From in MyWalkCells.WALK) {
 			ThisActionStats[Me].MP -= MyWalkCells.WALK[From]
 		} else if (From in MyWalkCells.JUMP) {
 			ThisActionStats[Me].MP -= MyWalkCells.JUMP[From]
@@ -72,65 +70,56 @@ class NodeClass {
 		} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
 			ThisActionStats[Me].MP -= MyWalkCells.TELEPORTATION_AND_JUMP[From]
 		}
-		ThisActionStats[Me].TP -= Cost //We Remove TP
-		if (Info.IS_WEAPON) ThisActionStats[Me].WEAPON = Item //Change Entity Weapon
-		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash, clonedIds) //Changing item consequences
-		ThisActionStats[Me].COOLDOWNS[Item] = Info.COOLDOWN //Adding the cooldown
-		ThisActionStats[Me].USES[Item]++ //Adding the uses
-		if (!(From in MyWalkCells.WALK)) { //Adding the moving item cooldown
+		ThisActionStats[Me].TP -= Cost
+		if (Info.IS_WEAPON) ThisActionStats[Me].WEAPON = Item
+		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash, clonedIds)
+		ThisActionStats[Me].COOLDOWNS[Item] = Info.COOLDOWN
+		ThisActionStats[Me].USES[Item]++
+		// Cooldowns des items de déplacement si la cellule d'arrivée vient d'une layer jump/télépo.
+		if (!(From in MyWalkCells.WALK)) {
 			if (From in MyWalkCells.JUMP) {
-				ThisActionStats[Me].COOLDOWNS[CHIP_JUMP] = ITEMINFO[CHIP_JUMP].COOLDOWN //Adding the jump cooldown
+				ThisActionStats[Me].COOLDOWNS[CHIP_JUMP] = ITEMINFO[CHIP_JUMP].COOLDOWN
 			} else if (From in MyWalkCells.TELEPORTATION) {
-				ThisActionStats[Me].COOLDOWNS[CHIP_TELEPORTATION] = ITEMINFO[CHIP_TELEPORTATION].COOLDOWN //Adding the Teleportation cooldown
-			} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) { //Adding both cooldowns
-				ThisActionStats[Me].COOLDOWNS[CHIP_JUMP] = ITEMINFO[CHIP_JUMP].COOLDOWN //Adding the jump cooldown
-				ThisActionStats[Me].COOLDOWNS[CHIP_TELEPORTATION] = ITEMINFO[CHIP_TELEPORTATION].COOLDOWN //Adding the Teleportation cooldown
+				ThisActionStats[Me].COOLDOWNS[CHIP_TELEPORTATION] = ITEMINFO[CHIP_TELEPORTATION].COOLDOWN
+			} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
+				ThisActionStats[Me].COOLDOWNS[CHIP_JUMP] = ITEMINFO[CHIP_JUMP].COOLDOWN
+				ThisActionStats[Me].COOLDOWNS[CHIP_TELEPORTATION] = ITEMINFO[CHIP_TELEPORTATION].COOLDOWN
 			}
 		}
-		var result = new NodeClass(Act, ThisActionStats, Parent) //Creating Node
+		var result = new NodeClass(Act, ThisActionStats, Parent)
 
-		// === Phase 2 + 4a + 4b: incremental hash patch (BASE_HASH + CONTEXT_BY_SIDE + HFP_BY_SIDE) ===
-		// ONE single path since Phase 4b — summon and resurrect nodes patch like everyone else:
-		//  - RESURRECT: the revived is pre-cloned into clonedIds (loop above, LOAD-BEARING); its OLD
-		//    contributions are 0 (all three contribution fns are LIFE-gated and it was dead in the
-		//    parent), the NEW ones come from its post-Update stats (life, cell, engine-faithful
-		//    fractional TURN_ORDER). Non-picked corpses patch as harmless no-ops (0 ^ 0).
-		//  - SUMMON (mapSize grew): the bulb is BORN in the branch (absent from the parent), so the
-		//    old^new patch can't see it — its contributions are ADDED explicitly after the loop.
-		// Patch over clonedIds — the EXACT set of possibly-mutated entities (Targets+Me pre-cloned
-		// + kill-path side-victims cloned-on-write). Covers cascade/unwind/procs by construction;
-		// the parent State keeps the pristine old values (it is never mutated anymore).
-		var bh = BaseHash                    // parent State's BaseHash
-		var ctx = clone(ParentContext, 1)    // copy so we never mutate the parent's context
-		var ctxSides = mapKeys(ctx)          // hoisted: the side set never changes inside the patch loop
-		var hfpMap = clone(ParentHfp, 1)     // Phase 4a: healers fingerprint, patched like the context
+		// Patch incrémental des trois hashs : old ^ new pour chaque entité de clonedIds.
+		// Un ressuscité était mort dans le parent -> ses contributions old valent 0 (fonctions
+		// LIFE-gated). Un bulbe né dans la branche est absent du parent -> ajouté plus bas.
+		var bh = BaseHash
+		var ctx = clone(ParentContext, 1)    // copie : le contexte du parent n'est jamais muté
+		var ctxSides = mapKeys(ctx)
+		var hfpMap = clone(ParentHfp, 1)
 		for (var tar: var _c in clonedIds) {
-			if (tar == Me) continue          // Me excluded from all three hashes
+			if (tar == Me) continue          // Me est exclu des trois hashs
 			var oldStat = State[tar]
 			var newStat = ThisActionStats[tar]
 			bh ^= StateClass.baseContribution(oldStat, tar) ^ StateClass.baseContribution(newStat, tar)
 			var deltaCtx = DeltaClass.contextContribution(oldStat, tar) ^ DeltaClass.contextContribution(newStat, tar)
 			if (deltaCtx != 0) {
-				var side = newStat.SIDE      // side doesn't change
-				for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx
+				var side = newStat.SIDE
+				for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx   // contextes des sides ADVERSES
 			}
 			var deltaHfp = HealClass.healerContributionOf(oldStat, tar) ^ HealClass.healerContributionOf(newStat, tar)
-			if (deltaHfp != 0) {             // patched into the entity's OWN side (enemy heals modeled)
+			if (deltaHfp != 0) {             // fingerprint du side de l'entité elle-même
 				var hfpSide = newStat.SIDE
 				hfpMap[hfpSide] = ((hfpSide in hfpMap) ? hfpMap[hfpSide] : 0) ^ deltaHfp
 			}
 		}
 
-		var entityAdded = mapSize(ThisActionStats) != mapSize(State)   // only summons ADD an id
+		var entityAdded = mapSize(ThisActionStats) != mapSize(State)   // seul un summon ajoute un id
 		if (entityAdded) {
-			// SUMMON add-on: the bulb's id is derivable from the Item (same formula as Consequences
-			// EFFECT_SUMMON). ASSERT it was really BORN in this branch — if the id scheme ever
-			// diverges (0-CD TODO) or a REAL bulb summoned this turn collides with SUMMON_ID_BASE+k
-			// (pre-existing silent hole, now LOUD), fall back to full rebuilds for this node.
+			// Ajout du bulbe né dans la branche (id dérivé du chip, même formule que Consequences).
+			// Garde-fou : si l'id n'est pas né ici (collision id réel / virtuel), rebuild complet.
 			var newId = SUMMON_ID_BASE + BulbState.getTypeOffset(Item)
 			if (!(newId in ThisActionStats) || (newId in State)) {
 				debugE("[SUMMON PATCH] id " + newId + " not born in this branch (item " + Item + ") -> full rebuild fallback")
-				if (newId in ThisActionStats) clonedIds[newId] = true   // best effort: its term recomputes
+				if (newId in ThisActionStats) clonedIds[newId] = true
 				result.CLONED = clonedIds
 				result.BASE_HASH = StateClass.getBaseHash(ThisActionStats)
 				result.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(ThisActionStats)
@@ -146,15 +135,13 @@ class NodeClass {
 			}
 			var addHfp = HealClass.healerContributionOf(newStat, newId)
 			if (addHfp != 0) hfpMap[newStat.SIDE] = ((newStat.SIDE in hfpMap) ? hfpMap[newStat.SIDE] : 0) ^ addHfp
-			clonedIds[newId] = true   // the bulb's term enters the scoring recompute set (termDelta 0-defaults its old term)
+			clonedIds[newId] = true   // le bulbe entre dans le recompute-set du scoring
 		}
 
 		result.CLONED = clonedIds
 		result.BASE_HASH = bh
 		result.CONTEXT_BY_SIDE = ctx
 		result.HFP_BY_SIDE = hfpMap
-		// (Phase 4b validated in a live fight: summon AND resurrect nodes, patched hashes
-		// bit-identical to independent full rebuilds — the TEMP SUMMONTEST was removed.)
 
 		BenchOps.Stop("Node")
 		return result

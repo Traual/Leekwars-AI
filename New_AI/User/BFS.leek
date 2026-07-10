@@ -1,71 +1,53 @@
-/**
- * Tree Search Action Selector (port from Old_AI's ActionSuite/Tree.leek)
+/*
+ * Sélecteur d'action par recherche arborescente gloutonne.
  *
- * Builds a tree of possible play sequences:
- *  - Depth-1 : every playable action is cloned+applied+state-scored.
- *  - Sorted by Δscore-vs-reference (descending).
- *  - Each base action is then greedy-expanded by picking the best next
- *    playable action from a sorted list re-scored in the current
- *    derived state for verification; early-exit when the sorted bound
- *    can't beat the running best.
- *  - The sorted ScoredEntries are CACHED by BaseHash across the whole
- *    BFS call. Steps that stay on the same BaseHash (self-buffs) reuse
- *    the root's list. Steps that change BaseHash (walk / Inversion /
- *    Grapple / summon) trigger a fresh enumerate+score+sort for that
- *    new BaseHash and cache it -- catches opportunities created by
- *    relocate plays while still saving work across branches that pass
- *    through the same derived BaseHash.
- *  - Each base action is greedily unrolled by a recursive DFS (unroll), tracking the best node.
- *  - A no-play node (score = initial) acts as a floor.
- *  - The best-scored node wins; we return its first ancestor's action.
- *
- * Danger is already included inside `ScoringClass.getStateScore`.
- **/
+ *  - Profondeur 1 : chaque action jouable est clonée + appliquée + scorée, puis triée
+ *    par Δscore décroissant.
+ *  - Chaque action de base est déroulée récursivement (unroll) : on descend la meilleure
+ *    action suivante, avec early-exit quand la borne du tri ne peut plus battre le best.
+ *  - Les listes triées sont CACHÉES par BaseHash sur tout l'appel : un step qui reste sur
+ *    le même BaseHash (self-buff) réutilise la liste, un step qui le change (move, summon,
+ *    Inversion...) énumère à neuf pour ce nouveau board.
+ *  - Un nœud "ne rien jouer" (score initial) sert de plancher.
+ *  - Le meilleur nœud gagne ; on renvoie l'action de son premier ancêtre.
+ */
 
 include("../includes.leek")
 
-// Compteur de steps d'expansion du getBestAction courant (les [+N] d'avant, en une ligne).
-// En greedy récursif, leafs == bases (une chaîne par action de base) -> le signal de forme
-// d'arbre restant = le nombre total de steps déroulés.
+// Nombre de steps d'expansion déroulés par le getBestAction courant (affiché dans "Best:").
 global BFS_CHAIN_STEPS = 0
 
 class ActionSuite {
 
-	/**
-	 * Returns the best single action to play in the given state.
+	/*
+	 * Renvoie la meilleure action à jouer dans l'état donné (null = ne rien jouer).
 	 */
 	static getBestAction(State) {
 		BenchOps.Start("BFS")
 		var MySide = State[Me].SIDE
 		var BaseHash = StateClass.getBaseHash(State)
-		var RootContext = DeltaClass.buildContextBySide(State)   // Phase 2: root context, patched down the tree
-		var RootHfp = HealClass.buildHfpBySide(State)            // Phase 4a: root healers fingerprint, patched down the tree
-		var RootTerms = ScoringClass.buildTermsMap(State, MySide, BaseHash, RootContext)   // Phase 4a: per-entity signed terms, carried down (mode 2)
+		var RootContext = DeltaClass.buildContextBySide(State)
+		var RootHfp = HealClass.buildHfpBySide(State)
+		var RootTerms = ScoringClass.buildTermsMap(State, MySide, BaseHash, RootContext)
 		var initialScore = ScoringClass.sumTerms(RootTerms)
 
-		// Per-call cache : BaseHash -> sorted ScoredEntries
-		// Entry shape : [act, deltaVsReference, node, nodeScore] (hashes live ON the node since Phase 2)
+		// Cache par appel : BaseHash -> liste triée d'entrées [act, delta, node, nodeScore].
 		var ScoredCache = [:]
 
-		// === Step 1 : enumerate, clone+apply+score+sort base actions ===
 		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, RootTerms)
 		ScoredCache[BaseHash] = rootEntries
 		BFS_CHAIN_STEPS = 0
 		debugC("--- " + count(rootEntries) + " base actions ---", COLOR_BLUE)
 
-		// === Step 2 : no-play floor (hide) = initial best, then recursively unroll each base action ===
-		// The BFS_DELTA_EPSILON margin keeps float residue (e.g. heal on a full-HP target, Δ≈2.9e-11)
-		// from outranking the floor / other candidates. DFS order + epsilon == the old array scan.
+		// Plancher "ne rien jouer", puis déroulé de chaque action de base. La marge
+		// BFS_DELTA_EPSILON empêche les résidus float de battre le plancher.
 		var noPlay = new NodeClass(null, State, null)
 		noPlay.SCORE = initialScore
 		var best = noPlay
 
-		// (No per-entry debug here: the [Base]/[+depth] lines cost real ops (string concat per node
-		// chain) AND saturated LeekWars' per-fight debug budget — the late-turn bench dumps were
-		// getting cut. The decision trace is the single "Best:" line below + Play's "Using:".)
-		for (var entry in rootEntries) {   // all entries have delta > epsilon (enumerateAndSort invariant)
+		for (var entry in rootEntries) {
 			var baseNode = entry[2]
-			baseNode.SCORE = entry[3]   // BASE_HASH / CONTEXT_BY_SIDE already set at node creation (Phase 2)
+			baseNode.SCORE = entry[3]
 			if (baseNode.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = baseNode
 			best = unroll(baseNode, ScoredCache, MySide, 1, best)
 		}
@@ -78,10 +60,10 @@ class ActionSuite {
 		return ancestor.ACTION
 	}
 
-	/* Greedy recursive branch unroll (replaces the Tree_Array + while loop). Descends the single best
-	 * next action; `best` is threaded as a parameter and returned (no global). Same DFS order + epsilon
-	 * margin as the old array scan -> behaviour-identical. No node storage. This recursion is the home
-	 * for the future incremental score (Phase 4): carry the parent score down and patch it per child. */
+	/*
+	 * Déroulé glouton récursif d'une branche : descend la meilleure action suivante tant
+	 * qu'il y en a une, en suivant le meilleur nœud rencontré.
+	 */
 	static unroll(node, ScoredCache, MySide, depth, best) {
 		var next = findBestNextNode(node, ScoredCache, MySide)
 		if (next == null) return best
@@ -90,14 +72,14 @@ class ActionSuite {
 		return unroll(next, ScoredCache, MySide, depth + 1, best)
 	}
 
-	/**
-	 * From a parent node, finds the best next action.
-	 * Uses ScoredCache keyed by BaseHash : reuses the cached sorted list
-	 * if the parent's derived state shares its BaseHash with a previously
-	 * seen state, otherwise enumerate+score+sort fresh for that new
-	 * BaseHash and cache it. Then iterates the sorted list, re-checking
-	 * playability and re-scoring each candidate in the parent's actual
-	 * stats.
+	/*
+	 * Depuis un nœud parent, trouve le meilleur nœud suivant.
+	 * Liste triée via ScoredCache (clé BaseHash). Deux chemins :
+	 *  - FRAIS (miss) : la liste vient d'être énumérée et scorée pour CET état exact ->
+	 *    la première entrée EST le meilleur suivant, aucune re-simulation.
+	 *  - RÉUTILISÉ (hit, même BaseHash atteint depuis un AUTRE état) : re-filtre
+	 *    (cooldown/uses/coût) et re-score chaque candidat dans les stats réelles du parent,
+	 *    avec break dès que la borne triée ne peut plus battre le meilleur delta.
 	 */
 	static findBestNextNode(Parent, ScoredCache, MySide) {
 		var State = Parent.END_STATS
@@ -105,7 +87,7 @@ class ActionSuite {
 		var MyTp = MyStats.TP
 		if (MyTp < MINIMUM_COST_ITEM) return null
 
-		var BaseHash = Parent.BASE_HASH   // always set at node creation since Phase 2
+		var BaseHash = Parent.BASE_HASH
 
 		var Entries
 		if (BaseHash in ScoredCache) {
@@ -114,16 +96,11 @@ class ActionSuite {
 			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent.TERMS)
 			ScoredCache[BaseHash] = Entries
 
-			// 4a.2 FRESH-PATH shortcut: this list was enumerated AND scored for THIS exact parent
-			// state (getBaseActions filters cooldown/uses/reachability/cost for it, ReferenceScore ==
-			// Parent.SCORE), so the best next node is simply the first entry of the sorted list
-			// (all entries are positive — enumerateAndSort invariant) — no re-simulation, no
-			// re-scoring, no re-filtering. The candidate loop below only serves STALE reuses
-			// (same BaseHash reached again from a DIFFERENT state).
+			// Chemin frais : toutes les entrées sont positives et triées pour cet état.
 			if (count(Entries) == 0) return null
 			var top = Entries[0]
 			var fresh = top[2]
-			fresh.PARENT = Parent   // was created with PARENT=null inside enumerateAndSort
+			fresh.PARENT = Parent   // créé avec PARENT=null dans enumerateAndSort
 			fresh.SCORE = top[3]
 			return fresh
 		}
@@ -141,9 +118,9 @@ class ActionSuite {
 		var BestDeltaFromParent = 0
 		var BestNode = null
 
-		for (var entry in Entries) {   // all entries have delta > epsilon (enumerateAndSort invariant)
+		for (var entry in Entries) {
 			var initialDelta = entry[1]
-			if (BestDeltaFromParent >= initialDelta) break
+			if (BestDeltaFromParent >= initialDelta) break   // borne du tri : plus rien à battre
 
 			var act = entry[0]
 			var item = act.Item
@@ -162,10 +139,8 @@ class ActionSuite {
 			}
 			if (cost > MyTp) continue
 
-			// Direct ActionToNodeInTree call: this loop ALREADY computed MyWalkCells (above), Info
-			// and the exact same cost formula for its own filtering — no re-derivation per node.
 			var candidate = NodeClass.ActionToNodeInTree(act, State, from, MyWalkCells, cost, Info, item, act.To, BaseHash, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE)
-			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, ParentScore, Parent.TERMS, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, MySide)   // Phase 4a: incremental
+			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, ParentScore, Parent.TERMS, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, MySide)
 			var deltaFromParent = candidateScore - ParentScore
 
 			if (deltaFromParent > BestDeltaFromParent) {
@@ -178,41 +153,36 @@ class ActionSuite {
 		return BestNode
 	}
 
-	/**
-	 * Enumerates baseActions, applies+scores each, sorts by delta-vs-ReferenceScore desc.
-	 * Returns entries [act, delta, node, nodeScore] (BASE_HASH / CONTEXT_BY_SIDE live on the node).
-	 * The node has PARENT=null (caller sets if needed).
-	 * INVARIANT: every returned entry has delta > BFS_DELTA_EPSILON. Sub-epsilon actions are
-	 * unselectable EVERYWHERE downstream (root: can't beat the noPlay floor; fresh path: rejected;
-	 * stale loop: the sorted bound breaks first) — dropping them here skips their sort work and
-	 * releases their node (+ cloned state) immediately instead of pinning it in ScoredCache
-	 * for the whole search. The downstream epsilon re-checks were removed as dead code.
+	/*
+	 * Énumère les actions de base, applique + score chacune, trie par delta décroissant.
+	 * Renvoie des entrées [act, delta, node, nodeScore], node avec PARENT=null.
+	 * INVARIANT : toute entrée renvoyée a delta > BFS_DELTA_EPSILON — les actions
+	 * sub-epsilon sont injouables partout en aval (plancher, chemin frais, borne du tri),
+	 * les dropper ici libère leur nœud immédiatement. Le code aval s'appuie dessus.
 	 */
 	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTerms) {
-		var basePairs = getBaseActions(State, BaseHash)   // [ [act, cost], ... ] — the filter's cost, REUSED (it was thrown away before)
-		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)   // once per enumeration (was once per NODE via the deleted ActionToNode wrapper)
+		var basePairs = getBaseActions(State, BaseHash)   // [ [act, coût], ... ] : le coût du filtre est réutilisé
+		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 		var Entries = []
 		for (var pair in basePairs) {
 			var act = pair[0]
 			var Item = act.Item
 			var node = NodeClass.ActionToNodeInTree(act, State, act.From, MyWalkCells, pair[1], ITEMINFO[Item], Item, act.To, BaseHash, null, ParentContext, ParentHfp)
-			var nodeScore = ScoringClass.getStateScoreFromParent(node, ReferenceScore, ParentTerms, ParentContext, ParentHfp, MySide)   // Phase 4a: incremental
+			var nodeScore = ScoringClass.getStateScoreFromParent(node, ReferenceScore, ParentTerms, ParentContext, ParentHfp, MySide)
 			var delta = nodeScore - ReferenceScore
 			if (delta <= BFS_DELTA_EPSILON) continue
 			push(Entries, [act, delta, node, nodeScore])
 		}
-		// arraySort RETURNS the sorted array (per LS doc) -- must capture.
-		// Comparator returns negative / 0 / positive : here descending by delta.
+		// arraySort RENVOIE le tableau trié (doc LS) : il faut capturer le retour.
 		return arraySort(Entries, function(a, b) {
 			return b[1] - a[1]
 		})
 	}
 
-	/**
-	 * Lists every playable action from the current state (no scoring here) as [act, cost] PAIRS —
-	 * the TP cost is needed by the filter anyway and enumerateAndSort feeds it straight to
-	 * ActionToNodeInTree instead of recomputing it per node.
-	 * Filtering: cooldown, MAX_USES, TP cost (incl. weapon-swap and move-item cost).
+	/*
+	 * Liste toute action jouable depuis l'état courant, en paires [act, coût TP] — le coût
+	 * (item + swap d'arme + jump/télépo) sert au filtre et est transmis tel quel aux nœuds.
+	 * Filtre : cooldown, MAX_USES, coût vs TP restants.
 	 */
 	static getBaseActions(State, BaseHash) {
 		var _final = []

@@ -1,43 +1,42 @@
-/**
- * DELTA — combines the danger map and the heal map into the NET damage each entity takes over
- * 1 round, sequenced by TURN ORDER. getStateScore feeds this to its survival formula as `danger`.
+/*
+ * Delta : combine la danger map et la heal map en dégâts NETS par entité sur 1 round,
+ * séquencés par ordre de tour. C'est le `danger` que consomme la formule de survie.
  *
- *   getNetDamageMap(State, BaseHash, contextBySide) -> [entityId -> net damage]
- *   (contextBySide = the per-side opposing-team hash, patched incrementally on the Node — Phase 2)
+ * Par entité, on déroule les casters dans l'ordre de jeu sur une vie courante :
+ *   - caster adverse   -> life -= DANGER_COEF · danger   (PAS de plancher : l'overkill compte,
+ *     le gradient de danger reste visible même sur une entité condamnée)
+ *   - caster allié     -> life += HEAL_COEF · heal, seulement si life > 0 (un mort n'est pas
+ *     soigné), plafonné à TOTAL_LIFE (l'overheal est perdu)
+ * net = max(0, LIFE − life). Le poison reste dans la formule de survie, pas ici.
  *
- * Per entity, walk casters in turn order on a running `life` starting at LIFE:
- *   - opposing caster      -> life -= DANGER_COEF · danger
- *         NO floor: the danger keeps rolling even past 0 (overkill counts), so the AI still sees a
- *         danger GRADIENT to reduce — it can work toward lowering it across several entity-turns
- *         instead of the value going flat the moment an entity is "doomed".
- *   - same-side caster, ONLY if life > 0  -> life += HEAL_COEF · heal, capped at TOTAL_LIFE
- *         a dead entity isn't healed (cut the heal); overheal is wasted.
- * net = max(0, LIFE − life). Poison/POT stay in the survival formula, untouched.
- *
- * Others take net damage at their current cell (they don't move on my turn). Me searches its
- * reachable cells (minDeltaForMe) for the one MINIMISING the net delta — danger AND heal evaluated
- * at the SAME flee cell (no mismatch), returned directly.
- **/
+ * Les autres encaissent à leur cellule courante (ils ne bougent pas pendant mon tour).
+ * Me cherche parmi ses cellules accessibles celle qui MINIMISE le net (danger et heal
+ * évalués à la même cellule de fuite).
+ */
 
 include("../../includes.leek")
 
 class DeltaClass {
 
-    /* [entityId -> net damage taken over 1 round]. */
-    static getNetDamageMap(State, BaseHash, contextBySide) {   // contextBySide is PATCHED on the Node (Phase 2) — no rebuild here
+    /*
+     * Map des dégâts nets [id -> net] sur 1 round.
+     *
+     * @param State [id -> stats]
+     * @param BaseHash hash (id, cellule) des vivants
+     * @param contextBySide [side -> hash de l'équipe adverse], patché sur les nœuds
+     * @return [id -> net]
+     */
+    static getNetDamageMap(State, BaseHash, contextBySide) {
         BenchOps.Start("Delta")
 
-        // Healers fingerprints, folded in one scan (Phase 1 heal fold) so getHealMap doesn't rescan
-        // State. ALL sides' healers are folded (enemy heals modeled): the PER-SIDE split salts
-        // NETDAMAGE_CACHE below (a buff/shackle/move/death on a healer flips exactly its side's
-        // entries — touching MY healer doesn't invalidate the enemies' cache and vice-versa), the
-        // COMBINED fold keys HEAL_MAP_CACHE. The per-side opposing-team context is PASSED IN
-        // (incrementally patched at node creation, Node.leek) — see buildContextBySide below.
+        // Fingerprints des healers des DEUX camps, foldés en un seul scan : le split par side
+        // sale NETDAMAGE_CACHE (toucher un healer n'invalide que son side), le fold combiné
+        // est la clé de HEAL_MAP_CACHE.
         var healersFingerprintBySide = [: ]
         var combinedFp = 0
         var healCasters = []
         for (var e: var stat in State) {
-            var c = HealClass.healerContributionOf(stat, e)   // single-source gates + formula
+            var c = HealClass.healerContributionOf(stat, e)
             if (c != 0) {
                 combinedFp ^= c
                 healersFingerprintBySide[stat.SIDE] = ((stat.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[stat.SIDE] : 0) ^ c
@@ -56,86 +55,80 @@ class DeltaClass {
         return _final
     }
 
-    /* THE danger-cache seed for one TARGET: its side's opposing context + its own shields/antidote.
-     * SINGLE SOURCE OF TRUTH for every consumer (netOf below, FinalCell) — CELL_DANGER_GET_CACHE
-     * and EVERY_ENEMIES_WALKABLES are keyed from it, so a second key-building path would fragment
-     * (or cross-collide) those caches. Replaces the retired getStatsHashForDanger, which pinned the
-     * SAME semantic inputs through a separate order-DEPENDENT addValueToBinHash chain (the Phase-1a
-     * hazard class) and made FinalCell recompute everything the BFS had just warmed.
-     * Shields MASKED to their slots: vulnerability = NEGATIVE shield, and an unmasked negative
-     * sign-extends through << and OR-absorbs every higher field (same hazard the SURVIVAL_CACHE
-     * key documents for POISON). REL & 0x7FFF keeps negatives distinct in 15 bits; ABS & 0xFFFFF. */
+    /*
+     * Graine des clés de cache danger pour UNE cible : contexte adverse de son side + ses
+     * propres shields/antidote. SOURCE UNIQUE pour tous les consommateurs (netOf, FinalCell) :
+     * un second chemin de construction fragmenterait ou ferait collisionner les caches.
+     * Shields MASQUÉS à leur slot : une vulné est un shield NÉGATIF, non masqué le signe
+     * s'étend par << et absorbe les champs supérieurs. antidoteCd 99 = pas d'antidote,
+     * distinct d'un antidote prêt (0).
+     */
     static statsHashFor(stat, contextBySide) {
-        var antidoteCd = (CHIP_ANTIDOTE in stat.COOLDOWNS) ? stat.COOLDOWNS[CHIP_ANTIDOTE] : 99   // 99 = pas d'antidote — distinct d'un antidote prêt (0), plus de null coercé
+        var antidoteCd = (CHIP_ANTIDOTE in stat.COOLDOWNS) ? stat.COOLDOWNS[CHIP_ANTIDOTE] : 99
         return addValueToBinHash(contextBySide[stat.SIDE], ((stat.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((stat.RELATIVE_SHIELD & 0x7FFF) << 15) | antidoteCd)
     }
 
-    /* Net damage of ONE entity — the per-entity body of getNetDamageMap, extracted so the
-     * incremental scoring (Phase 4a) can recompute a single entity's term through the exact same
-     * machinery. Cached: NETDAMAGE_CACHE for others, the two-level flee caches for Me. */
+    /*
+     * Dégâts nets d'UNE entité — le corps par-entité de getNetDamageMap, extrait pour que le
+     * scoring incrémental recalcule un seul terme par la même machinerie.
+     * Caché : NETDAMAGE_CACHE pour les autres, les deux caches de fuite pour Me.
+     */
     static netOf(e, stat, State, BaseHash, contextBySide, healersFingerprintBySide, healMap) {
         var statsHash = statsHashFor(stat, contextBySide)
         var hfp = (stat.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[stat.SIDE] : 0
 
         if (e == Me) {
-            // Me MOVES this turn: MIN net delta over my reachable flee cells (danger AND heal at
-            // the SAME cell). Two-level cached inside (per-cell net + the whole min by reachable set).
+            // Me BOUGE ce tour : min du net sur mes cellules accessibles.
             return minDeltaForMe(stat, State, BaseHash, statsHash, hfp, healMap)
         }
 
-        // Others don't move on my turn -> net damage at their CURRENT cell. Cache it: an entity
-        // untouched by my action keeps the same key across BFS nodes -> hit -> skip danger + heal
-        // + turn-order build + sequencing.
+        // Les autres ne bougent pas -> net à leur cellule courante. Une entité intouchée
+        // garde la même clé d'un nœud à l'autre -> hit, tout le déroulé est sauté.
         var ndKey = addValueToBinHash(statsHash ^ hfp, (stat.CELL << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE)
         if (ndKey in NETDAMAGE_CACHE) return NETDAMAGE_CACHE[ndKey]
 
         var dangerToT = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
-        // Casters hit T in the order they act AFTER T this round (X-Y-Z with T=Y -> Z then X).
+        // Les casters frappent dans l'ordre où ils jouent APRÈS la cible ce round.
         var afterOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, e)
         var nd = netDamage(stat, dangerToT, healMap, State, afterOrder, stat.CELL)
         NETDAMAGE_CACHE[ndKey] = nd
         return nd
     }
 
-    /* Min net delta Me takes this turn = MIN over my reachable cells of the net damage AT that cell
-     * (danger there sequenced with heal there + turn order). Returned directly — no post-processing.
-     * Heal-aware (danger & heal at the SAME flee cell) and gradient-preserving (net is uncapped, so
-     * overkill cells stay distinguishable). Two-level cached: outer = the whole MIN by reachable-set
-     * fingerprint, inner = the net at one flee cell (see Cache.leek). */
+    /*
+     * Net minimal de Me ce tour = min sur mes cellules accessibles du net à cette cellule
+     * (danger et heal séquencés au même endroit). Deux niveaux de cache : externe = le min
+     * entier par état de Me + set accessible, interne = le net d'une cellule.
+     */
     static minDeltaForMe(MeStats, State, BaseHash, statsHash, hfp, healMap) {
-        // seed = everything that fixes net(cell) EXCEPT the cell: enemy context + my shields
-        // (statsHash), my-side healers (hfp), my current+max life (heal cap + the life<=0 cut). The
-        // SAME seed keys BOTH caches — folded with the cell (inner) or my reachable-set hash (outer).
+        // seed = tout ce qui fixe net(cellule) SAUF la cellule : contexte ennemi + mes shields
+        // (statsHash), mes healers (hfp), ma vie courante et max (cap du heal, coupure à 0).
         var seed = addValueToBinHash(statsHash ^ hfp, (MeStats.LIFE << 16) | MeStats.TOTAL_LIFE)
-        // seed is loop-invariant below, and addValueToBinHash(seed, x) == rotl13(seed) ^ x. Precompute
-        // rotl13(seed) ONCE so the outer key and every per-cell inner key collapse to a single XOR
-        // (bit-identical to addValueToBinHash -> same cache keys, same result).
+        // rotl13(seed) précalculé : addValueToBinHash(seed, x) == rotl13(seed) ^ x, donc la clé
+        // externe et chaque clé interne se réduisent à un XOR (mêmes clés bit-exactes).
         var rotSeed = (seed << SHIFT) | ((seed >> HIGH_SHIFT) & MASK_HIGH)
 
-        // OUTER: revisiting the exact same Me-state (stats + capabilities) on the same BOARD -> whole
-        // search skipped. BaseHash folded in (P2-15): the min's DOMAIN = my reachable cells, which
-        // depend on OBSTACLES — an ally/bulb appearing or moving shrinks it without touching seed or
-        // walkHash. Enemy moves already changed the seed (context), so this only ADDS the ally case.
+        // Externe : même état de Me sur le même TERRAIN -> recherche entière sautée. BaseHash
+        // dans la clé : le DOMAINE du min est mes cellules accessibles, qui dépendent des
+        // obstacles (un allié qui apparaît ou bouge le réduit sans toucher seed ni walkHash).
         var outerKey = rotSeed ^ addValueToBinHash(BaseHash, WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MeStats))
         if (outerKey in ENTITY_DELTA_CACHE_FOR_ME) return ENTITY_DELTA_CACHE_FOR_ME[outerKey]
 
         var myWalkCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
-        // Danger setup built LAZILY on the first inner-cache MISS: on fully-warm nodes (every
-        // reachable cell already cached) we skip EntitiesToSkip + LoadEnemiesWalkableCellsMap + the
-        // (deliberately uncached) turn-order rebuild entirely.
+        // Setup danger construit PARESSEUSEMENT au premier miss interne : sur un nœud
+        // entièrement chaud, tout le setup est sauté.
         var toSkipMap = null
         var enemyWalkCells = null
         var castersInOrder = null
 
         var minDelta = MAX_VALUE
         for (var cell: var mp in myWalkCells) {
-            // INNER: net at this cell. Same seed -> hits even if I moved (overlapping reachable sets).
             var innerKey = rotSeed ^ cell
             var delta = 0
             if (innerKey in CELL_NETDAMAGE_FOR_ME_CACHE) {
                 delta = CELL_NETDAMAGE_FOR_ME_CACHE[innerKey]
             } else {
-                if (toSkipMap == null) { // first miss -> build the danger setup once
+                if (toSkipMap == null) {
                     toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
                     enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash, statsHash)
                     castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
@@ -145,7 +138,7 @@ class DeltaClass {
                 CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
             }
             if (delta < minDelta) {
-                if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // can't beat 0
+                if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // imbattable
                 minDelta = delta
             }
         }
@@ -153,27 +146,32 @@ class DeltaClass {
         return minDelta
     }
 
-    /* Net damage one entity takes over 1 round AT `cell`: danger keeps rolling (overkill counts),
-     * heal is applied only while alive AT `cell`, capped at TOTAL_LIFE. */
+    /*
+     * Net d'une entité sur 1 round À `cell` : le danger continue de rouler (l'overkill
+     * compte), le heal ne s'applique que vivante, plafonné à TOTAL_LIFE.
+     */
     static netDamage(stat, dangerToT, healMap, State, turnOrder, cell) {
         var life = stat.LIFE
         var totalLife = stat.TOTAL_LIFE
         for (var caster in turnOrder) {
             if (caster in dangerToT) {
-                life -= DANGER_COEF * dangerToT[caster]                 // no floor -> overkill keeps the gradient
+                life -= DANGER_COEF * dangerToT[caster]
             }
             if (life > 0 && State[caster].SIDE == stat.SIDE && caster in healMap && cell in healMap[caster]) {
-                life += HEAL_COEF * healMap[caster][cell]               // heal AT `cell` (the flee cell for Me)
-                if (life > totalLife) life = totalLife                 // overheal wasted
+                life += HEAL_COEF * healMap[caster][cell]
+                if (life > totalLife) life = totalLife
             }
         }
         return max(0, stat.LIFE - life)
     }
 
-    /* Full rebuild of the per-side opposing-team context (a side's context = every alive non-Me
-     * entity NOT on that side). COMPOSABLE XOR-fold via contextContribution -> the incremental Node
-     * patch and this MUST share the same contribution formula (single source of truth, else patched
-     * and rebuilt hashes silently diverge). Used at the BFS root and as the summon/resurrect fallback. */
+    /*
+     * Reconstruction complète du contexte par side (contexte d'un side = tous les vivants
+     * hors Me qui ne sont PAS de ce side). Fold XOR composable via contextContribution :
+     * le patch incrémental du nœud DOIT utiliser la même formule de contribution, sinon
+     * hashs patchés et reconstruits divergent silencieusement.
+     * Utilisé à la racine du BFS et en fallback summon/résurrection.
+     */
     static buildContextBySide(State) {
         var sides = [: ]
         for (var e: var stat in State) if (stat.LIFE > 0) sides[stat.SIDE] = true
@@ -182,22 +180,23 @@ class DeltaClass {
             var h = OFFSET_BASIS
             for (var e: var stat in State) {
                 if (e == Me || stat.SIDE == side) continue
-                h ^= contextContribution(stat, e)   // 0 when dead -> harmless
+                h ^= contextContribution(stat, e)   // 0 si morte -> inoffensif
             }
             contextBySide[side] = h
         }
         return contextBySide
     }
 
-    /* One entity's contribution to an OPPOSING-side context bucket. 0 if dead (so death removes it
-     * via XOR). stats CHAINED through mix64 (not XORed with the id/cell term) so two same-stat
-     * entities never cancel. */
+    /*
+     * Contribution d'une entité au contexte des sides adverses. 0 si morte (sa mort la
+     * retire par XOR). Stats CLAMPÉES à 0 dans la clé : le moteur stocke les stats
+     * shacklées négatives mais les plancher à l'usage, donc toute valeur négative produit
+     * le même danger que 0 — clamper évite l'absorption par extension de signe ET dédoublonne
+     * les états équivalents. Le pack de stats est CHAÎNÉ dans mix64 (pas XORé au terme
+     * id/cellule) pour que deux entités aux mêmes stats ne s'annulent jamais.
+     */
     static contextContribution(stat, id) {
         if (stat.LIFE <= 0) return 0
-        // Stats CLAMPED at 0 in the key: the engine stores shackled stats negative but FLOORS them at
-        // use, so every negative value produces the SAME danger as 0 — clamping both prevents the
-        // sign-extension OR-absorption (a negative MAGIC<<36 erased the STRENGTH field) AND dedups
-        // equivalent states. (POWER can't go negative — no shackle-power.)
         return mix64(mix64((id << 10) | stat.CELL) ^ ((max(0, stat.STRENGTH) << 48) | (max(0, stat.MAGIC) << 36) | (max(0, stat.TOTAL_MP) << 24) | (max(0, stat.TOTAL_TP) << 12) | stat.POWER))
     }
 }
