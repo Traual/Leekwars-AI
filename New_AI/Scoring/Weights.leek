@@ -51,6 +51,23 @@ global HEAL_COEF = 0.6
 // même philosophie que HEAL_COEF.
 global DR_RETURN_EXPECT = 0.4
 
+// Shields "au repos" (dans capability, memo-safe) : le net ne paie les shields que sous
+// danger réel — ce petit terme donne au shield préventif son ticket d'exploration quand il
+// n'y a rien de mieux à faire. NON clampé : une vulné (shield négatif) paie le même canal
+// en sens inverse (déshabiller un ennemi score même sans allié pour en profiter).
+global W_IDLE_ABS = 0.2   // par point de shield absolu
+global W_IDLE_REL = 1.0   // par % de shield relatif
+
+// Coût de cast à la main pour quelques items d'économie : soustrait au SCORE du nœud qui
+// les caste (coût d'ACTION porté par le chemin, hors TERMS). L'item doit rapporter PLUS que
+// son coût pour partir maintenant — Régé (une fois par combat) exige un vrai gros payoff,
+// Antidote un vrai poison à nettoyer, Manumission de vrais shackles.
+global CAST_COST = [
+	CHIP_REGENERATION: 100,
+	CHIP_ANTIDOTE: 10,
+	CHIP_MANUMISSION: 2
+]
+
 // Poison antidote-aware : la pression POT utilise effPot = coef(entité)·POT, avec
 // coef = 1/(1 + POISON_CLEANSE_W · protection). protection = son antidote 1/(1+cd) + chaque
 // porteur allié 1/(1+cd) DILUÉ par le nombre de coéquipiers qu'il couvre (un antidote

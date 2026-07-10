@@ -8,10 +8,12 @@
  *   value       = BASE_ALIVE + W_LIFE·sqrt(effLife) + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)
  *   term        = sign · (importance·value + capability + drDeterrence)
  * score = Σ term.  sign = +1 allié, −1 ennemi. Les morts contribuent 0 -> un kill vaut
- * toujours ≥ BASE_ALIVE.
+ * toujours ≥ BASE_ALIVE. Le SCORE d'un nœud soustrait en plus CAST_COST[action] (coût
+ * d'action porté par le chemin -> le score n'est pas strictement Σ termes).
  *
  * importance est FIGÉE au tour (classement des cibles), capability est le canal LIVE des
- * buffs/debuffs (Importance.leek), drDeterrence le bonus des porteurs de damage return.
+ * buffs/debuffs + shields idle (Importance.leek), drDeterrence le bonus des porteurs de
+ * damage return.
  * Le danger est RELATIF à la vie restante (jamais noyé), sqrt est concave (finir les blessés),
  * 1/(1+pressure) donne des rendements décroissants sur le danger.
  */
@@ -134,7 +136,9 @@ class ScoringClass {
         node.TERMS = terms
         BenchOps.Stop("Scoring")
 
-        return ParentScore + delta
+        // Coût de cast des items d'économie (CAST_COST, Weights.leek) : soustrait au SCORE,
+        // pas aux TERMS — un coût d'ACTION porté par le chemin, comme les TP.
+        return ParentScore + delta - ((node.ACTION.Item in CAST_COST) ? CAST_COST[node.ACTION.Item] : 0)
     }
 
     /* newTerm(e) − oldTerm(e) ; l'ancien terme est lu dans la map portée, puis écrasé. */

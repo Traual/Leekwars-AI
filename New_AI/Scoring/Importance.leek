@@ -135,6 +135,10 @@ class ImportanceClass {
             else if (s == STAT_RESISTANCE) v += hp * (1 + max(0, stat.RESISTANCE) / 100)
         }
         v *= CAP_SCALE * (1 + CAP_MP_FACTOR * max(0, stat.TOTAL_MP))
+        // Shields "au repos" : ticket d'exploration du shield préventif / de la vulné (le net
+        // ne les paie que sous danger réel). Memo-safe : les shields ne changent que sur des
+        // clones frais, qui nullent CAP_MEMO.
+        v += W_IDLE_ABS * stat.ABSOLUTE_SHIELD + W_IDLE_REL * stat.RELATIVE_SHIELD
         stat.CAP_MEMO = v
         return v
     }
