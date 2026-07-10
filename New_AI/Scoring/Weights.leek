@@ -6,8 +6,8 @@
  *
  * Per ALIVE entity:
  *   afterPoison = max(0, LIFE − COEF_POISON·POISON)                         // certain next-turn tick
- *   pressure    = (DANGER_WEIGHT·danger + COEF_POT·POISON_OVER_TIME)        // relative threats
- *               / (afterPoison + BUFFER)
+ *   pressure    = (DANGER_WEIGHT·danger + COEF_POT·effPot)                  // relative threats
+ *               / (afterPoison + BUFFER)     (effPot = antidote-discounted POT, poisonCoefOf)
  *   effLife     = afterPoison / (1 + pressure)                              // >0, threats never drowned
  *   value       = BASE_ALIVE + W_LIFE · sqrt(effLife) + W_TOTAL_LIFE · sqrt(TOTAL_LIFE)
  * score = Σ sign·value. Dead (LIFE=0, skipped) = 0 → kill always worth ≥ BASE_ALIVE.
@@ -57,3 +57,11 @@ global HEAL_COEF = 0.6
 // · DR/100 — the threat arriving on it converts into returns its attackers will bleed
 // (ScoringClass.drDeterrence). Confidence factor, same philosophy as HEAL_COEF.
 global DR_RETURN_EXPECT = 0.4
+
+// Antidote-aware poison: the POT pressure uses effPot = coef(entity)·POT, coef = 1/(1 +
+// POISON_CLEANSE_W · protection). protection = own antidote readiness 1/(1+cd) + each allied
+// carrier's 1/(1+cd) DILUTED by how many teammates it covers (an antidote cleanses ~one target
+// per 4-turn cooldown cycle — a lone carrier covering 4 protects each at 1/4, so poison keeps
+// ~80% of its value there, vs ~35% against a full-antidote team: push poison onto the poorly
+// covered side). Raise to devalue poison harder against covered teams (buildPoisonCoefs).
+global POISON_CLEANSE_W = 1.0

@@ -55,11 +55,25 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     ENTITY_DANGER_CACHE_FOR_OTHERS = [: ]
 
     DR_PHYSRATIO_BY_SIDE = null
+    POISON_COEF_CACHE = [: ]
+    ANY_ANTIDOTE = null
 }
 
 // [side -> opposing-team STR/(STR+MAG)] for the DR-deterrence bonus — frozen per turn, built
 // lazily at the first evaluation of a DR carrier (ScoringClass.buildDrPhysRatios). null = unbuilt.
 global DR_PHYSRATIO_BY_SIDE = null
+
+// [avb(alive bit-set, Me's antidote cd) -> [id -> poison coef ]0,1]]] — antidote-coverage
+// discount on POT (ScoringClass.poisonCoefOf). Bit-set key: a death/summon/revive REBUILDS
+// (kill-the-carrier priced in-branch), moves HIT (others are static on my turn). Me's antidote
+// cd in the key: the only branch-mutable input of the build (only Me's COOLDOWNS mutate in sim).
+// Geometry/cds read at build time -> per-turn reset.
+global POISON_COEF_CACHE = [: ]
+
+// Fight-turn flag: any entity holds Antidote? (dead included — inventory-based, branch-invariant)
+// Gates the poison-coverage machinery to ~2 ops in antidote-free fights. Lazy (ScoringClass.
+// anyAntidote), reset per turn (a summon can add chips).
+global ANY_ANTIDOTE = null
 
 // STATE
 

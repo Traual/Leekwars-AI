@@ -3,7 +3,8 @@
  *
  * Per ALIVE entity, a SURVIVAL value (kill base + concave, threat-pressured life):
  *   afterPoison = max(0, LIFE − COEF_POISON·POISON)                  // certain next-turn poison tick
- *   pressure    = (DANGER_WEIGHT·danger + COEF_POT·POISON_OVER_TIME) // relative threats (never drowned)
+ *   pressure    = (DANGER_WEIGHT·danger + COEF_POT·effPot)           // relative threats (never drowned)
+ *                 (effPot = antidote-coverage-discounted POT — poisonCoefOf; raw when no coverage)
  *               / (afterPoison + BUFFER)
  *   effLife     = afterPoison / (1 + pressure)                       // >0, monotone, threat-scaled (cheap)
  *   value       = BASE_ALIVE + W_LIFE·sqrt(effLife) + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)   // concave × 2
@@ -51,7 +52,7 @@ class ScoringClass {
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            _score += sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e]) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
+            _score += sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e], State) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
         }
         BenchOps.Stop("Scoring")
         return _score
@@ -67,7 +68,7 @@ class ScoringClass {
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            terms[e] = sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e]) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
+            terms[e] = sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e], State) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
         }
         BenchOps.Stop("Scoring")
         return terms
@@ -119,11 +120,24 @@ class ScoringClass {
                 healChanged[s] = true
             }
         }
+        // Which sides' ANTIDOTE COVERAGE changed? A cloned entity that is DEAD flips the alive
+        // bit-set -> POISON_COEF_CACHE rebuilds without it -> its OWN side's poisoned terms must
+        // reread their coefs (the opposing sides already recompute via the context change, its
+        // own side wouldn't). Fires on kill nodes only; antidote-free fights pay ~2 ops.
+        var coefChanged = null
+        if (anyAntidote(State)) {
+            for (var e: var _c in cloned) {
+                if (State[e].LIFE <= 0) {
+                    if (coefChanged == null) coefChanged = [: ]
+                    coefChanged[State[e].SIDE] = true
+                }
+            }
+        }
 
         var delta = 0
         var terms = clone(ParentTerms, 1)
 
-        if (dangerChanged == null && healChanged == null) {
+        if (dangerChanged == null && healChanged == null && coefChanged == null) {
             // Common case: only the cloned entities can have a changed term.
             for (var e: var _c in cloned) {
                 delta += termDelta(e, State, node, terms, healMap, MySide)
@@ -134,7 +148,8 @@ class ScoringClass {
             for (var e: var stat in State) {
                 if ((e in cloned)
                     || (dangerChanged != null && stat.SIDE in dangerChanged)
-                    || (healChanged != null && stat.SIDE in healChanged)) {
+                    || (healChanged != null && stat.SIDE in healChanged)
+                    || (coefChanged != null && stat.SIDE in coefChanged)) {
                     delta += termDelta(e, State, node, terms, healMap, MySide)
                 }
             }
@@ -152,7 +167,7 @@ class ScoringClass {
         if (stat.LIFE > 0) {
             var sign = (stat.SIDE == MySide) ? 1 : -1
             var net = DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)
-            newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, net) + ImportanceClass.capability(stat) + drDeterrence(stat, net, State))
+            newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, net, State) + ImportanceClass.capability(stat) + drDeterrence(stat, net, State))
         }
         var oldTerm = (e in terms) ? terms[e] : 0
         terms[e] = newTerm
@@ -165,8 +180,12 @@ class ScoringClass {
      * The max-life term (W_TOTAL_LIFE·sqrt) lives OUTSIDE the cache: the key is full (16+14+
      * 17+17 bits) and has no TOTAL_LIFE slot — added after the read, sqrt ≈ 8 ops. It is the
      * erosion/nova channel: permanent, heal-proof, so a max-life chip scores on both sides.
+     * POT is ANTIDOTE-DISCOUNTED first (effPot = poisonCoefOf·POT, only when > 0): the key
+     * packs the EFFECTIVE value — the formula's true input — so it stays exact by construction
+     * (two coverage states -> two keys, no salting). POISON (the certain next tick) untouched:
+     * no cleanse prevents it.
      */
-    static survivalValue(stat, danger) {
+    static survivalValue(stat, danger, State) {
         // Max-life term memoized on the stat object (TLSQ_MEMO, nulled at the clone sites) —
         // the SURVIVAL_CACHE key is full, so this term lives outside it; the memo turns the
         // per-call sqrt (~10 ops) into a field read for every unmutated entity.
@@ -175,11 +194,13 @@ class ScoringClass {
             tlTerm = W_TOTAL_LIFE * sqrt(max(0, stat.TOTAL_LIFE))
             stat.TLSQ_MEMO = tlTerm
         }
-        var key = (stat.LIFE << 48) | ((stat.POISON & 0x3FFF) << 34) | ((stat.POISON_OVER_TIME & 0x1FFFF) << 17) | (danger & 0x1FFFF)
+        var pot = stat.POISON_OVER_TIME
+        if (pot > 0) pot = poisonCoefOf(stat, State) * pot
+        var key = (stat.LIFE << 48) | ((stat.POISON & 0x3FFF) << 34) | ((pot & 0x1FFFF) << 17) | (danger & 0x1FFFF)
         if (key in SURVIVAL_CACHE) return SURVIVAL_CACHE[key] + tlTerm
 
         var afterPoison = max(0, stat.LIFE - COEF_POISON * stat.POISON)
-        var pressure = (DANGER_WEIGHT * danger + COEF_POT * stat.POISON_OVER_TIME) / (afterPoison + BUFFER)
+        var pressure = (DANGER_WEIGHT * danger + COEF_POT * pot) / (afterPoison + BUFFER)
         var effLife = afterPoison / (1 + pressure)
         var value = BASE_ALIVE + W_LIFE * sqrt(effLife)
 
@@ -226,6 +247,71 @@ class ScoringClass {
             var m = magAll - ((side in magBySide) ? magBySide[side] : 0)
             DR_PHYSRATIO_BY_SIDE[side] = (s + m > 0) ? s / (s + m) : 1   // no stats -> bare base damage, physical
         }
+    }
+
+    /* Fight-turn flag: does ANY entity hold Antidote? Scanned DEAD INCLUDED on purpose —
+     * inventory-based, so the flag is branch-invariant and can't be poisoned by a first
+     * evaluation landing on a kill-the-carrier branch. Gates the whole poison-coverage
+     * machinery to ~2 ops in antidote-free fights. Lazy, reset per turn (a summon adds chips). */
+    static anyAntidote(State) {
+        if (ANY_ANTIDOTE == null) {
+            ANY_ANTIDOTE = false
+            for (var e: var stat in State) {
+                if (CHIP_ANTIDOTE in stat.COOLDOWNS) { ANY_ANTIDOTE = true; break }
+            }
+        }
+        return ANY_ANTIDOTE
+    }
+
+    /* Poison coefficient of one entity ∈ ]0,1]: how much of the poison on it will actually
+     * STICK given the antidote coverage around it. From POISON_COEF_CACHE, keyed by
+     * avb(alive bit-set, my antidote cd): a death/summon/revive REBUILDS (killing the enemy
+     * antidote carrier re-values the poison on its whole team in-branch), moves HIT (others
+     * don't move on my turn — my own drift as a carrier is noise), and my antidote cd is the
+     * only branch-mutable input of the build (write census: only Me's COOLDOWNS mutate in sim
+     * — spending mine correctly drops my allies' coverage at the next rebuild). Residuals
+     * (self-healing at the next rebuild / real-action replan): a revived carrier's side keeps
+     * its pre-revive coefs, and sibling terms carried across my antidote cast lag one rebuild. */
+    static poisonCoefOf(stat, State) {
+        if (!anyAntidote(State)) return 1
+        var meCd = (CHIP_ANTIDOTE in State[Me].COOLDOWNS) ? State[Me].COOLDOWNS[CHIP_ANTIDOTE] : 99
+        var key = addValueToBinHash(StateClass.getHashedEntities(State), meCd)
+        if (!(key in POISON_COEF_CACHE)) POISON_COEF_CACHE[key] = buildPoisonCoefs(State)
+        var coefs = POISON_COEF_CACHE[key]
+        return (stat.ID in coefs) ? coefs[stat.ID] : 1
+    }
+
+    /* [id -> coef] for every alive entity: coef = 1/(1 + POISON_CLEANSE_W · protection),
+     * protection = own readiness 1/(1+cd) + Σ over allied carriers A reaching it of cap(A) /
+     * nCovered(A). The DILUTION is the point: an antidote cleanses ~one target per (4-turn)
+     * cooldown cycle, so a lone carrier covering 4 teammates protects each at 1/4 (team poison
+     * keeps ~80% value) while a full-antidote team collapses to ~35% — the scoring sees WHERE
+     * poison sticks. Reach = antidote range + MP (LoS ignored); cds/cells read live from the
+     * build State (purity pinned by the cache key). ~n·carriers dist checks, cached getDist. */
+    static buildPoisonCoefs(State) {
+        var antidoteRange = ITEMINFO[CHIP_ANTIDOTE].MAXRANGE
+        var carriers = [: ]   // id -> [capacity already diluted by nCovered, reach]
+        for (var a: var aStat in State) {
+            if (aStat.LIFE <= 0 || !(CHIP_ANTIDOTE in aStat.COOLDOWNS)) continue
+            var reach = antidoteRange + max(0, aStat.TOTAL_MP)
+            var nCovered = 0
+            for (var t: var tStat in State) {
+                if (tStat.LIFE > 0 && tStat.SIDE == aStat.SIDE && CellClass.getDist(aStat.CELL, tStat.CELL) <= reach) nCovered++
+            }
+            carriers[a] = [(1 / (1 + aStat.COOLDOWNS[CHIP_ANTIDOTE])) / nCovered, reach]
+        }
+        var coefs = [: ]
+        if (mapSize(carriers) == 0) return coefs   // nobody alive carries it -> every lookup defaults to 1
+        for (var e: var stat in State) {
+            if (stat.LIFE <= 0) continue
+            var protection = (CHIP_ANTIDOTE in stat.COOLDOWNS) ? 1 / (1 + stat.COOLDOWNS[CHIP_ANTIDOTE]) : 0
+            for (var a: var c in carriers) {
+                if (a == e || State[a].SIDE != stat.SIDE) continue
+                if (CellClass.getDist(State[a].CELL, stat.CELL) <= c[1]) protection += c[0]
+            }
+            coefs[e] = 1 / (1 + POISON_CLEANSE_W * protection)
+        }
+        return coefs
     }
 
     /**
