@@ -1,6 +1,8 @@
-/**
- * Saving every Map information
- **/
+/*
+ * Cell : la géométrie de la carte — formes d'AoE (cercles, lignes, diagonales, étoiles,
+ * carrés, lasers), distances et lignes de vue, le tout caché de façon persistante
+ * (la carte ne change jamais).
+ */
 
 include("../includes.leek")
 
@@ -265,7 +267,7 @@ class CellClass {
 		return _final
 	}
 	
-	static getStarWithLos(cell, minradius, radius) { //Special case, no need points maps cuz already saved in cache of Diagonals and Lines
+	static getStarWithLos(cell, minradius, radius) { // les points sont déjà cachés côté diagonales et lignes
 		var TmpHash = (cell << 14) | (minradius << 7) | radius
 		if (TmpHash in STAR_WITH_LOS_CACHE) return STAR_WITH_LOS_CACHE[TmpHash]
 		var _final = [: ]
@@ -347,8 +349,8 @@ class CellClass {
 		return _final
 	}
 
-	/* Laser AoE : la ligne de cellules de from vers to (axe X ou Y exactement), coupée au premier
-	 * obstacle. Le vecteur (stepX, stepY) remplace les 4 branches copiées-collées d'avant. */
+	/* Laser AoE : la ligne de cellules de from vers to (alignés sur exactement un axe),
+	 * coupée au premier obstacle. Direction portée par le vecteur (stepX, stepY). */
 	static getLaserAoe(from, to, minrange, maxrange) {
 		var Hash = (maxrange << 27) | (minrange << 20) | (to << 10) | from
 		if (Hash in LASERS) return LASERS[Hash]
@@ -398,8 +400,7 @@ class CellClass {
 	}
 
 	/* Carré de Chebyshev (toutes les cellules avec max(|dx|,|dy|) <= radius), obstacles exclus,
-	 * centre inclus — les formes AREA_SQUARE_*. Remplace les deux anciennes listes hardcodées
-	 * de 9 et 25 appels (getSquareOne/getSquareTwo). */
+	 * centre inclus — les formes AREA_SQUARE_*. */
 	static getSquare(cell, radius) {
 		var _final = [: ]
 		var BaseX = CELL_X[cell]
@@ -413,7 +414,8 @@ class CellClass {
 		return _final
 	}
 
-	static getDist(cell1, cell2) { //We are saving get cell distance to avoid losing operations
+	/* Distance entre deux cellules, cachée dans les deux sens. */
+	static getDist(cell1, cell2) {
 		var Hash =  cell1 << MAX_CELL_BINARY | cell2
 		if (Hash in DISTANCE_CACHE) return DISTANCE_CACHE[Hash]
 		var TmpDist = getCellDistance(cell1, cell2)
@@ -422,10 +424,10 @@ class CellClass {
 		return TmpDist
 	}
 
-	static getLos(cell1, cell2) { //Caching average los to save opés, check later if real Los (no leeks)
-		// Clé CANONIQUE (min, max) : LOS(A,B) == LOS(B,A) -> une seule entrée sert les deux sens.
-		// Économise l'écriture inverse par miss (~4 opés) et divise la map par 2 (persistante tout le
-		// combat) ; coût : +1 comparaison par appel. Même schéma que getLosWithBaseHash.
+	/* LoS "moyenne" (entités réelles incluses comme obstacles, via le builtin). */
+	static getLos(cell1, cell2) {
+		// Clé CANONIQUE (min, max) : LOS(A,B) == LOS(B,A) -> une seule entrée sert les deux
+		// sens, la map (persistante tout le combat) est divisée par 2.
 		var Hash = cell1 < cell2 ? (cell1 << MAX_CELL_BINARY | cell2) : (cell2 << MAX_CELL_BINARY | cell1)
 		if (Hash in LOS_CACHE) return LOS_CACHE[Hash]
 		var TmpLos = lineOfSight(cell1, cell2, EVERYONE)
@@ -433,10 +435,9 @@ class CellClass {
 		return TmpLos
 	}
 
-	static getLosWithBaseHash(cell1, cell2, State, BaseHash) { //Caching average los to save opés, check later if real Los (no leeks)
-		// Clé CANONIQUE (min, max) : LOS(A,B) == LOS(B,A) -> une seule entrée sert les deux sens.
-		// (L'ancien store inverse utilisait une clé brute sans fold BaseHash : jamais relue légitimement,
-		// RAM/opés perdues + collision accidentelle possible.)
+	/* LoS exacte sous un board donné (entités du State de branche comme obstacles). */
+	static getLosWithBaseHash(cell1, cell2, State, BaseHash) {
+		// Clé CANONIQUE (min, max) sous BaseHash : LOS(A,B) == LOS(B,A).
 		var Hash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), cell1 < cell2 ? (cell1 << MAX_CELL_BINARY | cell2) : (cell2 << MAX_CELL_BINARY | cell1))
 		if (Hash in LOS_WITH_BASE_HASH_CACHE) return LOS_WITH_BASE_HASH_CACHE[Hash]
 		var TmpLos = getLosWithoutCache(cell1, cell2, State, BaseHash)
@@ -444,6 +445,7 @@ class CellClass {
 		return TmpLos
 	}
 
+	/* Tracé de LoS exact (lignes, colonnes, diagonales, chemin de Christoffel simplifié). */
 	static getLosWithoutCache(cell_dep, cell_but, State, BaseHash) {
 		// Coordonnées des cases départ et but
 		var X_d = CELL_X[cell_dep],
