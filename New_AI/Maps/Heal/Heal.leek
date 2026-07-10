@@ -1,57 +1,54 @@
-/**
- * HEAL MAP — symmetric to the danger map, but for healing instead of damage. BOTH sides'
- * healers are modeled (enemy heals cushion enemy net damage — my kill pressure on a target
- * its healer can patch back up is worth less).
+/*
+ * Heal map : le symétrique de la danger map, pour le soin. Les healers des DEUX camps sont
+ * modélisés (un heal ennemi amortit ma pression de kill sur sa cible).
  *
- *   getHealMap(State) -> [ casterId -> [ cell -> heal ] ]
+ *   getHealMap(State) -> [casterId -> [cell -> heal]]
  *
- * For each alive caster that can heal (EXCEPT Me — my heals are handled by the BFS), its
- * "coverage": how much INSTANT heal it can deliver to a same-side target standing on each
- * cell, given where the caster can move + cast. Kept per-caster (not summed) so the net-HP
- * step can sequence heals/damage in TURN ORDER (can't blindly add X heal if the target died
- * or is already full life before the heal lands). heal_received(target) =
- *   Σ over casters K with K.SIDE == target.SIDE of coverage[K][target.CELL]
- * (the side gate lives in DeltaClass.netDamage — the map itself is side-agnostic).
+ * Pour chaque caster vivant qui peut soigner (SAUF Me : mes heals sont le travail du BFS),
+ * sa "couverture" : le soin INSTANTANÉ qu'il peut poser sur une cible de son camp à chaque
+ * cellule, déplacement + cast compris. Gardée par caster (pas sommée) pour que le net puisse
+ * séquencer soins et dégâts par ordre de tour.
  *
- * SIMPLER than danger:
- *  - only EFFECT_HEAL with duration 0 (instant). duration>0 = "negative poison" (vaccine/serum,
- *    a heal-over-time that cures POISON in Consequences) → excluded here.
- *  - NO shields (heal isn't reduced), NO vulnerability loop.
- *  - PESSIMISTIC: uses eff[1] (MIN roll) — small roll for heal (danger uses eff[2], max).
- *  - value(item) = eff[1] · (1 + WISDOM/100) · (1 − 0.2·aoeDist).   (mirrors Consequences EFFECT_HEAL)
- *  - combo = greedy heal/TP within TOTAL_TP + MAX_USES (no target dependence → per-caster only).
+ * Plus simple que le danger :
+ *  - EFFECT_HEAL durée 0 uniquement (les heals over time sont des "poisons négatifs",
+ *    traités dans Consequences)
+ *  - pas de shields, pas de chaîne de vulnés
+ *  - PESSIMISTE : roll MIN (eff[1]) ; valeur = eff[1] · (1 + WIS/100) · (1 − 0.2·aoeDist)
+ *  - combo = glouton heal/TP dans TOTAL_TP + MAX_USES (aucune dépendance à la cible)
  *
- * Reuses DangerClass geometry (getMapAoeForItem) + WalkCells. RAW potential — the missing-life
- * cap and turn-order sequencing happen in DeltaClass.netDamage. Consumed per node by
- * DeltaClass.getNetDamageMap (hot path: getHealMapPrecomputed) and by FinalCell (no-arg getHealMap).
- **/
+ * Potentiel BRUT : le cap de vie manquante et le séquençage vivent dans DeltaClass.netDamage.
+ */
 
 include("../../includes.leek")
 
 class HealClass {
 
-    /* One healer's contribution to its side's healers fingerprint (XOR-fold, order-independent).
-     * SINGLE SOURCE OF TRUTH: the per-side folds salt NETDAMAGE_CACHE and the COMBINED (all-sides)
-     * fold keys HEAL_MAP_CACHE. Every fold site uses it (getHealMap, getNetDamageMap, buildHfpBySide,
-     * the Node HFP patch) — never inline it again, a divergence silently splits the caches. */
+    /*
+     * Contribution d'un healer au fingerprint de son side (fold XOR, indépendant de l'ordre).
+     * SOURCE UNIQUE : les folds par side salent NETDAMAGE_CACHE, le fold combiné est la clé de
+     * HEAL_MAP_CACHE. Tout site de fold passe par ici — une divergence scinde les caches en
+     * silence. Stats clampées à 0 : shacklées négatives elles valent 0 à l'usage, et non
+     * clampées elles absorberaient les champs hauts.
+     */
     static healerContribution(stat, id) {
-        return addValueToBinHash(OFFSET_BASIS ^ id, (max(0, stat.WISDOM) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | stat.CELL) // clamped: negative shackled stats == 0 at use, and unclamped they OR-absorb the higher fields
+        return addValueToBinHash(OFFSET_BASIS ^ id, (max(0, stat.WISDOM) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | stat.CELL)
     }
 
-    /* GATED composable variant: the entity's contribution to ITS side's healers fingerprint, 0
-     * unless it qualifies (alive, non-Me — my heals are the BFS's job — with a heal item). BOTH
-     * sides qualify (enemy heals modeled). SINGLE SOURCE for every fold site (getHealMap,
-     * getNetDamageMap, buildHfpBySide, and the incremental Node patch of HFP_BY_SIDE — Phase 4a,
-     * same pattern as contextContribution). */
+    /*
+     * Variante GATÉE : la contribution de l'entité au fingerprint de son side, 0 si elle ne
+     * qualifie pas (vivante, non-Me, avec un item de heal). Les deux camps qualifient.
+     */
     static healerContributionOf(stat, id) {
         if (id == Me || stat.LIFE <= 0) return 0
         if (!hasHealItem(stat)) return 0
         return healerContribution(stat, id)
     }
 
-    /* Heal map lookup by an ALREADY-KNOWN combined fingerprint (XOR of the node's HFP_BY_SIDE
-     * values — Phase 4a). Cache hit unless a healer changed on this branch; on a miss the casters
-     * list is rebuilt with one scan. */
+    /*
+     * Heal map par fingerprint combiné DÉJÀ CONNU (XOR des HFP_BY_SIDE du nœud).
+     * Hit sauf si un healer a changé sur la branche ; au miss, la liste des casters est
+     * reconstruite en un scan.
+     */
     static getHealMapByFp(State, fp) {
         if (fp in HEAL_MAP_CACHE) return HEAL_MAP_CACHE[fp]
         var casters = []
@@ -61,9 +58,11 @@ class HealClass {
         return getHealMapPrecomputed(State, fp, casters)
     }
 
-    /* Full rebuild of the per-side healers fingerprint map (sides without healers stay ABSENT —
-     * every read is 0-defaulted). Used at the BFS root and as the Node summon/resurrect fallback —
-     * the incremental HFP patch must stay bit-consistent with this. */
+    /*
+     * Reconstruction complète du fingerprint par side (un side sans healer reste ABSENT,
+     * toute lecture est 0-défaut). Racine du BFS + fallback summon/résurrection du nœud —
+     * le patch incrémental doit rester bit-cohérent avec ceci.
+     */
     static buildHfpBySide(State) {
         var _final = [: ]
         for (var e: var stat in State) {
@@ -73,14 +72,15 @@ class HealClass {
         return _final
     }
 
-    /* No-arg entry: scans State to build the combined healers fingerprint + caster list, then
-     * delegates. For callers that don't already walk State (FinalCell, debug). Keep this loop
-     * structurally IDENTICAL to the fold in DeltaClass.getNetDamageMap. */
+    /*
+     * Entrée sans argument : scanne State pour construire fingerprint + liste des casters,
+     * puis délègue. Pour les appelants qui ne parcourent pas déjà State (FinalCell).
+     */
     static getHealMap(State) {
         var fp = 0
         var casters = []
         for (var e: var stat in State) {
-            var c = healerContributionOf(stat, e)   // single-source gates + formula
+            var c = healerContributionOf(stat, e)
             if (c != 0) {
                 fp ^= c
                 push(casters, e)
@@ -89,12 +89,12 @@ class HealClass {
         return getHealMapPrecomputed(State, fp, casters)
     }
 
-    /* Hot path: `fp` (COMBINED all-sides fingerprint, ORDER-INDEPENDENT) + `casters` are already
-     * built by the caller's own State scan, so State isn't walked a second time here. Bit-identical
-     * to the inline scan in getHealMap (same XOR fold, order-free). Returns the heal map BY REFERENCE. */
+    /*
+     * Chemin chaud : fp + casters déjà construits par le scan de l'appelant.
+     * Renvoyée PAR RÉFÉRENCE — read-only en aval. Hit hors fenêtre BenchOps
+     * (le bucket "Heal" ne profile que les miss).
+     */
     static getHealMapPrecomputed(State, fp, casters) {
-        // Hit OUTSIDE the BenchOps window (like getHealMapByFp): the "Heal" bucket profiles
-        // MISS work only. BY REFERENCE — read-only downstream.
         if (fp in HEAL_MAP_CACHE) return HEAL_MAP_CACHE[fp]
         BenchOps.Start("Heal")
         var _final = [: ]
@@ -106,17 +106,19 @@ class HealClass {
         return _final
     }
 
-    /* [cell -> heal] : the instant heal this caster can land on a same-side target per cell.
-     * Cached by (id, cell, mp, wisdom, tp) — constant per turn for a non-Me caster.
-     * SPLIT below (mirrors the danger map): the GEOMETRY (which cells each item reaches — NoEnt
-     * walkcells + AoE expansion, ~65% of a cold build) only depends on (id, cell, mp) and is
-     * cached separately, so WIS/TP changes (shackles, buffs) rebuild only the cheap combo layer. */
+    /*
+     * [cell -> heal] : le soin instantané que ce caster peut poser sur chaque cellule.
+     * Clé (id, cell, mp, wis, tp). En dessous, split géométrie / valeur (miroir de la danger
+     * map) : la GÉOMÉTRIE (quelles cellules chaque item atteint — le gros d'un build froid)
+     * ne dépend que de (id, cell, mp) et se cache à part, un buff/shackle WIS ou TP ne
+     * reconstruit que la couche combo.
+     */
     static getCasterCoverage(casterStats) {
         var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, (casterStats.CELL << 10) | max(0, casterStats.TOTAL_MP))
-        key = addValueToBinHash(key, (max(0, casterStats.WISDOM) << 15) | max(0, casterStats.TOTAL_TP)) // clamped: negative shackled stats == 0 at use
+        key = addValueToBinHash(key, (max(0, casterStats.WISDOM) << 15) | max(0, casterStats.TOTAL_TP))
         if (key in HEAL_COVERAGE_CACHE) return HEAL_COVERAGE_CACHE[key]
 
-        // GEOMETRY layer — position-only key, same pack as danger's MAP_CELL_ITEM_AOE_CACHE.
+        // Couche géométrie — clé position seule, même pack que la danger map.
         var geomKey = (casterStats.ID << 20) | (casterStats.CELL << 10) | max(0, casterStats.TOTAL_MP)
         var mapCellItemAoe
         if (geomKey in HEAL_CELL_ITEM_AOE_CACHE) {
@@ -135,7 +137,8 @@ class HealClass {
         return _final
     }
 
-    /* [cell -> [item -> minAoeDist]] : which heal items reach which cells (reuses danger geometry). */
+    /* [cell -> [item -> minAoeDist]] : quelles cellules chaque item de heal atteint
+     * (réutilise la géométrie de la danger map). */
     static getMapCellItemAoe(casterStats, walkCells) {
         var startCell = casterStats.CELL
         var _final = [: ]
@@ -152,14 +155,14 @@ class HealClass {
         return _final
     }
 
-    /* Greedy heal combo on one cell: stack the best heal/TP items within TOTAL_TP + MAX_USES.
-     * MEMOIZED BY CONTENT (mirrors danger's COMBO_FROM_ITEM_AOE_CACHE): the result is a pure
-     * function of the cell's [item -> aoeDist] entries + the caster's (WIS, TOTAL_TP) — a
-     * coverage build has ~350 cells but only ~10 distinct contents, and the same contents recur
-     * across casters and rebuilds all turn. USES is deliberately NOT in the key: every heal
-     * caster has USES = 0 (see Cache.leek). Reuses DangerClass.getHashFromItemAoeMap (the fold
-     * is order-dependent over map iteration — same-object iteration is stable, two same-content
-     * maps built in different orders only FRAGMENT, never collide). */
+    /*
+     * Combo de heal glouton sur une cellule : empile les meilleurs items heal/TP dans
+     * TOTAL_TP + MAX_USES. Memoïsé par CONTENU : fonction pure des entrées [item -> dist]
+     * de la cellule + (WIS, TOTAL_TP) du caster — ~350 cellules mais ~10 contenus distincts,
+     * partagés entre casters. USES volontairement HORS clé : tout heal caster a USES = 0.
+     * Le fold de contenu est dépendant de l'ordre d'itération : deux maps de même contenu
+     * construites dans des ordres différents FRAGMENTENT seulement, jamais de collision.
+     */
     static comboAtCell(itemAoeMap, casterStats) {
         var comboKey = addValueToBinHash(OFFSET_BASIS ^ DangerClass.getHashFromItemAoeMap(itemAoeMap), (max(0, casterStats.WISDOM) << 15) | max(0, casterStats.TOTAL_TP))
         if (comboKey in HEAL_COMBO_CACHE) return HEAL_COMBO_CACHE[comboKey]
@@ -195,19 +198,20 @@ class HealClass {
         return total
     }
 
-    /* Instant heal of one item on a target at AoE distance (eff MIN, WIS-scaled, no shields). */
+    /* Soin instantané d'un item à une distance d'AoE : roll MIN, scalé sagesse, sans shields. */
     static getItemHeal(item, casterStats, distance) {
         var distFactor = 1 - distance * 0.2
-        var wisdomFactor = 1 + max(0, casterStats.WISDOM) / 100 // floor-at-use, like the engine (wisdom shackle can store a negative)
+        var wisdomFactor = 1 + max(0, casterStats.WISDOM) / 100   // plancher à l'usage, comme le moteur
         var _final = 0
         for (var eff in ITEMINFO[item].EFFECTS) {
-            if (eff[0] == EFFECT_HEAL && eff[3] == 0) {        // instant heal only (duration 0)
-                _final += eff[1] * distFactor * wisdomFactor   // eff[1] = MIN roll (pessimistic)
+            if (eff[0] == EFFECT_HEAL && eff[3] == 0) {           // heal instantané seulement (durée 0)
+                _final += eff[1] * distFactor * wisdomFactor      // eff[1] = roll MIN (pessimiste)
             }
         }
         return _final
     }
 
+    /* Items de heal castables du caster (cooldown <= 1), cachés par id pour le tour. */
     static getHealItemsList(casterStats) {
         if (casterStats.ID in HEAL_ENTITY_INVENTORY) return HEAL_ENTITY_INVENTORY[casterStats.ID]
         var _final = []

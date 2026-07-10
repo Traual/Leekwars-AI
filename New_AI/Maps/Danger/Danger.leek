@@ -1,6 +1,7 @@
-/**
- * Here i will calculate the danger of a cell or the best walkable cell to go to for danger/gravity cells
- **/
+/*
+ * Danger map : les dégâts que chaque caster adverse peut poser sur une cible à une cellule
+ * donnée (meilleur combo, déplacement + vulnés compris).
+ */
 
 include("../../includes.leek")
 
@@ -16,30 +17,26 @@ class DangerClass {
 		this.EndValueDamage = TmpValueDamage
 	}
 
-	/* Per-caster danger an entity takes AT ITS CURRENT CELL from opposing casters. Uniform for every
-	 * entity — Me's min-delta flee search lives in DeltaClass.minDeltaForMe, not here.
+	/*
+	 * Danger par caster qu'une entité prend À SA CELLULE COURANTE. Uniforme pour toutes les
+	 * entités — la recherche de fuite de Me vit dans DeltaClass.minDeltaForMe, pas ici.
+	 * Clé + hit HORS fenêtre BenchOps : le bucket "Danger" ne profile que les miss.
 	 *
-	 * @param entity_state State Class of ID
-	 * @param state Map <Id : Class state of Id>
-	 * @param entity_id ID of entity
-	 * @param base_hash : Hash <id : cell> of every alive entities
-	 * @param thisStatsHashForDanger Stats hash of the entity (opposing context + own shields) — cache key
-	 *
-	 * @return Map [casterId -> damage] at the entity's cell
+	 * @param entity_state stats de la cible
+	 * @param state [id -> stats]
+	 * @param entity_id id de la cible
+	 * @param base_hash hash (id, cellule) des vivants
+	 * @param thisStatsHashForDanger graine de la cible (contexte adverse + ses shields) — clé
+	 * @return [casterId -> dégâts] à la cellule de la cible
 	 */
-
 	static getEntityDanger(entity_state, state, entity_id, base_hash, thisStatsHashForDanger) {
-		// Danger the entity takes at its CURRENT cell, per caster. Me's min-delta flee search moved to
-		// DeltaClass.minDeltaForMe (which calls get() per flee cell directly), so this is now uniform.
-		// Key + hit OUTSIDE the BenchOps window: hits pay zero instrumentation, the "Danger"
-		// bucket profiles MISS work only (user call 2026-07-10).
 		var Hash = addValueToBinHash(OFFSET_BASIS ^ thisStatsHashForDanger, entity_state.CELL)
 		if (Hash in ENTITY_DANGER_CACHE_FOR_OTHERS) return ENTITY_DANGER_CACHE_FOR_OTHERS[Hash]
 		BenchOps.Start("Danger")
-		//Skip MySelf as a caster: my own output is searched by the BFS, never counted as ambient danger
+		// Me est skippé comme caster : ma propre menace est explorée par le BFS, jamais
+		// comptée en danger ambiant.
 		var thisToSkipMap = clone(DangerClass.EntitiesToSkip(entity_state, state, base_hash))
 		thisToSkipMap[Me] = true
-		//Loading entity's enemies walk cells
 		var thisEnemiesWalkableCellsMap = LoadEnemiesWalkableCellsMap(state, entity_id, thisToSkipMap, base_hash, thisStatsHashForDanger)
 		var thisCastersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(state, entity_state.ID)
 		var tmp = DangerClass.get(entity_state.CELL, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
@@ -48,62 +45,42 @@ class DangerClass {
 		return tmp
 	}
 
-
-	/* Gives me a map of every entity's ennemies walkable cells (used for danger loading)
+	/*
+	 * [casterId -> walkcells] des casters menaçant une cible.
+	 * statsHash dans la clé : un shackle MP/TP simulé en branche change la mobilité d'un
+	 * caster sans toucher base_hash — sans lui, le cache servirait les walkcells d'avant
+	 * shackle tout le tour. Le réassemblage au miss est bon marché (les maps NoEnt par
+	 * caster restent cachées tout le combat par (cellule, mp)).
 	 *
-	 * @param state Map <Id : Class state of Id>
-	 * @param entity_id ID of entity
-	 * @param toSkipMap map <id : true> of entities not to load walkcells for
-	 * @param base_hash : Hash <id : cell> of every alive entities
-	 * @param statsHash : stats hash of the TARGET (opposing-team context + shields) — pins every
-	 *                    opposing caster's TOTAL_MP/TP, which the walkcells depend on
-	 *
-	 * @return Map [casterId -> walkcells]
+	 * @param toSkipMap [id -> true] des entités à ne pas charger
 	 */
-
 	static LoadEnemiesWalkableCellsMap(state, entity_id, toSkipMap, base_hash, statsHash) {
-		// statsHash folded into the key: an MP/TP shackle simulated in-branch changes the caster's
-		// mobility but NOT base_hash — keyed by base_hash alone this cache kept serving the FULL
-		// pre-shackle walkcells, so mobility shackles scored ~0 danger reduction all turn. Reassembly
-		// on a miss is cheap (the per-caster NoEnt maps stay fight-wide cached by (cell, mp)).
 		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ base_hash ^ statsHash), entity_id)
 		if (ThisHash in EVERY_ENEMIES_WALKABLES) return EVERY_ENEMIES_WALKABLES[ThisHash]
 		var EnemiesWalkCells = [: ]
 		for (var e: var stat in state) {
 			if (e in toSkipMap) continue
-			// Danger uses "NoEntities" walkcells: ignores all dynamic entities as obstacles.
-			// Approximation (an ally playing before won't actually block this enemy), but
-			// each per-enemy walkcells lookup becomes a fight-wide cache hit keyed only by
-			// (cell, mp). The outer EVERY_ENEMIES_WALKABLES cache still narrows by base_hash
-			// because the SET of non-skipped enemies depends on cooldowns/life (state-bound).
+			// Walkcells "NoEntities" : les entités ne comptent pas comme obstacles.
+			// Approximation acceptée contre un cache persistant tout le combat.
 			EnemiesWalkCells[e] = WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(stat)
 		}
 		EVERY_ENEMIES_WALKABLES[ThisHash] = EnemiesWalkCells
 		return EnemiesWalkCells
 	}
 
-	/* Loads an integer which is the danger i will face if i stay on cell "cell" (it takes in Enemy Strength, Tp, Mp, My Relative Shield, My Absolute Shield, It loads the best combo with vulnerabilities to it)
+	/*
+	 * Danger par caster sur UNE cellule : pour chaque caster adverse (en ordre de tour), son
+	 * meilleur combo contre la cible telle que les casters PRÉCÉDENTS l'ont laissée — les
+	 * vulnés d'un caster amplifient les suivants (chaîne cross-casters).
+	 * chainTarget n'est JAMAIS muté en place (la machinerie de combo clone avant d'écrire) ;
+	 * les endStates viennent du cache de combo — READ-ONLY par contrat.
 	 *
-	 * @param Cell the cell i want to load damages for
-	 * @param State Map <Id : Class Stats>
-	 * @param TargetStats Class Stats of Target
-	 * @param EnemyWalkCells Map <Id : WalkCellsMap>
-	 * @param ToSkipMap Map <Id : ToSkipBool>
-	 *
-	 * @return Int : Damages i may take
+	 * @return [casterId -> dégâts]
 	 */
-
 	static get(Cell, State, TargetStats, EnemyWalkCells, ToSkipMap, StatsHashForDanger, CastersInOrder) {
 		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), Cell)
 		if (ThisHash in CELL_DANGER_GET_CACHE) return CELL_DANGER_GET_CACHE[ThisHash]
-		var _final = [: ] // [casterId -> damage] : per-caster instead of a summed scalar (for net-HP turn ordering)
-		// CROSS-CASTER VULNÉ CHAIN (real since this commit — before, the sharing existed but nobody
-		// ever WROTE the shared object: parameter rebinds are local in LeekScript and every mutation
-		// path clones first, so each caster saw the ORIGINAL shields). Casters run in TURN ORDER;
-		// each receives the target as the PREVIOUS ones left it (vulnés/debuffs applied) — A's vulné
-		// amplifies B and C. chainTarget is NEVER mutated in place (the combo machinery clones
-		// before writing) -> no defensive clone needed (the old clone(TargetStats, 3) protected an
-		// object nobody wrote). The endStates come from the combo cache — READ-ONLY by contract.
+		var _final = [: ]   // par caster, pas sommé : le net séquence par ordre de tour
 		var chainTarget = TargetStats
 		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
@@ -113,32 +90,29 @@ class DangerClass {
 			var combo = getComboFromItemAoe(MapThisCellItemAoe, CasterStats, chainTarget)
 			if (combo[0] > 0) {
 				_final[Caster] = combo[0]
-				chainTarget = combo[1]           // le caster suivant voit la cible post-vulné/debuff
+				chainTarget = combo[1]   // le caster suivant voit la cible post-vulné/debuff
 			}
 		}
 		CELL_DANGER_GET_CACHE[ThisHash] = _final
 		return _final
 	}
 
-	/* Loads Combo From an ItemAoe Map, MyStats and CasterStats.
+	/*
+	 * Meilleur combo d'un caster sur la cible, vulnés comprises (essaie chaque item de vulné
+	 * en premier tant que ça améliore les dégâts).
 	 *
-	 * @param ItemAoeMap Map <Item : MinAoeDist>
-	 * @param CasterStats Class Stats of Caster
-	 * @param TargetStats Class Stats of Target — NEVER mutated (every mutation path clones first)
-	 *
-	 * @return the cache ENTRY [comboDamage, targetEndState] — READ-ONLY for callers (shared with
-	 *         the cache). endState = the target AFTER this caster's best combo (vulné/debuff shield
-	 *         mutations included; == the INPUT TargetStats when no vulné improves the combo). It
-	 *         feeds the NEXT caster of DangerClass.get's turn-ordered loop (cross-caster chains).
+	 * @param ItemAoeMap [item -> minAoeDist] des items qui atteignent la cellule
+	 * @param TargetStats JAMAIS muté (tout chemin de mutation clone d'abord)
+	 * @return l'ENTRÉE de cache [dégâtsCombo, étatFinalCible] — READ-ONLY pour les appelants
+	 *         (partagée avec le cache). L'état final nourrit le caster suivant de get().
 	 */
-
 	static getComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats) {
-		if (mapIsEmpty(ItemAoeMap)) return [0, TargetStats] //Can't use item on me so can't do damages -> target unchanged
+		if (mapIsEmpty(ItemAoeMap)) return [0, TargetStats]
 		var HashedItemAoeMap = getHashFromItemAoeMap(ItemAoeMap)
 		var HashWithShield = getStatsHashForDangerOneCaster(TargetStats, CasterStats, HashedItemAoeMap)
 		if (HashWithShield in COMBO_FROM_ITEM_AOE_CACHE) return COMBO_FROM_ITEM_AOE_CACHE[HashWithShield]
-		// Use TOTAL_TP : danger represents max single-turn damage potential next turn,
-		// not current-turn remaining TP. Stable across BFS steps (no chip-cast invalidation).
+		// TOTAL_TP : le danger représente le potentiel max du prochain tour, pas les TP
+		// restants de ce tour — stable d'un step de BFS à l'autre.
 		var BaseTp = CasterStats.TOTAL_TP
 		var BaseUses = CasterStats.USES
 		var _final = getBFSComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, BaseTp, clone(BaseUses))
@@ -150,18 +124,12 @@ class DangerClass {
 			BaseTp = ComboWithVulne.EndTp
 			ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
 		}
-		var entry = [_final, TargetStats]   // TargetStats = le local rebindé = l'état post-combo
+		var entry = [_final, TargetStats]   // TargetStats rebindé = l'état post-combo
 		COMBO_FROM_ITEM_AOE_CACHE[HashWithShield] = entry
 		return entry
 	}
 
-	/* get Me An Hash For ItemAoe
-	 *
-	 * @param ItemAoe Map <Item : MinArea>
-	 *
-	 * @return Hashed Map ItemAoe
-	 */
-
+	/* Hash de contenu d'une map [item -> dist]. */
 	static getHashFromItemAoeMap(ItemAoeMap) {
 		var Hash_Final = 0
 		for (var item: var dist in ItemAoeMap) {
@@ -174,21 +142,16 @@ class DangerClass {
 		return Hash_Final
 	}
 
-	/* Loads Combo From an ItemAoe Map, MyStats and CasterStats
-	 *
-	 * @param ItemAoeMap Map <Item : MinAoeDist>
-	 * @param CasterStats Class Stats of Caster
-	 * @param TargetStats Class Stats of Target
-	 *
-	 * @return Int : Damages output of combo
+	/*
+	 * Meilleur item de vulné jouable en premier : renvoie le DangerClass (état/TP/uses/dégâts
+	 * après vulné + combo) du plus rentable, ou null si aucun.
 	 */
-
 	static getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses) {
 		var MaxDamages = 0
 		var _final
 		for (var item: var aoe in ItemAoeMap) {
 			var Infos = ITEMINFO[item]
-			if (BaseUses[item] < Infos.MAX_USES && BaseTp >= Infos.COST && IsVulnerabilityItem(Infos)) { //CHECK COST AND USES
+			if (BaseUses[item] < Infos.MAX_USES && BaseTp >= Infos.COST && IsVulnerabilityItem(Infos)) {
 				var CDangerClass = getCellDangerClassFromItem(TargetStats, Infos, BaseTp, BaseUses, ItemAoeMap, CasterStats, item)
 				var Damages = CDangerClass.EndValueDamage
 				if (MaxDamages < Damages) {
@@ -200,43 +163,27 @@ class DangerClass {
 		return _final
 	}
 
-	/* get Me An Hash For Danger from only one caster (taking into account my shield and antidote cooldown, and caster's strength, magic and tp (not mp cuz used only in combo generation))
-	 *
-	 * @param TargetStats Class Stats of Target
-	 * @param CasterStats Class Stats of Caster
-	 * @param Initial Hash to add here (generally basehash)
-	 *
-	 * @return Hashed Stats
+	/*
+	 * Hash du danger d'UN caster sur la cible : items atteignables + shields/antidote de la
+	 * cible + stats offensives du caster. Shields masqués à leur slot (une vulné est un shield
+	 * négatif : non masqué, le signe absorberait les champs hauts) ; antidote 99 = pas de chip,
+	 * distinct de prêt (0) ; stats du caster clampées à 0 (le moteur plancher à l'usage).
 	 */
-
 	static getStatsHashForDangerOneCaster(TargetStats, CasterStats, TmpHash) {
-
-		// ——— INITIALISATION ———
 		var hash_value = (OFFSET_BASIS ^ TmpHash)
 
-		// ——— Shields + Target's antidote Cooldown ———
-
-		var antidoteCdTar = (CHIP_ANTIDOTE in TargetStats.COOLDOWNS) ? TargetStats.COOLDOWNS[CHIP_ANTIDOTE] : 99 // 99 = pas d'antidote (plus de null coercé)
-		var Mycombined = ((TargetStats.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((TargetStats.RELATIVE_SHIELD & 0x7FFF) << 15) | antidoteCdTar // masked: negative shields (vulnerability) must not OR-absorb the higher fields
+		var antidoteCdTar = (CHIP_ANTIDOTE in TargetStats.COOLDOWNS) ? TargetStats.COOLDOWNS[CHIP_ANTIDOTE] : 99
+		var Mycombined = ((TargetStats.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((TargetStats.RELATIVE_SHIELD & 0x7FFF) << 15) | antidoteCdTar
 		hash_value = addValueToBinHash(hash_value, Mycombined)
 
-		// ——— Caster stats ———
-
-		// TOTAL_TP : "max next-turn potential" like DeltaClass.statsHashFor's context — cache stable across BFS steps.
-		var Hiscombined = (max(0, CasterStats.STRENGTH) << 45) | (max(0, CasterStats.MAGIC) << 30) | (max(0, CasterStats.TOTAL_TP) << 15) | CasterStats.POWER // clamped: see getStatsHashForDanger
+		// TOTAL_TP : potentiel max du prochain tour, comme le contexte de statsHashFor.
+		var Hiscombined = (max(0, CasterStats.STRENGTH) << 45) | (max(0, CasterStats.MAGIC) << 30) | (max(0, CasterStats.TOTAL_TP) << 15) | CasterStats.POWER
 		hash_value = addValueToBinHash(hash_value, Hiscombined)
 
 		return hash_value
 	}
 
-	/* get The Damages at the end of combo after using the item for vulné
-	 *
-	 * @param TargetStats Class Stats of Target
-	 * @param Infos : ITEMINFO of Item
-	 *
-	 * @return MyModifiedStats
-	 */
-
+	/* État/TP/uses/dégâts après avoir joué cet item de vulné puis le meilleur combo derrière. */
 	static getCellDangerClassFromItem(TargetStats, Infos, BaseTp, BaseUses, ItemAoeMap, CasterStats, Item) {
 		var ThisTp = BaseTp - Infos.COST
 		var ThisUses = clone(BaseUses)
@@ -246,14 +193,7 @@ class DangerClass {
 		return new DangerClass(ThisItemMyStats, ThisTp, ThisUses, DamagesWithThisItemVulne)
 	}
 
-	/* Change My Shields According to the item used
-	 *
-	 * @param TargetStats Class Stats of Target
-	 * @param Infos : ITEMINFO of Item
-	 *
-	 * @return MyModifiedStats
-	 */
-
+	/* Applique les effets de vulné/debuff d'un item aux shields de la cible (clonée en amont). */
 	static getRoughVulneConsequences(TargetStats, Infos) {
 		for (var eff in Infos.EFFECTS) {
 			var EffType = eff[0]
@@ -275,15 +215,12 @@ class DangerClass {
 		}
 	]
 
-	/* Loads Combo From an ItemAoe Map, MyStats and CasterStats
+	/*
+	 * Combo glouton sans vulné : empile les items par dégâts (liste triée d'EntityDanger)
+	 * dans le budget TP + MAX_USES.
 	 *
-	 * @param ItemAoeMap Map <Item : MinAoeDist>
-	 * @param CasterStats Class Stats of Caster
-	 * @param TargetStats Class Stats of Target
-	 *
-	 * @return Int : Damages output of combo
+	 * @return dégâts totaux du combo
 	 */
-
 	static getBFSComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, CasterTP, ClonedEntityUses) {
 		var EntityDangerArray = EntityDangerClass.get(CasterStats, TargetStats)
 		var BFSHash = getBFSHash(ItemAoeMap, EntityDangerArray, CasterTP)
@@ -305,19 +242,9 @@ class DangerClass {
 		return _final
 	}
 
-	/* Makes an Hash For BFS, it takes every items usables and its damages to me, and casterTp
-	 *
-	 * @param ItemAoeMap Map <Item : MinAoeDist>
-	 * @param EntityDangerArray Array of Class EntityDangerMap
-	 *
-	 * @return Int : Hash for BFS
-	 */
-
+	/* Hash du combo glouton : chaque (item utilisable, ses dégâts) + le TP du caster. */
 	static getBFSHash(ItemAoeMap, EntityDangerArray, CasterTP) {
-		// ——— INITIALISATION ———
 		var hash_value = (OFFSET_BASIS ^ CasterTP)
-
-		//We then add every items and its damages usables in ItemAoeMap
 
 		for (var EntityDanger in EntityDangerArray) {
 			var ItemEntityDanger = EntityDanger.Item
@@ -332,22 +259,16 @@ class DangerClass {
 		return hash_value
 	}
 
-	/* Returns a Map <Cell : Map> <Item : SmallestAoe>
-	 *
-	 * @param EntityStats Class Stats of Caster
-	 * @param EntityWalkCells --> Map : <Cell : Score (Or MP)> Of Caster
-	 *
-	 * @return Map <Cell : Map> <Item : SmallestAoe>
+	/*
+	 * [cellule -> [item -> plus petite distance d'AoE]] : ce que le caster peut atteindre.
+	 * Clé (ID, cellule, TOTAL_MP) — l'ID est OBLIGATOIRE : la valeur embarque la liste d'items
+	 * du caster, deux ennemis déplacés sur la même cellule (attract/push) avec le même MP ne
+	 * doivent pas partager d'entrée. Pack direct injectif : cellule <= 612 (10 bits),
+	 * MP < 1024 (10 bits). mp clampé (shacklé négatif == 0).
 	 */
-
 	static getMapCellItemAoe(EntityStats, EntityWalkCells) {
 		var EntityStartCell = EntityStats.CELL
-		// Keyed (ID, cell, TOTAL_MP) — the ID is REQUIRED: the value embeds the caster's item list
-		// (getItemsList is id-keyed), so two different enemies displaced onto the same cell in
-		// different branches (attract/push/invert) with equal TOTAL_MP must not share an entry.
-		// Direct pack, no hash needed: cell <= 612 (10 bits), TOTAL_MP < 1024 (10 bits), id small
-		// -> injective. Per-turn cache + id<->type for virtual bulbs => id pins the inventory.
-		var TmpHash = (EntityStats.ID << 20) | (EntityStartCell << 10) | max(0, EntityStats.TOTAL_MP) // mp clamped (negative shackled mp == 0)
+		var TmpHash = (EntityStats.ID << 20) | (EntityStartCell << 10) | max(0, EntityStats.TOTAL_MP)
 		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
 		var _final = [: ]
 		for (var Item in EntityDangerClass.getItemsList(EntityStats)) {
@@ -364,23 +285,17 @@ class DangerClass {
 		return _final
 	}
 
-	/* Transforms getMapHittableCellsTotal (Map <Cell Id: true>) Into a map : Cell : MinAoeDist
-	 *
-	 * @param EntityStats Class Stats of Caster
-	 * @param EntityWalkCellsMap --> Map : <Cell : Score (Or MP)> Of Caster
-	 *
-	 * @return Map <Cell : MinAoeDist>
+	/*
+	 * [cellule -> distance d'AoE minimale] pour un item : les cellules touchables en direct
+	 * valent 0, puis l'expansion d'AoE remplit le reste au plus près.
 	 */
-
 	static getMapAoeForItem(Item, ItemInfos, WalkCellsMap, StartCell) {
 		var _final = [: ]
 		var MapCellsBool = getMapHittableCellsTotal(ItemInfos, WalkCellsMap, StartCell)
-		//First i add every cells that can be hit without aoe (it works without this first for tho i save few thousands ops of not saving a value then replacing it by 0)
 		for (var cell: var bool in MapCellsBool) {
 			_final[cell] = 0
 		}
-		if (ItemInfos.AREA_MAX > 0) { //If item isn't area type point
-			//Then i load aoe for unhittable cells
+		if (ItemInfos.AREA_MAX > 0) {
 			for (var cell: var bool in MapCellsBool) {
 				for (var Aoe: var AoeDist in ActionsClass.AoeDistItem(Item, cell)) {
 					var ActualCellDist = _final[Aoe]
@@ -393,26 +308,20 @@ class DangerClass {
 		return _final
 	}
 
-	/* Returns Every hitable cells by an entity with an item
-	 *
-	 * @param ItemInfos Class Items of item
-	 * @param WalkCellsMap --> Map : <Cell : Score (Or MP)> of Caster
-	 *
-	 * @return Map <Cell Id: true>
+	/*
+	 * [cellule -> true] : toutes les cellules touchables en direct par l'item depuis
+	 * n'importe quelle cellule accessible du caster.
 	 */
-
 	static getMapHittableCellsTotal(ItemInfos, WalkCellsMap, StartCell) {
-
-		//Starting by saving variables to save operations
 		var _final = [: ]
 		var LaunchType = ItemInfos.LAUNCHTYPE
 		var MinRange = ItemInfos.MINRANGE
 		var MaxRange = ItemInfos.MAXRANGE
-		if (ItemInfos.NEEDLOS) { //Normal items cases (need los)
+		if (ItemInfos.NEEDLOS) {
 			for (var EntityCell: var mp in WalkCellsMap) {
 				_final += ActionsClass.LaunchWithLos[LaunchType](EntityCell, MinRange, MaxRange)
 			}
-		} else { //Other items cases (don't need los) like spark
+		} else {
 			for (var EntityCell: var mp in WalkCellsMap) {
 				_final += ActionsClass.LaunchWithoutLos[LaunchType](EntityCell, MinRange, MaxRange)
 			}
@@ -421,13 +330,10 @@ class DangerClass {
 		return _final
 	}
 
-	/* Returns Map of entities to skip (entity : true)
-	 *
-	 * @param State --> Map : <Id : Stats>
-	 *
-	 * @return Map <Id: true>
+	/*
+	 * [id -> true] des entités à skipper pour le danger d'une cible : son propre camp,
+	 * les morts, et les casters sans item menaçant. Clé (BaseHash, id).
 	 */
-
 	static EntitiesToSkip(EntityState, State, BaseHash) {
 		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), EntityState.ID)
 		if (ThisHash in TO_SKIP_MAP_CACHE) return TO_SKIP_MAP_CACHE[ThisHash]
@@ -442,14 +348,7 @@ class DangerClass {
 		return _final
 	}
 
-	/* Tells us if entity has an item that must be counted in danger map
-	 *
-	 * @param CooldownMap --> Map : <ItemId : Cooldown>
-	 * @param CasterID --> For caching result (can't change during a turn)
-	 *
-	 * @return Bool
-	 */
-
+	/* L'entité a-t-elle un item à compter dans la danger map ? (cooldown <= 1, effet menaçant) */
 	static HaveAnHittableItem(CooldownMap, CasterID) {
 		if (CasterID in HAVE_AN_HITTABLE_ITEM_CACHE) return HAVE_AN_HITTABLE_ITEM_CACHE[CasterID]
 		for (var i: var cd in CooldownMap) {
@@ -465,8 +364,6 @@ class DangerClass {
 		return false
 	}
 
-	//Just a map for the function above
-
 	static MapHittables = [
 		EFFECT_DAMAGE: true,
 		EFFECT_LIFE_DAMAGE: true,
@@ -476,21 +373,13 @@ class DangerClass {
 		EFFECT_VULNERABILITY: true
 	]
 
-	/* Tells us if an item (Item) can apply Vulnerability (To then try to apply it before damages items to check damages changes)
-	 *
-	 * @param ItemInfosVar ItemInfo Class of Item
-	 *
-	 * @return Bool
-	 */
-
+	/* L'item peut-il poser une vulné/debuff ? (candidat à jouer AVANT les items de dégâts) */
 	static IsVulnerabilityItem(ItemInfosVar) {
 		for (var eff in ItemInfosVar.EFFECTS) {
 			if (MapLoadForVulne[eff[0]]) return true
 		}
 		return false
 	}
-
-	//Just a map for the function above
 
 	static MapLoadForVulne = [
 		EFFECT_DEBUFF: true,

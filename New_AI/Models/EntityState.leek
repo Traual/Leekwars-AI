@@ -1,6 +1,8 @@
-/**
- * Class State : Variables of a state
- **/
+/*
+ * État complet d'une entité, capturé depuis le moteur : stats, shields, effets,
+ * inventaire (cooldowns/uses), poisons agrégés, et les valeurs d'origine nécessaires
+ * à Libération / Manumission.
+ */
 
 include("../includes.leek")
 
@@ -15,12 +17,12 @@ class EntityStateClass extends EntityClass {
 	USES
 	EFFECTS
 	EFFECTS_ITEM_MAP
-	// Derived-field MEMOS (scoring): computed lazily, valid while the stats don't change —
-	// guaranteed by clone-on-write: stats only ever mutate on FRESH clones, and the clone sites
-	// (CloneOnlyTargetsAndMe / ensureCloned / the Node resurrection pre-clone) null these two.
-	// Writing a memo on a SHARED object is safe: sharing implies identical stats -> same value.
+	// Memos de champs dérivés (scoring), calculés paresseusement. Valides tant que les stats
+	// ne changent pas — garanti par le clone-on-write : toute mutation passe par un clone
+	// frais, et les sites de clone remettent ces deux champs à null. Écrire un memo sur un
+	// objet PARTAGÉ est sain : partage => stats identiques => même valeur.
 	CAP_MEMO    // ImportanceClass.capability(stat)
-	TLSQ_MEMO   // W_TOTAL_LIFE * sqrt(max(0, TOTAL_LIFE)) (survivalValue's out-of-cache term)
+	TLSQ_MEMO   // W_TOTAL_LIFE * sqrt(max(0, TOTAL_LIFE)) (terme hors cache de survivalValue)
 	POISON
 	POISON_OVER_TIME
 	JUST_POISON
@@ -28,7 +30,7 @@ class EntityStateClass extends EntityClass {
 	LIFE
 	TOTAL_LIFE
 	STRENGTH
-	TO_SAVE_STRENGTH //Oui on doit save POS et NEG pour Manumission (retire les neg) et liberations (retire 60% de POS et NEG)
+	TO_SAVE_STRENGTH // POS et NEG séparés : Manumission retire les shackles, Libération retire 60% des deux
 	TO_SAVE_SHACKLE_STRENGTH
 	WISDOM
 	TO_SAVE_WISDOM
@@ -45,7 +47,7 @@ class EntityStateClass extends EntityClass {
 	MAGIC
 	TO_SAVE_MAGIC
 	TO_SAVE_SHACKLE_MAGIC
-	FREQUENCY //No need to save cuz not usefull for Liberation/Manumission 
+	FREQUENCY // pas de TO_SAVE : inutile pour Libération/Manumission
 	MP
 	TOTAL_MP
 	TO_SAVE_TOTAL_MP
@@ -59,7 +61,7 @@ class EntityStateClass extends EntityClass {
 		super(id)
 		this.ABSOLUTE_SHIELD = getAbsoluteShield(id)
 		this.RELATIVE_SHIELD = getRelativeShield(id)
-		this.DAMAGE_RETURN = getDamageReturn(id) //Its always 0 at the start, so like this i will save the exact total buff of each so not saving it
+		this.DAMAGE_RETURN = getDamageReturn(id)
 		this.POWER = getPower(id)
 		this.SUMMONS = getSummons(id)
 		this.WEAPON = getWeapon(id)
@@ -67,10 +69,9 @@ class EntityStateClass extends EntityClass {
 		this.USES = [: ]
 		for (var i in this.INVENTORY) {
 			this.COOLDOWNS[i] = ItemClass.Cooldown(i, id)
-			// getItemUses est un builtin ENTITE COURANTE (1 arg) : l'appeler pour un AUTRE id stockait MES
-			// compteurs chez tout le monde -> pour un item partage (meme chip), apres mon cast la simu
-			// cappait a tort le potentiel next-turn de l'ennemi (uses < MAX_USES). Le moteur clear les
-			// uses au endTurn de CHAQUE entite -> pendant mon tour, les autres sont toujours a 0.
+			// getItemUses est un builtin ENTITÉ COURANTE (1 arg) : l'appeler pour un autre id
+			// stockerait MES compteurs chez tout le monde. Le moteur clear les uses au endTurn
+			// de chaque entité -> pendant mon tour, les autres sont toujours à 0.
 			this.USES[i] = id == Me ? getItemUses(i) : 0
 		}
 		this.EFFECTS = getEffects(id)
@@ -79,9 +80,6 @@ class EntityStateClass extends EntityClass {
 		this.POISON_OVER_TIME = getPoisonsOverTime(this.EFFECTS)
 		this.JUST_POISON = getJustPoisons(this.EFFECTS)
 		this.JUST_POISON_OVER_TIME = getJustPoisonsOverTime(this.EFFECTS)
-		/**
-		 * Leek Stats
-		 **/
 		this.LIFE = getLife(id)
 		this.TOTAL_LIFE = getTotalLife(id)
 		this.STRENGTH = getStrength(id)
@@ -95,11 +93,11 @@ class EntityStateClass extends EntityClass {
 		this.TOTAL_MP = getTotalMP(id)
 		this.TP = getTP(id)
 		this.TOTAL_TP = getTotalTP(id)
-		/**
-		 * Original Stats for Libe And Shackle summ for Manumission
-		 **/
-		this.TO_SAVE_STRENGTH = this.STRENGTH //initial strength of the leek
-		this.TO_SAVE_SHACKLE_STRENGTH = 0 //Total Shackle Effects
+
+		// Stats d'origine + total shacklé, reconstitués en dépliant les effets actifs
+		// (base pour Libération / Manumission).
+		this.TO_SAVE_STRENGTH = this.STRENGTH
+		this.TO_SAVE_SHACKLE_STRENGTH = 0
 		this.TO_SAVE_WISDOM = this.WISDOM
 		this.TO_SAVE_SHACKLE_WISDOM = 0
 		this.TO_SAVE_AGILITY = this.AGILITY
@@ -192,12 +190,10 @@ class EntityStateClass extends EntityClass {
 			}
 		}
 
-		/**
-		 * Map Stats
-		 **/
 		this.CELL = getCell(id)
 	}
 
+	/* Tick net du prochain tour : poisons − heals over time. */
 	getPoisons(Effects) {
 		var Poisons = 0
 		for (var eff in Effects) {
@@ -213,6 +209,7 @@ class EntityStateClass extends EntityClass {
 		return Poisons
 	}
 
+	/* Total restant (valeur × tours), net des heals over time. */
 	getPoisonsOverTime(Effects) {
 		var Poisons = 0
 		for (var eff in Effects) {
@@ -228,6 +225,7 @@ class EntityStateClass extends EntityClass {
 		return Poisons
 	}
 
+	/* Poison seul du prochain tour, sans compenser par les heals. */
 	getJustPoisons(Effects) {
 		var Poisons = 0
 		for (var eff in Effects) {
@@ -240,6 +238,7 @@ class EntityStateClass extends EntityClass {
 		return Poisons
 	}
 
+	/* Poison seul restant (valeur × tours), sans les heals. */
 	getJustPoisonsOverTime(Effects) {
 		var Poisons = 0
 		for (var eff in Effects) {

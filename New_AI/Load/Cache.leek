@@ -1,10 +1,10 @@
-/**
- * Here we put cache globals
- **/
+/*
+ * Tous les globals de cache, et le reset de début de tour.
+ */
 
 include("../includes.leek")
 
-function ReloadCacheNewTurn() { //Simple function that refresh cache that need to be refreshed
+function ReloadCacheNewTurn() {
     TARGETABLECACHE = [: ]
     MAP_CELL_ITEM_AOE_CACHE = [: ]
     CELL_DANGER_GET_CACHE = [: ]
@@ -30,28 +30,22 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     ACTIONS_SUMMON_CACHE = [: ]
     ACTIONS_ON_VOID_CACHE = [: ]
 
-    // Must be reset each turn: cache key is (base_hash, entity_id) but the
-    // stored map's contents depend on `toSkipMap`, which can change across
-    // turns even for the same key (e.g. HaveAnHittableItem flips when an
-    // enemy's cooldowns tick down). Cross-turn re-use of a stale map then
-    // leaves `EnemyWalkCells[Caster]` null for casters that were skipped
-    // previously but are live now -> crash in getMapCellItemAoe.
+    // Reset obligatoire : la clé est (base_hash, id) mais le contenu dépend de toSkipMap,
+    // qui peut changer d'un tour à l'autre pour la même clé (cooldowns qui descendent).
+    // Une map stale laisse EnemyWalkCells[caster] null pour un caster redevenu actif
+    // -> crash dans getMapCellItemAoe.
     EVERY_ENEMIES_WALKABLES = [: ]
 
-    // Must be reset each turn: getItemsList keys by ID only and filters
-    // cooldown > 1 at compute time — an item on cooldown at first evaluation
-    // would otherwise stay excluded for the WHOLE fight even once available
-    // again (danger underestimated -> walking into lethal range). The sorted
-    // damage lists in DANGER_ENTITY_CACHE are built FROM that items list and
-    // their key (stats + target shields) carries no cooldown info, so both
-    // must be refreshed together for the new list to propagate.
+    // Reset obligatoire : getItemsList est clé par ID et filtre cooldown > 1 au moment du
+    // calcul — sans reset, un item en cooldown à la première évaluation resterait exclu tout
+    // le combat (danger sous-estimé). Les listes triées de DANGER_ENTITY_CACHE en dérivent
+    // et leur clé ne porte pas les cooldowns : les deux se rafraîchissent ensemble.
     DANGER_ENTITY_INVENTORY = [: ]
     DANGER_ENTITY_CACHE = [: ]
 
-    // Same cooldown reason, one layer UP: this outer per-(statsHash, cell) danger memo carries no
-    // cooldown info in its key, so a cross-turn hit would serve pre-cooldown-refresh danger AND
-    // bypass the two freshly-reset caches above entirely (static standoffs: an enemy's big chip
-    // coming off cooldown would stay invisible). Reset it with them.
+    // Même raison cooldowns, une couche au-dessus : la clé (statsHash, cell) ne porte pas
+    // les cooldowns, un hit inter-tours servirait un danger d'avant rafraîchissement
+    // (le gros chip d'un ennemi sortant de cooldown resterait invisible).
     ENTITY_DANGER_CACHE_FOR_OTHERS = [: ]
 
     DR_PHYSRATIO_BY_SIDE = null
@@ -59,34 +53,18 @@ function ReloadCacheNewTurn() { //Simple function that refresh cache that need t
     ANY_ANTIDOTE = null
 }
 
-// [side -> opposing-team STR/(STR+MAG)] for the DR-deterrence bonus — frozen per turn, built
-// lazily at the first evaluation of a DR carrier (ScoringClass.buildDrPhysRatios). null = unbuilt.
-global DR_PHYSRATIO_BY_SIDE = null
-
-// [avb(alive bit-set, Me's antidote cd) -> [id -> poison coef ]0,1]]] — antidote-coverage
-// discount on POT (ScoringClass.poisonCoefOf). Bit-set key: a death/summon/revive REBUILDS
-// (kill-the-carrier priced in-branch), moves HIT (others are static on my turn). Me's antidote
-// cd in the key: the only branch-mutable input of the build (only Me's COOLDOWNS mutate in sim).
-// Geometry/cds read at build time -> per-turn reset.
-global POISON_COEF_CACHE = [: ]
-
-// Fight-turn flag: any entity holds Antidote? (dead included — inventory-based, branch-invariant)
-// Gates the poison-coverage machinery to ~2 ops in antidote-free fights. Lazy (ScoringClass.
-// anyAntidote), reset per turn (a summon can add chips).
-global ANY_ANTIDOTE = null
-
 // STATE
 
-// Keyed by the ALIVE bit-set (getHashedEntities): a resurrect flips the revived's bit, and its
-// assigned order is a pure function of (INITIAL_TURN_ORDER, alive set) -> coherent by construction.
+// Clé = bit-set des vivants (getHashedEntities) : une résurrection flippe le bit du ressuscité,
+// et son ordre assigné est une fonction pure de (INITIAL_TURN_ORDER, set des vivants).
 global ENTITY_SORTED_BY_TURN_ORDER_CACHE = [: ]
 
-// Engine initialOrder proxy: fight-start entity -> its turn-1 order rank. FIGHT-PERSISTENT,
-// captured once in Preload.InitInitialTurnOrder (summons excluded, like the engine's initialOrder).
-// Consumed by ResurrectionClass.Update for the revived's turn order.
+// Proxy de l'initialOrder du moteur : entité de début de combat -> son rang au tour 1.
+// PERSISTANT tout le combat, capturé une fois (summons exclus, comme dans le moteur).
+// Consommé par ResurrectionClass.Update pour l'ordre du ressuscité.
 global INITIAL_TURN_ORDER = [: ]
 
-// CELL CLASS
+// CELL
 
 global CELL_X = [: ]
 global CELL_Y = [: ]
@@ -126,23 +104,23 @@ global POINTS_INVERTED_STAR_WITH_LOS_CACHE = [: ]
 
 global LASERS = [: ]
 
-// For Item Class
+// ITEMS
 
 global ITEMINFO = [: ]
 
-// Target
+// TARGET
 
 global TARGETABLECACHE = [: ]
 
-// Consequences
+// CONSEQUENCES
 
 global CONSEQUENCE_TARGET_CACHE = [: ]
 
-//Stuff for Summons :
+// SUMMONS
 
 global SUMMONER_LEVEL_TIMES = min(300, getLevel()) / 300
 
-//For Cell Danger :
+// DANGER MAP
 
 global MAP_CELL_ITEM_AOE_CACHE = [: ]
 global CELL_DANGER_GET_CACHE = [: ]
@@ -153,23 +131,19 @@ global DANGER_ENTITY_CACHE = [: ]
 global DANGER_ENTITY_INVENTORY = [: ]
 global EVERY_ENEMIES_WALKABLES = [: ]
 
-// BaseHash-keyed optimisation: same BaseHash -> same skip map (reset per turn).
+// Même BaseHash -> même skip map (reset au tour).
 global TO_SKIP_MAP_CACHE = [: ]
-
-//Branch Danger Cache :
 
 global ENTITY_DANGER_CACHE_FOR_OTHERS = [: ]
 
-// Me's flee search caches (net delta, two levels). CELL_NETDAMAGE_FOR_ME_CACHE = net at ONE flee
-// cell; ENTITY_DELTA_CACHE_FOR_ME = the whole MIN over my reachable set. Both keyed by the same
-// seed = addValueToBinHash(statsHash ^ healersFP, pack(LIFE,TOTAL_LIFE)) — folded with the cell,
-// resp. BaseHash + the reachable-set fingerprint (the outer MIN's domain depends on obstacles:
-// an ally/bulb move shrinks my reachable cells — P2-15). Both reset per turn. (Replaces the retired
-// ENTITY_DANGER_CACHE_FOR_ME — the Me danger min is now a net-delta min, computed in DeltaClass.)
+// Recherche de fuite de Me (net minimal), deux niveaux : CELL_NETDAMAGE_FOR_ME_CACHE = le net
+// à UNE cellule de fuite, ENTITY_DELTA_CACHE_FOR_ME = le MIN entier sur mes cellules
+// accessibles. Même graine (statsHash ^ healersFP + vie), foldée avec la cellule, resp. avec
+// BaseHash + fingerprint du set accessible (le domaine du min dépend des obstacles).
 global CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
 global ENTITY_DELTA_CACHE_FOR_ME = [: ]
 
-//For Walkable cells / Jump Walkable cells
+// WALKCELLS (par layer)
 
 global WALKABLE_CACHE = [: ]
 global JUMP_CACHE = [: ]
@@ -177,96 +151,101 @@ global TELEPORTATION_CACHE = [: ]
 global TELEPORTATION_AND_JUMP_CACHE = [: ]
 global IGNORE_CELLLS_CACHE = [: ]
 
-// "NoEntities" walkcells: ignores all dynamic entities (allies, bulbs, enemies)
-// as obstacles. Only static map obstacles count. Used in danger evaluation,
-// where we accept the approximation in exchange for cache reuse across the
-// entire fight (key = (cell << 32) | mp, no base_hash dependency).
-// These caches are persistent across turns (the map never changes).
+// Variante "NoEntities" : ignore les entités comme obstacles, seuls les obstacles de la carte
+// comptent. Utilisée par le danger — l'approximation s'échange contre un cache PERSISTANT tout
+// le combat (clé (cell << 32) | mp, aucune dépendance au board).
 global WALKABLE_CACHE_NOENT = [: ]
 global JUMP_CACHE_NOENT = [: ]
 
-//For Entity Actions :
+// ACTIONS
 
-global ENTITY_ACTIONS_CACHE = [: ] //Actions on Everybody else then me
-global ACTIONS_ON_ME_CACHE = [: ] //Actions on me only Item from to me (either same cell or aoe)
-global ACTIONS_SUMMON_CACHE = [: ] //Actions of summoning something (Resu or Bulbs)
-global ACTIONS_ON_VOID_CACHE = [: ] //Actions on void for positive effects (glaive etc)
+global ENTITY_ACTIONS_CACHE = [: ]   // actions sur les autres entités
+global ACTIONS_ON_ME_CACHE = [: ]    // actions sur moi (même cellule ou AoE)
+global ACTIONS_SUMMON_CACHE = [: ]   // actions d'invocation (bulbes, résurrection)
+global ACTIONS_ON_VOID_CACHE = [: ]  // actions dans le vide à effet positif (glaive...)
 global COEFFED_MAP_ENTITY_CACHE = [: ]
 global HASHED_MAP_ITEM_CACHE = [: ]
 
-// For ally/enemy average distance (used by Actions.leek for bulb placement)
-
+// Distances moyennes aux alliés/ennemis (placement des bulbes).
 global AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
 global AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
 
-// Scoring: survival value keyed by round(LIFE, POISON, POISON_OVER_TIME, danger). Reset per turn.
+// SCORING
+
+// Valeur de survie, clé packée (LIFE, POISON, effPot, danger). Reset au tour.
 global SURVIVAL_CACHE = [: ]
 
-// Importance FROZEN per turn: [id -> importance], first computed at the BFS ROOT (real turn-start
-// stats) and served frozen down the whole tree — in-turn stat changes pay through the CAPABILITY
-// channel + the real maps (danger/heal), never through importance (the buff-farm fix). Reset per
-// turn (covers the bulb turns too — shared VM).
+// Importance FIGÉE au tour : [id -> importance], calculée à la racine du BFS avec les stats
+// réelles de début de tour et servie telle quelle dans tout l'arbre. Les changements de stats
+// en branche passent par le canal capability et les vraies maps (danger/heal), jamais par
+// l'importance. Reset au tour (couvre aussi les tours de bulbe — VM partagée).
 global IMPORTANCE_BY_ID = [: ]
 
-// Capability v2 caches, reset per turn:
-//  - CAPABILITY_ITEMS_BY_ID: KEY = the ENTITY ID -> its sorted castable item list
-//    [[item, hpValue, cost], ...] (turn-start cooldown <= 1 gate, HP-valued via CAP_HP_W,
-//    sorted HP/TP desc). Sound on id alone: INVENTORY is fight-constant per id and non-Me
-//    COOLDOWNS never mutate in-sim (write census); Me's list is deliberately its TURN-START
-//    potential (same convention as the danger inventory).
-//  - CAPABILITY_COMBO_CACHE: KEY = (id << 10) | max(0, TOTAL_TP) -> the greedy combo's per-stat
-//    HP buckets [STAT_X -> HP of X-scaled output]. TP is IN the key: an in-branch TP buff/shackle
-//    re-runs the greedy at the new budget, so the TP delta is EMERGENT (a bulb that can't use
-//    the extra TP scores 0, a loaded build gains a real extra cast) instead of a flat tp2 term.
+// Capability, reset au tour :
+//  - CAPABILITY_ITEMS_BY_ID : id -> sa liste d'items castables triée [[item, hpValue, coût]]
+//    (gate cooldown <= 1 de début de tour, valorisés en HP via CAP_HP_W, triés HP/TP desc).
+//    Clé id seule saine : INVENTORY constant par id, les COOLDOWNS non-Me ne bougent jamais
+//    en sim, et la liste de Me est volontairement son potentiel de DÉBUT de tour.
+//  - CAPABILITY_COMBO_CACHE : (id << 10) | max(0, TOTAL_TP) -> les buckets HP par stat du
+//    combo glouton. TP dans la clé : un buff/shackle TP en branche relance le glouton au
+//    nouveau budget, le delta TP est ÉMERGENT (un bulbe qui ne peut rien en faire score 0).
 global CAPABILITY_ITEMS_BY_ID = [: ]
 global CAPABILITY_COMBO_CACHE = [: ]
 
-// Heal map, three layers mirroring the danger map (the fix for Heal = 31-37% of every turn):
-//  - HEAL_COVERAGE_CACHE: the full per-caster coverage [cell -> heal], keyed (id,cell,mp,wis,tp)
-//    — the fast path, unchanged.
-//  - HEAL_CELL_ITEM_AOE_CACHE: the GEOMETRY layer [cell -> [item -> aoeDist]], keyed
-//    (id<<20)|(cell<<10)|max(0,mp) like danger's MAP_CELL_ITEM_AOE_CACHE — position-only, so a
-//    WIS/TP shackle or buff on a healer no longer rebuilds the expensive geometry (~65% of a
-//    cold coverage build), only the cheap combo layer. (canJump is pinned by id within a turn:
-//    non-Me cooldowns never change in-sim, and the cache resets per turn.)
-//  - HEAL_COMBO_CACHE: the VALUE layer, comboAtCell memoized by CONTENT (fold of the cell's
-//    [item -> aoeDist] entries + wis/tp) like danger's COMBO_FROM_ITEM_AOE_CACHE — a coverage
-//    build has ~350 cells but only ~10 distinct item/dist contents, shared across casters and
-//    rebuilds. (USES need not be in the key: every heal caster has USES = 0 — others reset each
-//    engine turn (P2-18), virtual bulbs start at 0, and Me is excluded from the map.)
-// Plus the per-caster heal-item list keyed by id. All reset per turn (cooldowns/positions).
+// HEAL MAP — trois couches, miroir de la danger map :
+//  - HEAL_COVERAGE_CACHE : la couverture complète d'un caster [cell -> heal],
+//    clé (id, cell, mp, wis, tp) — le fast path.
+//  - HEAL_CELL_ITEM_AOE_CACHE : la GÉOMÉTRIE [cell -> [item -> aoeDist]], clé
+//    (id<<20)|(cell<<10)|max(0,mp) — position seule, un buff/shackle WIS/TP ne reconstruit
+//    plus la géométrie (le gros d'un build froid), seulement la couche valeur.
+//  - HEAL_COMBO_CACHE : la VALEUR, memoïsée par CONTENU (fold des entrées [item -> dist]
+//    + wis/tp) — ~350 cellules mais ~10 contenus distincts, partagés entre casters.
+//    (USES pas dans la clé : tout heal caster a USES = 0 — le moteur les clear au endTurn,
+//    les bulbes virtuels partent à 0, et Me est exclu de la map.)
+// Plus la liste d'items de heal par caster. Tout reset au tour (cooldowns/positions).
 global HEAL_COVERAGE_CACHE = [: ]
 global HEAL_CELL_ITEM_AOE_CACHE = [: ]
 global HEAL_COMBO_CACHE = [: ]
 global HEAL_ENTITY_INVENTORY = [: ]
 
-// Delta: per-entity net damage keyed by (statsHash ^ healersFP[side], packed cell/life/totallife).
-// Reset per turn. Lets unchanged entities skip the danger query + heal + turn-order sequencing.
+// DELTA : net par entité, clé (statsHash ^ healersFP[side], pack cell/life/totallife).
+// Une entité intouchée saute danger + heal + séquençage. Reset au tour.
 global NETDAMAGE_CACHE = [: ]
 
-// Heal map: the whole [casterId -> coverage] outer map (ALL sides' healers — enemy heals modeled),
-// keyed by the COMBINED healers fingerprint (XOR-fold of every healer's id+wis+tp+mp+cell, all
-// sides). Returned BY REFERENCE (read-only downstream). The PER-SIDE split of the same fold salts
-// NETDAMAGE_CACHE — built locally by DeltaClass.getNetDamageMap / carried on nodes as HFP_BY_SIDE
-// (no global). Reset per turn.
+// Heal map externe [casterId -> couverture] (healers des DEUX camps), clé = fold COMBINÉ des
+// fingerprints de healers. Renvoyée PAR RÉFÉRENCE (read-only en aval). Le split par side du
+// même fold sale NETDAMAGE_CACHE — porté sur les nœuds (HFP_BY_SIDE). Reset au tour.
 global HEAL_MAP_CACHE = [: ]
 
+// [side -> STR/(STR+MAG) de l'équipe adverse] pour le bonus damage-return — figé au tour,
+// construit au premier porteur évalué (ScoringClass.buildDrPhysRatios). null = pas construit.
+global DR_PHYSRATIO_BY_SIDE = null
+
+// [avb(bit-set vivants, cd de mon antidote) -> [id -> coef poison ]0,1]]] — remise de
+// couverture antidote sur le POT (ScoringClass.poisonCoefOf). Clé bit-set : une mort/summon/
+// résu rebuild (tuer le porteur est pricé en branche), un move hit. Le cd de Me dans la clé :
+// seul input du build mutable en branche. Reset au tour (géométrie/cd lus au build).
+global POISON_COEF_CACHE = [: ]
+
+// Y a-t-il un antidote dans le combat ? (morts inclus — basé inventaire, invariant en branche)
+// Court-circuite la machinerie poison. Lazy (ScoringClass.anyAntidote), reset au tour.
+global ANY_ANTIDOTE = null
+
 // ============================================================================
-// WalkCells (packed-couple bitmap BFS — see Maps/WalkCells.leek)
+// WalkCells : BFS bitmap par couples de lignes (voir Maps/WalkCells.leek)
 // ============================================================================
-// Layout: 1 int per COUPLE of lines (18 couples total).
-//   bits 0-17  : even line 2c   (18 cells)
-//   bits 18-23 : gap (always 0) — blocks cross-row contamination for shifts ≤ 6
-//   bits 24-40 : odd line 2c+1  (17 cells)
-// Couple 17 holds only even line 34 (line 35 doesn't exist).
+// Layout : 1 int par COUPLE de lignes (18 couples).
+//   bits 0-17  : ligne paire 2c   (18 cellules)
+//   bits 18-23 : trou (toujours 0) — bloque la contamination inter-lignes pour les shifts <= 6
+//   bits 24-40 : ligne impaire 2c+1 (17 cellules)
+// Le couple 17 ne porte que la ligne paire 34 (la 35 n'existe pas).
 
 global OBSTACLES_ARRAY = getObstacles()
 
-// MAP_CELL_TO_COUPLE[cell] / MAP_CELL_TO_BITMASK[cell] = couple index + single-bit mask.
-// MAP_OBSTACLES_CACHE       = obstacle-only baseline (no entities), 18 ints.
-// ACC_TEMPLATE              = 19 zeros (18 couples + sentinel for safe acc[c+1] read).
-// CELL_BY_LSB[couple][lsb]  = cell id for the single bit `lsb` set in that couple.
-// All four are populated in Preload.InitCellClass; BFS callers clone what they need.
+// MAP_CELL_TO_COUPLE[cell] / MAP_CELL_TO_BITMASK[cell] = index de couple + masque à 1 bit.
+// MAP_OBSTACLES_CACHE = baseline obstacles seuls (18 ints). ACC_TEMPLATE = 19 zéros
+// (sentinelle pour lire acc[c+1] sans garde). CELL_BY_LSB[couple][lsb] = cellule du bit `lsb`.
+// Peuplés dans Preload.InitCellClass ; les appelants clonent ce dont ils ont besoin.
 global MAP_CELL_TO_COUPLE   = []
 global MAP_CELL_TO_BITMASK  = []
 global MAP_OBSTACLES_CACHE  = []; for (var i = 0; i < 18; i++) push(MAP_OBSTACLES_CACHE, 0)

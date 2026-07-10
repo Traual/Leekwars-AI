@@ -1,10 +1,12 @@
-/**
- * Saving every stats for an ID
- **/
+/*
+ * State : la map [id -> EntityState] du combat, ses hashs, ses tris d'ordre de tour,
+ * et les clones de simulation (clone-on-write).
+ */
 
 include("../includes.leek")
 
 class StateClass {
+	/* Capture l'état réel de toutes les entités depuis le moteur. */
 	static Virtualize() {
 		BenchOps.Start("StateVirtualize")
 		var _final = [: ]
@@ -15,13 +17,12 @@ class StateClass {
 		return _final
 	}
 
-	/* Returns an array of entities sorted by turn order
+	/*
+	 * Entités triées par ordre de tour.
 	 *
-	 * @param State Map Id : Entity State
-	 *
-	 * @return Array<EntityId>
+	 * @param State [id -> stats]
+	 * @return Array<id>
 	 */
-
 	static getSortedEntityByTurnOrder(State) {
 		var Hash = getHashedEntities(State)
 		if (Hash in ENTITY_SORTED_BY_TURN_ORDER_CACHE) return ENTITY_SORTED_BY_TURN_ORDER_CACHE[Hash]
@@ -36,14 +37,14 @@ class StateClass {
 		return _final
 	}
 
-	/* Returns an array of entities sorted by turn order after the play of entity
+	/*
+	 * Entités dans l'ordre où elles jouent APRÈS `entity` ce round (rotation du tri,
+	 * entity exclue).
 	 *
-	 * @param State Map Id : Entity State
-	 * @param entity (id of entity)
-	 *
-	 * @return Array<EntityId>
+	 * @param State [id -> stats]
+	 * @param entity id pivot
+	 * @return Array<id>
 	 */
-
 	static getEntitiesInTurnOrderAfterEntity(State, entity) {
 		var _toPush = []
 		var _final = []
@@ -60,23 +61,14 @@ class StateClass {
 		return _final
 	}
 
-	/* Hash every ids of State
-	 *
-	 * @param State map <Id: Stats>
-	 *
-	 * @return Hash
+	/*
+	 * Bit-set exact des ids VIVANTS : indépendant de l'ordre, zéro collision, ~3 ops/entité.
+	 * Valide tant que les ids < 64 (réels ~<50, bulbes virtuels = SUMMON_ID_BASE + 1..10).
+	 * Vivants seulement : le seul TURN_ORDER qui puisse changer sous une même clé est celui
+	 * d'un ressuscité (fonction pure de l'ordre initial + du set des vivants), or le revive
+	 * flippe justement son bit ici -> même clé <=> même tri.
 	 */
-
 	static getHashedEntities(State) {
-		// BIT-SET exact du set d'ids VIVANTS (vecteur caractéristique) : order-independent (la défrag
-		// de ENTITY_SORTED_BY_TURN_ORDER_CACHE), ZÉRO collision par construction, et ~3 opés/entité —
-		// moins cher que l'ancienne chaîne ET que mix64 (cette fonction est sur le hot path via
-		// getEntitiesInTurnOrderAfterEntity). Valide tant que les ids < 64 : réels ~<50 et bulbes
-		// virtuels = SUMMON_ID_BASE + 1..10.
-		// VIVANTS seulement : le seul TURN_ORDER qui puisse changer sous une même clé est celui d'un
-		// ressuscité (ResurrectionClass.Update le calcule au cast, fonction PURE de l'ordre initial +
-		// du set des vivants) — or le revive flippe justement son bit ici -> même clé <=> même tri.
-		// Les morts (TURN_ORDER = 0 du Virtualize, inertes partout) trient en tête, ties sans effet.
 		var hash_value = 0
 		for (var e: var stat in State) {
 			if (stat.LIFE > 0) hash_value |= 1 << e
@@ -84,32 +76,28 @@ class StateClass {
 		return hash_value
 	}
 
-	/* Hash Function for having an Hash of every Entities positions in Game (Very used)
-	 *
-	 * @param State Map <Id : Class Stats of Id>
-	 *
-	 * @return Hash id:Entity Cell of alive entities
+	/*
+	 * BaseHash : hash des positions (id, cellule) des vivants hors Me. Fold XOR composable —
+	 * le patch incrémental du nœud utilise la MÊME contribution (source unique).
 	 */
-
-	static getBaseHash(State) { //This is the BaseHash
+	static getBaseHash(State) {
 		var hash_value = OFFSET_BASIS
 		for (var id: var stat in State) {
 			if (id == Me || stat.LIFE <= 0) continue
-			// combining id (32 bits haut) and CELL (32 bits bas) in a 64 bits word to then put the word to the hash
-			hash_value ^= baseContribution(stat, id)   // COMPOSABLE XOR-fold — SINGLE SOURCE with the incremental Node patch
+			hash_value ^= baseContribution(stat, id)
 		}
 		return hash_value
 	}
 
-	/* One entity's contribution to the BaseHash (0 if dead). SINGLE SOURCE OF TRUTH shared with the
-	 * incremental Node patch (Phase 2) so patched == full recompute. Same formula as getBaseHash. */
+	/*
+	 * Contribution d'une entité au BaseHash (0 si morte). (id + 1) car mix64(0) = 0 :
+	 * l'entité 0 sur la cellule 0 contribuerait 0 = la sentinelle "morte".
+	 */
 	static baseContribution(stat, id) {
-		// (id + 1): mix64(0) = 0, so entity id 0 standing on cell 0 would contribute 0 = the DEAD
-		// sentinel -> "alive at (0,0)" and "dead" would share a BaseHash. Shifting the input keeps it
-		// nonzero for every real (id, cell).
 		return stat.LIFE > 0 ? mix64(((id + 1) << 32) | stat.CELL) : 0
 	}
 
+	/* [cellule -> true] des vivants hors Me (obstacles dynamiques). */
 	static getEntityCellsMap(State) {
 		var _final = [: ]
 		for (var e: var stat in State) {
@@ -126,17 +114,17 @@ class StateClass {
 		return _final
 	}
 
-	/* THE simulation clone — single source. Containers are SHARED by default: during the whole
-	 * sim NOBODY writes INVENTORY / EFFECTS / SUMMONS / EFFECTS_ITEM_MAP (read-only data — the
-	 * heal/danger combo machineries clone(USES) themselves before mutating), and COOLDOWNS /
-	 * USES are written for ME ONLY (the cast bookkeeping in ActionToNodeInTree) — write census
-	 * grep-verified. If a future effect ever mutates a TARGET's containers (e.g. a real
-	 * cooldown-setting effect), deep-clone them HERE (single chokepoint) — never patch it at
-	 * the effect site. Derived-field memos (CAP_MEMO/TLSQ_MEMO) are dirtied here too. */
+	/*
+	 * LE clone de simulation — source unique. Les containers sont PARTAGÉS par défaut :
+	 * personne n'écrit INVENTORY / EFFECTS / SUMMONS / EFFECTS_ITEM_MAP pendant la sim, et
+	 * COOLDOWNS / USES ne sont écrits que pour ME (comptabilité de cast). Si un jour un effet
+	 * mute un container d'une CIBLE, le deep-clone se fait ICI (point unique), jamais au site
+	 * de l'effet. Les memos dérivés (CAP_MEMO / TLSQ_MEMO) sont invalidés ici.
+	 */
 	static cloneEntityForSim(stat, isMe) {
-		var c = clone(stat, 1)                    // scalars copied, containers shared
+		var c = clone(stat, 1)                    // scalaires copiés, containers partagés
 		if (isMe) {
-			c.COOLDOWNS = clone(stat.COOLDOWNS)   // the only two containers the sim writes — Me only
+			c.COOLDOWNS = clone(stat.COOLDOWNS)   // les deux seuls containers écrits en sim — Me only
 			c.USES = clone(stat.USES)
 		}
 		c.CAP_MEMO = null
@@ -144,23 +132,26 @@ class StateClass {
 		return c
 	}
 
+	/* État de simulation : cibles + Me clonés, tout le reste partagé avec le parent. */
 	static CloneOnlyTargetsAndMe(Targets, EveryStats, clonedIds) {
 		var _final = [: ]
 		for (var tar: var dist in Targets + [Me: 0]) {
 			_final[tar] = cloneEntityForSim(EveryStats[tar], tar == Me)
 			clonedIds[tar] = true
 		}
-		for (var tar: var stats in EveryStats) { //No need to clone them
+		for (var tar: var stats in EveryStats) {
 			if (!(tar in _final)) _final[tar] = stats
 		}
 		return _final
 	}
 
-	/* Clone-on-write for the kill-path side effects (summon cascade, buff unwind, weapon procs):
-	 * those mutate entities OUTSIDE the pre-cloned Targets+Me set, i.e. objects SHARED with the
-	 * parent State — mutating them in place corrupts the whole search (audit bug A). Clones the
-	 * entity into EveryStats on first touch and records it in clonedIds, which thereby stays the
-	 * EXACT set of possibly-mutated entities (Node's incremental hash patch iterates it). */
+	/*
+	 * Clone-on-write pour les effets de bord des kills (cascade de summons, retrait de buffs,
+	 * procs d'armes) : ils mutent des entités HORS du set pré-cloné, donc des objets PARTAGÉS
+	 * avec l'état parent — les muter en place corromprait toute la recherche. Clone au premier
+	 * toucher et enregistre dans clonedIds, qui reste ainsi l'ensemble EXACT des entités
+	 * possiblement mutées (le patch de hashs du nœud l'itère).
+	 */
 	static ensureCloned(EveryStats, id, clonedIds) {
 		if (!(id in clonedIds)) {
 			EveryStats[id] = cloneEntityForSim(EveryStats[id], id == Me)
@@ -169,16 +160,10 @@ class StateClass {
 		return EveryStats[id]
 	}
 
-	/* Gives me the average distance of an entity from its own allies (0 if no allies) (its not weighted, every ally is valued the same : from a puny bulb to a leek)
-	 *
-	 * @param entity_side getSide of entity
-	 * @param state Map <Id : Class state of Id>
-	 * @param entity_state State Class of ID
-	 * @param base_hash : Hash <id : cell> of every alive entities
-	 *
-	 * @return average dist to allies of entity
+	/*
+	 * Distance moyenne d'une entité à ses alliés vivants (0 si aucun), non pondérée.
+	 * Me exclu (je bouge avant la fin du tour). Clé BaseHash + (cellule, id).
 	 */
-
 	static getAverageDistFromAllies(entity_side, state, entity_cell, entity_id, base_hash) {
 		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ base_hash), (entity_cell << 32) | entity_id)
 		if (ThisHash in AVERAGE_DISTANCE_FROM_ALLIES_CACHE) return AVERAGE_DISTANCE_FROM_ALLIES_CACHE[ThisHash]
@@ -186,8 +171,8 @@ class StateClass {
 		var Divide = 0
 		for (var entity: var thisState in state) {
 			if (entity_side == thisState.SIDE) {
-				if (entity == entity_id || entity == Me) continue //Don't want to count myself in it cuz i will move before the end of the turn
-				if (thisState.LIFE <= 0) continue // corpses don't pull the average (the BaseHash key only pins ALIVE positions)
+				if (entity == entity_id || entity == Me) continue
+				if (thisState.LIFE <= 0) continue   // les cadavres ne tirent pas la moyenne (la clé ne pinne que les vivants)
 				Total += CellClass.getDist(thisState.CELL, entity_cell)
 				Divide++
 			}
@@ -197,17 +182,10 @@ class StateClass {
 		return _final
 	}
 
-	/* Gives me the average distance of an entity from its own ennemies (0 if no ennemies) (its not weighted, every ally is valued the same : from a puny bulb to a leek)
-	 *
-	 * @param entity_side getSide of entity
-	 * @param state Map <Id : Class state of Id>
-	 * @param entity_cell Cell of Entity ID
-	 * @param entity_id Tested entity's ID
-	 * @param base_hash : Hash <id : cell> of every alive entities
-	 *
-	 * @return average dist to ennemies of entity
+	/*
+	 * Distance moyenne d'une entité à ses ennemis vivants (0 si aucun), non pondérée.
+	 * Me exclu. Clé BaseHash + (cellule, id).
 	 */
-
 	static getAverageDistFromEnnemies(entity_side, state, entity_cell, entity_id, base_hash) {
 		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ base_hash), (entity_cell << 32) | entity_id)
 		if (ThisHash in AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE) return AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE[ThisHash]
@@ -215,8 +193,8 @@ class StateClass {
 		var Divide = 0
 		for (var entity: var thisState in state) {
 			if (entity_side != thisState.SIDE) {
-				if (entity == Me) continue //Don't want to count myself in it cuz i will move before the end of the turn
-				if (thisState.LIFE <= 0) continue // corpses don't pull the average (the BaseHash key only pins ALIVE positions)
+				if (entity == Me) continue
+				if (thisState.LIFE <= 0) continue   // les cadavres ne tirent pas la moyenne (la clé ne pinne que les vivants)
 				Total += CellClass.getDist(thisState.CELL, entity_cell)
 				Divide++
 			}
