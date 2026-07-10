@@ -1,10 +1,7 @@
-/** Exporté le 19/07/2025 19:56:23 **/
-
-/** Maps/Actions **/
-
-/**
- * Listing possible actions
- **/
+/*
+ * Actions : l'énumération de toutes les actions jouables d'un état — sur moi, dans le
+ * vide, summons, et sur les autres entités (avec dédoublonnage par hash de cibles).
+ */
 
 include("../includes.leek")
 
@@ -30,17 +27,14 @@ class ActionsClass {
 		CHIP_LIGHTNING_BULB: true
 	]
 
-	static getEveryActionsInAState(State, WalkCells, MyCell, BaseHash) { //If i remove my mps from actions on everyone i could cache with BaseHash and MyCell
+	/* Toutes les actions jouables de l'état : sur moi + dans le vide + summons + sur les autres. */
+	static getEveryActionsInAState(State, WalkCells, MyCell, BaseHash) {
 		BenchOps.Start("Actions")
 		var _final = []
 		var LeekCells = StateClass.getEntityCellsMap(State)
-		//Adding Actions on Me :
 		pushAll(_final, getEveryActionsOnMe(MyCell, MY_INVENTORY_ON_ME, State, BaseHash))
-		//Adding Action On Void :
 		pushAll(_final, getEveryActionsInVoid(MyCell, MY_INVENTORY_ON_VOID, State, LeekCells, BaseHash))
-		//Adding Summon Actions :
 		pushAll(_final, getEverySummonActions(MyCell, MY_INVENTORY_SUMMON, State, LeekCells, BaseHash))
-		//Adding Actions on EveryOne Else
 		pushAll(_final, getEveryActionsOnEveryOne(State[Me].CELL, MY_INVENTORY_ON_EVERYONE, State, WalkCells, BaseHash))
 		BenchOps.Stop("Actions")
 		return _final
@@ -68,9 +62,10 @@ class ActionsClass {
 		return _final
 	}
 
+	/* La meilleure façon de me cibler moi-même avec l'item (cellule d'AoE la plus proche si minrange > 0). */
 	static getActionOnMe(MyCell, LaunchType, MinRange, MaxRange, item, NeedLos, State, BaseHash) {
 		//TODO : Check i am the only entity in targets ?
-		if (MinRange == 0) return new ActionClass(item, MyCell, MyCell) //Check if its usefull on me, dome doesn't need an action if i'm the only target :B
+		if (MinRange == 0) return new ActionClass(item, MyCell, MyCell)
 		var MinDist = 1000
 		var MinDistCell
 		if (NeedLos) {
@@ -120,28 +115,31 @@ class ActionsClass {
 		return _final
 	}
 
+	/* Cellule d'invocation : près des ennemis pour un bulbe offensif (MeanBulbs), près des
+	 * alliés sinon (bulbe doux / résurrection). */
 	static getSummonAction(LaunchType, basefrom, MinRange, MaxRange, LeekCells, item, State, base_hash) { //TODO : Debug and Cache
 
 		var CellsUsables = []
 		var CellToSummon
 		var BestScore = MAX_VALUE
 		var entity_side = State[Me].SIDE
-		if (item in MeanBulbs) { //Mean Bulb
+		if (item in MeanBulbs) {
 			for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
 				if (c in LeekCells) continue
 				if (CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) {
-					var ScoreOfTestedCell = StateClass.getAverageDistFromEnnemies(entity_side, State, c, 1000, base_hash) //Id is set to 1000 cuz i don't need to skip anyone cuz bulbstats not yet in State and i don't want to break the cache with -1
+					// id 1000 : personne à skipper (le bulbe n'est pas encore dans State), et -1 casserait le cache
+					var ScoreOfTestedCell = StateClass.getAverageDistFromEnnemies(entity_side, State, c, 1000, base_hash)
 					if (ScoreOfTestedCell < BestScore) {
 						BestScore = ScoreOfTestedCell
 						CellToSummon = c
 					}
 				}
 			}
-		} else { //Gentle Bulb or Resu
+		} else {
 			for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
 				if (c in LeekCells) continue
 				if (CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) {
-					var ScoreOfTestedCell = StateClass.getAverageDistFromAllies(entity_side, State, c, 1000, base_hash) //Id is set to 1000 cuz i don't need to skip anyone cuz bulbstats not yet in State and i don't want to break the cache with -1
+					var ScoreOfTestedCell = StateClass.getAverageDistFromAllies(entity_side, State, c, 1000, base_hash)
 					if (ScoreOfTestedCell < BestScore) {
 						BestScore = ScoreOfTestedCell
 						CellToSummon = c
@@ -163,7 +161,8 @@ class ActionsClass {
 		return _final
 	}
 
-	static getEveryActionsOnEveryOne(MyCell, Inventory, State, WalkCells, BaseHash) { // MaxDist param removed: it was computed by the caller and never used here
+	/* Actions offensives/soutien sur les autres entités, dédoublonnées par hash de cibles. */
+	static getEveryActionsOnEveryOne(MyCell, Inventory, State, WalkCells, BaseHash) {
 		var combined = (State[Me].MP << 20) | MyCell
 		var Hash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), combined)
 		if (Hash in ENTITY_ACTIONS_CACHE) return ENTITY_ACTIONS_CACHE[Hash]
@@ -182,6 +181,9 @@ class ActionsClass {
 		return _final
 	}
 
+	/* Pour un item : une action par ensemble de cibles DISTINCT (DoneHashs dédoublonne les
+	 * (from, to) qui touchent exactement les mêmes entités aux mêmes distances), en partant
+	 * des cellules les moins chères en déplacement. */
 	static getActionsOnEveryone(State, Item, BaseHash, SortedWalkCells) {
 
 		var HashedMapAoe = LoadHashedMapAoe(State, Item, BaseHash)
@@ -202,6 +204,7 @@ class ActionsClass {
 		return _final
 	}
 
+	/* Cas AREA_FIRST_INLINE (attract / push) : vise l'entité et calcule la cellule d'arrivée. */
 	static getFirstInlineActions(State, Infos, Item, SortedWalkCells, BaseHash) {
 		var _final = []
 		var LaunchType = Infos.LAUNCHTYPE
@@ -277,13 +280,15 @@ class ActionsClass {
 		return MinDistCell
 	}
 
-	static isAttract(Infos) { //ATM i can either be attract or push, if there are other items i need to re do this better
+	static isAttract(Infos) { // seuls attract et push existent pour l'instant
 		for (var eff in Infos.EFFECTS) {
 			if (eff[0] == EFFECT_ATTRACT) return true
 		}
 		return false
 	}
 
+	/* [from -> [to -> hash des (entité, distance d'AoE) touchées]] pour un item — la matière
+	 * du dédoublonnage de getActionsOnEveryone. */
 	static LoadHashedMapAoe(State, Item, BaseHash) {
 		var Hash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), Item)
 		if (Hash in HASHED_MAP_ITEM_CACHE) return HASHED_MAP_ITEM_CACHE[Hash]
@@ -294,11 +299,11 @@ class ActionsClass {
 		for (var entity: var EntityState in State) {
 			if (entity == Me || !Target.Targetable(Item, EntityState, CastState) || EntityState.LIFE <= 0) continue
 			for (var from: var MapToHash in LoadMapFromAoeForAnEntity(Item, EntityState.CELL, Infos, LaunchFct)) {
-				var Tmp = from in _final ? _final[from] : _final[from] = [: ] //Used to optimize acces costs to _final[from]
+				var Tmp = from in _final ? _final[from] : _final[from] = [: ]
 				for (var to: var TmpHash in MapToHash) {
-					// Packing: ENTITY in the high bits, aoe-DIST in the 3-bit slot (dist <= 6 fits; ids don't).
-					// The old (dist << 3) | entity had the fields SWAPPED: ids >= 8 bled into the dist slot,
-					// distinct target-sets collided in DoneHashs and real attack actions were silently dropped.
+					// Packing : l'ENTITÉ dans les bits hauts, la DISTANCE dans le slot 3 bits
+					// (dist <= 6 y tient, pas les ids — inverser ferait collisionner des
+					// ensembles de cibles distincts dans DoneHashs).
 					if (to in Tmp) {
 						Tmp[to] = addValueToBinHash(Tmp[to], (entity << MAX_AOE_DIST_BINARY) | TmpHash)
 					} else {
@@ -307,14 +312,14 @@ class ActionsClass {
 				}
 			}
 		}
-		//Adding MySelf To Hash :
-		if (Target.Targetable(Item, CastState, CastState) && Infos.MINRANGE <= Infos.AREA_MAX && Infos.AREA_MAX > 0) { //Avoid Adding MySelf for Lightning
+		// M'ajoute au hash si je suis dans l'AoE depuis from (même packing entité-haut/dist-bas).
+		if (Target.Targetable(Item, CastState, CastState) && Infos.MINRANGE <= Infos.AREA_MAX && Infos.AREA_MAX > 0) {
 			for (var from: var MapToHash in _final) {
-				var Tmp = _final[from] //from is in final (set above)
+				var Tmp = _final[from]
 				var MapAoeCellsOfFrom = AoeDistItem(Item, from)
 				for (var to: var TmpHash in MapToHash) {
-					if (to in MapAoeCellsOfFrom) { //If i'm in the area, i add myself to hash :
-						Tmp[to] = addValueToBinHash(Tmp[to], (Me << MAX_AOE_DIST_BINARY) | MapAoeCellsOfFrom[to]) // same entity-high / dist-low packing as above
+					if (to in MapAoeCellsOfFrom) {
+						Tmp[to] = addValueToBinHash(Tmp[to], (Me << MAX_AOE_DIST_BINARY) | MapAoeCellsOfFrom[to])
 					}
 				}
 			}
@@ -363,8 +368,9 @@ class ActionsClass {
 		return _final
 	}
 
+	/* Cellule "vide" pour un item à effet positif de zone (type glaive) : la première cellule
+	 * visible dont l'AoE ne touche aucune entité. */
 	static getActionInVoid(basefrom, LaunchType, MinRange, MaxRange, LeekCells, Item, State, BaseHash) {
-		//Items like broadsword on me
 		for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
 			var GoodCell = true
 			if (CellClass.getLosWithBaseHash(basefrom, c, State, BaseHash)) {
@@ -390,7 +396,8 @@ class ActionsClass {
 		return NumberOfSumms < SUMMON_LIMIT
 	}
 
-	static AoeDistItem(item, to) { //Return a map of hit cells but no lazers
+	/* [cellule touchée -> distance d'AoE] de l'item centré sur to (lasers exclus). */
+	static AoeDistItem(item, to) {
 		var AoeType = ITEMINFO[item].AREA
 		return MapOptiDistItem[AoeType](to)
 	}
