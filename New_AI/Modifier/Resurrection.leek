@@ -1,10 +1,7 @@
-/** Exporté le 19/07/2025 19:55:35 **/
-
-/** Effects/Resurrect **/
-
-/**
- * Class to add to ActualStats on the consequences of an action (Only RESURRECT Type) : Item To X (For ResurrectCell)
- **/
+/*
+ * Résurrection : choisit quel mort allié relever et applique les conséquences
+ * (vie, cellule, ordre de tour) sur l'état de simulation.
+ */
 
 include("../includes.leek")
 
@@ -24,17 +21,14 @@ class ResurrectionClass {
 		revived.LIFE = revived.TOTAL_LIFE / 2
 		revived.CELL = To
 
-		// Engine-faithful turn order (State.java resurrect(), verified): the revived is reinserted
-		// just BEFORE the next LIVING entity that follows it in initialOrder (in-branch deaths count
-		// — this walk reads the CURRENT branch State), else APPENDED at the END (also the summon and
-		// unknown-slot cases: summons are never in the engine's initialOrder, and an entity dead
-		// before our turn-1 capture has no INITIAL_TURN_ORDER entry). Without this the revived kept
-		// TURN_ORDER = 0 (captured dead) and "played first" in the netDamage sequencing.
-		// -0.25 (not -0.5) so the slot never ties a virtual bulb (owner + 0.5) and stays on the
-		// engine's side of it: a bulb inserted at indexOf(owner)+1 acts BEFORE a revived placed at
-		// indexOf(follower). Cache coherence: ENTITY_SORTED_BY_TURN_ORDER_CACHE is keyed by the
-		// ALIVE bit-set, which this revive flips — and this order is a PURE function of
-		// (INITIAL_TURN_ORDER, alive set), so same key <=> same sort.
+		// Ordre de tour fidèle au moteur : le ressuscité est réinséré juste AVANT la prochaine
+		// entité VIVANTE qui le suit dans l'ordre initial (les morts de branche comptent — on lit
+		// le State courant), sinon ajouté en FIN (cas des summons et des slots inconnus).
+		// -0.25 (pas -0.5) pour ne jamais tie un bulbe virtuel (invocateur + 0.5) et rester du
+		// bon côté : un bulbe inséré à indexOf(owner)+1 agit AVANT un ressuscité placé à
+		// indexOf(follower). Cohérence de cache : ENTITY_SORTED_BY_TURN_ORDER_CACHE est clé par
+		// le bit-set des vivants, que ce revive flippe — et cet ordre est une fonction PURE de
+		// (INITIAL_TURN_ORDER, set des vivants), donc même clé <=> même tri.
 		var myInit = (Resurrect_ID in INITIAL_TURN_ORDER) ? INITIAL_TURN_ORDER[Resurrect_ID] : null
 		var followerInit = null
 		var followerOrder = null
@@ -53,6 +47,7 @@ class ResurrectionClass {
 		revived.TURN_ORDER = (followerOrder != null) ? followerOrder - 0.25 : maxOrder + 1
 	}
 
+	/* Le meilleur mort allié à relever (score = TOTAL_LIFE/4, le plus gros d'abord). */
 	static ScoringWichId(State) {
 		var _final_id
 		var top_score = 0
@@ -65,7 +60,7 @@ class ResurrectionClass {
 				top_score = Score
 			}
 		}
-		// (No debug here: this runs on EVERY resurrection node of the BFS — the real cast logs in Play.)
+		// Pas de debug ici : tourne sur CHAQUE nœud de résurrection du BFS (le vrai cast logue dans Play).
 		return new ResurrectionClass(_final_id, top_score)
 	}
 }

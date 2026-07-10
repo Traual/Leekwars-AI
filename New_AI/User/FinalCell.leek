@@ -1,45 +1,42 @@
-/**
- * FinalCell : choose the cell to end the turn on.
- *
- * Scoring (Σ survival) does NOT depend on where I stand, so the end cell is a pure POSITIONING +
- * SAFETY choice — and (for now) NO danger/position trade. Two layers:
- *   1. GRAVITY (Maps/Gravity) ranks every reachable cell by how strategic the placement is
- *      (cohesion with allies, approach to enemies, anti-AOE, covid...).
- *   2. SAFETY filters by the heal-aware NET damage I'd take there (danger cushioned by heal,
- *      sequenced by turn order) — the same net the scoring uses.
- * We walk the cells in gravity order and take the FIRST that is fully safe (net == 0): the
- * best-placed cell I can't be hurt on. If none is fully safe, fall back to the least-net cell
- * (gravity-tiebroken via the sort order). Reuses the danger module + DeltaClass.netDamage unchanged.
- **/
+/*
+ * FinalCell : la cellule de fin de tour. Le score (Σ survie) ne dépend pas d'où je me tiens,
+ * le placement est donc un choix pur POSITIONNEMENT + SÉCURITÉ, en deux couches :
+ *   1. GRAVITY classe chaque cellule accessible (cohésion alliés, approche ennemis,
+ *      anti-AoE, covid...).
+ *   2. SÉCURITÉ filtre par le NET que j'y prendrais (danger amorti par les heals, séquencé
+ *      par ordre de tour) — le même net que le scoring.
+ * On parcourt les cellules par gravité décroissante et on prend la PREMIÈRE totalement sûre
+ * (net == 0) ; sinon, celle du net minimal (départagée par l'ordre de gravité).
+ */
 
 include("../includes.leek")
 
 class FinalCell {
-    /* Best cell to end the turn on: highest-gravity fully-safe (net==0) cell, else least net.
+    /*
+     * Meilleure cellule de fin de tour : la plus haute gravité totalement sûre, sinon le
+     * moindre net.
      *
-     * @param State    Map <Id : EntityState>
-     * @param BaseHash Hash of all other entities' positions
-     * @return Best cell ID
+     * @param State [id -> stats]
+     * @param BaseHash hash (id, cellule) des vivants
+     * @return id de cellule
      */
     static get(State, BaseHash) {
         BenchOps.Start("FinalCell")
         var MyState = State[Me]
         var myId = MyState.ID
 
-        // Cells I can reach with my remaining MP.
+        // Cellules accessibles avec mes MP restants.
         var possibleCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
 
-        // Positioning (gravity) + heal map (for the heal-aware net).
+        // Positionnement (gravity) + heal map (pour le net heal-aware).
         var gravityMap = GravityClass.loadGravityMap(State, possibleCells)
         var healMap    = HealClass.getHealMap(State)
 
-        // Best placement first.
+        // Meilleur placement d'abord.
         var cells = arraySort(mapKeys(possibleCells), function(a, b) { return gravityMap[b] - gravityMap[a] })
 
-        // Danger context — SAME key family as the BFS (DeltaClass.statsHashFor over the per-side
-        // context): FinalCell inherits the search-warmed CELL_DANGER_GET_CACHE / EVERY_ENEMIES_
-        // WALKABLES entries instead of recomputing them under a second key family. buildContextBySide
-        // is O(sides·N), once per turn here.
+        // MÊME famille de clés danger que le BFS (DeltaClass.statsHashFor) : FinalCell hérite
+        // des caches chauffés par la recherche au lieu de recalculer sous une seconde famille.
         var thisStatsHashForDanger      = DeltaClass.statsHashFor(MyState, DeltaClass.buildContextBySide(State))
         var thisToSkipMap               = DangerClass.EntitiesToSkip(MyState, State, BaseHash)
         var thisEnemiesWalkableCellsMap = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, thisToSkipMap, BaseHash, thisStatsHashForDanger)
@@ -51,8 +48,8 @@ class FinalCell {
         debugC("--- Finding Best Final Cell (gravity-sorted, heal-aware net) ---", COLOR_BLUE)
         for (var cell in cells) {
             var dangerMap = DangerClass.get(cell, State, MyState, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
-            var net = DeltaClass.netDamage(MyState, dangerMap, healMap, State, thisCastersInOrder, cell)   // danger cushioned by heal
-            if (net == 0) { bestCell = cell ; bestNet = 0 ; break }   // best gravity AND fully safe -> done
+            var net = DeltaClass.netDamage(MyState, dangerMap, healMap, State, thisCastersInOrder, cell)
+            if (net == 0) { bestCell = cell ; bestNet = 0 ; break }   // meilleure gravité ET sûre -> fini
             if (net < bestNet) { bestNet = net ; bestCell = cell }
         }
 

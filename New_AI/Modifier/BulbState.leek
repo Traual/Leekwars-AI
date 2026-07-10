@@ -1,7 +1,7 @@
-/**
- * BulbState: Creates a virtual entity state for a summoned bulb.
- * Uses getBulbStats() and getBulbChips() API for accurate, up-to-date stats.
- **/
+/*
+ * BulbState : l'état virtuel d'un bulbe invoqué en branche (stats interpolées par le
+ * niveau de l'invocateur via getBulbStats / getBulbChips).
+ */
 
 include("../includes.leek")
 
@@ -28,7 +28,7 @@ class BulbState {
 	SPECIAL_WEAPON
 	EFFECTS
 	EFFECTS_ITEM_MAP
-	CAP_MEMO    // derived-field memos, same contract as EntityState (null = compute lazily)
+	CAP_MEMO    // memos de champs dérivés, même contrat qu'EntityState (null = calcul lazy)
 	TLSQ_MEMO
 	POISON
 	POISON_OVER_TIME
@@ -97,13 +97,11 @@ class BulbState {
 		this.POISON_OVER_TIME = 0
 		this.JUST_POISON = 0
 		this.JUST_POISON_OVER_TIME = 0
-		// Fractionnaire : le moteur INSERE le summon juste apres son invocateur (Order.addSummon,
-		// indexOf(owner)+1) — donc le summon LE PLUS RECENT joue EN PREMIER parmi ceux du meme
-		// invocateur (chaque insertion pousse les precedents d'un cran). 0.5/(1+n) reproduit ca
-		// exactement : 1er bulbe +0.5, 2e +0.25, 3e +0.166... (le plus recent = le plus petit offset)
-		// sans jamais collisionner avec les ordres entiers reels ni les slots x.75 des ressuscites.
-		// TURN_ORDER lu depuis SummonerStats (l'etat de BRANCHE) et non le builtin live : moins cher,
-		// et coherent si l'invocateur porte un ordre fractionnaire de branche.
+		// Fractionnaire : le moteur INSÈRE le summon juste après son invocateur, donc le plus
+		// RÉCENT joue en PREMIER parmi ceux du même invocateur. 0.5/(1+n) reproduit ça
+		// exactement (1er bulbe +0.5, 2e +0.25, ...) sans jamais collisionner avec les ordres
+		// entiers réels ni les slots x.75 des ressuscités. TURN_ORDER lu depuis SummonerStats
+		// (l'état de BRANCHE), cohérent si l'invocateur porte lui-même un ordre fractionnaire.
 		this.TURN_ORDER = SummonerStats.TURN_ORDER + 0.5 / (1 + NPriorVirtuals)
 
 		// === Leek Stats (interpolation min + (max - min) * SummonerLevelTimes) ===
@@ -170,12 +168,14 @@ class BulbState {
 		}
 	}
 
-	/* Distinct per-bulb-type index (1..10), added to SUMMON_ID_BASE (turn-start max REAL id, dead
-	 * included) so a virtual bulb's id is FIXED per type for the whole turn: same id <=> same type,
-	 * whatever the summon order across branches/chains -> the id-only caches (HEAL_ENTITY_INVENTORY,
-	 * DANGER_ENTITY_INVENTORY) can't collide between types. Always > every real id (alive or dead,
-	 * resurrectable corpses safe) -> no overwrite; ids stay low (base+10 max). Chips have cooldowns,
-	 * so a same-type resummon in one branch is impossible (see the 0-CD TODO in Main.leek). */
+	/*
+	 * Index distinct par TYPE de bulbe (1..10), ajouté à SUMMON_ID_BASE (max des ids réels au
+	 * début du tour, morts inclus) : l'id d'un bulbe virtuel est FIXE par type tout le tour —
+	 * même id <=> même type quel que soit l'ordre des summons entre branches, donc les caches
+	 * clés par id seul ne peuvent pas collisionner entre types. Toujours > tout id réel (pas
+	 * d'écrasement, cadavres ressuscitables inclus). Les chips ont des cooldowns : un resummon
+	 * même-type dans une branche est impossible (voir le TODO 0-CD du Main).
+	 */
 	static getTypeOffset(Chip) {
 		switch (Chip) {
 			case CHIP_PUNY_BULB:      return 1

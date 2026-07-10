@@ -1,21 +1,16 @@
-/**
- * Here we are creating a random action
- **/
+/*
+ * Boucle de jeu du tour : joue la meilleure action tant qu'il y en a une,
+ * puis va se placer sur la meilleure cellule finale.
+ */
 
 include("../includes.leek")
 
 class Play {
 
-	/* Playing function, seeks the best action to do until there are none, then go hide itself to minimize danger
-	 *
-	 * @return Nothing
-	 */
-
 	constructor() {
-		// No ReloadCacheNewTurn here: Main.leek runs it BEFORE Preload.InitStateClass, and that
-		// order is load-bearing — InitStateClass populates whole-turn globals (MY_INVENTORY_ON_ME
-		// via Target.Targetable/TARGETABLECACHE) that must not be derived from last turn's cache
-		// entries. A second reset here only threw away the entries InitStateClass had just warmed.
+		// Pas de ReloadCacheNewTurn ici : Main l'exécute AVANT Preload.InitStateClass, et cet
+		// ordre est porteur — InitStateClass peuple des globals de tour entier (inventaires via
+		// TARGETABLECACHE) qui ne doivent pas dériver d'entrées du tour précédent.
 		while (true) {
 			var State = StateClass.Virtualize()
 			var Action = ActionSuite.getBestAction(State)
@@ -28,46 +23,31 @@ class Play {
 			WalkCellsClass.MoveTo(From, State, TmpBaseHash)
 			executeAction(Item, To, State)
 		}
-		//Then i reload stats and find the final cell to go with theses stats :
-
+		// Plus rien à jouer : re-capture l'état réel et choisit la cellule de fin de tour.
 		var State = StateClass.Virtualize()
 		var this_Base_Hash = StateClass.getBaseHash(State)
 		var this_Final_Cell = FinalCell.get(State, this_Base_Hash)
 		WalkCellsClass.MoveTo(this_Final_Cell, State, this_Base_Hash)
 	}
 
-	/* Little function to execute the action no matter what it is
-	 *
-	 * @param Item : To use on cell To
-	 * @param To : Cell to use item to 
-	 *
-	 * @return Nothing
-	 */
-
+	/* Exécute l'action quelle qu'elle soit : item classique, summon ou résurrection. */
 	executeAction(Item, To, State) {
 		var ItemEffects = ITEMINFO[Item].EFFECTS
 		if (ItemEffects[0][0] != EFFECT_SUMMON && ItemEffects[0][0] != EFFECT_RESURRECT) {
-			useItem(Item, To) //If its a random item
+			useItem(Item, To)
 		} else {
 			if (count(ItemEffects) > 1) debugW("Summon or Resu and Multiple Effects ?! Outdated play in execute Action")
 			if (ItemEffects[0][0] != EFFECT_RESURRECT) {
-				summon(Item, To, Bulb.AI) //If its a summon
+				summon(Item, To, Bulb.AI)
 			} else {
 				var resuId = ResurrectionClass.ScoringWichId(State).ID
 				debugC("Resurrecting entity " + resuId, COLOR_GREEN)
-				resurrect(resuId, To) //if its a resurrection
+				resurrect(resuId, To)
 			}
 		}
 	}
 
-	/* Little function that uses item (it can set Weapon if my weapon isn't in hand) and uses the item (either usechip or useweapon)
-	 *
-	 * @param Item : To use on cell To
-	 * @param To : Cell to use item to 
-	 *
-	 * @return Nothing
-	 */
-
+	/* Utilise l'item (équipe l'arme si besoin), chip ou arme. */
 	useItem(Item, To) {
 		if (ITEMINFO[Item].IS_WEAPON) {
 			if (getWeapon() != Item) setWeapon(Item)

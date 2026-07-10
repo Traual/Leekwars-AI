@@ -1,16 +1,16 @@
-/**
- * This is the BulbAI
-**/
+/*
+ * IA des bulbes. Le bulbe s'exécute dans la VM DE L'INVOCATEUR (summon passe une fonction
+ * de l'IA du propriétaire) : tous les globals et caches sont partagés.
+ */
 
 include("../includes.leek")
 
 class Bulb {
 	static AI() {
-		// Reset FIRST, then InitStateClass — the same load-bearing order as Main.leek. The bulb runs
-		// in the SUMMONER'S VM (summon(chip, cell, Bulb.AI) passes a function of the owner's AI), so
-		// every per-turn cache still holds the OWNER'S-turn entries when the bulb starts. Without
-		// this reset the bulb consumed the owner's action lists (ACTIONS_ON_ME_CACHE, MyCell-only
-		// key) and tried to cast the owner's chips ("Cette puce n'est pas équipée" — real crash).
+		// Reset D'ABORD, puis InitStateClass — le même ordre porteur que Main. Au démarrage du
+		// bulbe, les caches per-turn contiennent encore les entrées du tour du PROPRIÉTAIRE :
+		// sans ce reset, le bulbe consommait les listes d'actions du proprio et tentait de
+		// caster ses chips ("Cette puce n'est pas équipée").
 		ReloadCacheNewTurn()
 		Preload.InitStateClass()
 		new Play()

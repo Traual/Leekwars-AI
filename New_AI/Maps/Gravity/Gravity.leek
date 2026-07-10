@@ -1,19 +1,17 @@
-/**
- * GRAVITY MAP — positioning "pull" score per cell, for FinalCell. Higher = better placement.
- * NOT a danger trade (danger stays separate). loadGravityMap(State, walkCells) -> [cell -> score].
+/*
+ * Gravity map : score de placement par cellule, pour FinalCell (plus haut = mieux placé).
+ * PAS un trade avec le danger (la sécurité est filtrée à part).
  *
- * Per cell, SUM over every alive non-Me entity (importance-weighted):
- *   - enemies : linear approach pull (closer = higher).
- *   - allies  : convex cohesion pull, 1 - (d/maxDist)^x  -> flat when near (freedom to chase the
- *               enemy) / steep when far (urgency to regroup); plus an anti-AOE cluster penalty
- *               (don't get wiped by a single AOE / a teleporting enemy).
- *   - center  : tiny pull toward the map center.
- *   - COVID block (gated by myCovidValue > 0): within the REAL contagion range of the chip,
- *               REWARD being near enemies (spread it) and PENALISE being near allies (don't
- *               infect them), scaled by the REAL spread value (engine-exact, see myCovidValue).
- *               The spread fires at the END of my turn (Entity.endTurn) -> FinalCell, which
- *               consumes this map, is exactly the decision point.
- **/
+ * Par cellule, somme sur chaque entité vivante hors Me (pondérée par l'importance) :
+ *   - ennemis : attraction d'approche linéaire (plus près = plus haut)
+ *   - alliés  : cohésion convexe 1 - (d/maxDist)^x — plate de près (liberté de chasser),
+ *               pentue de loin (urgence de regrouper) ; plus une pénalité anti-cluster AoE
+ *   - centre  : petite attraction vers le centre de la carte
+ *   - COVID (gate myCovidValue > 0) : dans le rayon réel de contagion, récompense la
+ *     proximité des ennemis (contaminer) et pénalise celle des alliés, à la vraie valeur de
+ *     spread (engine-exact, voir myCovidValue). Le spread part au endTurn -> FinalCell est
+ *     exactement le point de décision.
+ */
 
 include("../../includes.leek")
 

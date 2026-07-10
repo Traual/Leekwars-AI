@@ -1,39 +1,32 @@
-/**
- * TWO SEPARATE FUNCTIONS (the buff-farm fix — form and level DECOUPLED):
+/*
+ * Les deux canaux de valeur d'une entité, découplés :
  *
  *   term(e) = sign · ( importance(e) · survival(e)  +  capability(e) )
  *
- * #1 IMPORTANCE — the TIER multiplier in [0,1], FROZEN AT TURN START (memo by id, first
- *    computed at the BFS root on the real stats; reset per turn in ReloadCacheNewTurn).
- *    Its only job: rank WHO matters (focus/protect — a bulb ≈ 1/3 of a real leek). Frozen ⇒
- *    in-turn buffs move it by exactly ZERO — the old live version paid ~90 score per self-buff
- *    (importance × ~2000 survival) and the AI spent entire endgames buff-farming instead of
- *    attacking. Stat changes pay through capability + the REAL channels (danger context,
- *    damage formulas, heal map).
+ * #1 IMPORTANCE — multiplicateur de rang dans [0,1], FIGÉ au début du tour (memo par id).
+ *    Son seul rôle : classer QUI compte (focus/protéger — un bulbe ≈ 1/3 d'un vrai poireau).
+ *    Figé => un buff en cours de tour ne le bouge pas d'un point ; les changements de stats
+ *    paient par capability et par les vrais canaux (contexte danger, formules de dégâts,
+ *    heal map).
  *
- * #2 CAPABILITY v2 — the additive, LIVE, deliberately SMALL buff/debuff channel:
+ * #2 CAPABILITY — le canal LIVE des buffs/debuffs, additif et volontairement PETIT :
  *      capability = CAP_SCALE · Σ_S bucket_S · (1 + max(0,stat_S)/100) · (1 + CAP_MP_FACTOR·mp)
- *    bucket_S = the HP output of S-scaled effects in the entity's best item combo AT ITS
- *    CURRENT TOTAL_TP (cooldown-gated greedy, HP-valued via the USER-calibrated CAP_HP_W
- *    table — the scoring's native currency). The (1 + stat/100) is THE GENERATOR'S OWN
- *    multiplier (an item outputs its base even at stat 0). "The value of a stat = what the
- *    ITEMS can do with it": buffing a stat no item uses → 0 (pruned — correct); shackling a
- *    mage's STR → 0; TP buffs are EMERGENT (the combo re-runs at the new budget — a bulb
- *    that can't fit an extra cast gains 0, a loaded build gains a real cast); MP = flat
- *    flattened multiplier. max(0,·): shackles below 0 can't raise the output.
- *    Killing an entity frees its capability (~40-70) — its loaded kit dies with it, coherent.
+ *    bucket_S = la sortie HP des effets scalés par S dans le meilleur combo d'items de
+ *    l'entité à son TOTAL_TP courant (glouton gated cooldown, valorisé via CAP_HP_W).
+ *    « La valeur d'une stat = ce que les ITEMS peuvent en faire » : buffer une stat
+ *    qu'aucun item n'utilise vaut 0 ; les buffs TP sont ÉMERGENTS (le combo se relance au
+ *    nouveau budget) ; MP = multiplicateur plat. Tuer une entité libère sa capability.
  *
- * LIFE is in neither function (survival term owns it). Costs: importance ≈ 5 ops (memo hit),
- * capability ≈ 5 (CAP_MEMO hit) / ~40 (combo-cache hit) / ~150-300 per NEW (id, TP) pair.
- **/
+ * LIFE n'est dans aucun des deux (le terme de survie s'en charge).
+ */
 
 include("../includes.leek")
 
 // ============================================================================
-// TUNE HERE — #1 IMPORTANCE.   raw = Σ W[S]·stat[S]·(1 + IMP_CONVEX·stat[S]) ;
-// importance = min(1, raw/IMP_SCALE), FROZEN per turn.
-//   - SCIENCE highest (team value); other combat stats equal; TP ≫ MP.
-//   - IMP_SCALE: raw value that maps to importance 1. Raise to make everyone lower.
+// TUNING — #1 IMPORTANCE.   raw = Σ W[S]·stat[S]·(1 + IMP_CONVEX·stat[S]) ;
+// importance = min(1, raw/IMP_SCALE), figée au tour.
+//   - SCIENCE au-dessus (valeur d'équipe), autres stats de combat égales, TP >> MP.
+//   - IMP_SCALE : le raw qui vaut importance 1. Monter => tout le monde baisse.
 // ============================================================================
 global IMP_W_STRENGTH   = 0.002
 global IMP_W_MAGIC      = 0.002
@@ -47,16 +40,8 @@ global IMP_CONVEX       = 0.0003
 global IMP_SCALE        = 9.0
 
 // ============================================================================
-// TUNE HERE — #2 CAPABILITY v2.   capability = CAP_SCALE · ( Σ_S T_S·max(0,stat_S)
-//                                                            + CAP_W_TP·tp² + CAP_W_MP·mp² )
-// T_S = HP of item-output per point of stat S, from the entity's TURN-START best combo
-// (greedy HP/TP over items with turn-start cooldown ≤ 1, within TOTAL_TP) — cached per id
-// per turn in CAPABILITY_T_BY_ID. "The value of a stat = what the entity's ITEMS can do
-// with it": buffing a stat no item uses → T = 0 → worthless (and pruned — correct);
-// shackling a mage's STR → 0 too (v1's blind square overpaid those).
-// CAP_HP_W = HP per point of base effect (the common currency, USER-calibrated June 2026,
-// NOVA lowered 10 → 5 on user call). Only the RATIOS matter for the greedy — the absolute
-// level is absorbed by CAP_SCALE (master dial: a main-stat buff ≈ +10, adrenaline ≈ +8).
+// TUNING — #2 CAPABILITY. CAP_HP_W = HP par point d'effet de base (la monnaie commune).
+// Seuls les RATIOS comptent pour le glouton — le niveau absolu est absorbé par CAP_SCALE.
 // ============================================================================
 global CAP_HP_W = [
     EFFECT_DAMAGE: 1.0,
@@ -68,7 +53,7 @@ global CAP_HP_W = [
     EFFECT_VULNERABILITY: 25.0,         // miroir du relative shield
     EFFECT_ABSOLUTE_VULNERABILITY: 5.0, // miroir de l'absolute shield
     EFFECT_DAMAGE_RETURN: 15.0,
-    EFFECT_NOVA_DAMAGE: 5.0,            // permanent + heal-proof (10 → 5, user call)
+    EFFECT_NOVA_DAMAGE: 5.0,            // permanent + heal-proof
     EFFECT_NOVA_VITALITY: 5.0,
     EFFECT_AFTEREFFECT: -2.0,           // le self-poison du doping
     EFFECT_BUFF_TP: 100.0,              // 1 TP ≈ un cast de plus
@@ -84,9 +69,9 @@ global CAP_HP_W = [
     EFFECT_SHACKLE_WISDOM: 3.0,
     EFFECT_SHACKLE_AGILITY: 2.0
 ]
-// Effet -> stat de scaling du CASTER (multiplicateurs engine-vérifiés dans Consequences),
-// en CONSTANTES STAT_* lisibles. Les effets sans scaling (vulnés, raw buffs) comptent dans
-// la VALEUR du greedy mais n'alimentent aucun bucket.
+// Effet -> stat de scaling du CASTER (multiplicateurs vérifiés dans le moteur). Les effets
+// sans scaling (vulnés, raw buffs) comptent dans la VALEUR du glouton mais n'alimentent
+// aucun bucket.
 global CAP_STAT_OF_EFFECT = [
     EFFECT_DAMAGE: STAT_STRENGTH,
     EFFECT_POISON: STAT_MAGIC,
@@ -102,17 +87,15 @@ global CAP_STAT_OF_EFFECT = [
     EFFECT_DAMAGE_RETURN: STAT_AGILITY,                                           // ×(1+AGI/100)
     EFFECT_ABSOLUTE_SHIELD: STAT_RESISTANCE, EFFECT_RELATIVE_SHIELD: STAT_RESISTANCE // ×(1+RES/100)
 ]
-global CAP_MP_FACTOR = 0.1   // MP = multiplicateur plat du résultat (mobilité générique — assumé
-                             // aplati : 8 PM ≠ 2 entités à 4 PM ; 0.03 → 0.1, user call)
-global CAP_SCALE     = 0.006 // master dial (protein ≈ +10 sur un build à ~900 HP de bucket STR)
+global CAP_MP_FACTOR = 0.1   // MP = multiplicateur plat (mobilité générique, volontairement aplati)
+global CAP_SCALE     = 0.006 // master dial (un buff de main-stat ≈ +10 sur un build chargé)
 
 class ImportanceClass {
 
-    /**
-     * Importance multiplier of one entity, in [0,1] — FROZEN at its first computation of
-     * the turn (the BFS root scores every real entity from the pristine State before any
-     * branch; a virtual bulb freezes at its constructor stats). Low for weak entities
-     * (a bulb ≈ 1/3 of a real leek), 1 for a maxed build.
+    /*
+     * Importance d'une entité, dans [0,1] — FIGÉE à sa première évaluation du tour (la racine
+     * du BFS score toutes les entités réelles avant toute branche ; un bulbe virtuel se fige
+     * à ses stats de constructeur). Basse pour une entité faible, 1 pour un build max.
      */
     static get(stat) {
         var id = stat.ID
@@ -130,24 +113,18 @@ class ImportanceClass {
         return imp
     }
 
-    /**
-     * LIVE additive buff/debuff channel, v2 (see header):
-     *   capability = CAP_SCALE · Σ_S bucket_S · (1 + max(0, stat_S)/100) · (1 + CAP_MP_FACTOR·mp)
-     * The (1 + stat/100) is THE GENERATOR'S OWN FORMULA (an item outputs its base even at
-     * stat 0 — the old T×stat shape wrongly zeroed a 0-STR rifle). bucket_S = the HP output
-     * of S-scaled effects in the entity's best combo AT ITS CURRENT TOTAL_TP (cached by
-     * (id, TP) — a TP buff re-runs the greedy, so its delta is EMERGENT: 0 on a bulb that
-     * can't use the extra TP, a real extra cast on a loaded build). MP = flat multiplier
-     * (generic mobility — flattened on purpose). MEMOIZED on the stat object (CAP_MEMO,
-     * null-on-clone). Me is INCLUDED on purpose: my buffs' immediate delta has no other
-     * channel (Me is excluded from contextBySide AND the heal map — my outputs are simulated,
-     * not projected), so capability(Me) is the exploration ticket that keeps buff→attack
-     * chains alive past the sub-epsilon enumeration filter; the chain's real payoff still
-     * dominates the decision.
+    /*
+     * Canal LIVE des buffs/debuffs (formule du header). Le (1 + stat/100) est LA formule du
+     * moteur : un item sort sa base même à stat 0. Memoïsé sur l'objet stat (CAP_MEMO,
+     * null-au-clone). Me est INCLUS exprès : le delta immédiat de mes buffs n'a aucun autre
+     * canal (Me est exclu du contexte danger ET de la heal map — mes sorties sont simulées,
+     * pas projetées), capability(Me) est le ticket d'exploration qui garde les chaînes
+     * buff→attaque au-dessus du filtre sub-epsilon ; le vrai payoff de la chaîne domine
+     * ensuite la décision.
      */
     static capability(stat) {
         if (stat.CAP_MEMO != null) return stat.CAP_MEMO
-        var combo = getCapabilityCombo(stat)   // [STAT_X -> HP des effets scalés par X], only non-zero buckets
+        var combo = getCapabilityCombo(stat)   // [STAT_X -> HP des effets scalés par X], buckets non nuls
         var v = 0
         for (var s: var hp in combo) {
             if      (s == STAT_STRENGTH)   v += hp * (1 + max(0, stat.STRENGTH) / 100)
@@ -162,9 +139,11 @@ class ImportanceClass {
         return v
     }
 
-    /* The entity's sorted castable item list [[item, hpValue, cost], ...] — turn-start
-     * cooldown ≤ 1 gate (the danger-inventory convention), HP-valued via CAP_HP_W, sorted
-     * HP/TP desc. Cached per id per turn (CAPABILITY_ITEMS_BY_ID). */
+    /*
+     * Liste d'items castables de l'entité [[item, hpValue, coût], ...] — gate cooldown <= 1
+     * de début de tour (convention de l'inventaire danger), valorisés via CAP_HP_W, triés
+     * HP/TP décroissant. Cachée par id pour le tour.
+     */
     static getCapabilityItems(stat) {
         var id = stat.ID
         if (id in CAPABILITY_ITEMS_BY_ID) return CAPABILITY_ITEMS_BY_ID[id]
@@ -183,10 +162,12 @@ class ImportanceClass {
         return items
     }
 
-    /* The greedy combo at the entity's CURRENT TOTAL_TP, as per-stat HP buckets
-     * [STAT_X -> HP output of X-scaled effects]. Cached by (id << 10) | max(0, TOTAL_TP) —
-     * TP is IN the key so in-branch TP buffs/shackles re-run the greedy at the new budget
-     * (few distinct TP values per turn -> few runs, ~100-200 ops each). */
+    /*
+     * Le combo glouton au TOTAL_TP courant de l'entité, en buckets HP par stat
+     * [STAT_X -> HP des effets scalés par X]. Clé (id << 10) | max(0, TOTAL_TP) — le TP est
+     * DANS la clé pour que les buffs/shackles TP en branche relancent le glouton au nouveau
+     * budget (peu de TP distincts par tour -> peu de runs).
+     */
     static getCapabilityCombo(stat) {
         var tp = max(0, stat.TOTAL_TP)
         var key = (stat.ID << 10) | tp
