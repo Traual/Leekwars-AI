@@ -29,14 +29,13 @@ class DangerClass {
 	 */
 
 	static getEntityDanger(entity_state, state, entity_id, base_hash, thisStatsHashForDanger) {
-		BenchOps.Start("Danger")
 		// Danger the entity takes at its CURRENT cell, per caster. Me's min-delta flee search moved to
 		// DeltaClass.minDeltaForMe (which calls get() per flee cell directly), so this is now uniform.
+		// Key + hit OUTSIDE the BenchOps window: hits pay zero instrumentation, the "Danger"
+		// bucket profiles MISS work only (user call 2026-07-10).
 		var Hash = addValueToBinHash(OFFSET_BASIS ^ thisStatsHashForDanger, entity_state.CELL)
-		if (Hash in ENTITY_DANGER_CACHE_FOR_OTHERS) {
-			BenchOps.Stop("Danger")
-			return ENTITY_DANGER_CACHE_FOR_OTHERS[Hash]
-		}
+		if (Hash in ENTITY_DANGER_CACHE_FOR_OTHERS) return ENTITY_DANGER_CACHE_FOR_OTHERS[Hash]
+		BenchOps.Start("Danger")
 		//Skip MySelf as a caster: my own output is searched by the BFS, never counted as ambient danger
 		var thisToSkipMap = clone(DangerClass.EntitiesToSkip(entity_state, state, base_hash))
 		thisToSkipMap[Me] = true

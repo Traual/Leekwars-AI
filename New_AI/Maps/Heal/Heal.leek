@@ -93,12 +93,10 @@ class HealClass {
      * built by the caller's own State scan, so State isn't walked a second time here. Bit-identical
      * to the inline scan in getHealMap (same XOR fold, order-free). Returns the heal map BY REFERENCE. */
     static getHealMapPrecomputed(State, fp, casters) {
+        // Hit OUTSIDE the BenchOps window (like getHealMapByFp): the "Heal" bucket profiles
+        // MISS work only. BY REFERENCE — read-only downstream.
+        if (fp in HEAL_MAP_CACHE) return HEAL_MAP_CACHE[fp]
         BenchOps.Start("Heal")
-        if (fp in HEAL_MAP_CACHE) {                          // unchanged healers across BFS nodes -> hit
-            BenchOps.Stop("Heal")
-            return HEAL_MAP_CACHE[fp]                        // BY REFERENCE — read-only downstream
-        }
-
         var _final = [: ]
         for (var caster in casters) {
             _final[caster] = getCasterCoverage(State[caster])
