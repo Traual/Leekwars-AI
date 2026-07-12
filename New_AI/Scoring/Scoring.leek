@@ -1,11 +1,10 @@
 /*
  * Scoring : valeur d'un état, en HP d'équipe.
  *
- * Par entité VIVANTE :
- *   afterPoison = max(0, LIFE − COEF_POISON·POISON)
- *   pressure    = (DANGER_WEIGHT·danger + COEF_POT·effPot) / (afterPoison + BUFFER)
- *   effLife     = afterPoison / (1 + pressure)
- *   value       = BASE_ALIVE + W_LIFE·sqrt(effLife) + W_TTK·g(ttk) + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)
+ * Par entité VIVANTE — deux canaux, chaque input a UN seul canal :
+ *   afterPoison = max(0, LIFE − COEF_POISON·POISON)          // STOCK : vie après le tick certain
+ *   ttk         = rounds avant la mort sous la pression      // HORIZON : danger net + traînée poison
+ *   value       = BASE_ALIVE + W_LIFE·sqrt(afterPoison) + W_TTK·g(ttk) + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)
  *   term        = sign · (importance·value + capability + drDeterrence)
  * score = Σ term.  sign = +1 allié, −1 ennemi. Les morts contribuent 0 -> un kill vaut
  * toujours ≥ BASE_ALIVE. Le SCORE d'un nœud soustrait en plus CAST_COST[action] (coût
@@ -14,8 +13,8 @@
  * importance est FIGÉE au tour (classement des cibles), capability est le canal LIVE des
  * buffs/debuffs + shields idle (Importance.leek), drDeterrence le bonus des porteurs de
  * damage return.
- * Le danger est RELATIF à la vie restante (jamais noyé), sqrt est concave (finir les blessés),
- * 1/(1+pressure) donne des rendements décroissants sur le danger.
+ * sqrt est concave (finir les blessés paie plus par HP) ; g(ttk) est relatif à la vie (une
+ * menace n'est jamais noyée) et concentre la valeur sur les SEUILS de kill.
  */
 
 include("../includes.leek")
@@ -176,37 +175,43 @@ class ScoringClass {
         var key = (stat.LIFE << 48) | ((stat.POISON & 0x3FFF) << 34) | ((pot & 0x1FFFF) << 17) | (danger & 0x1FFFF)
         if (key in SURVIVAL_CACHE) return SURVIVAL_CACHE[key] + tlTerm
 
+        // Canal STOCK : la vie brute après le tick certain du prochain tour. AUCUNE projection
+        // ici — le danger et la traînée de poison vivent exclusivement dans le canal TTK
+        // (chaque input a UN canal, pas de double compte). sqrt concave : un HP vaut plus
+        // près de la mort -> finir les blessés.
         var afterPoison = max(0, stat.LIFE - COEF_POISON * stat.POISON)
-        var pressure = (DANGER_WEIGHT * danger + COEF_POT * pot) / (afterPoison + BUFFER)
-        var effLife = afterPoison / (1 + pressure)
-        var value = BASE_ALIVE + W_LIFE * sqrt(effLife)
+        var value = BASE_ALIVE + W_LIFE * sqrt(afterPoison)
 
-        // ----- TTK (kill-horizon) : rounds avant la mort sous la pression courante -----
+        // Canal HORIZON (TTK) : rounds avant la mort sous la pression courante.
         // tick = poison du prochain tour, il se répète tant que le poison dure ;
-        // duration = effPot/tick = rounds de poison restants (effPot est déjà remisé par la
-        // couverture antidote -> le TTK est antidote-aware). Deux régimes :
-        //   - il meurt PENDANT le poison  : ttk = LIFE / (danger + tick)
+        // duration = effPot/tick = rounds de poison restants (effPot est remisé par la
+        // couverture antidote -> le TTK est antidote-aware). Numérateur = afterPoison :
+        // le tick certain est déjà décompté du stock, l'horizon part d'après lui.
+        // Deux régimes :
+        //   - il meurt PENDANT le poison  : ttk = afterPoison / (danger + tick)
         //   - le poison EXPIRE avant      : ttk = duration + vie restante / danger seul
-        // Les +1 aux dénominateurs évitent la division par 0 (sans pression : ttk ≈ LIFE,
-        // grand -> g ≈ 1). Tous les inputs (LIFE, POISON, effPot, danger) sont déjà dans la
-        // clé du cache -> calculé sur miss seulement, aucun salage.
+        // Les +1 aux dénominateurs évitent la division par 0 (sans pression : ttk grand
+        // -> g ≈ 1). Tous les inputs (LIFE, POISON, effPot, danger) sont déjà dans la clé
+        // du cache -> calculé sur miss seulement, aucun salage.
         var tick = max(0, stat.POISON)
         var effPot = max(0, pot)
         var ttk
         if (tick > 0 && effPot > 0) {
             var duration = effPot / tick                    // rounds de poison restants
             var duringPoison = danger + tick                // pression par round pendant le poison
-            if (stat.LIFE <= duringPoison * duration) {
-                ttk = stat.LIFE / (duringPoison + 1)        // mort avant l'expiration du poison
+            if (afterPoison <= duringPoison * duration) {
+                ttk = afterPoison / (duringPoison + 1)      // mort avant l'expiration du poison
             } else {
-                ttk = duration + (stat.LIFE - duringPoison * duration) / (danger + 1)
+                ttk = duration + (afterPoison - duringPoison * duration) / (danger + 1)
             }
         } else {
-            ttk = stat.LIFE / (danger + 1)
+            ttk = afterPoison / (danger + 1)
         }
-        // g(ttk) = ttk/(ttk+TTK_HALF) : 0 (condamné) -> 1 (sûr), pente max près de 0.
-        // Franchir un seuil de kill (ttk 2 -> 1) est la plus grosse monnaie du canal, puis g
-        // s'aplatit (condamné) -> l'IA empile les vulnés jusqu'au seuil et passe à la suivante.
+        // g(ttk) = ttk/(ttk+TTK_HALF) : 0 (condamné) -> 1 (sûr), pente max près de 0, et
+        // RELATIF (un même danger mord plus une petite vie). Franchir un seuil de kill
+        // (ttk 2 -> 1) est la plus grosse monnaie du canal, puis g s'aplatit (condamné)
+        // -> l'IA empile les vulnés jusqu'au seuil et passe à la cible suivante. L'overkill
+        // garde un gradient (ttk continue de baisser sous 1 : 0.8 -> 0.5 -> 0.3...).
         value += W_TTK * ttk / (ttk + TTK_HALF)
 
         SURVIVAL_CACHE[key] = value

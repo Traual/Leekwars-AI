@@ -2,12 +2,10 @@
  * Tous les scalaires réglables du scoring (monnaie : HP). Les nombres se balayent ici
  * sans toucher à la logique.
  *
- * Par entité VIVANTE :
- *   afterPoison = max(0, LIFE − COEF_POISON·POISON)                  // tick certain du prochain tour
- *   pressure    = (DANGER_WEIGHT·danger + COEF_POT·effPot)           // menaces relatives
- *               / (afterPoison + BUFFER)     (effPot = POT remisé par la couverture antidote)
- *   effLife     = afterPoison / (1 + pressure)
- *   value       = BASE_ALIVE + W_LIFE · sqrt(effLife) + W_TTK · g(ttk)
+ * Par entité VIVANTE — deux canaux, chaque input a UN seul canal :
+ *   afterPoison = max(0, LIFE − COEF_POISON·POISON)   // STOCK : vie après le tick certain
+ *   ttk         = rounds avant la mort                // HORIZON : danger net + traînée poison
+ *   value       = BASE_ALIVE + W_LIFE · sqrt(afterPoison) + W_TTK · g(ttk)
  *               + W_TOTAL_LIFE · sqrt(TOTAL_LIFE)
  * score = Σ sign·value. Les morts (0) => un kill vaut toujours >= BASE_ALIVE.
  */
@@ -18,8 +16,10 @@ include("../includes.leek")
 // vaut toujours >= BASE_ALIVE (monotone, jamais indifférent). Valorise aussi summons/résus.
 global BASE_ALIVE = 1000
 
-// Terme de vie : W_LIFE · sqrt(effLife). sqrt est concave -> un HP vaut plus près de la mort
-// (pousse à finir les blessés). (Envie de ~0.75 de concavité ? sqrt(effLife·sqrt(effLife)).)
+// Canal STOCK : W_LIFE · sqrt(afterPoison) — la vie brute, AUCUNE projection dedans (le
+// danger et la traînée de poison vivent dans le TTK). sqrt est concave -> un HP vaut plus
+// près de la mort (pousse à finir les blessés). Paie le chip damage et les heals même sur
+// des cibles hors de toute menace. (~0.75 de concavité ? sqrt(x·sqrt(x)).)
 global W_LIFE = 14.0
 
 // Terme de vie max : le capital DURABLE de l'entité. Seul canal de l'érosion/nova (permanent,
@@ -30,38 +30,31 @@ global W_TOTAL_LIFE = 0.5 * W_LIFE
 // Tick de poison immédiat : dégâts certains du prochain tour, soustraits de la vie.
 global COEF_POISON = 0.5
 
-// Menaces "pression", relatives à la vie restante (elles mordent même énormes, jamais
-// noyées) :
-//   - danger  (entrant, post-shield, caché)                     pondéré DANGER_WEIGHT
-//   - effPot  (poison restant total, antidote-remisé)           pondéré COEF_POT
-// BUFFER évite la division par zéro quand la vie -> 0 et fixe l'échelle de la pression.
-// effLife = afterPoison/(1+pressure) : décroissante et convexe -> rendements décroissants.
-global DANGER_WEIGHT = 0.7
-global COEF_POT = 0.2
-global BUFFER = 500
-
 // Le heal amortit le danger dans le net séquencé par ordre de tour (DeltaClass) : chaque
 // heal ne compte qu'à HEAL_COEF de son potentiel (un soin est moins CERTAIN qu'un dégât —
 // le healer peut être mort, shacklé, hors position).
 global DANGER_COEF = 1.0
 global HEAL_COEF = 0.6
 
-// ----- TTK (kill-horizon) -----
+// ----- Canal HORIZON : TTK (kill-horizon) — LE canal de menace -----
 // survivalValue gagne W_TTK · g(ttk), avec g(ttk) = ttk / (ttk + TTK_HALF) ∈ [0,1[ et
-// ttk = rounds avant la mort sous la pression courante (voir le calcul dans survivalValue :
-// danger net + tick de poison, durée du poison = effPot/tick, donc antidote-remisée).
+// ttk = rounds avant la mort sous la pression courante (danger net + tick de poison, durée
+// du poison = effPot/tick, donc antidote-remisée — calcul dans survivalValue).
+// C'est le SEUL endroit où le danger projeté et la traînée de poison entrent dans la valeur
+// (l'ancien canal pressure/effLife double-comptait ET était concave -> saupoudrage de
+// vulnés ; remplacé).
 //
-// POURQUOI : le canal sqrt/pressure est CONCAVE — la 2e vulné sur la même cible paie moins
-// que la 1re, donc l'IA saupoudrait les vulnés au lieu de les empiler. g(ttk) a sa pente
-// MAXIMALE près de ttk 0-1.5 : franchir un seuil de kill est la plus grosse monnaie du
-// canal (TTK_HALF=2 : ttk 2->1 = Δg 0.167, ·W_TTK = ~67 ; ttk 1->0.5 = ~53), puis g
+// g a sa pente MAXIMALE près de ttk 0-1.5 : franchir un seuil de kill est la plus grosse
+// monnaie du canal (TTK_HALF=2 : ttk 2->1 = Δg 0.167, ·W_TTK = ~67 ; 1->0.5 = ~53), puis g
 // s'aplatit (cible condamnée, rien à gratter) et l'IA passe à la suivante.
-// -> stack de vulnés jusqu'au one-turn-kill ÉMERGENT, et le POT-léthal est couvert
-// (un empoisonné condamné a ttk ~ sa durée de poison -> valeur effondrée).
+// -> stack de vulnés jusqu'au one-turn-kill ÉMERGENT ; POT-léthal couvert (un empoisonné
+// condamné a ttk ~ sa durée de poison -> valeur effondrée) ; menace RELATIVE à la vie
+// (jamais noyée) ; l'overkill garde un gradient (ttk descend sous 1 en continu).
 //
 // Tuning à la main :
-//   W_TTK    : l'ampleur du canal. 0 = OFF (comportement d'avant, exact). Monter -> les
-//              seuils de kill dominent le chip damage (W_LIFE reste le canal HP lisse).
+//   W_TTK    : l'ampleur de TOUTE la sensibilité au danger (l'équivalent de l'ancien
+//              couple DANGER_WEIGHT/BUFFER). 400 ≈ l'ancienne ampleur sur un build 3k HP.
+//              0 = plus AUCUNE peur (stock seul) — à ne pas laisser en combat.
 //   TTK_HALF : où est le "milieu" de g (g = 0.5 à ttk = TTK_HALF). Monter -> les seuils
 //              lointains (3-4 rounds) paient aussi ; descendre -> seuls les kills
 //              imminents comptent.
