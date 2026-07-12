@@ -155,7 +155,7 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_POISON:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) * (1 + CastStats.POWER / 100) // MAGIC planchée à l'usage, POWER non (EffectPoison du moteur)
 				var effectDuration = Effect[3]
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
@@ -199,7 +199,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityLifeDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
 				break
 			case EFFECT_NOVA_DAMAGE:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100) * (1 + CastStats.POWER / 100) // SCIENCE planchée, POWER non (EffectNovaDamage du moteur)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
@@ -391,6 +391,7 @@ class ConsequencesClass {
 		var CastStats = State[Caster]
 		var prevEffectTotal = 0   // STEALS : total appliqué de l'effet précédent de CE cast (contrat Attack.java)
 		for (var Effect in ITEMINFO[Item].EFFECTS) {
+			if (CastStats.LIFE <= 0) break   // caster mort en route (retour léthal) : le moteur saute les effets restants
 			var EffectType = Effect[0]
 			switch (EffectType) {
 				case EFFECT_SUMMON:
@@ -634,7 +635,14 @@ class ConsequencesClass {
 		TarStats.TOTAL_LIFE -= Damage * EROSION_NO_POISON
 		if (!TarIsCaster) {
 			var Damage_Return = BaseDamages * (TarStats.DAMAGE_RETURN / 100)
-			CastStats.LIFE += min(Damage * (CastStats.WISDOM / 1000), CastStats.TOTAL_LIFE - CastStats.LIFE) - Damage_Return
+			var casterLife = CastStats.LIFE + min(Damage * (CastStats.WISDOM / 1000), CastStats.TOTAL_LIFE - CastStats.LIFE) - Damage_Return
+			if (casterLife <= 0 && CastStats.LIFE > 0) {
+				// Retour léthal : le caster meurt VRAIMENT (cascade de ses summons + déroulé de
+				// ses buffs), et getConsequences saute ses effets restants — comme le moteur.
+				getKillConsequences(Dist, 0, Effect, CastStats, TarStats, false, EveryStats, true, clonedIds)
+			} else {
+				CastStats.LIFE = casterLife
+			}
 			CastStats.TOTAL_LIFE -= Damage_Return * EROSION_NO_POISON
 		}
 		switch (TarStats.SPECIAL_WEAPON) {
@@ -652,7 +660,11 @@ class ConsequencesClass {
 	}
 
 	static getEntityDebuffConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
-		var DebuffPower = Effect[1] / 100
+		// Le moteur RETIRE removal% de chaque effet (Effect.reduce garde 1 − percent), avec
+		// removal = valeur · crit·targetCount (Multiplier) · aoe (EffectDebuff du moteur).
+		// DebuffPower = la fraction CONSERVÉE, clampée à 0 (un débuff >= 100% efface tout).
+		var removal = Effect[1] * Multiplier * (1 - Dist * 0.2)
+		var DebuffPower = max(0, 1 - removal / 100)
 		TarStats.TO_SAVE_SHACKLE_AGILITY *= DebuffPower
 		TarStats.TO_SAVE_SHACKLE_MAGIC *= DebuffPower
 		TarStats.TO_SAVE_SHACKLE_TOTAL_MP *= DebuffPower
@@ -712,7 +724,12 @@ class ConsequencesClass {
 		TarStats.TOTAL_LIFE -= Damage * EROSION_NO_POISON
 		if (!TarIsCaster) {
 			var Damage_Return = BaseDamages * (TarStats.DAMAGE_RETURN / 100)
-			CastStats.LIFE -= Damage_Return
+			if (CastStats.LIFE - Damage_Return <= 0 && CastStats.LIFE > 0) {
+				// Retour léthal : voir getEntityDamageConsequences.
+				getKillConsequences(Dist, 0, Effect, CastStats, TarStats, false, EveryStats, true, clonedIds)
+			} else {
+				CastStats.LIFE -= Damage_Return
+			}
 			CastStats.TOTAL_LIFE -= Damage_Return * EROSION_NO_POISON
 		}
 		switch (TarStats.SPECIAL_WEAPON) {
