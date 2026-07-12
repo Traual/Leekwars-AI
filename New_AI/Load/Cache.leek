@@ -77,7 +77,7 @@ global LOS_CACHE = [: ]
 global LOS_WITH_BASE_HASH_CACHE = [: ]
 global FILLED_CELLS_CACHE = [: ]
 
-global DISK_CACHE = [: ]
+global DISC_CACHE = [: ]
 global CIRCLE_CACHE = [: ]
 global CIRCLE_WITH_LOS_CACHE = [: ]
 global DISC_WITH_LOS_CACHE = [: ]
@@ -125,7 +125,7 @@ global SUMMONER_LEVEL_TIMES = min(300, getLevel()) / 300
 global MAP_CELL_ITEM_AOE_CACHE = [: ]
 global CELL_DANGER_GET_CACHE = [: ]
 global COMBO_FROM_ITEM_AOE_CACHE = [: ]
-global BFS_CELL_DANGER_CACHE = [: ]
+global COMBO_DAMAGE_CACHE = [: ]
 global HAVE_AN_HITTABLE_ITEM_CACHE = [: ]
 global DANGER_ENTITY_CACHE = [: ]
 global DANGER_ENTITY_INVENTORY = [: ]
@@ -149,7 +149,7 @@ global WALKABLE_CACHE = [: ]
 global JUMP_CACHE = [: ]
 global TELEPORTATION_CACHE = [: ]
 global TELEPORTATION_AND_JUMP_CACHE = [: ]
-global IGNORE_CELLLS_CACHE = [: ]
+global IGNORE_CELLS_CACHE = [: ]
 
 // Variante "NoEntities" : ignore les entités comme obstacles, seuls les obstacles de la carte
 // comptent. Utilisée par le danger — l'approximation s'échange contre un cache PERSISTANT tout

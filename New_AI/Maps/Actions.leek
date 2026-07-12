@@ -127,8 +127,7 @@ class ActionsClass {
 			for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
 				if (c in LeekCells) continue
 				if (CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) {
-					// id 1000 : personne à skipper (le bulbe n'est pas encore dans State), et -1 casserait le cache
-					var ScoreOfTestedCell = StateClass.getAverageDistFromEnnemies(entity_side, State, c, 1000, base_hash)
+					var ScoreOfTestedCell = StateClass.getAverageDistFromEnnemies(entity_side, State, c, ID_NOBODY, base_hash)
 					if (ScoreOfTestedCell < BestScore) {
 						BestScore = ScoreOfTestedCell
 						CellToSummon = c
@@ -139,7 +138,7 @@ class ActionsClass {
 			for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
 				if (c in LeekCells) continue
 				if (CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) {
-					var ScoreOfTestedCell = StateClass.getAverageDistFromAllies(entity_side, State, c, 1000, base_hash)
+					var ScoreOfTestedCell = StateClass.getAverageDistFromAllies(entity_side, State, c, ID_NOBODY, base_hash)
 					if (ScoreOfTestedCell < BestScore) {
 						BestScore = ScoreOfTestedCell
 						CellToSummon = c
@@ -204,41 +203,25 @@ class ActionsClass {
 		return _final
 	}
 
-	/* Cas AREA_FIRST_INLINE (attract / push) : vise l'entité et calcule la cellule d'arrivée. */
+	/* Cas AREA_FIRST_INLINE (attract / push) : vise l'entité, calcule la cellule d'arrivée
+	 * (la plus proche pour un attract, la plus lointaine pour un push). */
 	static getFirstInlineActions(State, Infos, Item, SortedWalkCells, BaseHash) {
 		var _final = []
 		var LaunchType = Infos.LAUNCHTYPE
 		var MinRange = Infos.MINRANGE
 		var MaxRange = Infos.MAXRANGE
 		var OccupiedCellsArray = WalkCellsClass.LoadIgnoreCells(State, Me, BaseHash)
+		var attract = isAttract(Infos)
 
-		if (isAttract(Infos)) {
-			for (var e: var stat in State) {
-				if (e == Me) continue
-				var EntityCell = stat.CELL
-				var HittableCellsAreaEntity = LaunchWithLos[LaunchType](EntityCell, MinRange, MaxRange)
-				var from = getClosestSortedWalkCellsToHit(HittableCellsAreaEntity, SortedWalkCells)
-				if (from != null && CellClass.getLosWithBaseHash(from, EntityCell, State, BaseHash)) {
-					var CellToAttract = getClosestCellToAttract(from, EntityCell, MinRange, MaxRange, OccupiedCellsArray)
-					if (CellToAttract != null) {
-						var Act = new ActionClass(Item, from, CellToAttract)
-						push(_final, Act)
-					}
-				}
-			}
-		} else {
-			for (var e: var stat in State) {
-				if (e == Me) continue
-				var EntityCell = stat.CELL
-				var HittableCellsAreaEntity = LaunchWithLos[LaunchType](EntityCell, MinRange, MaxRange)
-				var from = getClosestSortedWalkCellsToHit(HittableCellsAreaEntity, SortedWalkCells)
-				if (from != null && CellClass.getLosWithBaseHash(from, EntityCell, State, BaseHash)) {
-					var CellToPush = getFarthestCellToPush(from, EntityCell, MinRange, MaxRange, OccupiedCellsArray)
-					if (CellToPush != null) {
-						var Act = new ActionClass(Item, from, CellToPush)
-						push(_final, Act)
-					}
-				}
+		for (var e: var stat in State) {
+			if (e == Me) continue
+			var EntityCell = stat.CELL
+			var HittableCellsAreaEntity = LaunchWithLos[LaunchType](EntityCell, MinRange, MaxRange)
+			var from = getClosestSortedWalkCellsToHit(HittableCellsAreaEntity, SortedWalkCells)
+			if (from != null && CellClass.getLosWithBaseHash(from, EntityCell, State, BaseHash)) {
+				var To = attract ? getClosestCellToAttract(from, EntityCell, MinRange, MaxRange, OccupiedCellsArray)
+				                 : getFarthestCellToPush(from, EntityCell, MinRange, MaxRange, OccupiedCellsArray)
+				if (To != null) push(_final, new ActionClass(Item, from, To))
 			}
 		}
 		return _final
@@ -329,7 +312,7 @@ class ActionsClass {
 	}
 
 	static LoadMapFromAoeForAnEntity(Item, EntityCell, Infos, LaunchFunction) {
-		var Hash = EntityCell * MAX_ITEM + Item
+		var Hash = (EntityCell << 9) | Item   // cellule < 613, item < 512 -> injectif
 		if (Hash in COEFFED_MAP_ENTITY_CACHE) return COEFFED_MAP_ENTITY_CACHE[Hash]
 		var MinRange = Infos.MINRANGE
 		var MaxRange = Infos.MAXRANGE

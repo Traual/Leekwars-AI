@@ -115,7 +115,7 @@ class DangerClass {
 		// restants de ce tour — stable d'un step de BFS à l'autre.
 		var BaseTp = CasterStats.TOTAL_TP
 		var BaseUses = CasterStats.USES
-		var _final = getBFSComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, BaseTp, clone(BaseUses))
+		var _final = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, BaseTp, clone(BaseUses))
 		var ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
 		while ((ComboWithVulne instanceof DangerClass) && (ComboWithVulne.EndValueDamage > _final)) {
 			_final = ComboWithVulne.EndValueDamage
@@ -129,15 +129,11 @@ class DangerClass {
 		return entry
 	}
 
-	/* Hash de contenu d'une map [item -> dist]. */
+	/* Hash de contenu d'une map [item -> dist] : chaîne rotate-XOR, entrée (item 9 bits | dist 4 bits). */
 	static getHashFromItemAoeMap(ItemAoeMap) {
 		var Hash_Final = 0
 		for (var item: var dist in ItemAoeMap) {
-			Hash_Final = (
-				(Hash_Final * MAX_ITEM * MAX_AOE_DIST) +
-				(item * MAX_AOE_DIST) +
-				dist
-			)
+			Hash_Final = addValueToBinHash(Hash_Final, (item << 4) | dist)
 		}
 		return Hash_Final
 	}
@@ -189,7 +185,7 @@ class DangerClass {
 		var ThisUses = clone(BaseUses)
 		var ThisItemMyStats = getRoughVulneConsequences(clone(TargetStats, 2), Infos)
 		ThisUses[Item]++
-		var DamagesWithThisItemVulne = getBFSComboFromItemAoe(ItemAoeMap, CasterStats, ThisItemMyStats, ThisTp, clone(ThisUses))
+		var DamagesWithThisItemVulne = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, ThisItemMyStats, ThisTp, clone(ThisUses))
 		return new DangerClass(ThisItemMyStats, ThisTp, ThisUses, DamagesWithThisItemVulne)
 	}
 
@@ -221,10 +217,10 @@ class DangerClass {
 	 *
 	 * @return dégâts totaux du combo
 	 */
-	static getBFSComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, CasterTP, ClonedEntityUses) {
+	static getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, CasterTP, ClonedEntityUses) {
 		var EntityDangerArray = EntityDangerClass.get(CasterStats, TargetStats)
-		var BFSHash = getBFSHash(ItemAoeMap, EntityDangerArray, CasterTP)
-		if (BFSHash in BFS_CELL_DANGER_CACHE) return BFS_CELL_DANGER_CACHE[BFSHash]
+		var ComboHash = getGreedyComboHash(ItemAoeMap, EntityDangerArray, CasterTP)
+		if (ComboHash in COMBO_DAMAGE_CACHE) return COMBO_DAMAGE_CACHE[ComboHash]
 		var _final = 0
 		for (var EntityDanger in EntityDangerArray) {
 			var ItemEntityDanger = EntityDanger.Item
@@ -238,12 +234,12 @@ class DangerClass {
 				}
 			}
 		}
-		BFS_CELL_DANGER_CACHE[BFSHash] = _final
+		COMBO_DAMAGE_CACHE[ComboHash] = _final
 		return _final
 	}
 
 	/* Hash du combo glouton : chaque (item utilisable, ses dégâts) + le TP du caster. */
-	static getBFSHash(ItemAoeMap, EntityDangerArray, CasterTP) {
+	static getGreedyComboHash(ItemAoeMap, EntityDangerArray, CasterTP) {
 		var hash_value = (OFFSET_BASIS ^ CasterTP)
 
 		for (var EntityDanger in EntityDangerArray) {

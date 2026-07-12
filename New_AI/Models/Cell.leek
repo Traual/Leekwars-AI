@@ -65,7 +65,7 @@ class CellClass {
 
 	static getDisc(cell, minradius, radius) {
 		var TmpHash = (cell << 14) | (minradius << 7) | radius
-		if (TmpHash in DISK_CACHE) return DISK_CACHE[TmpHash]
+		if (TmpHash in DISC_CACHE) return DISC_CACHE[TmpHash]
 
 		var _final = [: ]
 		// Parcourir les cellules dans les rayon
@@ -73,7 +73,7 @@ class CellClass {
 			_final += getCircle(cell, d)
 		}
 
-		DISK_CACHE[TmpHash] = _final
+		DISC_CACHE[TmpHash] = _final
 		return _final
 	}
 

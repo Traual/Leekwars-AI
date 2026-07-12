@@ -96,15 +96,4 @@ class GravityClass {
         return 0
     }
 
-    /* TEMP debug: markText the gravity score on every map cell (heatmap to eyeball the field). */
-    static debugVisual() {
-        var State = StateClass.Virtualize()
-        var allCells = [: ]
-        for (var c = 0; c < 613; c++) allCells[c] = 0
-        var gravity = loadGravityMap(State, allCells)
-        clearMarks()
-        for (var cell: var score in gravity) {
-            markText(cell, round(score * 100) / 100)
-        }
-    }
 }

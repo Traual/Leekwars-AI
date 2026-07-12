@@ -223,27 +223,6 @@ class WalkCellsClass {
 		})
 	}
 
-	// Bientôt obsolète (candidat code mort) :
-	static LoadCoeffedCellsFromWalkCellsClass(layers) { // [cellule -> coût pénalisé par layer], pour l'Action Map
-		var _final = [: ]
-		var Walk = layers.WALK
-		var Jump = layers.JUMP
-		var Tele = layers.TELEPORTATION
-		var TeleAndJump = layers.TELEPORTATION_AND_JUMP
-		for (var c:var mp in layers.MAX) {
-			if (c in Walk) {
-				_final[c] = Walk[c]
-			} else if (c in Jump) {
-				_final[c] = Jump[c] + 100
-			} else if (c in Tele) {
-				_final[c] = Tele[c] + 1000
-			} else if (c in TeleAndJump) {
-				_final[c] = TeleAndJump[c] + 10000
-			}
-		}
-		return _final
-	}
-
 	// ============================================================================
 	// Helpers d'exécution (une fois par action réelle, à l'émission)
 	// ============================================================================
@@ -1073,12 +1052,12 @@ class WalkCellsClass {
 
 	static LoadIgnoreCells(EveryStats, EntityToBeIgnored, BaseHash) {
 		var Hash = addValueToBinHash(OFFSET_BASIS ^ BaseHash, EntityToBeIgnored)
-		if (Hash in IGNORE_CELLLS_CACHE) return IGNORE_CELLLS_CACHE[Hash]
+		if (Hash in IGNORE_CELLS_CACHE) return IGNORE_CELLS_CACHE[Hash]
 		var _final = []
 		for (var e: var stat in EveryStats) {
 			if (stat.LIFE > 0 && e != EntityToBeIgnored) push(_final, stat.CELL)
 		}
-		IGNORE_CELLLS_CACHE[Hash] = _final
+		IGNORE_CELLS_CACHE[Hash] = _final
 		return _final
 	}
 }
