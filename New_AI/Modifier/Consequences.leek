@@ -635,15 +635,18 @@ class ConsequencesClass {
 		TarStats.TOTAL_LIFE -= Damage * EROSION_NO_POISON
 		if (!TarIsCaster) {
 			var Damage_Return = BaseDamages * (TarStats.DAMAGE_RETURN / 100)
-			var casterLife = CastStats.LIFE + min(Damage * (CastStats.WISDOM / 1000), CastStats.TOTAL_LIFE - CastStats.LIFE) - Damage_Return
-			if (casterLife <= 0 && CastStats.LIFE > 0) {
+			// Le moteur applique le retour AVANT le lifesteal (dans le removeLife de la cible)
+			// et le plafonne à la vie restante — l'érosion suit le retour APPLIQUÉ, pas le brut.
+			var appliedReturn = min(Damage_Return, CastStats.LIFE)
+			if (Damage_Return >= CastStats.LIFE && CastStats.LIFE > 0) {
 				// Retour léthal : le caster meurt VRAIMENT (cascade de ses summons + déroulé de
-				// ses buffs), et getConsequences saute ses effets restants — comme le moteur.
+				// ses buffs, le lifesteal ne le sauve pas), et getConsequences saute ses effets
+				// restants — comme le moteur.
 				getKillConsequences(Dist, 0, Effect, CastStats, TarStats, false, EveryStats, true, clonedIds)
 			} else {
-				CastStats.LIFE = casterLife
+				CastStats.LIFE += min(Damage * (CastStats.WISDOM / 1000), CastStats.TOTAL_LIFE - CastStats.LIFE) - Damage_Return
 			}
-			CastStats.TOTAL_LIFE -= Damage_Return * EROSION_NO_POISON
+			CastStats.TOTAL_LIFE -= appliedReturn * EROSION_NO_POISON
 		}
 		switch (TarStats.SPECIAL_WEAPON) {
 			case WEAPON_REVOKED_M_LASER:
@@ -663,6 +666,12 @@ class ConsequencesClass {
 		// Le moteur RETIRE removal% de chaque effet (Effect.reduce garde 1 − percent), avec
 		// removal = valeur · crit·targetCount (Multiplier) · aoe (EffectDebuff du moteur).
 		// DebuffPower = la fraction CONSERVÉE, clampée à 0 (un débuff >= 100% efface tout).
+		// Le pull (stat − TO_SAVE)·(1−p) plus bas réduit buffs ET shackles uniformément :
+		// TO_SAVE_<stat> est la BASE VRAIE (EntityState y réintègre les shackles initiaux),
+		// donc un débuff REMONTE une stat shacklée, comme le moteur.
+		// RÉSIDU accepté : le moteur SKIPPE les effets MODIFIER_IRREDUCTIBLE (surtout des
+		// effets système : multiplicateur colossus, power de BR) — la sim réduit ses agrégats
+		// sans distinction ; il faudrait un suivi par effet pour l'exactitude.
 		var removal = Effect[1] * Multiplier * (1 - Dist * 0.2)
 		var DebuffPower = max(0, 1 - removal / 100)
 		TarStats.TO_SAVE_SHACKLE_AGILITY *= DebuffPower
@@ -724,13 +733,14 @@ class ConsequencesClass {
 		TarStats.TOTAL_LIFE -= Damage * EROSION_NO_POISON
 		if (!TarIsCaster) {
 			var Damage_Return = BaseDamages * (TarStats.DAMAGE_RETURN / 100)
-			if (CastStats.LIFE - Damage_Return <= 0 && CastStats.LIFE > 0) {
+			var appliedReturn = min(Damage_Return, CastStats.LIFE)   // plafonné à la vie restante (érosion sur l'appliqué)
+			if (Damage_Return >= CastStats.LIFE && CastStats.LIFE > 0) {
 				// Retour léthal : voir getEntityDamageConsequences.
 				getKillConsequences(Dist, 0, Effect, CastStats, TarStats, false, EveryStats, true, clonedIds)
 			} else {
 				CastStats.LIFE -= Damage_Return
 			}
-			CastStats.TOTAL_LIFE -= Damage_Return * EROSION_NO_POISON
+			CastStats.TOTAL_LIFE -= appliedReturn * EROSION_NO_POISON
 		}
 		switch (TarStats.SPECIAL_WEAPON) {
 			case WEAPON_REVOKED_M_LASER:
