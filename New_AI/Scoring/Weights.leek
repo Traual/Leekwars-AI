@@ -7,7 +7,8 @@
  *   pressure    = (DANGER_WEIGHT·danger + COEF_POT·effPot)           // menaces relatives
  *               / (afterPoison + BUFFER)     (effPot = POT remisé par la couverture antidote)
  *   effLife     = afterPoison / (1 + pressure)
- *   value       = BASE_ALIVE + W_LIFE · sqrt(effLife) + W_TOTAL_LIFE · sqrt(TOTAL_LIFE)
+ *   value       = BASE_ALIVE + W_LIFE · sqrt(effLife) + W_TTK · g(ttk)
+ *               + W_TOTAL_LIFE · sqrt(TOTAL_LIFE)
  * score = Σ sign·value. Les morts (0) => un kill vaut toujours >= BASE_ALIVE.
  */
 
@@ -44,6 +45,28 @@ global BUFFER = 500
 // le healer peut être mort, shacklé, hors position).
 global DANGER_COEF = 1.0
 global HEAL_COEF = 0.6
+
+// ----- TTK (kill-horizon) -----
+// survivalValue gagne W_TTK · g(ttk), avec g(ttk) = ttk / (ttk + TTK_HALF) ∈ [0,1[ et
+// ttk = rounds avant la mort sous la pression courante (voir le calcul dans survivalValue :
+// danger net + tick de poison, durée du poison = effPot/tick, donc antidote-remisée).
+//
+// POURQUOI : le canal sqrt/pressure est CONCAVE — la 2e vulné sur la même cible paie moins
+// que la 1re, donc l'IA saupoudrait les vulnés au lieu de les empiler. g(ttk) a sa pente
+// MAXIMALE près de ttk 0-1.5 : franchir un seuil de kill est la plus grosse monnaie du
+// canal (TTK_HALF=2 : ttk 2->1 = Δg 0.167, ·W_TTK = ~67 ; ttk 1->0.5 = ~53), puis g
+// s'aplatit (cible condamnée, rien à gratter) et l'IA passe à la suivante.
+// -> stack de vulnés jusqu'au one-turn-kill ÉMERGENT, et le POT-léthal est couvert
+// (un empoisonné condamné a ttk ~ sa durée de poison -> valeur effondrée).
+//
+// Tuning à la main :
+//   W_TTK    : l'ampleur du canal. 0 = OFF (comportement d'avant, exact). Monter -> les
+//              seuils de kill dominent le chip damage (W_LIFE reste le canal HP lisse).
+//   TTK_HALF : où est le "milieu" de g (g = 0.5 à ttk = TTK_HALF). Monter -> les seuils
+//              lointains (3-4 rounds) paient aussi ; descendre -> seuls les kills
+//              imminents comptent.
+global W_TTK = 400.0
+global TTK_HALF = 2.0
 
 // Dissuasion du damage return : le terme d'un porteur gagne DR_RETURN_EXPECT · physRatio
 // (équipe adverse) · min(net, LIFE) · DR/100 — la menace qui lui arrive se convertit en

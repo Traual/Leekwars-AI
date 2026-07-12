@@ -5,7 +5,7 @@
  *   afterPoison = max(0, LIFE − COEF_POISON·POISON)
  *   pressure    = (DANGER_WEIGHT·danger + COEF_POT·effPot) / (afterPoison + BUFFER)
  *   effLife     = afterPoison / (1 + pressure)
- *   value       = BASE_ALIVE + W_LIFE·sqrt(effLife) + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)
+ *   value       = BASE_ALIVE + W_LIFE·sqrt(effLife) + W_TTK·g(ttk) + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)
  *   term        = sign · (importance·value + capability + drDeterrence)
  * score = Σ term.  sign = +1 allié, −1 ennemi. Les morts contribuent 0 -> un kill vaut
  * toujours ≥ BASE_ALIVE. Le SCORE d'un nœud soustrait en plus CAST_COST[action] (coût
@@ -180,6 +180,34 @@ class ScoringClass {
         var pressure = (DANGER_WEIGHT * danger + COEF_POT * pot) / (afterPoison + BUFFER)
         var effLife = afterPoison / (1 + pressure)
         var value = BASE_ALIVE + W_LIFE * sqrt(effLife)
+
+        // ----- TTK (kill-horizon) : rounds avant la mort sous la pression courante -----
+        // tick = poison du prochain tour, il se répète tant que le poison dure ;
+        // duration = effPot/tick = rounds de poison restants (effPot est déjà remisé par la
+        // couverture antidote -> le TTK est antidote-aware). Deux régimes :
+        //   - il meurt PENDANT le poison  : ttk = LIFE / (danger + tick)
+        //   - le poison EXPIRE avant      : ttk = duration + vie restante / danger seul
+        // Les +1 aux dénominateurs évitent la division par 0 (sans pression : ttk ≈ LIFE,
+        // grand -> g ≈ 1). Tous les inputs (LIFE, POISON, effPot, danger) sont déjà dans la
+        // clé du cache -> calculé sur miss seulement, aucun salage.
+        var tick = max(0, stat.POISON)
+        var effPot = max(0, pot)
+        var ttk
+        if (tick > 0 && effPot > 0) {
+            var duration = effPot / tick                    // rounds de poison restants
+            var duringPoison = danger + tick                // pression par round pendant le poison
+            if (stat.LIFE <= duringPoison * duration) {
+                ttk = stat.LIFE / (duringPoison + 1)        // mort avant l'expiration du poison
+            } else {
+                ttk = duration + (stat.LIFE - duringPoison * duration) / (danger + 1)
+            }
+        } else {
+            ttk = stat.LIFE / (danger + 1)
+        }
+        // g(ttk) = ttk/(ttk+TTK_HALF) : 0 (condamné) -> 1 (sûr), pente max près de 0.
+        // Franchir un seuil de kill (ttk 2 -> 1) est la plus grosse monnaie du canal, puis g
+        // s'aplatit (condamné) -> l'IA empile les vulnés jusqu'au seuil et passe à la suivante.
+        value += W_TTK * ttk / (ttk + TTK_HALF)
 
         SURVIVAL_CACHE[key] = value
         return value + tlTerm
