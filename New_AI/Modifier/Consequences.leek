@@ -635,16 +635,17 @@ class ConsequencesClass {
 		TarStats.TOTAL_LIFE -= Damage * EROSION_NO_POISON
 		if (!TarIsCaster) {
 			var Damage_Return = BaseDamages * (TarStats.DAMAGE_RETURN / 100)
-			// Le moteur applique le retour AVANT le lifesteal (dans le removeLife de la cible)
-			// et le plafonne à la vie restante — l'érosion suit le retour APPLIQUÉ, pas le brut.
-			var appliedReturn = min(Damage_Return, CastStats.LIFE)
-			if (Damage_Return >= CastStats.LIFE && CastStats.LIFE > 0) {
+			// Ordre moteur (EffectDamage) : dégâts -> LIFESTEAL crédité au caster -> PUIS retour,
+			// plafonné à la vie restante POST-lifesteal — un gros lifesteal peut donc sauver d'un
+			// retour léthal. L'érosion suit le retour APPLIQUÉ, pas le brut.
+			var lifeAfterSteal = CastStats.LIFE + min(Damage * (CastStats.WISDOM / 1000), CastStats.TOTAL_LIFE - CastStats.LIFE)
+			var appliedReturn = min(Damage_Return, lifeAfterSteal)
+			if (Damage_Return >= lifeAfterSteal && CastStats.LIFE > 0) {
 				// Retour léthal : le caster meurt VRAIMENT (cascade de ses summons + déroulé de
-				// ses buffs, le lifesteal ne le sauve pas), et getConsequences saute ses effets
-				// restants — comme le moteur.
+				// ses buffs), et getConsequences saute ses effets restants — comme le moteur.
 				getKillConsequences(Dist, 0, Effect, CastStats, TarStats, false, EveryStats, true, clonedIds)
 			} else {
-				CastStats.LIFE += min(Damage * (CastStats.WISDOM / 1000), CastStats.TOTAL_LIFE - CastStats.LIFE) - Damage_Return
+				CastStats.LIFE = lifeAfterSteal - Damage_Return
 			}
 			CastStats.TOTAL_LIFE -= appliedReturn * EROSION_NO_POISON
 		}
