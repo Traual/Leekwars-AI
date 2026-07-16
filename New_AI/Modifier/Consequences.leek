@@ -638,7 +638,7 @@ class ConsequencesClass {
 			// Ordre moteur (EffectDamage) : dégâts -> LIFESTEAL crédité au caster -> PUIS retour,
 			// plafonné à la vie restante POST-lifesteal — un gros lifesteal peut donc sauver d'un
 			// retour léthal. L'érosion suit le retour APPLIQUÉ, pas le brut.
-			var lifeAfterSteal = CastStats.LIFE + min(Damage * (CastStats.WISDOM / 1000), CastStats.TOTAL_LIFE - CastStats.LIFE)
+			var lifeAfterSteal = CastStats.LIFE + min(Damage * (max(0, CastStats.WISDOM) / 1000), CastStats.TOTAL_LIFE - CastStats.LIFE) // WIS clampée : le moteur gate lifeSteal > 0, une sagesse shacklée négative ne DRAINE pas
 			var appliedReturn = min(Damage_Return, lifeAfterSteal)
 			if (Damage_Return >= lifeAfterSteal && CastStats.LIFE > 0) {
 				// Retour léthal : le caster meurt VRAIMENT (cascade de ses summons + déroulé de
