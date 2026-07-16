@@ -48,7 +48,8 @@ class ResurrectionClass {
 	}
 
 	/*
-	 * Le meilleur mort allié à relever (score = TOTAL_LIFE/4, le plus gros d'abord).
+	 * Le meilleur mort allié à relever (score = son terme post-revive, voir
+	 * ScoringClass.getResurrectionScore).
 	 * Règle moteur (State.resurrectEntity) : ressusciter un VRAI poireau ignore la limite de
 	 * summons ; ressusciter un summon mort exige une place libre. SOURCE UNIQUE du choix —
 	 * le filtre d'actions, la sim (Update) et le vrai cast (Play) passent tous ici, sinon le

@@ -11,7 +11,6 @@ class EntityStateClass extends EntityClass {
 	RELATIVE_SHIELD
 	DAMAGE_RETURN
 	POWER
-	SUMMONS
 	WEAPON
 	COOLDOWNS
 	USES
@@ -63,7 +62,6 @@ class EntityStateClass extends EntityClass {
 		this.RELATIVE_SHIELD = getRelativeShield(id)
 		this.DAMAGE_RETURN = getDamageReturn(id)
 		this.POWER = getPower(id)
-		this.SUMMONS = getSummons(id)
 		this.WEAPON = getWeapon(id)
 		this.COOLDOWNS = [: ]
 		this.USES = [: ]

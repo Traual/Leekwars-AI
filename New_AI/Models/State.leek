@@ -126,7 +126,7 @@ class StateClass {
 
 	/*
 	 * LE clone de simulation — source unique. Les containers sont PARTAGÉS par défaut :
-	 * personne n'écrit INVENTORY / EFFECTS / SUMMONS / EFFECTS_ITEM_MAP pendant la sim, et
+	 * personne n'écrit INVENTORY / EFFECTS / EFFECTS_ITEM_MAP pendant la sim, et
 	 * COOLDOWNS / USES ne sont écrits que pour ME (comptabilité de cast). Si un jour un effet
 	 * mute un container d'une CIBLE, le deep-clone se fait ICI (point unique), jamais au site
 	 * de l'effet. Les memos dérivés (CAP_MEMO / TLSQ_MEMO) sont invalidés ici.
