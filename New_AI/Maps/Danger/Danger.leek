@@ -81,6 +81,7 @@ class DangerClass {
 		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), Cell)
 		if (ThisHash in CELL_DANGER_GET_CACHE) return CELL_DANGER_GET_CACHE[ThisHash]
 		var _final = [: ]   // par caster, pas sommé : le net séquence par ordre de tour
+		var mySide = State[Me].SIDE
 		var chainTarget = TargetStats
 		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
@@ -89,7 +90,12 @@ class DangerClass {
 			var MapThisCellItemAoe = Cell in MapCellItemAoe ? MapCellItemAoe[Cell] : [: ]
 			var combo = getComboFromItemAoe(MapThisCellItemAoe, CasterStats, chainTarget)
 			if (combo[0] > 0) {
-				_final[Caster] = combo[0]
+				// Crit binaire asymétrique (Constants), appliqué à l'ASSEMBLAGE : le facteur
+				// est commun à tous les items -> l'ordre du greedy et le packing TP ne
+				// changent pas, multiplier le total ≡ multiplier chaque item, et les caches
+				// profonds restent crit-free. Les vulnés de la chaîne ne critent pas (résidu).
+				var critAt = (CasterStats.SIDE != mySide) ? MIN_AGILITY_ENEMY_CRIT : MIN_AGILITY_TO_FULLY_CRIT
+				_final[Caster] = combo[0] * ((CasterStats.AGILITY >= critAt) ? CRITICAL_FACTOR : 1)
 				chainTarget = combo[1]   // le caster suivant voit la cible post-vulné/debuff
 			}
 		}

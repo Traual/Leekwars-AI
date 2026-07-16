@@ -81,7 +81,16 @@ global EROSION_POISON = 0.10
 // JEU
 
 global MAX_USEFUL_RELATIVE_SHIELD = 100
+
+// Crit BINAIRE asymétrique — jamais d'espérance : chaque nombre simulé doit correspondre à
+// un cast réel possible (les seuils de kill / le TTK l'exigent). Doctrine "pire cas pour
+// moi", symétrique à 5% près :
+//   - ce qui joue POUR moi (mes casts, heals de mes alliés) ne crite qu'à partir de
+//     MIN_AGILITY_TO_FULLY_CRIT (95%+ de chance : je ne compte pas sur la chance) ;
+//   - ce qui joue CONTRE moi (danger ennemi, heals des healers ennemis) est craint
+//     critique dès MIN_AGILITY_ENEMY_CRIT (5% de chance suffisent à le craindre).
 global MIN_AGILITY_TO_FULLY_CRIT = 950
+global MIN_AGILITY_ENEMY_CRIT = 50
 global FIGHT_TYPE = getFightType() // sert au calcul du power dans Consequences
 
 // BFS :

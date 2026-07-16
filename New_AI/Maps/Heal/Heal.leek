@@ -31,7 +31,11 @@ class HealClass {
      * clampées elles absorberaient les champs hauts.
      */
     static healerContribution(stat, id) {
-        return addValueToBinHash(OFFSET_BASIS ^ id, (max(0, stat.WISDOM) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | stat.CELL)
+        // critClass (bits 10-11, libres : cellule < 1024) : le facteur de crit du healer
+        // dépend de son AGI par seuils — sans ces bits, un buff/shackle d'AGI traversant
+        // un seuil en branche servirait une couverture stale.
+        var critClass = (stat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((stat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
+        return addValueToBinHash(OFFSET_BASIS ^ id, (max(0, stat.WISDOM) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | (critClass << 10) | stat.CELL)
     }
 
     /*
@@ -114,8 +118,14 @@ class HealClass {
      * reconstruit que la couche combo.
      */
     static getCasterCoverage(casterStats) {
+        // Crit binaire asymétrique (Constants) : healer ENNEMI craint critique dès
+        // MIN_AGILITY_ENEMY_CRIT (son soutien joue contre moi), healer allié crédité
+        // seulement à MIN_AGILITY_TO_FULLY_CRIT. Facteur commun -> post-multiplication de la
+        // couverture (l'ordre du combo ne change pas), les combos restent crit-free.
+        var critAt = (casterStats.SIDE != getSide(Me)) ? MIN_AGILITY_ENEMY_CRIT : MIN_AGILITY_TO_FULLY_CRIT
+        var critFactor = (casterStats.AGILITY >= critAt) ? CRITICAL_FACTOR : 1
         var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, (casterStats.CELL << 10) | max(0, casterStats.TOTAL_MP))
-        key = addValueToBinHash(key, (max(0, casterStats.WISDOM) << 15) | max(0, casterStats.TOTAL_TP))
+        key = addValueToBinHash(key, ((critFactor > 1 ? 1 : 0) << 30) | (max(0, casterStats.WISDOM) << 15) | max(0, casterStats.TOTAL_TP))
         if (key in HEAL_COVERAGE_CACHE) return HEAL_COVERAGE_CACHE[key]
 
         // Couche géométrie — clé position seule, même pack que la danger map.
@@ -131,7 +141,7 @@ class HealClass {
 
         var _final = [: ]
         for (var cell: var itemAoeMap in mapCellItemAoe) {
-            _final[cell] = comboAtCell(itemAoeMap, casterStats)
+            _final[cell] = comboAtCell(itemAoeMap, casterStats) * critFactor
         }
         HEAL_COVERAGE_CACHE[key] = _final
         return _final
