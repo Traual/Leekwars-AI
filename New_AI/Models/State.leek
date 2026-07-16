@@ -114,6 +114,16 @@ class StateClass {
 		return _final
 	}
 
+	/* Nombre de summons VIVANTS d'un camp — la notion du moteur pour SUMMON_LIMIT
+	 * (les bulbes virtuels de la branche sont dans State, donc comptés). */
+	static countLivingSummons(State, side) {
+		var n = 0
+		for (var e: var stat in State) {
+			if (stat.LIFE > 0 && stat.IS_SUMMON && stat.SIDE == side) n++
+		}
+		return n
+	}
+
 	/*
 	 * LE clone de simulation — source unique. Les containers sont PARTAGÉS par défaut :
 	 * personne n'écrit INVENTORY / EFFECTS / SUMMONS / EFFECTS_ITEM_MAP pendant la sim, et

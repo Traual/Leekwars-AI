@@ -47,13 +47,21 @@ class ResurrectionClass {
 		revived.TURN_ORDER = (followerOrder != null) ? followerOrder - 0.25 : maxOrder + 1
 	}
 
-	/* Le meilleur mort allié à relever (score = TOTAL_LIFE/4, le plus gros d'abord). */
+	/*
+	 * Le meilleur mort allié à relever (score = TOTAL_LIFE/4, le plus gros d'abord).
+	 * Règle moteur (State.resurrectEntity) : ressusciter un VRAI poireau ignore la limite de
+	 * summons ; ressusciter un summon mort exige une place libre. SOURCE UNIQUE du choix —
+	 * le filtre d'actions, la sim (Update) et le vrai cast (Play) passent tous ici, sinon le
+	 * filtre pourrait autoriser un poireau et la sim relever un bulbe mort différent.
+	 */
 	static ScoringWichId(State) {
+		var summonSlotFree = StateClass.countLivingSummons(State, State[Me].SIDE) < SUMMON_LIMIT
 		var _final_id
 		var top_score = 0
 		for (var id: var entity_state in State) {
 			if (entity_state.LIFE > 0) continue
 			if (entity_state.SIDE != State[Me].SIDE) continue
+			if (entity_state.IS_SUMMON && !summonSlotFree) continue   // summon mort : place requise
 			var Score = ScoringClass.getResurrectionScore(entity_state, State)
 			if (Score > top_score) {
 				_final_id = id

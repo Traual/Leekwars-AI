@@ -103,9 +103,19 @@ class ActionsClass {
 	static getEverySummonActions(MyCell, Inventory, State, LeekCells, BaseHash) {
 		var TmpHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), MyCell)
 		if (TmpHash in ACTIONS_SUMMON_CACHE) return ACTIONS_SUMMON_CACHE[TmpHash]
+		// Summons vivants du camp, comptés UNE fois par build (bulbes virtuels de la branche
+		// inclus — ils sont dans State). Sain sous le cache : le compte est une fonction du
+		// set des vivants, que BaseHash pinne (summon/mort en branche -> nouvelle clé).
+		var livingSummons = StateClass.countLivingSummons(State, State[Me].SIDE)
 		var _final = []
 		for (var item in Inventory) {
-			if (IsSummonable(item, State)) { //TODO : Check if resu isn't a bulb, or i already have 8 bulbs on the map
+			// Bulbe : une place libre suffit. Résurrection : la règle moteur (vrai poireau OK
+			// même à 8, summon mort seulement si place) vit dans ScoringWichId — l'action
+			// n'est proposée que s'il existe un candidat valide.
+			var castable = (item == CHIP_RESURRECTION)
+				? (ResurrectionClass.ScoringWichId(State).ID != null)
+				: (livingSummons < SUMMON_LIMIT)
+			if (castable) {
 				var Infos = ITEMINFO[item]
 				var Act = getSummonAction(Infos.LAUNCHTYPE, MyCell, Infos.MINRANGE, Infos.MAXRANGE, LeekCells, item, State, BaseHash)
 				if (Act) push(_final, Act)
@@ -368,15 +378,6 @@ class ActionsClass {
 				}
 			}
 		}
-	}
-
-	static IsSummonable(item, State) { //TODO : Being Able To Resu if i already have 8 bulbs and i want to resu a leek (dunno how to do it)
-		var NumberOfSumms = 0
-		var MySide = State[Me].SIDE
-		for (var e: var stat in State) {
-			if (stat.SIDE == MySide) NumberOfSumms += count(stat.SUMMONS)
-		}
-		return NumberOfSumms < SUMMON_LIMIT
 	}
 
 	/* [cellule touchée -> distance d'AoE] de l'item centré sur to (lasers exclus). */
