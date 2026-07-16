@@ -17,7 +17,40 @@ class ResurrectionClass {
 		var Resurrect_ID = ScoringWichId(State).ID
 		if (Resurrect_ID == null) return;
 		var revived = State[Resurrect_ID]
-		revived.TOTAL_LIFE /= 2
+
+		// Le moteur ressuscite PROPRE : die() retire tous les effets SUR le mort (stats de
+		// base, zéro shield/poison/DR). Reset par champs — TO_SAVE_<stat> EST la base vraie.
+		// EFFECTS (container partagé, jamais écrit en sim) n'est pas touché : les effets de
+		// turn-start qu'il liste sont neutralisés par ces resets.
+		revived.POISON = 0
+		revived.POISON_OVER_TIME = 0
+		revived.JUST_POISON = 0
+		revived.JUST_POISON_OVER_TIME = 0
+		revived.ABSOLUTE_SHIELD = 0
+		revived.RELATIVE_SHIELD = 0
+		revived.DAMAGE_RETURN = 0
+		revived.POWER = 0
+		revived.STRENGTH   = revived.TO_SAVE_STRENGTH
+		revived.WISDOM     = revived.TO_SAVE_WISDOM
+		revived.AGILITY    = revived.TO_SAVE_AGILITY
+		revived.MAGIC      = revived.TO_SAVE_MAGIC
+		revived.RESISTANCE = revived.TO_SAVE_RESISTANCE
+		revived.SCIENCE    = revived.TO_SAVE_SCIENCE
+		revived.TOTAL_MP = revived.TO_SAVE_TOTAL_MP
+		revived.MP       = revived.TO_SAVE_TOTAL_MP
+		revived.TOTAL_TP = revived.TO_SAVE_TOTAL_TP
+		revived.TP       = revived.TO_SAVE_TOTAL_TP
+		revived.TO_SAVE_SHACKLE_STRENGTH = 0
+		revived.TO_SAVE_SHACKLE_WISDOM = 0
+		revived.TO_SAVE_SHACKLE_AGILITY = 0
+		revived.TO_SAVE_SHACKLE_MAGIC = 0
+		revived.TO_SAVE_SHACKLE_TOTAL_MP = 0
+		revived.TO_SAVE_SHACKLE_TOTAL_TP = 0
+
+		// Vie ressuscitée engine-exacte (Entity.resurrect) : max(10, TL·0.5·crit), LIFE = TL/2.
+		// Crit binaire à 950 AGI — la convention de toute la sim.
+		var critFactor = (State[Me].AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? CRITICAL_FACTOR : 1
+		revived.TOTAL_LIFE = max(10, revived.TOTAL_LIFE * 0.5 * critFactor)
 		revived.LIFE = revived.TOTAL_LIFE / 2
 		revived.CELL = To
 

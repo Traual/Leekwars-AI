@@ -330,15 +330,16 @@ class ScoringClass {
     }
 
     /*
-     * Classe les morts alliés pour la résurrection : le TERME post-revive du candidat,
-     * canal danger omis (la cellule To est commune à tous les candidats -> le net n'y
-     * différencie pas). Le revive donne TOTAL_LIFE/2 et LIFE = TOTAL_LIFE/4 -> les deux
-     * termes de vie sont les VRAIS termes du scoring, pondérés par l'importance, plus le
-     * kit (capability) : relever le support au kit chargé peut battre le tank vide.
-     * Quasi gratuit : importance et capability sont déjà memoizées (par id / par objet).
+     * Classe les morts alliés pour la résurrection : PROXY du terme post-revive — canaux
+     * danger/TTK/DR omis volontairement (la cellule To est commune aux candidats, tous
+     * relevés sans shields -> le net n'y différencie pas), et le kit (capability) lu sur
+     * les stats de mort (proxy assumé). Vie ressuscitée engine-exacte (Entity.resurrect) :
+     * max(10, TL·0.5·crit), crit binaire à 950 AGI. Quasi gratuit : importance et
+     * capability sont déjà memoizées (par id / par objet).
      */
     static getResurrectionScore(entity_state, State) {
-        var reviveTL = entity_state.TOTAL_LIFE / 2
+        var critFactor = (State[Me].AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? CRITICAL_FACTOR : 1
+        var reviveTL = max(10, entity_state.TOTAL_LIFE * 0.5 * critFactor)
         return ImportanceClass.get(entity_state)
                  * (BASE_ALIVE + W_LIFE * sqrt(reviveTL / 2) + W_TOTAL_LIFE * sqrt(reviveTL))
              + ImportanceClass.capability(entity_state)
