@@ -81,7 +81,6 @@ class DangerClass {
 		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), Cell)
 		if (ThisHash in CELL_DANGER_GET_CACHE) return CELL_DANGER_GET_CACHE[ThisHash]
 		var _final = [: ]   // par caster, pas sommé : le net séquence par ordre de tour
-		var mySide = State[Me].SIDE
 		var chainTarget = TargetStats
 		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
@@ -90,17 +89,24 @@ class DangerClass {
 			var MapThisCellItemAoe = Cell in MapCellItemAoe ? MapCellItemAoe[Cell] : [: ]
 			var combo = getComboFromItemAoe(MapThisCellItemAoe, CasterStats, chainTarget)
 			if (combo[0] > 0) {
-				// Crit binaire asymétrique (Constants), appliqué à l'ASSEMBLAGE : le facteur
-				// est commun à tous les items -> l'ordre du greedy et le packing TP ne
-				// changent pas, multiplier le total ≡ multiplier chaque item, et les caches
-				// profonds restent crit-free. Les vulnés de la chaîne ne critent pas (résidu).
-				var critAt = (CasterStats.SIDE != mySide) ? MIN_AGILITY_ENEMY_CRIT : MIN_AGILITY_TO_FULLY_CRIT
-				_final[Caster] = combo[0] * ((CasterStats.AGILITY >= critAt) ? CRITICAL_FACTOR : 1)
+				// Le crit est appliqué EN PROFONDEUR (getItemDanger avant les shields + vulnés
+				// de chaîne critées), pas ici : (d − ABS)·1.3 ≠ d·1.3 − ABS.
+				_final[Caster] = combo[0]
 				chainTarget = combo[1]   // le caster suivant voit la cible post-vulné/debuff
 			}
 		}
 		CELL_DANGER_GET_CACHE[ThisHash] = _final
 		return _final
+	}
+
+	/*
+	 * Facteur de crit binaire asymétrique d'un caster (doctrine dans Constants) : un caster
+	 * ADVERSE est craint critique dès MIN_AGILITY_ENEMY_CRIT, un allié n'est crédité qu'à
+	 * partir de MIN_AGILITY_TO_FULLY_CRIT (on ne compte pas sur sa chance).
+	 */
+	static critFactorOf(CasterStats) {
+		var critAt = (CasterStats.SIDE != getSide(Me)) ? MIN_AGILITY_ENEMY_CRIT : MIN_AGILITY_TO_FULLY_CRIT
+		return (CasterStats.AGILITY >= critAt) ? CRITICAL_FACTOR : 1
 	}
 
 	/*
@@ -179,7 +185,9 @@ class DangerClass {
 		hash_value = addValueToBinHash(hash_value, Mycombined)
 
 		// TOTAL_TP : potentiel max du prochain tour, comme le contexte de statsHashFor.
-		var Hiscombined = (max(0, CasterStats.STRENGTH) << 45) | (max(0, CasterStats.MAGIC) << 30) | (max(0, CasterStats.TOTAL_TP) << 15) | CasterStats.POWER
+		// Bit 62 = classe de crit du caster (les valeurs de combo et les vulnés en dépendent).
+		var critBit = (critFactorOf(CasterStats) > 1) ? 1 : 0
+		var Hiscombined = (critBit << 62) | (max(0, CasterStats.STRENGTH) << 45) | (max(0, CasterStats.MAGIC) << 30) | (max(0, CasterStats.TOTAL_TP) << 15) | CasterStats.POWER
 		hash_value = addValueToBinHash(hash_value, Hiscombined)
 
 		return hash_value
@@ -189,31 +197,33 @@ class DangerClass {
 	static getCellDangerClassFromItem(TargetStats, Infos, BaseTp, BaseUses, ItemAoeMap, CasterStats, Item) {
 		var ThisTp = BaseTp - Infos.COST
 		var ThisUses = clone(BaseUses)
-		var ThisItemMyStats = getRoughVulneConsequences(clone(TargetStats, 2), Infos)
+		var ThisItemMyStats = getRoughVulneConsequences(clone(TargetStats, 2), Infos, critFactorOf(CasterStats))
 		ThisUses[Item]++
 		var DamagesWithThisItemVulne = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, ThisItemMyStats, ThisTp, clone(ThisUses))
 		return new DangerClass(ThisItemMyStats, ThisTp, ThisUses, DamagesWithThisItemVulne)
 	}
 
-	/* Applique les effets de vulné/debuff d'un item aux shields de la cible (clonée en amont). */
-	static getRoughVulneConsequences(TargetStats, Infos) {
+	/* Applique les effets de vulné/debuff d'un item aux shields de la cible (clonée en
+	 * amont), CritFactor compris — les vulnés critent dans le moteur (× criticalPower). */
+	static getRoughVulneConsequences(TargetStats, Infos, CritFactor) {
 		for (var eff in Infos.EFFECTS) {
 			var EffType = eff[0]
-			if (EffType in MapChange) MapChange[EffType](TargetStats, eff)
+			if (EffType in MapChange) MapChange[EffType](TargetStats, eff, CritFactor)
 		}
 		return TargetStats
 	}
 
 	static MapChange = [
-		EFFECT_DEBUFF: function(TargetStats, eff) {
-			TargetStats.ABSOLUTE_SHIELD *= 1 - (eff[1] / 100)
-			TargetStats.RELATIVE_SHIELD *= 1 - (eff[1] / 100)
+		EFFECT_DEBUFF: function(TargetStats, eff, CritFactor) {
+			var keep = max(0, 1 - (eff[1] * CritFactor / 100))   // clampé : un débuff crité peut dépasser 100%
+			TargetStats.ABSOLUTE_SHIELD *= keep
+			TargetStats.RELATIVE_SHIELD *= keep
 		},
-		EFFECT_VULNERABILITY: function(TargetStats, eff) {
-			TargetStats.RELATIVE_SHIELD -= eff[1]
+		EFFECT_VULNERABILITY: function(TargetStats, eff, CritFactor) {
+			TargetStats.RELATIVE_SHIELD -= eff[1] * CritFactor
 		},
-		EFFECT_ABSOLUTE_VULNERABILITY: function(TargetStats, eff) {
-			TargetStats.ABSOLUTE_SHIELD -= eff[1]
+		EFFECT_ABSOLUTE_VULNERABILITY: function(TargetStats, eff, CritFactor) {
+			TargetStats.ABSOLUTE_SHIELD -= eff[1] * CritFactor
 		}
 	]
 

@@ -834,6 +834,9 @@ class ConsequencesClass {
 		var distFactor = 1 - (Distance * 0.2)
 		var powerFactor = 1 + casterstats.POWER / 100
 		var strengthFactor = 1 + max(0, casterstats.STRENGTH) / 100 // plancher à l'usage, comme le moteur
+		// Crit binaire asymétrique (Constants), appliqué AVANT les shields comme le moteur :
+		// (d·1.3 − ABS) ≠ (d − ABS)·1.3.
+		var critFactor = DangerClass.critFactorOf(casterstats)
 		var shieldFactor = 1 - targetstats.RELATIVE_SHIELD / 100
 		// 99 = pas d'antidote dans l'inventaire (jamais de cure -> le poison compte sa durée
 		// PLEINE), distinct d'un antidote prêt (0).
@@ -842,13 +845,13 @@ class ConsequencesClass {
 			if (eff[5] & EFFECT_MODIFIER_ON_CASTER) continue
 			switch (eff[0]) {
 				case EFFECT_DAMAGE:
-					_final += (eff[2] * distFactor * Multiplier * powerFactor * strengthFactor * shieldFactor - targetstats.ABSOLUTE_SHIELD)
+					_final += (eff[2] * distFactor * Multiplier * powerFactor * strengthFactor * critFactor * shieldFactor - targetstats.ABSOLUTE_SHIELD)
 					break
 				case EFFECT_LIFE_DAMAGE:
-					_final += (eff[2] * powerFactor * (casterstats.LIFE / 100) * shieldFactor - targetstats.ABSOLUTE_SHIELD)
+					_final += (eff[2] * powerFactor * (casterstats.LIFE / 100) * critFactor * shieldFactor - targetstats.ABSOLUTE_SHIELD)
 					break
 				case EFFECT_POISON:
-					_final += eff[2] * powerFactor * distFactor * (1 + max(0, casterstats.MAGIC) / 100) * min(eff[3], antidoteCd + 1)
+					_final += eff[2] * powerFactor * distFactor * (1 + max(0, casterstats.MAGIC) / 100) * critFactor * min(eff[3], antidoteCd + 1)
 					break
 			}
 		}
