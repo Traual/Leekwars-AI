@@ -3,7 +3,6 @@
  * (multiplicateurs de stats, shields, kills en cascade, steals, débuffs...).
  */
 
-//TODO : Add Special Weapons Effects on Kill (Here and in Action Fitness)
 include("../includes.leek")
 
 class ConsequencesClass {
@@ -52,6 +51,9 @@ class ConsequencesClass {
 						targetStats.LIFE -= appliedDamage
 					}
 					targetStats.TOTAL_LIFE -= appliedDamage * erosionRate
+					// Érosion immédiate -> proc nova (EffectAftereffect.java:27). Les ticks
+					// FUTURS et leurs procs restent hors modèle — chantier ticks/ledger.
+					if (targetStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(targetStats, appliedDamage * erosionRate)
 					targetStats.POISON += calculatedValue
 					targetStats.POISON_OVER_TIME += calculatedValue * effectDuration
 					effectTotal += appliedDamage
@@ -68,8 +70,16 @@ class ConsequencesClass {
 				break
 			case EFFECT_ATTRACT:
 			case EFFECT_PUSH:
-				for (var targetId: var aoeDistance in RealTargets)
-					if (!State[targetId].STATIC) State[targetId].CELL = To
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (targetStats.STATIC) continue
+					var oldCell = targetStats.CELL
+					targetStats.CELL = To
+					// Déplacement subi (State.slideEntity -> onMoved si la cellule change).
+					// Géométrie exacte du push/attract : chantier séparé — on proc sur le
+					// changement de cellule actuellement simulé.
+					if (targetStats.SPECIAL_WEAPON != null) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, To)
+				}
 				break
 			case EFFECT_BOOST_MAX_LIFE:
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.WISDOM) / 100)
@@ -186,10 +196,14 @@ class ConsequencesClass {
 				break
 			case EFFECT_INVERT:
 				for (var targetId: var aoeDistance in RealTargets) {
-					if (!State[targetId].STATIC) {
-						State[targetId].CELL = From
-						State[Caster].CELL = To
-					}
+					var targetStats = State[targetId]
+					if (targetStats.STATIC) continue
+					var oldCell = targetStats.CELL
+					targetStats.CELL = From
+					State[Caster].CELL = To
+					// La CIBLE subit le déplacement (invertEntities : target.onMoved(caster)) ;
+					// le caster s'auto-ignore (onMoved : by == this -> return).
+					if (targetStats.SPECIAL_WEAPON != null) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, From)
 				}
 				break
 			case EFFECT_KILL:
@@ -206,7 +220,8 @@ class ConsequencesClass {
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					var damageAmount = min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
 					targetStats.TOTAL_LIFE -= damageAmount
-					if (targetId != Caster && targetStats.SPECIAL_WEAPON == WEAPON_UNBRIDLED_GAZOR) targetStats.MAGIC += damageAmount * 0.2
+					// onNovaDamage moteur : seul test isDead, PAS d'exclusion self.
+					if (targetStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(targetStats, damageAmount)
 					effectTotal += damageAmount
 				}
 				break
@@ -395,6 +410,9 @@ class ConsequencesClass {
 		// en cours de cast ne change pas le verdict des effets suivants. Lu aussi par les
 		// fonctions de dégâts pour l'érosion.
 		CAST_IS_CRITICAL = CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT
+		// Unstable Destroyer : UN soin par cast critique, AVANT le premier effet (State.java
+		// appelle onCritical avant applyOnCell — armes, puces, summon, resurrect).
+		if (CAST_IS_CRITICAL && CastStats.SPECIAL_WEAPON != null) applyOnCriticalPassive(CastStats)
 		for (var Effect in ITEMINFO[Item].EFFECTS) {
 			if (CastStats.LIFE <= 0) break   // caster mort en route (retour léthal) : le moteur saute les effets restants
 			var EffectType = Effect[0]
@@ -640,6 +658,58 @@ class ConsequencesClass {
 		}
 	}
 
+	/*
+	 * Passifs d'armes événementiels — calqués sur Entity.java (onDirectDamage, onNovaDamage,
+	 * onCritical, onMoved) : porteur VIVANT seulement, valeurs lues dans PASSIVE_INFO.
+	 * Les call sites gatent sur SPECIAL_WEAPON != null pour ne payer l'appel que chez les
+	 * porteurs. Hors modèle (documenté) : les procs des ticks FUTURS de poison (Illicit
+	 * Grenade Launcher : POISON_TO_SCIENCE au tick) et d'aftereffect — chantier ticks/ledger.
+	 */
+
+	/* Dégâts DIRECTS encaissés (EFFECT_DAMAGE + EFFECT_LIFE_DAMAGE, après dégâts+érosion,
+	 * avant lifesteal/retour) : Revoked M-Laser -> STRENGTH, Mysterious Electrisor -> shield. */
+	static applyOnDirectDamagePassive(stats, appliedDamage) {
+		if (stats.LIFE <= 0 || appliedDamage <= 0) return
+		if (stats.SPECIAL_WEAPON == WEAPON_REVOKED_M_LASER) {
+			stats.STRENGTH += appliedDamage * (PASSIVE_INFO[WEAPON_REVOKED_M_LASER][EFFECT_DAMAGE_TO_STRENGTH][1] / 100)
+		} else if (stats.SPECIAL_WEAPON == WEAPON_MYSTERIOUS_ELECTRISOR) {
+			stats.ABSOLUTE_SHIELD += appliedDamage * (PASSIVE_INFO[WEAPON_MYSTERIOUS_ELECTRISOR][EFFECT_DAMAGE_TO_ABSOLUTE_SHIELD][1] / 100)
+		}
+	}
+
+	/* Érosion/nova encaissée : Unbridled Gazor -> MAGIC (érosion des dégâts et life damage,
+	 * du retour de EffectDamage, de l'aftereffect immédiat, nova pur SANS exclusion self —
+	 * le moteur ne teste que isDead. PAS le retour de EffectLifeDamage : le Java n'y appelle
+	 * pas onNovaDamage). */
+	static applyOnNovaDamagePassive(stats, appliedErosion) {
+		if (stats.LIFE <= 0 || appliedErosion <= 0) return
+		if (stats.SPECIAL_WEAPON == WEAPON_UNBRIDLED_GAZOR) {
+			stats.MAGIC += appliedErosion * (PASSIVE_INFO[WEAPON_UNBRIDLED_GAZOR][EFFECT_NOVA_DAMAGE_TO_MAGIC][1] / 100)
+		}
+	}
+
+	/* Cast critique (UNE fois par cast, AVANT les effets — State.java appelle onCritical
+	 * avant applyOnCell, pour armes, puces, summon ET resurrect) : Unstable Destroyer se
+	 * soigne de value1 (jet = 0, convention sim), cappé à la vie manquante. Le crit
+	 * DÉCLENCHE le passif, il ne le multiplie pas (pas de CRITICAL_FACTOR). */
+	static applyOnCriticalPassive(CastStats) {
+		if (CastStats.LIFE <= 0) return
+		if (CastStats.SPECIAL_WEAPON == WEAPON_UNSTABLE_DESTROYER && CastStats.LIFE < CastStats.TOTAL_LIFE) {
+			CastStats.LIFE = min(CastStats.TOTAL_LIFE, CastStats.LIFE + PASSIVE_INFO[WEAPON_UNSTABLE_DESTROYER][EFFECT_CRITICAL_TO_HEAL][1])
+		}
+	}
+
+	/* Déplacement SUBI (push, attract, cible d'un invert — Entity.onMoved ignore les
+	 * automouvements, donc jamais le caster de l'invert) : Explorer Rifle -> MP + TOTAL_MP. */
+	static applyOnMovedPassive(stats, movedId, moverId, oldCell, newCell) {
+		if (stats.LIFE <= 0 || movedId == moverId || oldCell == newCell) return
+		if (stats.SPECIAL_WEAPON == WEAPON_EXPLORER_RIFLE) {
+			var mp = PASSIVE_INFO[WEAPON_EXPLORER_RIFLE][EFFECT_MOVED_TO_MP][1]
+			stats.MP += mp
+			stats.TOTAL_MP += mp
+		}
+	}
+
 	static getEntityDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, clonedIds) {
 		var BaseDamages = base * (1 - Dist * 0.2)
 		// Érosion : +10 points si le cast est critique (crit binaire à 950), le RETOUR érode
@@ -654,6 +724,12 @@ class ConsequencesClass {
 			TarStats.LIFE -= Damage
 		}
 		TarStats.TOTAL_LIFE -= Damage * erosionRate
+		// Passifs de la cible (EffectDamage : onDirectDamage puis onNovaDamage APRÈS les
+		// dégâts, AVANT lifesteal et retour ; cible morte -> aucun proc).
+		if (TarStats.SPECIAL_WEAPON != null) {
+			applyOnDirectDamagePassive(TarStats, Damage)
+			applyOnNovaDamagePassive(TarStats, Damage * erosionRate)
+		}
 		if (!TarIsCaster) {
 			var Damage_Return = BaseDamages * (TarStats.DAMAGE_RETURN / 100)
 			// Ordre moteur (EffectDamage) : dégâts -> LIFESTEAL crédité au caster -> PUIS retour,
@@ -669,17 +745,8 @@ class ConsequencesClass {
 				CastStats.LIFE = lifeAfterSteal - Damage_Return
 			}
 			CastStats.TOTAL_LIFE -= appliedReturn * erosionRate
-		}
-		switch (TarStats.SPECIAL_WEAPON) {
-			case WEAPON_REVOKED_M_LASER:
-				TarStats.STRENGTH += Damage * 0.05
-				break
-			case WEAPON_UNBRIDLED_GAZOR:
-				TarStats.MAGIC += Damage * 0.01
-				break
-			case WEAPON_MYSTERIOUS_ELECTRISOR:
-				TarStats.ABSOLUTE_SHIELD += Damage * 0.05
-				break
+			// Érosion du retour -> proc nova du caster SURVIVANT (EffectDamage.java:75).
+			if (CastStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(CastStats, appliedReturn * erosionRate)
 		}
 		return Damage   // STEALS : les dégâts réellement infligés alimentent PrevEffectTotal
 	}
@@ -754,6 +821,12 @@ class ConsequencesClass {
 			TarStats.LIFE -= Damage
 		}
 		TarStats.TOTAL_LIFE -= Damage * erosionRate
+		// Passifs de la cible (EffectLifeDamage : onDirectDamage puis onNovaDamage, comme
+		// les dégâts directs ; cible morte -> aucun proc).
+		if (TarStats.SPECIAL_WEAPON != null) {
+			applyOnDirectDamagePassive(TarStats, Damage)
+			applyOnNovaDamagePassive(TarStats, Damage * erosionRate)
+		}
 		if (!TarIsCaster) {
 			var Damage_Return = BaseDamages * (TarStats.DAMAGE_RETURN / 100)
 			var appliedReturn = min(Damage_Return, CastStats.LIFE)   // plafonné à la vie restante (érosion sur l'appliqué)
@@ -764,17 +837,7 @@ class ConsequencesClass {
 				CastStats.LIFE -= Damage_Return
 			}
 			CastStats.TOTAL_LIFE -= appliedReturn * erosionRate
-		}
-		switch (TarStats.SPECIAL_WEAPON) {
-			case WEAPON_REVOKED_M_LASER:
-				TarStats.STRENGTH += Damage * 0.05
-				break
-			case WEAPON_UNBRIDLED_GAZOR:
-				TarStats.MAGIC += Damage * 0.01
-				break
-			case WEAPON_MYSTERIOUS_ELECTRISOR:
-				TarStats.ABSOLUTE_SHIELD += Damage * 0.05
-				break
+			// PAS de proc nova ici : EffectLifeDamage.java n'appelle pas onNovaDamage sur le retour.
 		}
 		return Damage   // STEALS : les dégâts réellement infligés alimentent PrevEffectTotal
 	}

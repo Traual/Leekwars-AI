@@ -32,15 +32,14 @@ class Preload {
 			ITEMINFO[i] = [: ]
 			var Iinfo = new ItemClass(i)
 			ITEMINFO[i] = Iinfo
-		}
-		// PASSIVE_INFO[arme][type] = ligne complète du passif — source unique des valeurs
-		// de proc (rien en dur dans Consequences).
-		for (var i = 0; i < 500; i++) {
-			var passives = ITEMINFO[i].PASSIVE_EFFECTS
-			if (passives == null) continue
-			for (var eff in passives) {
-				if (!(i in PASSIVE_INFO)) PASSIVE_INFO[i] = [: ]
-				PASSIVE_INFO[i][eff[0]] = eff
+			// PASSIVE_INFO[arme][type] = ligne au layout de getWeaponPassiveEffects (eff[1] =
+			// value1), PAS celui des effets runtime de getEffects. Source unique des valeurs
+			// de proc (rien en dur dans Consequences).
+			if (Iinfo.PASSIVE_EFFECTS != null) {
+				for (var eff in Iinfo.PASSIVE_EFFECTS) {
+					if (!(i in PASSIVE_INFO)) PASSIVE_INFO[i] = [: ]
+					PASSIVE_INFO[i][eff[0]] = eff
+				}
 			}
 		}
 	}

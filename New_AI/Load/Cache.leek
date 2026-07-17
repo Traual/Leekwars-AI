@@ -108,9 +108,10 @@ global LASERS = [: ]
 
 global ITEMINFO = [: ]
 
-// PASSIVE_INFO[arme][type d'effet passif] = ligne complète de l'effet (même layout que
-// EFFECTS : eff[1] = value1). Peuplé une fois dans Preload.InitItemInfo — les procs de
-// passifs (Enhanced Lightninger, Dark Katana, ...) lisent leurs valeurs ici, jamais en dur.
+// PASSIVE_INFO[arme][type d'effet passif] = ligne complète au layout de
+// getWeaponPassiveEffects (eff[1] = value1) — PAS celui des effets runtime de getEffects.
+// Peuplé une fois dans Preload.InitItemInfo — les procs de passifs (Enhanced, Dark, Revoked,
+// Mysterious, Unbridled, Unstable, Explorer) lisent leurs valeurs ici, jamais en dur.
 global PASSIVE_INFO = [: ]
 
 // TARGET
