@@ -37,6 +37,7 @@ class ConsequencesClass {
 			case EFFECT_AFTEREFFECT:
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
 				var effectDuration = Effect[3]
+				var erosionRate = (CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? EROSION_CRIT : EROSION_NO_POISON
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
@@ -50,7 +51,7 @@ class ConsequencesClass {
 					} else {
 						targetStats.LIFE -= appliedDamage
 					}
-					targetStats.TOTAL_LIFE -= appliedDamage * EROSION_NO_POISON
+					targetStats.TOTAL_LIFE -= appliedDamage * erosionRate
 					targetStats.POISON += calculatedValue
 					targetStats.POISON_OVER_TIME += calculatedValue * effectDuration
 					effectTotal += appliedDamage
@@ -624,6 +625,9 @@ class ConsequencesClass {
 
 	static getEntityDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, clonedIds) {
 		var BaseDamages = base * (1 - Dist * 0.2)
+		// Érosion : +10 points si le cast est critique (crit binaire à 950), le RETOUR érode
+		// au MÊME taux (celui de l'attaque, comme le moteur).
+		var erosionRate = (CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? EROSION_CRIT : EROSION_NO_POISON
 		var DamagesWithShield = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
 		var TargetLife = TarStats.LIFE
 		var Damage = min(DamagesWithShield, TargetLife)
@@ -632,7 +636,7 @@ class ConsequencesClass {
 		} else {
 			TarStats.LIFE -= Damage
 		}
-		TarStats.TOTAL_LIFE -= Damage * EROSION_NO_POISON
+		TarStats.TOTAL_LIFE -= Damage * erosionRate
 		if (!TarIsCaster) {
 			var Damage_Return = BaseDamages * (TarStats.DAMAGE_RETURN / 100)
 			// Ordre moteur (EffectDamage) : dégâts -> LIFESTEAL crédité au caster -> PUIS retour,
@@ -647,7 +651,7 @@ class ConsequencesClass {
 			} else {
 				CastStats.LIFE = lifeAfterSteal - Damage_Return
 			}
-			CastStats.TOTAL_LIFE -= appliedReturn * EROSION_NO_POISON
+			CastStats.TOTAL_LIFE -= appliedReturn * erosionRate
 		}
 		switch (TarStats.SPECIAL_WEAPON) {
 			case WEAPON_REVOKED_M_LASER:
@@ -723,6 +727,7 @@ class ConsequencesClass {
 
 	static getEntityLifeDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, clonedIds) {
 		var BaseDamages = base * (1 - Dist * 0.2)
+		var erosionRate = (CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? EROSION_CRIT : EROSION_NO_POISON
 		var InitialDamages = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
 		var TargetLife = TarStats.LIFE
 		var Damage = min(InitialDamages, TargetLife)
@@ -731,7 +736,7 @@ class ConsequencesClass {
 		} else {
 			TarStats.LIFE -= Damage
 		}
-		TarStats.TOTAL_LIFE -= Damage * EROSION_NO_POISON
+		TarStats.TOTAL_LIFE -= Damage * erosionRate
 		if (!TarIsCaster) {
 			var Damage_Return = BaseDamages * (TarStats.DAMAGE_RETURN / 100)
 			var appliedReturn = min(Damage_Return, CastStats.LIFE)   // plafonné à la vie restante (érosion sur l'appliqué)
@@ -741,7 +746,7 @@ class ConsequencesClass {
 			} else {
 				CastStats.LIFE -= Damage_Return
 			}
-			CastStats.TOTAL_LIFE -= appliedReturn * EROSION_NO_POISON
+			CastStats.TOTAL_LIFE -= appliedReturn * erosionRate
 		}
 		switch (TarStats.SPECIAL_WEAPON) {
 			case WEAPON_REVOKED_M_LASER:
