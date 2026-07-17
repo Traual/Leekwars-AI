@@ -20,8 +20,10 @@ class ResurrectionClass {
 
 		// Le moteur ressuscite PROPRE : die() retire tous les effets SUR le mort (stats de
 		// base, zéro shield/poison/DR). Reset par champs — TO_SAVE_<stat> EST la base vraie.
-		// EFFECTS (container partagé, jamais écrit en sim) n'est pas touché : les effets de
-		// turn-start qu'il liste sont neutralisés par ces resets.
+		// EFFECTS : REBINDÉ sur un tableau neuf (pas muté — le container est partagé avec les
+		// états parents, mais le revived est un clone frais : l'assignation ne touche que lui).
+		// Plus d'effets fantômes pour un ReplacementChangeStats ultérieur.
+		revived.EFFECTS = []
 		revived.POISON = 0
 		revived.POISON_OVER_TIME = 0
 		revived.JUST_POISON = 0
