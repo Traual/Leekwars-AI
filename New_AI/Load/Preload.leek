@@ -33,6 +33,16 @@ class Preload {
 			var Iinfo = new ItemClass(i)
 			ITEMINFO[i] = Iinfo
 		}
+		// PASSIVE_INFO[arme][type] = ligne complète du passif — source unique des valeurs
+		// de proc (rien en dur dans Consequences).
+		for (var i = 0; i < 500; i++) {
+			var passives = ITEMINFO[i].PASSIVE_EFFECTS
+			if (passives == null) continue
+			for (var eff in passives) {
+				if (!(i in PASSIVE_INFO)) PASSIVE_INFO[i] = [: ]
+				PASSIVE_INFO[i][eff[0]] = eff
+			}
+		}
 	}
 
 	static InitCellClass() {

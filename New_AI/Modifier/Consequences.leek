@@ -47,7 +47,7 @@ class ConsequencesClass {
 					// restante), comme getEntityDamageConsequences.
 					var appliedDamage = min(calculatedValue, targetStats.LIFE)
 					if (appliedDamage >= targetStats.LIFE && targetStats.LIFE > 0) {
-						getKillConsequences(aoeDistance, 0, Effect, targetStats, CastStats, targetId == Caster, State, true, clonedIds)
+						getKillConsequences(targetStats, CastStats, State, clonedIds)
 					} else {
 						targetStats.LIFE -= appliedDamage
 					}
@@ -193,7 +193,7 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_KILL:
-				for (var targetId: var aoeDistance in RealTargets) getKillConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster, State, true, clonedIds)
+				for (var targetId: var aoeDistance in RealTargets) getKillConsequences(State[targetId], CastStats, State, clonedIds)
 				break
 			case EFFECT_LIFE_DAMAGE:
 				var casterStatMultiplier = baseEffectValue * (CastStats.LIFE / 100) * (1 + CastStats.POWER / 100)
@@ -578,52 +578,65 @@ class ConsequencesClass {
 		}
 	}
 
-	static getKillConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster, EveryStats, AddTpEnhancedLightninger, clonedIds) {
-		TarStats.LIFE = 0
-		var Killed = TarStats.ID
-		RemoveCastedEffects(EveryStats, Killed, clonedIds)
-		// Clone-on-write : les victimes de cascade (summons du mort) et les porteurs d'armes
-		// spéciales peuvent être HORS du set pré-cloné. Collecter d'abord, puis cloner+muter.
-		var cascadeIds = []
-		var procIds = []
-		for (var e: var stat in EveryStats) {
-			if (stat.SUMMONER == Killed) push(cascadeIds, e)
-			if (stat.SPECIAL_WEAPON == WEAPON_ENHANCED_LIGHTNINGER && AddTpEnhancedLightninger) {
-				push(procIds, e)
-			} else {
-				if (stat.SPECIAL_WEAPON == WEAPON_DARK_KATANA) push(procIds, e)
+	/*
+	 * Mort d'une entité — réplique State.onPlayerDie puis Entity.die, dans l'ordre moteur :
+	 * bonus BR du killer -> bonus coffre -> Dark Katana (alliés VIVANTS de la victime, victime
+	 * non-summon) -> Enhanced Lightninger (le killer SEUL, vivant) -> retrait des effets lancés
+	 * par la victime -> cascade des summons vivants (killer null : aucun bonus, aucun proc).
+	 * KillerStats == null pour une mort de cascade. Idempotente : victime déjà morte = no-op.
+	 */
+	static getKillConsequences(VictimStats, KillerStats, EveryStats, clonedIds) {
+		if (VictimStats.LIFE <= 0) return
+		VictimStats = StateClass.ensureCloned(EveryStats, VictimStats.ID, clonedIds)
+		VictimStats.LIFE = 0
+		var Killed = VictimStats.ID
+		var killer = (KillerStats != null) ? StateClass.ensureCloned(EveryStats, KillerStats.ID, clonedIds) : null
+
+		// Bonus BR + coffre (State.onPlayerDie — killer non-null seulement, PAS de check
+		// vivant : un renvoyeur mort touche quand même son bonus, comme le moteur).
+		if (killer != null) {
+			if (FIGHT_TYPE == FIGHT_TYPE_BATTLE_ROYALE) {
+				// Approx déclarée : le moteur lit le seul effet RAW_BUFF_POWER SYSTÈME de la
+				// victime (attack == null) ; notre POWER agrège aussi les buffs d'items.
+				killer.POWER += (VictimStats.IS_SUMMON ? 2 : 10) + floor(VictimStats.POWER / 2)
 			}
-		}
-		for (var e in cascadeIds) {
-			getKillConsequences(Dist, Multiplier, Effect, StateClass.ensureCloned(EveryStats, e, clonedIds), CastStats, TarIsCaster, EveryStats, false, clonedIds)
-		}
-		for (var e in procIds) {
-			var stat = StateClass.ensureCloned(EveryStats, e, clonedIds)
-			if (stat.SPECIAL_WEAPON == WEAPON_ENHANCED_LIGHTNINGER) {
-				stat.TOTAL_TP++
-				stat.TP++
-			} else {
-				stat.AGILITY += 100
+			switch (VictimStats.NAME) {
+				case "wooden_chest": killer.POWER += 10; break
+				case "iron_chest": killer.POWER += 50; break
+				case "diamond_chest": killer.POWER += 100; break
 			}
 		}
 
-		switch (TarStats.NAME) {
-			case "wooden_chest":
-				CastStats.POWER += 10
-				break
-			case "iron_chest":
-				CastStats.POWER += 50
-				break
-			case "diamond_chest":
-				CastStats.POWER += 100
-				break
-		}
-		if (FIGHT_TYPE == FIGHT_TYPE_BATTLE_ROYALE) {
-			if (TarStats.IS_SUMMON) {
-				CastStats.POWER += 2 + floor(TarStats.POWER / 2)
-			} else {
-				CastStats.POWER += 10 + floor(TarStats.POWER / 2)
+		// Dark Katana : la mort d'un NON-summon buffe l'AGILITY des alliés VIVANTS porteurs de
+		// la victime (Entity.onAllyKilled : jamais elle-même, jamais l'autre camp, morts
+		// exclus). Collecter les ids PUIS cloner+muter (pas de mutation pendant le parcours).
+		if (!VictimStats.IS_SUMMON) {
+			var darkIds = []
+			for (var e: var stat in EveryStats) {
+				if (e != Killed && stat.LIFE > 0 && stat.SIDE == VictimStats.SIDE && stat.SPECIAL_WEAPON == WEAPON_DARK_KATANA) push(darkIds, e)
 			}
+			for (var e in darkIds) {
+				StateClass.ensureCloned(EveryStats, e, clonedIds).AGILITY += PASSIVE_INFO[WEAPON_DARK_KATANA][EFFECT_ALLY_KILLED_TO_AGILITY][1]
+			}
+		}
+
+		// Enhanced Lightninger : le KILLER SEUL, s'il est VIVANT et porteur (Entity.onKill :
+		// isDead() return). Les autres porteurs ne gagnent rien.
+		if (killer != null && killer.LIFE > 0 && killer.SPECIAL_WEAPON == WEAPON_ENHANCED_LIGHTNINGER) {
+			var tp = PASSIVE_INFO[WEAPON_ENHANCED_LIGHTNINGER][EFFECT_KILL_TO_TP][1]
+			killer.TP += tp
+			killer.TOTAL_TP += tp
+		}
+
+		// Entity.die : retrait de tous les effets lancés par la victime, PUIS cascade — les
+		// summons VIVANTS de la victime meurent avec killer null (récursif : summons de summons).
+		RemoveCastedEffects(EveryStats, Killed, clonedIds)
+		var cascadeIds = []
+		for (var e: var stat in EveryStats) {
+			if (stat.LIFE > 0 && stat.SUMMONER == Killed) push(cascadeIds, e)
+		}
+		for (var e in cascadeIds) {
+			getKillConsequences(EveryStats[e], null, EveryStats, clonedIds)
 		}
 	}
 
@@ -636,7 +649,7 @@ class ConsequencesClass {
 		var TargetLife = TarStats.LIFE
 		var Damage = min(DamagesWithShield, TargetLife)
 		if (Damage >= TargetLife && TargetLife > 0) {
-			getKillConsequences(Dist, 0, Effect, TarStats, CastStats, TarIsCaster, EveryStats, true, clonedIds)
+			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
 		} else {
 			TarStats.LIFE -= Damage
 		}
@@ -651,7 +664,7 @@ class ConsequencesClass {
 			if (Damage_Return >= lifeAfterSteal && CastStats.LIFE > 0) {
 				// Retour léthal : le caster meurt VRAIMENT (cascade de ses summons + déroulé de
 				// ses buffs), et getConsequences saute ses effets restants — comme le moteur.
-				getKillConsequences(Dist, 0, Effect, CastStats, TarStats, false, EveryStats, true, clonedIds)
+				getKillConsequences(CastStats, TarStats, EveryStats, clonedIds)
 			} else {
 				CastStats.LIFE = lifeAfterSteal - Damage_Return
 			}
@@ -736,7 +749,7 @@ class ConsequencesClass {
 		var TargetLife = TarStats.LIFE
 		var Damage = min(InitialDamages, TargetLife)
 		if (Damage >= TargetLife && TargetLife > 0) {
-			getKillConsequences(Dist, 0, Effect, TarStats, CastStats, TarIsCaster, EveryStats, true, clonedIds)
+			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
 		} else {
 			TarStats.LIFE -= Damage
 		}
@@ -746,7 +759,7 @@ class ConsequencesClass {
 			var appliedReturn = min(Damage_Return, CastStats.LIFE)   // plafonné à la vie restante (érosion sur l'appliqué)
 			if (Damage_Return >= CastStats.LIFE && CastStats.LIFE > 0) {
 				// Retour léthal : voir getEntityDamageConsequences.
-				getKillConsequences(Dist, 0, Effect, CastStats, TarStats, false, EveryStats, true, clonedIds)
+				getKillConsequences(CastStats, TarStats, EveryStats, clonedIds)
 			} else {
 				CastStats.LIFE -= Damage_Return
 			}
