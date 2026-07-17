@@ -37,7 +37,7 @@ class ScoringClass {
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            _score += sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e], State) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
+            _score += sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e], State, BaseHash) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
         }
         BenchOps.Stop("Scoring")
         return _score
@@ -54,7 +54,7 @@ class ScoringClass {
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            terms[e] = sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e], State) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
+            terms[e] = sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e], State, BaseHash) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
         }
         BenchOps.Stop("Scoring")
         return terms
@@ -101,13 +101,16 @@ class ScoringClass {
                 healChanged[s] = true
             }
         }
-        // Sides dont la couverture antidote a changé : une entité clonée MORTE flippe le
-        // bit-set des vivants -> les coefs poison de SON side changent (les sides adverses
-        // recalculent déjà via le contexte, le sien non).
+        // Sides dont la couverture antidote a changé : une entité clonée MORTE (le BaseHash
+        // flippe -> les coefs de SON side changent) ou PORTEUSE d'antidote touchée (shackle
+        // MP, push, cd -> la clé bouge via carrierFold/BaseHash). Les sides adverses
+        // recalculent déjà via le contexte, le sien non. Résidu : pusher un coéquipier
+        // non-porteur change la dilution nCovered des autres — leurs termes portés se
+        // rafraîchiront à leur prochain recalcul (second ordre, rarissime en branche).
         var coefChanged = null
         if (anyAntidote(State)) {
             for (var e: var _c in cloned) {
-                if (State[e].LIFE <= 0) {
+                if (State[e].LIFE <= 0 || (CHIP_ANTIDOTE in State[e].COOLDOWNS)) {
                     if (coefChanged == null) coefChanged = [: ]
                     coefChanged[State[e].SIDE] = true
                 }
@@ -147,7 +150,7 @@ class ScoringClass {
         if (stat.LIFE > 0) {
             var sign = (stat.SIDE == MySide) ? 1 : -1
             var net = DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)
-            newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, net, State) + ImportanceClass.capability(stat) + drDeterrence(stat, net, State))
+            newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, net, State, node.BASE_HASH) + ImportanceClass.capability(stat) + drDeterrence(stat, net, State))
         }
         var oldTerm = (e in terms) ? terms[e] : 0
         terms[e] = newTerm
@@ -164,14 +167,14 @@ class ScoringClass {
      * — le vrai input de la formule — donc reste exacte sans salage. POISON (le tick certain
      * du prochain tour) n'est jamais réduit : aucun cleanse ne l'empêche.
      */
-    static survivalValue(stat, danger, State) {
+    static survivalValue(stat, danger, State, BaseHash) {
         var tlTerm = stat.TLSQ_MEMO
         if (tlTerm == null) {
             tlTerm = W_TOTAL_LIFE * sqrt(max(0, stat.TOTAL_LIFE))
             stat.TLSQ_MEMO = tlTerm
         }
         var pot = stat.POISON_OVER_TIME
-        if (pot > 0) pot = poisonCoefOf(stat, State) * pot
+        if (pot > 0) pot = poisonCoefOf(stat, State, BaseHash) * pot
         var key = (stat.LIFE << 48) | ((stat.POISON & 0x3FFF) << 34) | ((pot & 0x1FFFF) << 17) | (danger & 0x1FFFF)
         if (key in SURVIVAL_CACHE) return SURVIVAL_CACHE[key] + tlTerm
 
@@ -268,10 +271,11 @@ class ScoringClass {
      */
     static anyAntidote(State) {
         if (ANY_ANTIDOTE == null) {
-            ANY_ANTIDOTE = false
+            ANTIDOTE_CARRIER_IDS = []
             for (var e: var stat in State) {
-                if (CHIP_ANTIDOTE in stat.COOLDOWNS) { ANY_ANTIDOTE = true; break }
+                if (CHIP_ANTIDOTE in stat.COOLDOWNS) push(ANTIDOTE_CARRIER_IDS, e)
             }
+            ANY_ANTIDOTE = count(ANTIDOTE_CARRIER_IDS) > 0
         }
         return ANY_ANTIDOTE
     }
@@ -279,16 +283,23 @@ class ScoringClass {
     /*
      * Coefficient poison d'une entité ∈ ]0,1] : la part du poison posé sur elle qui va
      * vraiment COLLER, vu la couverture antidote autour d'elle.
-     * Cache clé avb(bit-set des vivants, cd de mon antidote) : une mort/summon/résu REBUILD
-     * (tuer le porteur d'antidote revalorise le poison de son équipe en branche), un move HIT
-     * (les autres ne bougent pas pendant mon tour), et mon cd est le seul input mutable en
-     * branche (seuls les COOLDOWNS de Me bougent en sim). Résidus auto-guéris au rebuild
-     * suivant : side d'un porteur ressuscité, termes frères portés après mon cast d'antidote.
+     * Clé = BaseHash ^ carrierFold : BaseHash pinne tout le monde non-Me (morts, summons,
+     * résus, DÉPLACEMENTS FORCÉS — pusher un porteur rebuild), carrierFold pinne
+     * (vivant, TOTAL_MP, cd) de chaque porteur (mon cast d'antidote, un shackle/buff MP).
+     * Me est GELÉ à sa cellule de début de tour dans le build (donneur ET receveur) : la
+     * portée d'un porteur (~range 6 + MP) dépasse largement un tour de déplacement, les
+     * flips de bord sont rarissimes et le replan à chaque action réelle guérit — et sans
+     * Me dans la clé, mes moves ne rebuildent jamais.
      */
-    static poisonCoefOf(stat, State) {
+    static poisonCoefOf(stat, State, BaseHash) {
         if (!anyAntidote(State)) return 1
-        var meCd = (CHIP_ANTIDOTE in State[Me].COOLDOWNS) ? State[Me].COOLDOWNS[CHIP_ANTIDOTE] : 99
-        var key = addValueToBinHash(StateClass.getHashedEntities(State), meCd)
+        // Fold des porteurs (liste figée au tour — l'inventaire ne change pas, ~1-3 ids).
+        var carrierFold = 0
+        for (var e in ANTIDOTE_CARRIER_IDS) {
+            var s = State[e]
+            if (s.LIFE > 0) carrierFold ^= mix64((e << 20) | (max(0, s.TOTAL_MP) << 10) | min(1023, s.COOLDOWNS[CHIP_ANTIDOTE]))
+        }
+        var key = BaseHash ^ carrierFold
         if (!(key in POISON_COEF_CACHE)) POISON_COEF_CACHE[key] = buildPoisonCoefs(State)
         var coefs = POISON_COEF_CACHE[key]
         return (stat.ID in coefs) ? coefs[stat.ID] : 1
@@ -306,12 +317,14 @@ class ScoringClass {
     static buildPoisonCoefs(State) {
         var antidoteRange = ITEMINFO[CHIP_ANTIDOTE].MAXRANGE
         var carriers = [: ]   // id -> [capacité déjà diluée par nCovered, portée]
-        for (var a: var aStat in State) {
-            if (aStat.LIFE <= 0 || !(CHIP_ANTIDOTE in aStat.COOLDOWNS)) continue
+        for (var a in ANTIDOTE_CARRIER_IDS) {
+            var aStat = State[a]
+            if (aStat.LIFE <= 0) continue
             var reach = antidoteRange + max(0, aStat.TOTAL_MP)
+            var aCell = (a == Me) ? MY_TURN_START_CELL : aStat.CELL   // Me gelé (voir poisonCoefOf)
             var nCovered = 0
             for (var t: var tStat in State) {
-                if (tStat.LIFE > 0 && tStat.SIDE == aStat.SIDE && CellClass.getDist(aStat.CELL, tStat.CELL) <= reach) nCovered++
+                if (tStat.LIFE > 0 && tStat.SIDE == aStat.SIDE && CellClass.getDist(aCell, (t == Me) ? MY_TURN_START_CELL : tStat.CELL) <= reach) nCovered++
             }
             carriers[a] = [(1 / (1 + aStat.COOLDOWNS[CHIP_ANTIDOTE])) / nCovered, reach]
         }
@@ -319,10 +332,12 @@ class ScoringClass {
         if (mapSize(carriers) == 0) return coefs   // aucun porteur vivant -> tous les lookups valent 1
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
+            var eCell = (e == Me) ? MY_TURN_START_CELL : stat.CELL
             var protection = (CHIP_ANTIDOTE in stat.COOLDOWNS) ? 1 / (1 + stat.COOLDOWNS[CHIP_ANTIDOTE]) : 0
             for (var a: var c in carriers) {
                 if (a == e || State[a].SIDE != stat.SIDE) continue
-                if (CellClass.getDist(State[a].CELL, stat.CELL) <= c[1]) protection += c[0]
+                var aCell = (a == Me) ? MY_TURN_START_CELL : State[a].CELL
+                if (CellClass.getDist(aCell, eCell) <= c[1]) protection += c[0]
             }
             coefs[e] = 1 / (1 + POISON_CLEANSE_W * protection)
         }

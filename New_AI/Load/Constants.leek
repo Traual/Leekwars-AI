@@ -93,6 +93,10 @@ global MAX_USEFUL_RELATIVE_SHIELD = 100
 //     critique dès MIN_AGILITY_ENEMY_CRIT (5% de chance suffisent à le craindre).
 global MIN_AGILITY_TO_FULLY_CRIT = 950
 global MIN_AGILITY_ENEMY_CRIT = 50
+// Crit du cast en cours de sim — posé par getConsequences AVANT la boucle d'effets (le moteur
+// roll une fois par CAST, pas par effet : Attack.applyOnCell), lu par la boucle et les
+// fonctions de dégâts pour l'érosion. Transient : toujours écrit avant lecture.
+global CAST_IS_CRITICAL = false
 global FIGHT_TYPE = getFightType() // sert au calcul du power dans Consequences
 
 // BFS :

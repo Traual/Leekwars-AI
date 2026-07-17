@@ -37,7 +37,7 @@ class ConsequencesClass {
 			case EFFECT_AFTEREFFECT:
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
 				var effectDuration = Effect[3]
-				var erosionRate = (CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? EROSION_CRIT : EROSION_NO_POISON
+				var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
@@ -391,6 +391,10 @@ class ConsequencesClass {
 		var Targets = ConsequenceTargets(Item, From, To, State, Caster, BaseHash)
 		var CastStats = State[Caster]
 		var prevEffectTotal = 0   // STEALS : total appliqué de l'effet précédent de CE cast (contrat Attack.java)
+		// Crit du CAST : roll unique AVANT les effets (Attack.applyOnCell) — un self-buff d'AGI
+		// en cours de cast ne change pas le verdict des effets suivants. Lu aussi par les
+		// fonctions de dégâts pour l'érosion.
+		CAST_IS_CRITICAL = CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT
 		for (var Effect in ITEMINFO[Item].EFFECTS) {
 			if (CastStats.LIFE <= 0) break   // caster mort en route (retour léthal) : le moteur saute les effets restants
 			var EffectType = Effect[0]
@@ -413,7 +417,7 @@ class ConsequencesClass {
 			}
 			var TmpTargets = RealConsequenceTargets(Targets, Effect, State, CastStats, Caster)
 			var Multiplier = (Effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) ? mapSize(TmpTargets) : 1 //Saving Multiplier
-			if (CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) Multiplier *= CRITICAL_FACTOR
+			if (CAST_IS_CRITICAL) Multiplier *= CRITICAL_FACTOR
 			var RealTargets = Effect[5] & EFFECT_MODIFIER_ON_CASTER ? [Caster: 0] : TmpTargets
 			prevEffectTotal = applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds, prevEffectTotal)
 		}
@@ -627,7 +631,7 @@ class ConsequencesClass {
 		var BaseDamages = base * (1 - Dist * 0.2)
 		// Érosion : +10 points si le cast est critique (crit binaire à 950), le RETOUR érode
 		// au MÊME taux (celui de l'attaque, comme le moteur).
-		var erosionRate = (CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? EROSION_CRIT : EROSION_NO_POISON
+		var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
 		var DamagesWithShield = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
 		var TargetLife = TarStats.LIFE
 		var Damage = min(DamagesWithShield, TargetLife)
@@ -727,7 +731,7 @@ class ConsequencesClass {
 
 	static getEntityLifeDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, clonedIds) {
 		var BaseDamages = base * (1 - Dist * 0.2)
-		var erosionRate = (CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? EROSION_CRIT : EROSION_NO_POISON
+		var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
 		var InitialDamages = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
 		var TargetLife = TarStats.LIFE
 		var Damage = min(InitialDamages, TargetLife)
