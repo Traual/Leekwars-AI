@@ -13,6 +13,11 @@ class Play {
 		// TARGETABLECACHE) qui ne doivent pas dériver d'entrées du tour précédent.
 		while (true) {
 			var State = StateClass.Virtualize()
+			// Ancre de replan : ma vraie cellule actuelle — meilleure estimation de ma cellule
+			// de fin de tour pour la couverture antidote, converge au fil des actions réelles.
+			// Portée par la POISON_KEY : les maps de l'ancienne ancre deviennent injoignables.
+			MY_REPLAN_CELL = State[Me].CELL
+			MY_REPLAN_CELL_HASH = mix64(MY_REPLAN_CELL)
 			var Action = ActionSuite.getBestAction(State)
 			if (Action == null) break
 			var From = Action.From

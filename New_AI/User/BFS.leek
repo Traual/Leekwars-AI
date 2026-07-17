@@ -29,12 +29,13 @@ class ActionSuite {
 		var RootContext = DeltaClass.buildContextBySide(State)
 		var RootHfp = HealClass.buildHfpBySide(State)
 		var RootTerms = ScoringClass.buildTermsMap(State, MySide, BaseHash, RootContext)
+		var RootPoisonKey = ScoringClass.poisonKeyOf(State, BaseHash)
 		var initialScore = ScoringClass.sumTerms(RootTerms)
 
 		// Cache par appel : BaseHash -> liste triée d'entrées [act, delta, node, nodeScore].
 		var ScoredCache = [:]
 
-		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, RootTerms)
+		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, RootTerms, RootPoisonKey)
 		ScoredCache[BaseHash] = rootEntries
 		BFS_CHAIN_STEPS = 0
 		debugC("--- " + count(rootEntries) + " base actions ---", COLOR_BLUE)
@@ -93,7 +94,7 @@ class ActionSuite {
 		if (BaseHash in ScoredCache) {
 			Entries = ScoredCache[BaseHash]
 		} else {
-			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent.TERMS)
+			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent.TERMS, Parent.POISON_KEY)
 			ScoredCache[BaseHash] = Entries
 
 			// Chemin frais : toutes les entrées sont positives et triées pour cet état.
@@ -140,7 +141,7 @@ class ActionSuite {
 			if (cost > MyTp) continue
 
 			var candidate = NodeClass.ActionToNodeInTree(act, State, from, MyWalkCells, cost, Info, item, act.To, BaseHash, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE)
-			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, ParentScore, Parent.TERMS, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, MySide)
+			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, ParentScore, Parent.TERMS, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, MySide, Parent.POISON_KEY)
 			var deltaFromParent = candidateScore - ParentScore
 
 			if (deltaFromParent > BestDeltaFromParent) {
@@ -160,7 +161,7 @@ class ActionSuite {
 	 * sub-epsilon sont injouables partout en aval (plancher, chemin frais, borne du tri),
 	 * les dropper ici libère leur nœud immédiatement. Le code aval s'appuie dessus.
 	 */
-	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTerms) {
+	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTerms, ParentPoisonKey) {
 		var basePairs = getBaseActions(State, BaseHash)   // [ [act, coût], ... ] : le coût du filtre est réutilisé
 		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 		var Entries = []
@@ -168,7 +169,7 @@ class ActionSuite {
 			var act = pair[0]
 			var Item = act.Item
 			var node = NodeClass.ActionToNodeInTree(act, State, act.From, MyWalkCells, pair[1], ITEMINFO[Item], Item, act.To, BaseHash, null, ParentContext, ParentHfp)
-			var nodeScore = ScoringClass.getStateScoreFromParent(node, ReferenceScore, ParentTerms, ParentContext, ParentHfp, MySide)
+			var nodeScore = ScoringClass.getStateScoreFromParent(node, ReferenceScore, ParentTerms, ParentContext, ParentHfp, MySide, ParentPoisonKey)
 			var delta = nodeScore - ReferenceScore
 			if (delta <= BFS_DELTA_EPSILON) continue
 			push(Entries, [act, delta, node, nodeScore])

@@ -92,7 +92,6 @@ class Preload {
 		Me = getEntity()
 		BASE_INVENTORY = getWeapons(Me) + getChips(Me)
 		var myStateOnMe = new EntityStateClass(Me)
-		MY_TURN_START_CELL = myStateOnMe.CELL   // cellule de début de tour (gels de géométrie : couverture antidote)
 		MY_INVENTORY_ON_ME = ActionsClass.getInventoryOnMe(BASE_INVENTORY, myStateOnMe)
 		MY_INVENTORY_ON_VOID = ActionsClass.getInventoryOnVoid(BASE_INVENTORY)
 		MY_INVENTORY_SUMMON = ActionsClass.getInventorySummon(BASE_INVENTORY)

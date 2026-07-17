@@ -15,6 +15,7 @@ class NodeClass {
 	HFP_BY_SIDE       // par side : fingerprint des healers (clé de la heal map)
 	CLONED            // [id -> true] : ensemble EXACT des entités possiblement mutées par l'action
 	TERMS             // [id -> terme signé] : termes du scoring, clonés du parent puis patchés
+	POISON_KEY        // clé de couverture antidote de END_STATS (posée par getStateScoreFromParent, 0 sans antidote)
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction

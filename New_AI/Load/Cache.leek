@@ -221,12 +221,11 @@ global HEAL_MAP_CACHE = [: ]
 // construit au premier porteur évalué (ScoringClass.buildDrPhysRatios). null = pas construit.
 global DR_PHYSRATIO_BY_SIDE = null
 
-// [BaseHash ^ carrierFold -> [id -> coef poison ]0,1]]] — remise de couverture antidote sur
-// le POT (ScoringClass.poisonCoefOf). BaseHash pinne le monde non-Me (morts, summons, pushs
-// -> rebuild), carrierFold pinne (vivant, TOTAL_MP, cd) des porteurs (casts d'antidote,
-// shackles MP). Me est GELÉ à MY_TURN_START_CELL dans le build : la portée d'un porteur
-// (range + MP) dépasse largement un tour de déplacement -> mes moves ne rebuildent jamais,
-// les flips de bord sont rarissimes et le replan guérit. Reset au tour.
+// [POISON_KEY -> [id -> coef poison ]0,1]]] — remise de couverture antidote sur le POT
+// (ScoringClass.poisonCoefOf). La clé (ScoringClass.poisonKeyOf) encode TOUS les inputs du
+// build : BaseHash (positions/vie des non-Me), porteurs (vivant, TOTAL_MP, cd), ancre de
+// replan de Me, Me vivant/mort — les maps d'une ancienne ancre deviennent injoignables sans
+// flush manuel. Reset au tour.
 global POISON_COEF_CACHE = [: ]
 
 // Y a-t-il un antidote dans le combat ? (morts inclus — basé inventaire, invariant en branche)
@@ -235,8 +234,11 @@ global POISON_COEF_CACHE = [: ]
 global ANY_ANTIDOTE = null
 global ANTIDOTE_CARRIER_IDS = []
 
-// Cellule de Me au début du tour (Preload.InitStateClass — la VM du bulbe la repose pour lui).
-global MY_TURN_START_CELL = 0
+// Ancre de replan de Me : sa VRAIE cellule, reposée à chaque itération de Play (VM du bulbe
+// comprise) — meilleure estimation de sa cellule de fin de tour pour la couverture antidote,
+// converge au fil des actions réelles. Le hash précalculé est XORé dans chaque POISON_KEY.
+global MY_REPLAN_CELL = 0
+global MY_REPLAN_CELL_HASH = 0
 
 // ============================================================================
 // WalkCells : BFS bitmap par couples de lignes (voir Maps/WalkCells.leek)
