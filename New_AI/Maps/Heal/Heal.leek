@@ -13,7 +13,7 @@
  *  - EFFECT_HEAL durée 0 uniquement (les heals over time sont des "poisons négatifs",
  *    traités dans Consequences)
  *  - pas de shields, pas de chaîne de vulnés
- *  - PESSIMISTE : roll MIN (eff[1]) ; valeur = eff[1] · (1 + WIS/100) · (1 − 0.2·aoeDist)
+ *  - PESSIMISTE : roll MIN (eff[1]) ; valeur = eff[1] · max(0, 1 + WIS/100) · (1 − 0.2·aoeDist)
  *  - combo = glouton heal/TP dans TOTAL_TP + MAX_USES (aucune dépendance à la cible)
  *
  * Potentiel BRUT : le cap de vie manquante et le séquençage vivent dans DeltaClass.netDamage.
@@ -35,7 +35,9 @@ class HealClass {
         // dépend de son AGI par seuils — sans ces bits, un buff/shackle d'AGI traversant
         // un seuil en branche servirait une couverture stale.
         var critClass = (stat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((stat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-        return addValueToBinHash(OFFSET_BASIS ^ id, (max(0, stat.WISDOM) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | (critClass << 10) | stat.CELL)
+        // Clé WIS = max(0, WIS + 100) : le facteur moteur est max(0, 1 + WIS/100), donc -50
+        // (soigne 50%) doit se distinguer de 0 (100%) ; -100 et -150 partagent 0 (facteur nul).
+        return addValueToBinHash(OFFSET_BASIS ^ id, (max(0, stat.WISDOM + 100) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | (critClass << 10) | stat.CELL)
     }
 
     /*
@@ -125,7 +127,7 @@ class HealClass {
         var critAt = (casterStats.SIDE != getSide(Me)) ? MIN_AGILITY_ENEMY_CRIT : MIN_AGILITY_TO_FULLY_CRIT
         var critFactor = (casterStats.AGILITY >= critAt) ? CRITICAL_FACTOR : 1
         var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, (casterStats.CELL << 10) | max(0, casterStats.TOTAL_MP))
-        key = addValueToBinHash(key, ((critFactor > 1 ? 1 : 0) << 30) | (max(0, casterStats.WISDOM) << 15) | max(0, casterStats.TOTAL_TP))
+        key = addValueToBinHash(key, ((critFactor > 1 ? 1 : 0) << 30) | (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
         if (key in HEAL_COVERAGE_CACHE) return HEAL_COVERAGE_CACHE[key]
 
         // Couche géométrie — clé position seule, même pack que la danger map.
@@ -174,7 +176,7 @@ class HealClass {
      * construites dans des ordres différents FRAGMENTENT seulement, jamais de collision.
      */
     static comboAtCell(itemAoeMap, casterStats) {
-        var comboKey = addValueToBinHash(OFFSET_BASIS ^ DangerClass.getHashFromItemAoeMap(itemAoeMap), (max(0, casterStats.WISDOM) << 15) | max(0, casterStats.TOTAL_TP))
+        var comboKey = addValueToBinHash(OFFSET_BASIS ^ DangerClass.getHashFromItemAoeMap(itemAoeMap), (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
         if (comboKey in HEAL_COMBO_CACHE) return HEAL_COMBO_CACHE[comboKey]
 
         var items = []
@@ -211,7 +213,7 @@ class HealClass {
     /* Soin instantané d'un item à une distance d'AoE : roll MIN, scalé sagesse, sans shields. */
     static getItemHeal(item, casterStats, distance) {
         var distFactor = 1 - distance * 0.2
-        var wisdomFactor = 1 + max(0, casterStats.WISDOM) / 100   // plancher à l'usage, comme le moteur
+        var wisdomFactor = max(0, 1 + casterStats.WISDOM / 100)   // le moteur floor le SOIN, pas la stat : WIS -50 soigne 50%, <= -100 soigne 0
         var _final = 0
         for (var eff in ITEMINFO[item].EFFECTS) {
             if (eff[0] == EFFECT_HEAL && eff[3] == 0) {           // heal instantané seulement (durée 0)
