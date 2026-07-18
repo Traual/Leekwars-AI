@@ -563,16 +563,42 @@ class ConsequencesClass {
 		}
 	}
 
+	/*
+	 * Remplacement moteur (Effect.createEffect:215-228) : un effet NON stackable de durée
+	 * non nulle retire LA PREMIÈRE ligne active de même type ET même item d'origine (break
+	 * après la première — un item à plusieurs effets persistants garde ses autres types).
+	 * La ligne est annulée (removeCastedEffect) PUIS retirée du ledger via un tableau NEUF
+	 * rebindé — jamais de mutation du tableau partagé avec les états parents. La ligne
+	 * disparue ne sera pas re-déroulée à la mort de son ancien caster.
+	 */
 	static ReplacementChangeStats(Item, Effect, TarStats) {
 		if (Effect[5] & EFFECT_MODIFIER_STACKABLE) return;
+		if (Effect[3] == 0) return;
+		// Pré-scan : pas de match -> aucune allocation (chemin ultra-majoritaire).
+		var found = false
 		for (var eff in TarStats.EFFECTS) {
-			if (eff[5] == Item) {
-				removeCastedEffect(eff[0], TarStats, eff[1], eff[3])
-			}
+			if (eff[0] == Effect[0] && eff[5] == Item) { found = true; break }
 		}
+		if (!found) return;
+		var newEffects = []
+		var removed = false
+		for (var eff in TarStats.EFFECTS) {
+			if (!removed && eff[0] == Effect[0] && eff[5] == Item) {
+				removeCastedEffect(eff[0], TarStats, eff[1], eff[3])
+				removed = true
+				continue   // la ligne remplacée ne passe pas dans le nouveau tableau
+			}
+			push(newEffects, eff)
+		}
+		TarStats.EFFECTS = newEffects
 	}
 
-	/* Déroule tous les effets castés par une entité (à sa mort). */
+	/*
+	 * Déroule tous les effets castés par une entité (à sa mort) ET retire leurs lignes du
+	 * ledger des cibles (Entity.die : removeLaunchedEffect + removeEffect) — TOUTES les
+	 * lignes du caster, pas seulement la première. Tableau neuf rebindé (jamais de mutation
+	 * du partagé) -> un second appel avec le même caster est un no-op.
+	 */
 	static RemoveCastedEffects(EveryStats, Caster, clonedIds) {
 		// Clone-on-write : un porteur d'effet peut être HORS du set pré-cloné (= partagé avec
 		// l'état parent). Collecter d'abord, puis cloner+muter — ensureCloned remplace des
@@ -588,11 +614,15 @@ class ConsequencesClass {
 		}
 		for (var e in touched) {
 			var stat = StateClass.ensureCloned(EveryStats, e, clonedIds)
+			var newEffects = []
 			for (var eff in stat.EFFECTS) {
 				if (eff[2] == Caster) {
 					removeCastedEffect(eff[0], stat, eff[1], eff[3])
+				} else {
+					push(newEffects, eff)
 				}
 			}
+			stat.EFFECTS = newEffects
 		}
 	}
 
