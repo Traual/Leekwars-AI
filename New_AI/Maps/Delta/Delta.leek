@@ -86,7 +86,10 @@ class DeltaClass {
 
         // Les autres ne bougent pas -> net à leur cellule courante. Une entité intouchée
         // garde la même clé d'un nœud à l'autre -> hit, tout le déroulé est sauté.
-        var ndKey = addValueToBinHash(statsHash ^ hfp, (stat.CELL << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE)
+        // Salée par (id, IS_SUMMON) : le PROFIL de couverture heal (poireau/summon) est un
+        // input du net depuis la vitalité — sans ce sel, un poireau et un summon aux mêmes
+        // valeurs partageraient un net calculé avec la mauvaise couverture.
+        var ndKey = addValueToBinHash(addValueToBinHash(statsHash ^ hfp, (stat.CELL << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE), (e << 1) | (stat.IS_SUMMON ? 1 : 0))
         if (ndKey in NETDAMAGE_CACHE) return NETDAMAGE_CACHE[ndKey]
 
         var dangerToT = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
@@ -104,8 +107,10 @@ class DeltaClass {
      */
     static minDeltaForMe(MeStats, State, BaseHash, statsHash, hfp, healMap) {
         // seed = tout ce qui fixe net(cellule) SAUF la cellule : contexte ennemi + mes shields
-        // (statsHash), mes healers (hfp), ma vie courante et max (cap du heal, coupure à 0).
-        var seed = addValueToBinHash(statsHash ^ hfp, (MeStats.LIFE << 16) | MeStats.TOTAL_LIFE)
+        // (statsHash), mes healers (hfp), ma vie courante et max (cap du heal, coupure à 0),
+        // et mon PROFIL de cible heal (id, IS_SUMMON — un bulbe lit la couverture summon).
+        // Le sel sépare automatiquement les deux niveaux (le seed nourrit leurs deux clés).
+        var seed = addValueToBinHash(addValueToBinHash(statsHash ^ hfp, (MeStats.LIFE << 16) | MeStats.TOTAL_LIFE), (Me << 1) | (MeStats.IS_SUMMON ? 1 : 0))
         // rotl13(seed) précalculé : addValueToBinHash(seed, x) == rotl13(seed) ^ x, donc la clé
         // externe et chaque clé interne se réduisent à un XOR (mêmes clés bit-exactes).
         var rotSeed = (seed << SHIFT) | ((seed >> HIGH_SHIFT) & MASK_HIGH)

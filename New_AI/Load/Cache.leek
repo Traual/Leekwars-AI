@@ -144,7 +144,8 @@ global ENTITY_DANGER_CACHE_FOR_OTHERS = [: ]
 
 // Recherche de fuite de Me (net minimal), deux niveaux : CELL_NETDAMAGE_FOR_ME_CACHE = le net
 // à UNE cellule de fuite, ENTITY_DELTA_CACHE_FOR_ME = le MIN entier sur mes cellules
-// accessibles. Même graine (statsHash ^ healersFP + vie), foldée avec la cellule, resp. avec
+// accessibles. Même graine (statsHash ^ healersFP + vie + (id, IS_SUMMON) de Me — le profil
+// de couverture heal est un input du net), foldée avec la cellule, resp. avec
 // BaseHash + fingerprint du set accessible (le domaine du min dépend des obstacles).
 global CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
 global ENTITY_DELTA_CACHE_FOR_ME = [: ]
@@ -218,8 +219,9 @@ global HEAL_CELL_ITEM_AOE_CACHE = [: ]
 global HEAL_COMBO_CACHE = [: ]
 global HEAL_ENTITY_INVENTORY = [: ]
 
-// DELTA : net par entité, clé (statsHash ^ healersFP[side], pack cell/life/totallife).
-// Une entité intouchée saute danger + heal + séquençage. Reset au tour.
+// DELTA : net par entité, clé (statsHash ^ healersFP[side], pack cell/life/totallife) salée
+// par (id, IS_SUMMON) — le profil de couverture heal (poireau/summon) est un input du net
+// depuis la vitalité. Une entité intouchée saute danger + heal + séquençage. Reset au tour.
 global NETDAMAGE_CACHE = [: ]
 
 // Heal map externe [casterId -> couverture par profil] (healers des DEUX camps), clé = fold
