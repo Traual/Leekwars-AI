@@ -604,7 +604,7 @@ class ConsequencesClass {
 	 * KillerStats == null pour une mort de cascade. Idempotente : victime déjà morte = no-op.
 	 */
 	static getKillConsequences(VictimStats, KillerStats, EveryStats, clonedIds) {
-		if (VictimStats.LIFE <= 0) return
+		if (VictimStats.LIFE <= 0) return;
 		VictimStats = StateClass.ensureCloned(EveryStats, VictimStats.ID, clonedIds)
 		VictimStats.LIFE = 0
 		var Killed = VictimStats.ID
@@ -669,7 +669,7 @@ class ConsequencesClass {
 	/* Dégâts DIRECTS encaissés (EFFECT_DAMAGE + EFFECT_LIFE_DAMAGE, après dégâts+érosion,
 	 * avant lifesteal/retour) : Revoked M-Laser -> STRENGTH, Mysterious Electrisor -> shield. */
 	static applyOnDirectDamagePassive(stats, appliedDamage) {
-		if (stats.LIFE <= 0 || appliedDamage <= 0) return
+		if (stats.LIFE <= 0 || appliedDamage <= 0) return;
 		// Double arrondi moteur : onDirectDamage reçoit un ENTIER, puis l'effet RAW_* arrondit
 		// le proc — round((value1+jet·value2)·aoe·crit), jet=0/aoe=1/crit=false pour un passif.
 		// 12 dégâts × 4% -> 0 (pas 0.48). Le State garde sa convention flottante par ailleurs.
@@ -686,7 +686,7 @@ class ConsequencesClass {
 	 * le moteur ne teste que isDead. PAS le retour de EffectLifeDamage : le Java n'y appelle
 	 * pas onNovaDamage). */
 	static applyOnNovaDamagePassive(stats, appliedErosion) {
-		if (stats.LIFE <= 0 || appliedErosion <= 0) return
+		if (stats.LIFE <= 0 || appliedErosion <= 0) return;
 		if (stats.SPECIAL_WEAPON == WEAPON_UNBRIDLED_GAZOR) {
 			// Même double arrondi que applyOnDirectDamagePassive : érosion 3 -> 1 magie, 2 -> 0.
 			stats.MAGIC += round(round(appliedErosion) * PASSIVE_INFO[WEAPON_UNBRIDLED_GAZOR][EFFECT_NOVA_DAMAGE_TO_MAGIC][1] / 100)
@@ -698,7 +698,7 @@ class ConsequencesClass {
 	 * soigne de value1 (jet = 0, convention sim), cappé à la vie manquante. Le crit
 	 * DÉCLENCHE le passif, il ne le multiplie pas (pas de CRITICAL_FACTOR). */
 	static applyOnCriticalPassive(CastStats) {
-		if (CastStats.LIFE <= 0) return
+		if (CastStats.LIFE <= 0) return;
 		if (CastStats.SPECIAL_WEAPON == WEAPON_UNSTABLE_DESTROYER && CastStats.LIFE < CastStats.TOTAL_LIFE) {
 			CastStats.LIFE = min(CastStats.TOTAL_LIFE, CastStats.LIFE + PASSIVE_INFO[WEAPON_UNSTABLE_DESTROYER][EFFECT_CRITICAL_TO_HEAL][1])
 		}
@@ -707,7 +707,7 @@ class ConsequencesClass {
 	/* Déplacement SUBI (push, attract, cible d'un invert — Entity.onMoved ignore les
 	 * automouvements, donc jamais le caster de l'invert) : Explorer Rifle -> MP + TOTAL_MP. */
 	static applyOnMovedPassive(stats, movedId, moverId, oldCell, newCell) {
-		if (stats.LIFE <= 0 || movedId == moverId || oldCell == newCell) return
+		if (stats.LIFE <= 0 || movedId == moverId || oldCell == newCell) return;
 		if (stats.SPECIAL_WEAPON == WEAPON_EXPLORER_RIFLE) {
 			var mp = PASSIVE_INFO[WEAPON_EXPLORER_RIFLE][EFFECT_MOVED_TO_MP][1]
 			stats.MP += mp
