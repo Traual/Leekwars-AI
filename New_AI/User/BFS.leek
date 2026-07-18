@@ -48,13 +48,27 @@ class ActionSuite {
 		noPlay.SCORE = initialScore
 		var best = noPlay
 
+		// ===== DIAGNOSTIC TRANSPOSITIONS (temporaire, AUCUN élagage — mesure seule) =====
+		// Table locale à CE getBestAction : bucket (xor, somme, longueur) du multiensemble
+		// d'actions (Item, To, RESURRECT_ID — From exclu) -> représentants [chemin, node,
+		// score, profondeur]. Rien n'est jamais coupé ni muté, best reste identique.
+		var Diag = ["buckets": [: ], "nodes": 0, "bagHits": 0, "paths": 0, "prefilters": 0,
+			"exact": 0, "dominated": 0, "better": 0, "mismatch": 0, "maxGap": 0,
+			"wouldSkip": 0, "ops": 0]
+
 		for (var entry in rootEntries) {
 			var baseNode = entry[2]
 			baseNode.SCORE = entry[3]
+			var aSig = mix64(transDiagActionSig(baseNode.ACTION))
+			var dom = transDiagRecord(Diag, baseNode, aSig, aSig, 1)
 			if (baseNode.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = baseNode
-			best = unroll(baseNode, ScoredCache, MySide, 1, best)
+			best = unroll(baseNode, ScoredCache, MySide, 1, best, Diag, aSig, aSig, dom)
 		}
 		BenchOps.Stop("BFS")
+		debug("TransDiag nodes=" + Diag["nodes"] + " bagHits=" + Diag["bagHits"] + " paths=" + Diag["paths"]
+			+ " prefilters=" + Diag["prefilters"] + " exactStates=" + Diag["exact"] + " dominated=" + Diag["dominated"]
+			+ " better=" + Diag["better"] + " scoreMismatch=" + Diag["mismatch"] + " maxGap=" + Diag["maxGap"]
+			+ " wouldSkip=" + Diag["wouldSkip"] + " ops=" + Diag["ops"])
 
 		if (best.ACTION == null) return null
 		var ancestor = best
@@ -67,12 +81,18 @@ class ActionSuite {
 	 * Déroulé glouton récursif d'une branche : descend la meilleure action suivante tant
 	 * qu'il y en a une, en suivant le meilleur nœud rencontré.
 	 */
-	static unroll(node, ScoredCache, MySide, depth, best) {
+	static unroll(node, ScoredCache, MySide, depth, best, Diag, pathXor, pathSum, underDominated) {
+		// Diagnostic : cet appel aurait été évité si l'élagage coupait les nœuds dominés.
+		if (underDominated) Diag["wouldSkip"]++
 		var next = findBestNextNode(node, ScoredCache, MySide)
 		if (next == null) return best
 		if (next.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = next
 		BFS_CHAIN_STEPS++
-		return unroll(next, ScoredCache, MySide, depth + 1, best)
+		var aSig = mix64(transDiagActionSig(next.ACTION))
+		var nXor = pathXor ^ aSig
+		var nSum = pathSum + aSig
+		var dom = transDiagRecord(Diag, next, nXor, nSum, depth + 1)
+		return unroll(next, ScoredCache, MySide, depth + 1, best, Diag, nXor, nSum, underDominated || dom)
 	}
 
 	/*
@@ -248,5 +268,170 @@ class ActionSuite {
 	 */
 	static scoredKeyOf(BaseHash, ResurrectId) {
 		return addValueToBinHash(BaseHash, ResurrectId == null ? 0 : ResurrectId + 1)
+	}
+
+	// ============================================================================
+	// DIAGNOSTIC TRANSPOSITIONS — mesure pure, à retirer/convertir après le combat
+	// de mesure. Aucune de ces fonctions ne mute un node, un state ou un cache.
+	// ============================================================================
+
+	/* Signature d'action LOGIQUE (Item, To, RESURRECT_ID) — From exclu volontairement :
+	 * deux cellules de tir peuvent porter la même transposition, l'état final tranche. */
+	static transDiagActionSig(act) {
+		return (act.Item << 24) | ((act.RESURRECT_ID == null ? 0 : act.RESURRECT_ID + 1) << 12) | act.To
+	}
+
+	/* Chemin logique du nœud : remontée des PARENT, liste de [Item, To, RESURRECT_ID]. */
+	static transDiagPath(node) {
+		var path = []
+		var n = node
+		while (n != null && n.ACTION != null) {
+			push(path, [n.ACTION.Item, n.ACTION.To, n.ACTION.RESURRECT_ID])
+			n = n.PARENT
+		}
+		return path
+	}
+
+	/* Même MULTIENSEMBLE d'actions (ordre ignoré, multiplicité respectée — deux usages
+	 * identiques ne s'annulent jamais, contrairement à un xor seul). */
+	static samePathMultiset(a, b) {
+		if (count(a) != count(b)) return false
+		var used = []
+		for (var i = 0; i < count(b); i++) push(used, false)
+		for (var act in a) {
+			var found = false
+			for (var j = 0; j < count(b); j++) {
+				if (used[j]) continue
+				var o = b[j]
+				if (o[0] == act[0] && o[1] == act[1] && o[2] == act[2]) { used[j] = true; found = true; break }
+			}
+			if (!found) return false
+		}
+		return true
+	}
+
+	/* Égalité de deux maps scalaires (clés ET valeurs), boucles explicites. */
+	static sameScalarMap(a, b) {
+		if (a == null || b == null) return a == null && b == null
+		if (mapSize(a) != mapSize(b)) return false
+		for (var k: var v in a) {
+			if (!(k in b)) return false
+			if (b[k] != v) return false
+		}
+		return true
+	}
+
+	/* Préfiltre bon marché avant la comparaison exacte des états. */
+	static transDiagPrefilter(nodeA, nodeB) {
+		if (nodeA.BASE_HASH != nodeB.BASE_HASH) return false
+		if (nodeA.POISON_KEY != nodeB.POISON_KEY) return false
+		var sa = nodeA.END_STATS
+		var sb = nodeB.END_STATS
+		if (mapSize(sa) != mapSize(sb)) return false
+		for (var e: var _s in sa) if (!(e in sb)) return false
+		if (!sameScalarMap(nodeA.CONTEXT_BY_SIDE, nodeB.CONTEXT_BY_SIDE)) return false
+		if (!sameScalarMap(nodeA.HFP_BY_SIDE, nodeB.HFP_BY_SIDE)) return false
+		var ma = sa[Me]
+		var mb = sb[Me]
+		if (ma.TP != mb.TP || ma.MP != mb.MP || ma.CELL != mb.CELL || ma.WEAPON != mb.WEAPON) return false
+		if (!sameScalarMap(ma.COOLDOWNS, mb.COOLDOWNS)) return false
+		if (!sameScalarMap(ma.USES, mb.USES)) return false
+		return true
+	}
+
+	/*
+	 * Comparaison EXACTE de deux états de recherche : tout champ pouvant influencer une
+	 * action future ou le scoring. Ignorés : CAP_MEMO/TLSQ_MEMO (dérivés), EFFECTS_ITEM_MAP
+	 * (inutilisé), les références de containers. INVENTORY ignoré : l'id d'un bulbe virtuel
+	 * détermine son type pour tout le tour (SUMMON_ID_BASE + offset), l'égalité des ids de
+	 * la map suffit. EFFECTS : même nombre, même ORDRE, mêmes six champs.
+	 */
+	static sameSearchState(sa, sb) {
+		if (mapSize(sa) != mapSize(sb)) return false
+		for (var e: var a in sa) {
+			if (!(e in sb)) return false
+			var b = sb[e]
+			if (a.SIDE != b.SIDE || a.IS_SUMMON != b.IS_SUMMON || a.SUMMONER != b.SUMMONER
+				|| a.STATIC != b.STATIC || a.TURN_ORDER != b.TURN_ORDER) return false
+			if (a.LIFE != b.LIFE || a.TOTAL_LIFE != b.TOTAL_LIFE || a.CELL != b.CELL) return false
+			if (a.STRENGTH != b.STRENGTH || a.WISDOM != b.WISDOM || a.AGILITY != b.AGILITY
+				|| a.RESISTANCE != b.RESISTANCE || a.SCIENCE != b.SCIENCE || a.MAGIC != b.MAGIC
+				|| a.FREQUENCY != b.FREQUENCY) return false
+			if (a.TP != b.TP || a.TOTAL_TP != b.TOTAL_TP || a.MP != b.MP || a.TOTAL_MP != b.TOTAL_MP) return false
+			if (a.ABSOLUTE_SHIELD != b.ABSOLUTE_SHIELD || a.RELATIVE_SHIELD != b.RELATIVE_SHIELD
+				|| a.DAMAGE_RETURN != b.DAMAGE_RETURN || a.POWER != b.POWER) return false
+			if (a.WEAPON != b.WEAPON || a.SPECIAL_WEAPON != b.SPECIAL_WEAPON) return false
+			if (a.POISON != b.POISON || a.POISON_OVER_TIME != b.POISON_OVER_TIME
+				|| a.JUST_POISON != b.JUST_POISON || a.JUST_POISON_OVER_TIME != b.JUST_POISON_OVER_TIME) return false
+			if (a.TO_SAVE_STRENGTH != b.TO_SAVE_STRENGTH || a.TO_SAVE_WISDOM != b.TO_SAVE_WISDOM
+				|| a.TO_SAVE_AGILITY != b.TO_SAVE_AGILITY || a.TO_SAVE_MAGIC != b.TO_SAVE_MAGIC
+				|| a.TO_SAVE_RESISTANCE != b.TO_SAVE_RESISTANCE || a.TO_SAVE_SCIENCE != b.TO_SAVE_SCIENCE
+				|| a.TO_SAVE_TOTAL_MP != b.TO_SAVE_TOTAL_MP || a.TO_SAVE_TOTAL_TP != b.TO_SAVE_TOTAL_TP) return false
+			if (a.TO_SAVE_SHACKLE_STRENGTH != b.TO_SAVE_SHACKLE_STRENGTH
+				|| a.TO_SAVE_SHACKLE_WISDOM != b.TO_SAVE_SHACKLE_WISDOM
+				|| a.TO_SAVE_SHACKLE_AGILITY != b.TO_SAVE_SHACKLE_AGILITY
+				|| a.TO_SAVE_SHACKLE_MAGIC != b.TO_SAVE_SHACKLE_MAGIC
+				|| a.TO_SAVE_SHACKLE_TOTAL_MP != b.TO_SAVE_SHACKLE_TOTAL_MP
+				|| a.TO_SAVE_SHACKLE_TOTAL_TP != b.TO_SAVE_SHACKLE_TOTAL_TP) return false
+			if (!sameScalarMap(a.COOLDOWNS, b.COOLDOWNS)) return false
+			if (!sameScalarMap(a.USES, b.USES)) return false
+			var ea = a.EFFECTS
+			var eb = b.EFFECTS
+			if (count(ea) != count(eb)) return false
+			for (var i = 0; i < count(ea); i++) {
+				var ra = ea[i]
+				var rb = eb[i]
+				if (ra[0] != rb[0] || ra[1] != rb[1] || ra[2] != rb[2] || ra[3] != rb[3]
+					|| ra[4] != rb[4] || ra[5] != rb[5]) return false
+			}
+		}
+		return true
+	}
+
+	/*
+	 * Enregistre un nœud atteint par unroll dans la table de diagnostic et renvoie true
+	 * s'il est DOMINÉ (état exact déjà vu avec score >= au sien) — purement informatif,
+	 * l'appelant continue le déroulé quoi qu'il arrive. Sur match d'état exact, le
+	 * représentant garde le MEILLEUR score vu (dans MA table — le node n'est pas touché).
+	 */
+	static transDiagRecord(Diag, node, pathXor, pathSum, pathLen) {
+		var t0 = getOperations()
+		Diag["nodes"]++
+		var dominated = false
+		var key = addValueToBinHash(addValueToBinHash(pathXor, pathSum), pathLen)
+		var buckets = Diag["buckets"]
+		if (!(key in buckets)) {
+			buckets[key] = [[transDiagPath(node), node, node.SCORE, pathLen]]
+		} else {
+			Diag["bagHits"]++
+			var reps = buckets[key]
+			var myPath = transDiagPath(node)
+			var foundExact = false
+			for (var rep in reps) {
+				if (!samePathMultiset(myPath, rep[0])) continue
+				Diag["paths"]++
+				if (!transDiagPrefilter(node, rep[1])) continue
+				Diag["prefilters"]++
+				if (!sameSearchState(node.END_STATS, rep[1].END_STATS)) continue
+				Diag["exact"]++
+				foundExact = true
+				var gap = abs(node.SCORE - rep[2])
+				if (gap > BFS_DELTA_EPSILON) {
+					Diag["mismatch"]++
+					if (gap > Diag["maxGap"]) Diag["maxGap"] = gap
+				}
+				if (rep[2] >= node.SCORE - BFS_DELTA_EPSILON) {
+					Diag["dominated"]++
+					dominated = true
+				} else {
+					Diag["better"]++
+					rep[2] = node.SCORE
+				}
+				break
+			}
+			if (!foundExact) push(reps, [myPath, node, node.SCORE, pathLen])
+		}
+		Diag["ops"] += getOperations() - t0
+		return dominated
 	}
 }
