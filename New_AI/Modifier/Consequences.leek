@@ -1140,10 +1140,12 @@ class ConsequencesClass {
 		return _final
 	}
 
-	/* Dégâts estimés d'UN item du caster sur la cible à une distance d'AoE (pour la danger map). */
+	/* Dégâts estimés d'UN item du caster sur la cible à une distance d'AoE (pour la danger
+	 * map). Targetabilité PAR EFFET, comme le moteur (Attack.java:219-235 filtre chaque
+	 * effet par ses masques) — l'autorité du premier effet était fragile pour un item aux
+	 * masques hétérogènes. Coût limité aux constructions froides de DANGER_ENTITY_CACHE. */
 	static getItemDanger(item, casterstats, targetstats, Distance, Multiplier) {
 		var Info = ITEMINFO[item]
-		if (!isHitable(Info.EFFECTS[0], targetstats, casterstats, false)) return 0
 		var _final = 0
 		var distFactor = 1 - (Distance * 0.2)
 		var powerFactor = 1 + casterstats.POWER / 100
@@ -1157,6 +1159,7 @@ class ConsequencesClass {
 		var antidoteCd = (CHIP_ANTIDOTE in targetstats.COOLDOWNS) ? targetstats.COOLDOWNS[CHIP_ANTIDOTE] : 99
 		for (var eff in Info.EFFECTS) {
 			if (eff[5] & EFFECT_MODIFIER_ON_CASTER) continue
+			if (!isHitable(eff, targetstats, casterstats, false)) continue
 			switch (eff[0]) {
 				case EFFECT_DAMAGE:
 					_final += (eff[2] * distFactor * Multiplier * powerFactor * strengthFactor * critFactor * shieldFactor - targetstats.ABSOLUTE_SHIELD)

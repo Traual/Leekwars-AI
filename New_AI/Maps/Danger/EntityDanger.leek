@@ -88,7 +88,9 @@ class EntityDangerClass {
 		var hash_value = (OFFSET_BASIS ^ EntityStats.ID)
 
 		var antidoteCdMe = (CHIP_ANTIDOTE in MyStats.COOLDOWNS) ? MyStats.COOLDOWNS[CHIP_ANTIDOTE] : 99
-		var combinedMe = ((MyStats.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((MyStats.RELATIVE_SHIELD & 0x7FFF) << 15) | antidoteCdMe
+		// Bit 50 = type de la cible (poireau/summon) : getItemDanger filtre les effets par
+		// leurs masques NON_SUMMONS/SUMMONS — deux types ne partagent jamais une liste.
+		var combinedMe = ((MyStats.IS_SUMMON ? 1 : 0) << 50) | ((MyStats.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((MyStats.RELATIVE_SHIELD & 0x7FFF) << 15) | antidoteCdMe
 		hash_value = addValueToBinHash(hash_value, combinedMe)
 
 		// Bit 62 = classe de crit du caster (les valeurs d'items en dépendent depuis que

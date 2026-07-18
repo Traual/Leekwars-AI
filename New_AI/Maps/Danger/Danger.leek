@@ -30,7 +30,10 @@ class DangerClass {
 	 * @return [casterId -> dégâts] à la cellule de la cible
 	 */
 	static getEntityDanger(entity_state, state, entity_id, base_hash, thisStatsHashForDanger) {
-		var Hash = addValueToBinHash(OFFSET_BASIS ^ thisStatsHashForDanger, entity_state.CELL)
+		// (id << 10 | cellule) — l'ID est OBLIGATOIRE : CastersInOrder pivote sur la cible,
+		// deux cibles de même camp aux mêmes shields/cellule peuvent avoir un ordre
+		// d'attaquants différent (la chaîne de vulnés en dépend). Pack injectif, cellule 10 bits.
+		var Hash = addValueToBinHash(OFFSET_BASIS ^ thisStatsHashForDanger, (entity_id << 10) | entity_state.CELL)
 		if (Hash in ENTITY_DANGER_CACHE_FOR_OTHERS) return ENTITY_DANGER_CACHE_FOR_OTHERS[Hash]
 		BenchOps.Start("Danger")
 		// Me est skippé comme caster : ma propre menace est explorée par le BFS, jamais
@@ -78,7 +81,9 @@ class DangerClass {
 	 * @return [casterId -> dégâts]
 	 */
 	static get(Cell, State, TargetStats, EnemyWalkCells, ToSkipMap, StatsHashForDanger, CastersInOrder) {
-		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), Cell)
+		// (id << 10 | cellule) : même raison que getEntityDanger — l'ordre des casters (donc
+		// la chaîne de vulnés) dépend de l'IDENTITÉ de la cible, pas que de ses stats.
+		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), (TargetStats.ID << 10) | Cell)
 		if (ThisHash in CELL_DANGER_GET_CACHE) return CELL_DANGER_GET_CACHE[ThisHash]
 		var _final = [: ]   // par caster, pas sommé : le net séquence par ordre de tour
 		var chainTarget = TargetStats
@@ -181,7 +186,11 @@ class DangerClass {
 		var hash_value = (OFFSET_BASIS ^ TmpHash)
 
 		var antidoteCdTar = (CHIP_ANTIDOTE in TargetStats.COOLDOWNS) ? TargetStats.COOLDOWNS[CHIP_ANTIDOTE] : 99
-		var Mycombined = ((TargetStats.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((TargetStats.RELATIVE_SHIELD & 0x7FFF) << 15) | antidoteCdTar
+		// Bit 50 = type de la cible (poireau/summon) : les masques NON_SUMMONS/SUMMONS
+		// changent les effets applicables — l'ID reste HORS clé exprès, deux cibles de même
+		// type et mêmes shields partagent leur combo (LIFE lue seulement > 0, SIDE toujours
+		// ennemi du caster dans cette machinerie : constants, pas des inputs).
+		var Mycombined = ((TargetStats.IS_SUMMON ? 1 : 0) << 50) | ((TargetStats.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((TargetStats.RELATIVE_SHIELD & 0x7FFF) << 15) | antidoteCdTar
 		hash_value = addValueToBinHash(hash_value, Mycombined)
 
 		// TOTAL_TP : potentiel max du prochain tour, comme le contexte de statsHashFor.
@@ -197,18 +206,22 @@ class DangerClass {
 	static getCellDangerClassFromItem(TargetStats, Infos, BaseTp, BaseUses, ItemAoeMap, CasterStats, Item) {
 		var ThisTp = BaseTp - Infos.COST
 		var ThisUses = clone(BaseUses)
-		var ThisItemMyStats = getRoughVulneConsequences(clone(TargetStats, 2), Infos, critFactorOf(CasterStats))
+		var ThisItemMyStats = getRoughVulneConsequences(clone(TargetStats, 2), Infos, critFactorOf(CasterStats), CasterStats)
 		ThisUses[Item]++
 		var DamagesWithThisItemVulne = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, ThisItemMyStats, ThisTp, clone(ThisUses))
 		return new DangerClass(ThisItemMyStats, ThisTp, ThisUses, DamagesWithThisItemVulne)
 	}
 
 	/* Applique les effets de vulné/debuff d'un item aux shields de la cible (clonée en
-	 * amont), CritFactor compris — les vulnés critent dans le moteur (× criticalPower). */
-	static getRoughVulneConsequences(TargetStats, Infos, CritFactor) {
+	 * amont), CritFactor compris — les vulnés critent dans le moteur (× criticalPower).
+	 * Targetabilité PAR EFFET (le moteur filtre chaque effet, Attack.java) : un effet qui ne
+	 * touche pas ce profil de cible (masques eff[4]) ne modifie pas l'état approximatif. */
+	static getRoughVulneConsequences(TargetStats, Infos, CritFactor, CasterStats) {
 		for (var eff in Infos.EFFECTS) {
 			var EffType = eff[0]
-			if (EffType in MapChange) MapChange[EffType](TargetStats, eff, CritFactor)
+			if (!(EffType in MapChange)) continue
+			if (!ConsequencesClass.isHitable(eff, TargetStats, CasterStats, false)) continue
+			MapChange[EffType](TargetStats, eff, CritFactor)
 		}
 		return TargetStats
 	}
