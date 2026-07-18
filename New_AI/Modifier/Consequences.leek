@@ -670,10 +670,14 @@ class ConsequencesClass {
 	 * avant lifesteal/retour) : Revoked M-Laser -> STRENGTH, Mysterious Electrisor -> shield. */
 	static applyOnDirectDamagePassive(stats, appliedDamage) {
 		if (stats.LIFE <= 0 || appliedDamage <= 0) return
+		// Double arrondi moteur : onDirectDamage reçoit un ENTIER, puis l'effet RAW_* arrondit
+		// le proc — round((value1+jet·value2)·aoe·crit), jet=0/aoe=1/crit=false pour un passif.
+		// 12 dégâts × 4% -> 0 (pas 0.48). Le State garde sa convention flottante par ailleurs.
+		var dmg = round(appliedDamage)
 		if (stats.SPECIAL_WEAPON == WEAPON_REVOKED_M_LASER) {
-			stats.STRENGTH += appliedDamage * (PASSIVE_INFO[WEAPON_REVOKED_M_LASER][EFFECT_DAMAGE_TO_STRENGTH][1] / 100)
+			stats.STRENGTH += round(dmg * PASSIVE_INFO[WEAPON_REVOKED_M_LASER][EFFECT_DAMAGE_TO_STRENGTH][1] / 100)
 		} else if (stats.SPECIAL_WEAPON == WEAPON_MYSTERIOUS_ELECTRISOR) {
-			stats.ABSOLUTE_SHIELD += appliedDamage * (PASSIVE_INFO[WEAPON_MYSTERIOUS_ELECTRISOR][EFFECT_DAMAGE_TO_ABSOLUTE_SHIELD][1] / 100)
+			stats.ABSOLUTE_SHIELD += round(dmg * PASSIVE_INFO[WEAPON_MYSTERIOUS_ELECTRISOR][EFFECT_DAMAGE_TO_ABSOLUTE_SHIELD][1] / 100)
 		}
 	}
 
@@ -684,7 +688,8 @@ class ConsequencesClass {
 	static applyOnNovaDamagePassive(stats, appliedErosion) {
 		if (stats.LIFE <= 0 || appliedErosion <= 0) return
 		if (stats.SPECIAL_WEAPON == WEAPON_UNBRIDLED_GAZOR) {
-			stats.MAGIC += appliedErosion * (PASSIVE_INFO[WEAPON_UNBRIDLED_GAZOR][EFFECT_NOVA_DAMAGE_TO_MAGIC][1] / 100)
+			// Même double arrondi que applyOnDirectDamagePassive : érosion 3 -> 1 magie, 2 -> 0.
+			stats.MAGIC += round(round(appliedErosion) * PASSIVE_INFO[WEAPON_UNBRIDLED_GAZOR][EFFECT_NOVA_DAMAGE_TO_MAGIC][1] / 100)
 		}
 	}
 
