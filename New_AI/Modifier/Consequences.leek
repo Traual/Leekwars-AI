@@ -88,15 +88,25 @@ class ConsequencesClass {
 				break
 			case EFFECT_ATTRACT:
 			case EFFECT_PUSH:
+				// Géométrie moteur (Attack.java:186-198 + Map.getPush/AttractLastAvailableCell) :
+				// l'entité GLISSE vers la cellule VISÉE To, jamais au-delà, stoppée par la
+				// première case indisponible — la VALEUR de l'effet n'intervient pas. To reste
+				// la cellule de CAST (Play.useItem la reçoit telle quelle), seule la destination
+				// SIMULÉE change. STATIC gate en tête comme State.slideEntity.
+				var occupied = [: ]
+				for (var oid: var ostat in State) if (ostat.LIFE > 0) occupied[ostat.CELL] = true
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (targetStats.STATIC) continue
 					var oldCell = targetStats.CELL
-					targetStats.CELL = To
-					// Déplacement subi (State.slideEntity -> onMoved si la cellule change).
-					// Géométrie exacte du push/attract : chantier séparé — on proc sur le
-					// changement de cellule actuellement simulé.
-					if (targetStats.SPECIAL_WEAPON != null) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, To)
+					var newCell = CellClass.slideDestination(oldCell, To, State[Caster].CELL, EffectType == EFFECT_ATTRACT, occupied)
+					if (newCell == oldCell) continue
+					targetStats.CELL = newCell
+					occupied[oldCell] = false
+					occupied[newCell] = true
+					// Déplacement subi RÉEL (State.slideEntity -> onMoved seulement si la
+					// cellule change) : Explorer proc exactement une fois, sur la vraie arrivée.
+					if (targetStats.SPECIAL_WEAPON != null) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, newCell)
 				}
 				break
 			case EFFECT_BOOST_MAX_LIFE:

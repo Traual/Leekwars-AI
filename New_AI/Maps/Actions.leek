@@ -215,6 +215,13 @@ class ActionsClass {
 
 	/* Cas AREA_FIRST_INLINE (attract / push) : vise l'entité, calcule la cellule d'arrivée
 	 * (la plus proche pour un attract, la plus lointaine pour un push). */
+	/*
+	 * Actions push/attract (AREA_FIRST_INLINE) : To est une cellule de VISÉE/direction, PAS
+	 * une cellule d'arrivée — le moteur fait glisser l'entité VERS To et s'arrête au premier
+	 * blocage (CellClass.slideDestination). Push vise le plus loin possible dans le
+	 * prolongement, attract au plus près du caster : les gates de direction moteur sont
+	 * satisfaits par construction.
+	 */
 	static getFirstInlineActions(State, Infos, Item, SortedWalkCells, BaseHash) {
 		var _final = []
 		var LaunchType = Infos.LAUNCHTYPE

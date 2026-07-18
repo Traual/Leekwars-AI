@@ -424,6 +424,44 @@ class CellClass {
 		return TmpDist
 	}
 
+	static signOf(v) {
+		return v > 0 ? 1 : (v < 0 ? -1 : 0)
+	}
+
+	/*
+	 * Destination réelle d'un push/attract — réplique Map.getPush/AttractLastAvailableCell :
+	 * l'entité GLISSE case par case de sa cellule VERS la cellule visée (jamais au-delà),
+	 * stoppée par la première case indisponible (obstacle, entité VIVANTE — les morts ne
+	 * bloquent pas, retirés de la map moteur — ou bord). La VALEUR de l'effet n'existe pas
+	 * dans ce chemin (Attack.java:186-198). Gate de direction : push exige la visée dans le
+	 * PROLONGEMENT caster->entité (signum égaux), attract l'exige CÔTÉ caster (signum
+	 * opposés) — sinon aucun déplacement. occupied = [cellule -> truthy] des vivants.
+	 */
+	static slideDestination(fromCell, aimCell, casterCell, isAttract, occupied) {
+		var ex = CELL_X[fromCell]
+		var ey = CELL_Y[fromCell]
+		var cdx = signOf(ex - CELL_X[casterCell])
+		var cdy = signOf(ey - CELL_Y[casterCell])
+		var dx = signOf(CELL_X[aimCell] - ex)
+		var dy = signOf(CELL_Y[aimCell] - ey)
+		if (isAttract) {
+			if (cdx != -dx || cdy != -dy) return fromCell
+		} else {
+			if (cdx != dx || cdy != dy) return fromCell
+		}
+		var current = fromCell
+		var cx = ex
+		var cy = ey
+		while (current != aimCell) {
+			cx += dx
+			cy += dy
+			var next = getCellFromXY(cx, cy)
+			if (next == null || TMPOBSTACLES[next] || occupied[next]) return current
+			current = next
+		}
+		return current
+	}
+
 	/* LoS STATIQUE : le 3e argument de lineOfSight est la liste des entités IGNORÉES —
 	 * EVERYONE (rafraîchi à chaque Virtualize) les ignore toutes, le cache persistant ne
 	 * dépend donc que des obstacles de la carte. Obstacles dynamiques du State (summons
