@@ -7,8 +7,9 @@
  *     le gradient de danger reste visible même sur une entité condamnée)
  *   - caster allié     -> vitalité D'ABORD (monte le cap ET la vie), puis heal ordinaire,
  *     seulement si life > 0 (un mort n'est pas soigné), plafonné au NOUVEAU total — une
- *     vitalité reçue à pleine vie absorbe donc les dégâts suivants ; profil de cible
- *     choisi par (caster == cible ? SELF : summon/poireau), le tout × HEAL_COEF
+ *     vitalité reçue à pleine vie absorbe donc les dégâts suivants ; profil de cible par
+ *     TYPE de la cible (summon/poireau — jamais SELF : la liste des casters exclut la
+ *     cible), le tout × HEAL_COEF
  * net = max(0, LIFE − life). Le poison reste dans la formule de survie, pas ici.
  *
  * Les autres encaissent à leur cellule courante (ils ne bougent pas pendant mon tour).
@@ -162,14 +163,15 @@ class DeltaClass {
     static netDamage(stat, dangerToT, healMap, State, turnOrder, cell) {
         var life = stat.LIFE
         var totalLife = stat.TOTAL_LIFE
-        var targetId = stat.ID
+        // turnOrder = les casters jouant APRÈS la cible, cible EXCLUE (rotation de
+        // getEntitiesInTurnOrderAfterEntity) -> jamais de self-heal ici, profil par type.
         var allyProfile = stat.IS_SUMMON ? HEAL_PROFILE_ALLY_SUMMON : HEAL_PROFILE_ALLY_LEEK
         for (var caster in turnOrder) {
             if (caster in dangerToT) {
                 life -= DANGER_COEF * dangerToT[caster]
             }
             if (life > 0 && State[caster].SIDE == stat.SIDE && caster in healMap) {
-                var coverage = healMap[caster][(caster == targetId) ? HEAL_PROFILE_SELF : allyProfile]
+                var coverage = healMap[caster][allyProfile]
                 if (cell in coverage) {
                     var parts = coverage[cell]
                     var projectedVitality = HEAL_COEF * parts[1]

@@ -203,14 +203,14 @@ global CAPABILITY_COMBO_CACHE = [: ]
 
 // HEAL MAP — trois couches, miroir de la danger map :
 //  - HEAL_COVERAGE_CACHE : la couverture complète d'un caster, PAR PROFIL de cible
-//    [HEAL_PROFILE_* -> [cell -> [heal, vitalité]]], clé (id, cell, mp, wis, tp) — le fast
-//    path ; l'id porte le type summon/non-summon du caster.
+//    [ALLY_LEEK | ALLY_SUMMON -> [cell -> [heal, vitalité]]] (pas de SELF : le séquenceur
+//    exclut la cible de sa liste de casters), clé (id, cell, mp, wis, tp) — le fast path.
 //  - HEAL_CELL_ITEM_AOE_CACHE : la GÉOMÉTRIE [cell -> [item -> aoeDist]], clé
-//    (id<<20)|(cell<<10)|max(0,mp) — position seule, COMMUNE aux trois profils, un
+//    (id<<20)|(cell<<10)|max(0,mp) — position seule, COMMUNE aux deux profils, un
 //    buff/shackle WIS/TP ne reconstruit plus la géométrie, seulement la couche valeur.
 //  - HEAL_COMBO_CACHE : la VALEUR [heal, vitalité], memoïsée par CONTENU (fold des entrées
-//    [item -> dist] + wis/tp + PROFIL + summon-ness du caster) — deux profils ne partagent
-//    jamais un combo.
+//    [item -> dist] + wis/tp + PROFIL) — deux profils ne partagent jamais un combo, deux
+//    casters de types différents partagent un combo allié identique.
 //    (USES pas dans la clé : tout heal caster a USES = 0 — le moteur les clear au endTurn,
 //    les bulbes virtuels partent à 0, et Me est exclu de la map.)
 // Plus la liste d'items de heal par caster. Tout reset au tour (cooldowns/positions).
