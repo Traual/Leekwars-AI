@@ -213,8 +213,6 @@ class ActionsClass {
 		return _final
 	}
 
-	/* Cas AREA_FIRST_INLINE (attract / push) : vise l'entité, calcule la cellule d'arrivée
-	 * (la plus proche pour un attract, la plus lointaine pour un push). */
 	/*
 	 * Actions push/attract (AREA_FIRST_INLINE) : To est une cellule de VISÉE/direction, PAS
 	 * une cellule d'arrivée — le moteur fait glisser l'entité VERS To et s'arrête au premier

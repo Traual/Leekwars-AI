@@ -18,6 +18,10 @@ class Play {
 			// Portée par la POISON_KEY : les maps de l'ancienne ancre deviennent injoignables.
 			MY_REPLAN_CELL = State[Me].CELL
 			MY_REPLAN_CELL_HASH = mix64(MY_REPLAN_CELL)
+			// Importance recalculée à CHAQUE replan réel (un buff/shackle réellement exécuté
+			// devient visible), puis FIGÉE pendant tout le BFS qui suit — jamais vidée dans
+			// les nœuds ni entre branches. Quelques centaines d'opés, négligeable vs le BFS.
+			IMPORTANCE_BY_ID = [: ]
 			var Action = ActionSuite.getBestAction(State)
 			if (Action == null) break
 			var From = Action.From

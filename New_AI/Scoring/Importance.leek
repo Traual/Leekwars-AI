@@ -24,7 +24,8 @@ include("../includes.leek")
 
 // ============================================================================
 // TUNING — #1 IMPORTANCE.   raw = Σ W[S]·stat[S]·(1 + IMP_CONVEX·stat[S]) ;
-// importance = max(0, min(1, raw/IMP_SCALE)), figée au tour.
+// importance = max(0, min(1, raw/IMP_SCALE)), figée par replan réel (recalculée à chaque
+// planification de Play, stable pendant un BFS).
 //   - SCIENCE au-dessus (valeur d'équipe), autres stats de combat égales, TP >> MP.
 //   - IMP_SCALE : le raw qui vaut importance 1. Monter => tout le monde baisse.
 // ============================================================================
@@ -93,9 +94,11 @@ global CAP_SCALE     = 0.006 // master dial (un buff de main-stat ≈ +10 sur un
 class ImportanceClass {
 
     /*
-     * Importance d'une entité, dans [0,1] — FIGÉE à sa première évaluation du tour (la racine
-     * du BFS score toutes les entités réelles avant toute branche ; un bulbe virtuel se fige
-     * à ses stats de constructeur). Basse pour une entité faible, 1 pour un build max.
+     * Importance d'une entité, dans [0,1] — FIGÉE à sa première évaluation du REPLAN réel
+     * (Play vide IMPORTANCE_BY_ID avant chaque getBestAction : la racine du BFS score les
+     * entités réelles avec leurs stats à jour, puis tout l'arbre sert ces valeurs ; un bulbe
+     * virtuel se fige à ses stats de constructeur). Basse pour une entité faible, 1 pour un
+     * build max.
      */
     static get(stat) {
         var id = stat.ID

@@ -181,10 +181,12 @@ global AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
 // Valeur de survie, clé packée (LIFE, POISON, effPot, danger). Reset au tour.
 global SURVIVAL_CACHE = [: ]
 
-// Importance FIGÉE au tour : [id -> importance], calculée à la racine du BFS avec les stats
-// réelles de début de tour et servie telle quelle dans tout l'arbre. Les changements de stats
-// en branche passent par le canal capability et les vraies maps (danger/heal), jamais par
-// l'importance. Reset au tour (couvre aussi les tours de bulbe — VM partagée).
+// Importance FIGÉE par replan réel : [id -> importance], vidée par Play à CHAQUE replan
+// (un buff/shackle réellement exécuté est visible à la planification suivante) puis servie
+// telle quelle dans TOUT le BFS correspondant. Les changements de stats en branche passent
+// par le canal capability et les vraies maps (danger/heal), jamais par l'importance. Le
+// reset de ReloadCacheNewTurn reste en filet de sécurité (VM du bulbe comprise) — Play
+// réinitialise ensuite à chaque replan.
 global IMPORTANCE_BY_ID = [: ]
 
 // Capability, reset au tour :
