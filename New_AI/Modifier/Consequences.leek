@@ -809,7 +809,7 @@ class ConsequencesClass {
 		// isDead() return). Les autres porteurs ne gagnent rien.
 		if (killer != null && killer.LIFE > 0 && killer.SPECIAL_WEAPON == WEAPON_ENHANCED_LIGHTNINGER) {
 			var killRow = PASSIVE_INFO[WEAPON_ENHANCED_LIGHTNINGER][EFFECT_KILL_TO_TP]
-			// forceStackable : activateOnKillPassiveEffect crée le RAW TP stackable EN DUR (Effect.java:621).
+			// forceStackable : Entity.activateOnKillPassiveEffect crée le RAW TP stackable EN DUR.
 			applyPassiveRawEffect(killer, EFFECT_RAW_BUFF_TP, killRow[1], WEAPON_ENHANCED_LIGHTNINGER, killRow, true)
 		}
 
@@ -839,7 +839,7 @@ class ConsequencesClass {
 	 * critical = false). Applique le RAW aux agrégats ET l'enregistre au ledger — type RAW
 	 * réel (jamais le type événementiel), caster = porteur, item = l'arme, durée = la ligne
 	 * passive. Le flag stackable vient des modifiers de la ligne (le moteur le lit là, SAUF
-	 * onKill qui force TRUE en dur — Effect.java:621, d'où forceStackable) : non-stackable
+	 * Entity.activateOnKillPassiveEffect qui force TRUE en dur, d'où forceStackable) : non-stackable
 	 * -> remplacement moteur sur (type RAW, arme) AVANT application, via une ligne
 	 * synthétique au layout attendu par ReplacementChangeStats.
 	 */

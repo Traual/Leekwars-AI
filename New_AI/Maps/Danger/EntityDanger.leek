@@ -6,7 +6,10 @@
 
 include("../../includes.leek")
 
-class EntityDangerClass { //TODO : Remove Libe From It To Avoid Losing Opés
+// Libération/Debuff reste VOLONTAIREMENT dans la géométrie et les candidats de vulné :
+// elle peut retirer les shields avant le combo de dégâts. Son Damage direct nul l'empêche
+// déjà d'entrer comme attaque brute — ne pas la filtrer pour gratter des opés.
+class EntityDangerClass {
 	Item
 	Aoe
 	Damages

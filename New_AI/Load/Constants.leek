@@ -83,7 +83,6 @@ global EROSION_NO_POISON = 0.05
 global EROSION_POISON = 0.10
 // +10 points d'érosion sur un effet CRITIQUE (Effect.java : erosionRate += 0.10 si crit).
 global EROSION_CRIT = 0.15
-//TODO: Effects like % of Mysterious elec / Revoked M_LASER and Fix Gazor at 20%
 
 // JEU
 
