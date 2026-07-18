@@ -68,12 +68,22 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_ANTIDOTE:
+				// Entity.clearPoisons : retire UNIQUEMENT les lignes EffectPoison — ni
+				// aftereffect, ni HoT. Déroulé PAR LIGNE via removeCastedEffect (source unique :
+				// POISON/POT/JUST_* redescendent exactement, invariant JUST_* == somme des
+				// lignes EFFECT_POISON), puis ledger purgé — plus de second déroulé à la mort
+				// du caster ni au remplacement.
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
-					targetStats.POISON -= targetStats.JUST_POISON
-					targetStats.JUST_POISON = 0
-					targetStats.POISON_OVER_TIME -= targetStats.JUST_POISON_OVER_TIME
-					targetStats.JUST_POISON_OVER_TIME = 0
+					var newEffects = []
+					for (var eff in targetStats.EFFECTS) {
+						if (eff[0] == EFFECT_POISON) {
+							removeCastedEffect(EFFECT_POISON, targetStats, eff[1], eff[3])
+						} else {
+							push(newEffects, eff)
+						}
+					}
+					targetStats.EFFECTS = newEffects
 				}
 				break
 			case EFFECT_ATTRACT:
@@ -440,8 +450,12 @@ class ConsequencesClass {
 			case EFFECT_STEAL_ABSOLUTE_SHIELD:
 				// Moteur : le CASTER gagne un bouclier absolu égal au TOTAL de l'effet PRÉCÉDENT
 				// de l'item (rien n'est retiré à la cible ici — le "vol" vient de l'effet d'avant,
-				// typiquement une vulné absolue).
+				// typiquement une vulné absolue). EffectStealAbsoluteShield vérifié : buff NORMAL
+				// (stats.setStat) -> remplacement + ledger comme les autres shields (les gates
+				// durée/valeur écartent seuls les variantes instantanées).
+				if (!isEffectStackable) ReplacementChangeStats(Item, Effect, CastStats)
 				CastStats.ABSOLUTE_SHIELD += PrevEffectTotal
+				RecordCastedEffect(CastStats, EffectType, PrevEffectTotal, Caster, Effect[3], CAST_IS_CRITICAL, Item)
 				effectTotal = PrevEffectTotal
 				break
 			case EFFECT_STEAL_LIFE:
@@ -936,24 +950,44 @@ class ConsequencesClass {
 		TarStats.TOTAL_MP -= (TarStats.TOTAL_MP - TarStats.TO_SAVE_TOTAL_MP) * InverseDebuffPower
 		TarStats.TP -= (TarStats.TOTAL_TP - TarStats.TO_SAVE_TOTAL_TP) * InverseDebuffPower
 		TarStats.TOTAL_TP -= (TarStats.TOTAL_TP - TarStats.TO_SAVE_TOTAL_TP) * InverseDebuffPower
+
+		// Symétrie ledger <-> agrégats : chaque ligne est réduite comme le moteur
+		// (Effect.reduce : value·(1−p), la ligne SUBSISTE même à 0 — vérifié, reduce ne
+		// supprime jamais). La réduction par ligne des shields ET des vulnés équivaut au ×p
+		// du net agrégé (distributivité). RAW_BUFF_POWER exclu — le calcul ci-dessus ne
+		// réduit pas POWER. Lignes NEUVES (jamais de eff[1] muté en place — partagé avec les
+		// parents). Le résidu MODIFIER_IRREDUCTIBLE documenté plus haut vaut aussi ici.
+		var newEffects = []
+		for (var eff in TarStats.EFFECTS) {
+			if (eff[0] == EFFECT_RAW_BUFF_POWER) {
+				push(newEffects, eff)
+			} else {
+				push(newEffects, [eff[0], eff[1] * DebuffPower, eff[2], eff[3], eff[4], eff[5]])
+			}
+		}
+		TarStats.EFFECTS = newEffects
 	}
 
+	/*
+	 * Manumission/Rémission — Entity.removeShackles : retire TOUTES les lignes des six
+	 * familles de shackles. Déroulé PAR LIGNE via removeCastedEffect (stat restaurée ET
+	 * compteur TO_SAVE_SHACKLE_* redescendu — l'invariant compteur == somme des lignes
+	 * tient de l'unfold au debuff), puis ledger purgé : la mort ultérieure du casteur des
+	 * shackles ne restaure plus une seconde fois. L'ancienne restauration globale par
+	 * compteurs est REMPLACÉE (sinon double restauration).
+	 */
 	static getEntityRemoveShacklesConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
-		TarStats.AGILITY += TarStats.TO_SAVE_SHACKLE_AGILITY
-		TarStats.MAGIC += TarStats.TO_SAVE_SHACKLE_MAGIC
-		TarStats.MP += TarStats.TO_SAVE_SHACKLE_TOTAL_MP
-		TarStats.TOTAL_MP += TarStats.TO_SAVE_SHACKLE_TOTAL_MP
-		TarStats.STRENGTH += TarStats.TO_SAVE_SHACKLE_STRENGTH
-		TarStats.TP += TarStats.TO_SAVE_SHACKLE_TOTAL_TP
-		TarStats.TOTAL_TP += TarStats.TO_SAVE_SHACKLE_TOTAL_TP
-		TarStats.WISDOM += TarStats.TO_SAVE_SHACKLE_WISDOM
-
-		TarStats.TO_SAVE_SHACKLE_AGILITY = 0
-		TarStats.TO_SAVE_SHACKLE_MAGIC = 0
-		TarStats.TO_SAVE_SHACKLE_TOTAL_MP = 0
-		TarStats.TO_SAVE_SHACKLE_STRENGTH = 0
-		TarStats.TO_SAVE_SHACKLE_TOTAL_TP = 0
-		TarStats.TO_SAVE_SHACKLE_WISDOM = 0
+		var newEffects = []
+		for (var eff in TarStats.EFFECTS) {
+			var t = eff[0]
+			if (t == EFFECT_SHACKLE_AGILITY || t == EFFECT_SHACKLE_MAGIC || t == EFFECT_SHACKLE_MP
+				|| t == EFFECT_SHACKLE_STRENGTH || t == EFFECT_SHACKLE_TP || t == EFFECT_SHACKLE_WISDOM) {
+				removeCastedEffect(t, TarStats, eff[1], eff[3])
+			} else {
+				push(newEffects, eff)
+			}
+		}
+		TarStats.EFFECTS = newEffects
 	}
 
 	static getEntityLifeDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, clonedIds) {

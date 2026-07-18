@@ -206,6 +206,10 @@ class EntityStateClass extends EntityClass {
 		for (var eff in Effects) {
 			switch (eff[0]) {
 				case EFFECT_POISON:
+				// Aftereffect actif au début du replan : ses ticks futurs comptent comme un
+				// poison (la sim de branche fait pareil), mais PAS dans JUST_* — le moteur
+				// (clearPoisons) ne le retire pas à l'antidote.
+				case EFFECT_AFTEREFFECT:
 					Poisons += eff[1]
 					break
 				case EFFECT_HEAL:
@@ -222,6 +226,7 @@ class EntityStateClass extends EntityClass {
 		for (var eff in Effects) {
 			switch (eff[0]) {
 				case EFFECT_POISON:
+				case EFFECT_AFTEREFFECT:   // ticks futurs (voir getPoisons), hors JUST_*
 					Poisons += eff[1] * eff[3]
 					break
 				case EFFECT_HEAL:
