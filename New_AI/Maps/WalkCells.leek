@@ -135,8 +135,16 @@ class WalkCellsClass {
 		return r
 	}
 
+	/* Jump FUTUR d'une entité non-Me (potentiel de déplacement à son prochain tour) : ses TP
+	 * seront rechargés -> TOTAL_TP, cooldown <= 1 (il aura tourné d'ici là). Ne pas confondre
+	 * avec canJump (TP réellement restants), qui reste le filtre du BFS de Me. */
+	static canJumpNextTurn(stats) {
+		if (!(CHIP_JUMP in stats.COOLDOWNS)) return false
+		return stats.COOLDOWNS[CHIP_JUMP] <= 1 && stats.TOTAL_TP >= ITEMINFO[CHIP_JUMP].COST
+	}
+
 	static getMaxWalkOrJumpNoEntitiesFull(stats) {
-		return canJump(stats) ? getJumpNoEntitiesFull(stats) : getWalkNoEntitiesFull(stats)
+		return canJumpNextTurn(stats) ? getJumpNoEntitiesFull(stats) : getWalkNoEntitiesFull(stats)
 	}
 
 	// ============================================================================

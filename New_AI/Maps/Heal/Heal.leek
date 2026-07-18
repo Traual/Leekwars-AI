@@ -216,7 +216,9 @@ class HealClass {
         var wisdomFactor = max(0, 1 + casterStats.WISDOM / 100)   // le moteur floor le SOIN, pas la stat : WIS -50 soigne 50%, <= -100 soigne 0
         var _final = 0
         for (var eff in ITEMINFO[item].EFFECTS) {
-            if (eff[0] == EFFECT_HEAL && eff[3] == 0) {           // heal instantané seulement (durée 0)
+            // Heal instantané EXTERNE seulement : durée 0 et pas ON_CASTER (Vampirization
+            // soigne son caster, pas la cible -> hors heal map ; même filtre qu'isHealItem).
+            if (eff[0] == EFFECT_HEAL && eff[3] == 0 && !(eff[5] & EFFECT_MODIFIER_ON_CASTER)) {
                 _final += eff[1] * distFactor * wisdomFactor      // eff[1] = roll MIN (pessimiste)
             }
         }
@@ -241,7 +243,8 @@ class HealClass {
 
     static isHealItem(Infos) {
         for (var eff in Infos.EFFECTS) {
-            if (eff[0] == EFFECT_HEAL && eff[3] == 0) return true
+            // Même filtre que getItemHeal : un soin ON_CASTER n'est pas un heal externe.
+            if (eff[0] == EFFECT_HEAL && eff[3] == 0 && !(eff[5] & EFFECT_MODIFIER_ON_CASTER)) return true
         }
         return false
     }

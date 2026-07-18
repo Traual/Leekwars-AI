@@ -90,7 +90,6 @@ class GravityClass {
             var m = getMagic(eff[2])   // caster D'ORIGINE, stats ACTUELLES (mort -> null -> 0)
             var p = getPower(eff[2])
             var value = COVID_BASE * (1 + max(0, m == null ? 0 : m) / 100) * (1 + max(0, p == null ? 0 : p) / 100) * (eff[4] ? CRITICAL_FACTOR : 1)
-            debug("[COVID] value=" + value + " range=" + COVID_RANGE + " | raw effect=" + eff)   // TEMP validation (layout getEffects + valeurs) — à retirer après un combat covidé
             return value
         }
         return 0
