@@ -201,13 +201,15 @@ global CAPABILITY_ITEMS_BY_ID = [: ]
 global CAPABILITY_COMBO_CACHE = [: ]
 
 // HEAL MAP — trois couches, miroir de la danger map :
-//  - HEAL_COVERAGE_CACHE : la couverture complète d'un caster [cell -> heal],
-//    clé (id, cell, mp, wis, tp) — le fast path.
+//  - HEAL_COVERAGE_CACHE : la couverture complète d'un caster, PAR PROFIL de cible
+//    [HEAL_PROFILE_* -> [cell -> [heal, vitalité]]], clé (id, cell, mp, wis, tp) — le fast
+//    path ; l'id porte le type summon/non-summon du caster.
 //  - HEAL_CELL_ITEM_AOE_CACHE : la GÉOMÉTRIE [cell -> [item -> aoeDist]], clé
-//    (id<<20)|(cell<<10)|max(0,mp) — position seule, un buff/shackle WIS/TP ne reconstruit
-//    plus la géométrie (le gros d'un build froid), seulement la couche valeur.
-//  - HEAL_COMBO_CACHE : la VALEUR, memoïsée par CONTENU (fold des entrées [item -> dist]
-//    + wis/tp) — ~350 cellules mais ~10 contenus distincts, partagés entre casters.
+//    (id<<20)|(cell<<10)|max(0,mp) — position seule, COMMUNE aux trois profils, un
+//    buff/shackle WIS/TP ne reconstruit plus la géométrie, seulement la couche valeur.
+//  - HEAL_COMBO_CACHE : la VALEUR [heal, vitalité], memoïsée par CONTENU (fold des entrées
+//    [item -> dist] + wis/tp + PROFIL + summon-ness du caster) — deux profils ne partagent
+//    jamais un combo.
 //    (USES pas dans la clé : tout heal caster a USES = 0 — le moteur les clear au endTurn,
 //    les bulbes virtuels partent à 0, et Me est exclu de la map.)
 // Plus la liste d'items de heal par caster. Tout reset au tour (cooldowns/positions).
@@ -220,9 +222,9 @@ global HEAL_ENTITY_INVENTORY = [: ]
 // Une entité intouchée saute danger + heal + séquençage. Reset au tour.
 global NETDAMAGE_CACHE = [: ]
 
-// Heal map externe [casterId -> couverture] (healers des DEUX camps), clé = fold COMBINÉ des
-// fingerprints de healers. Renvoyée PAR RÉFÉRENCE (read-only en aval). Le split par side du
-// même fold sale NETDAMAGE_CACHE — porté sur les nœuds (HFP_BY_SIDE). Reset au tour.
+// Heal map externe [casterId -> couverture par profil] (healers des DEUX camps), clé = fold
+// COMBINÉ des fingerprints de healers. Renvoyée PAR RÉFÉRENCE (read-only en aval). Le split
+// par side du même fold sale NETDAMAGE_CACHE — porté sur les nœuds (HFP_BY_SIDE). Reset au tour.
 global HEAL_MAP_CACHE = [: ]
 
 // [side -> STR/(STR+MAG) de l'équipe adverse] pour le bonus damage-return — figé au tour,

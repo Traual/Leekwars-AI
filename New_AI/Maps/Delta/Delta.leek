@@ -5,8 +5,10 @@
  * Par entité, on déroule les casters dans l'ordre de jeu sur une vie courante :
  *   - caster adverse   -> life -= DANGER_COEF · danger   (PAS de plancher : l'overkill compte,
  *     le gradient de danger reste visible même sur une entité condamnée)
- *   - caster allié     -> life += HEAL_COEF · heal, seulement si life > 0 (un mort n'est pas
- *     soigné), plafonné à TOTAL_LIFE (l'overheal est perdu)
+ *   - caster allié     -> vitalité D'ABORD (monte le cap ET la vie), puis heal ordinaire,
+ *     seulement si life > 0 (un mort n'est pas soigné), plafonné au NOUVEAU total — une
+ *     vitalité reçue à pleine vie absorbe donc les dégâts suivants ; profil de cible
+ *     choisi par (caster == cible ? SELF : summon/poireau), le tout × HEAL_COEF
  * net = max(0, LIFE − life). Le poison reste dans la formule de survie, pas ici.
  *
  * Les autres encaissent à leur cellule courante (ils ne bougent pas pendant mon tour).
@@ -148,18 +150,29 @@ class DeltaClass {
 
     /*
      * Net d'une entité sur 1 round À `cell` : le danger continue de rouler (l'overkill
-     * compte), le heal ne s'applique que vivante, plafonné à TOTAL_LIFE.
+     * compte), le heal ne s'applique que vivante. Vitalité AVANT heal : le cap local monte
+     * d'abord (et la vie avec), puis le heal ordinaire est plafonné au NOUVEAU total —
+     * une vitalité à pleine vie reste utile contre les dégâts suivants.
      */
     static netDamage(stat, dangerToT, healMap, State, turnOrder, cell) {
         var life = stat.LIFE
         var totalLife = stat.TOTAL_LIFE
+        var targetId = stat.ID
+        var allyProfile = stat.IS_SUMMON ? HEAL_PROFILE_ALLY_SUMMON : HEAL_PROFILE_ALLY_LEEK
         for (var caster in turnOrder) {
             if (caster in dangerToT) {
                 life -= DANGER_COEF * dangerToT[caster]
             }
-            if (life > 0 && State[caster].SIDE == stat.SIDE && caster in healMap && cell in healMap[caster]) {
-                life += HEAL_COEF * healMap[caster][cell]
-                if (life > totalLife) life = totalLife
+            if (life > 0 && State[caster].SIDE == stat.SIDE && caster in healMap) {
+                var coverage = healMap[caster][(caster == targetId) ? HEAL_PROFILE_SELF : allyProfile]
+                if (cell in coverage) {
+                    var parts = coverage[cell]
+                    var projectedVitality = HEAL_COEF * parts[1]
+                    totalLife += projectedVitality
+                    life += projectedVitality
+                    life += HEAL_COEF * parts[0]
+                    if (life > totalLife) life = totalLife
+                }
             }
         }
         return max(0, stat.LIFE - life)

@@ -2,24 +2,35 @@
  * Heal map : le symétrique de la danger map, pour le soin. Les healers des DEUX camps sont
  * modélisés (un heal ennemi amortit ma pression de kill sur sa cible).
  *
- *   getHealMap(State) -> [casterId -> [cell -> heal]]
+ *   getHealMap(State) -> [casterId -> [profil -> [cell -> [heal, vitalité]]]]
  *
  * Pour chaque caster vivant qui peut soigner (SAUF Me : mes heals sont le travail du BFS),
- * sa "couverture" : le soin INSTANTANÉ qu'il peut poser sur une cible de son camp à chaque
- * cellule, déplacement + cast compris. Gardée par caster (pas sommée) pour que le net puisse
- * séquencer soins et dégâts par ordre de tour.
+ * sa "couverture" : ce qu'il peut poser sur une cible de son camp à chaque cellule,
+ * déplacement + cast compris. Gardée par caster (pas sommée) pour que le net puisse
+ * séquencer soins et dégâts par ordre de tour. La GÉOMÉTRIE est commune ; la VALEUR dépend
+ * du PROFIL de cible (les masques moteur eff[4] d'Armoring/Loam/Fertilizer distinguent
+ * caster / poireau / summon — jamais d'id d'item en dur) et porte DEUX composantes :
+ * heal instantané externe + vitalité (gain de LIFE ET de TOTAL_LIFE).
  *
  * Plus simple que le danger :
- *  - EFFECT_HEAL durée 0 uniquement (les heals over time sont des "poisons négatifs",
- *    traités dans Consequences)
+ *  - EFFECT_HEAL durée 0 (les heals over time sont des "poisons négatifs", Consequences)
+ *    + EFFECT_BOOST_MAX_LIFE ; jamais d'effet ON_CASTER (Vampirization reste exclue)
  *  - pas de shields, pas de chaîne de vulnés
  *  - PESSIMISTE : roll MIN (eff[1]) ; valeur = eff[1] · max(0, 1 + WIS/100) · (1 − 0.2·aoeDist)
- *  - combo = glouton heal/TP dans TOTAL_TP + MAX_USES (aucune dépendance à la cible)
+ *  - combo = glouton (heal+vitalité)/TP dans TOTAL_TP + MAX_USES, composantes accumulées
+ *    séparément
  *
- * Potentiel BRUT : le cap de vie manquante et le séquençage vivent dans DeltaClass.netDamage.
+ * Potentiel BRUT : cap de vie manquante, hausse du cap par la vitalité et séquençage vivent
+ * dans DeltaClass.netDamage.
  */
 
 include("../../includes.leek")
+
+// Profils de cible de la couverture : même géométrie, valeur par TYPE de cible.
+// SELF = le caster lui-même (exige le bit EFFECT_TARGET_CASTER + son type réel).
+global HEAL_PROFILE_SELF = 0
+global HEAL_PROFILE_ALLY_LEEK = 1
+global HEAL_PROFILE_ALLY_SUMMON = 2
 
 class HealClass {
 
@@ -113,11 +124,12 @@ class HealClass {
     }
 
     /*
-     * [cell -> heal] : le soin instantané que ce caster peut poser sur chaque cellule.
-     * Clé (id, cell, mp, wis, tp). En dessous, split géométrie / valeur (miroir de la danger
-     * map) : la GÉOMÉTRIE (quelles cellules chaque item atteint — le gros d'un build froid)
-     * ne dépend que de (id, cell, mp) et se cache à part, un buff/shackle WIS ou TP ne
-     * reconstruit que la couche combo.
+     * [profil -> [cell -> [heal, vitalité]]] : ce que ce caster peut poser sur chaque
+     * cellule, par profil de cible. Clé (id, cell, mp, wis, tp) — l'id porte le type
+     * summon/non-summon du caster. En dessous, split géométrie / valeur (miroir de la
+     * danger map) : la GÉOMÉTRIE (quelles cellules chaque item atteint — le gros d'un build
+     * froid) ne dépend que de (id, cell, mp), est COMMUNE aux trois profils et se cache à
+     * part ; un buff/shackle WIS ou TP ne reconstruit que la couche combo.
      */
     static getCasterCoverage(casterStats) {
         // Crit binaire asymétrique (Constants) : healer ENNEMI craint critique dès
@@ -142,8 +154,16 @@ class HealClass {
         }
 
         var _final = [: ]
+        _final[HEAL_PROFILE_SELF] = [: ]
+        _final[HEAL_PROFILE_ALLY_LEEK] = [: ]
+        _final[HEAL_PROFILE_ALLY_SUMMON] = [: ]
         for (var cell: var itemAoeMap in mapCellItemAoe) {
-            _final[cell] = comboAtCell(itemAoeMap, casterStats) * critFactor
+            for (var profile = HEAL_PROFILE_SELF; profile <= HEAL_PROFILE_ALLY_SUMMON; profile++) {
+                var combo = comboAtCell(itemAoeMap, casterStats, profile)
+                if (combo[0] > 0 || combo[1] > 0) {
+                    _final[profile][cell] = [combo[0] * critFactor, combo[1] * critFactor]
+                }
+            }
         }
         HEAL_COVERAGE_CACHE[key] = _final
         return _final
@@ -168,61 +188,90 @@ class HealClass {
     }
 
     /*
-     * Combo de heal glouton sur une cellule : empile les meilleurs items heal/TP dans
-     * TOTAL_TP + MAX_USES. Memoïsé par CONTENU : fonction pure des entrées [item -> dist]
-     * de la cellule + (WIS, TOTAL_TP) du caster — ~350 cellules mais ~10 contenus distincts,
-     * partagés entre casters. USES volontairement HORS clé : tout heal caster a USES = 0.
-     * Le fold de contenu est dépendant de l'ordre d'itération : deux maps de même contenu
-     * construites dans des ordres différents FRAGMENTENT seulement, jamais de collision.
+     * Combo de heal glouton sur une cellule pour UN profil : empile les meilleurs items
+     * (heal+vitalité)/TP dans TOTAL_TP + MAX_USES, en accumulant les DEUX composantes
+     * séparément -> [heal, vitalité]. Memoïsé par CONTENU : fonction pure des entrées
+     * [item -> dist] de la cellule + (WIS, TOTAL_TP, PROFIL, summon-ness du caster) —
+     * ~350 cellules mais ~10 contenus distincts, partagés entre casters ; deux profils ne
+     * partagent JAMAIS un combo (profil dans la clé), et SELF distingue caster summon/
+     * non-summon (les masques moteur en dépendent). USES volontairement HORS clé : tout
+     * heal caster a USES = 0. Le fold de contenu est dépendant de l'ordre d'itération :
+     * deux maps de même contenu construites dans des ordres différents FRAGMENTENT
+     * seulement, jamais de collision.
      */
-    static comboAtCell(itemAoeMap, casterStats) {
-        var comboKey = addValueToBinHash(OFFSET_BASIS ^ DangerClass.getHashFromItemAoeMap(itemAoeMap), (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
+    static comboAtCell(itemAoeMap, casterStats, profile) {
+        var comboKey = addValueToBinHash(OFFSET_BASIS ^ DangerClass.getHashFromItemAoeMap(itemAoeMap),
+            (profile << 35) | ((casterStats.IS_SUMMON ? 1 : 0) << 34) | (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
         if (comboKey in HEAL_COMBO_CACHE) return HEAL_COMBO_CACHE[comboKey]
 
         var items = []
         for (var item: var aoeDist in itemAoeMap) {
-            var heal = getItemHeal(item, casterStats, aoeDist)
-            if (heal <= 0) continue
-            var cost = ITEMINFO[item].COST
-            push(items, [item, heal, cost])
+            var parts = getItemHealParts(item, casterStats, aoeDist, profile)
+            var gain = parts[0] + parts[1]
+            if (gain <= 0) continue
+            push(items, [item, parts[0], parts[1], gain, ITEMINFO[item].COST])
         }
         if (count(items) == 0) {
-            HEAL_COMBO_CACHE[comboKey] = 0
-            return 0
+            var zero = [0, 0]
+            HEAL_COMBO_CACHE[comboKey] = zero
+            return zero
         }
-        items = arraySort(items, function(a, b) { return (b[1] / b[2]) - (a[1] / a[2]) })  // heal/TP desc
+        items = arraySort(items, function(a, b) { return (b[3] / b[4]) - (a[3] / a[4]) })  // (heal+vitalité)/TP desc
 
         var remainingTp = casterStats.TOTAL_TP
         var uses = clone(casterStats.USES)
-        var total = 0
+        var totalHeal = 0
+        var totalVitality = 0
         for (var it in items) {
             var item = it[0]
-            var heal = it[1]
-            var cost = it[2]
+            var cost = it[4]
             var maxUses = ITEMINFO[item].MAX_USES
             while (remainingTp >= cost && uses[item] < maxUses) {
-                total += heal
+                totalHeal += it[1]
+                totalVitality += it[2]
                 remainingTp -= cost
                 uses[item]++
             }
         }
-        HEAL_COMBO_CACHE[comboKey] = total
-        return total
+        var res = [totalHeal, totalVitality]
+        HEAL_COMBO_CACHE[comboKey] = res
+        return res
     }
 
-    /* Soin instantané d'un item à une distance d'AoE : roll MIN, scalé sagesse, sans shields. */
-    static getItemHeal(item, casterStats, distance) {
+    /*
+     * Un effet peut-il toucher ce PROFIL de cible ? Miroir des règles d'isHitable (masque
+     * eff[4]) : SELF exige le bit CASTER + le bit ALLIES + le bit summon/non-summon du type
+     * RÉEL du caster ; les profils alliés (cible != caster) exigent ALLIES + leur type.
+     * Armoring/Loam/Fertilizer fonctionnent par leurs données moteur, aucune exception d'id.
+     */
+    static effectMatchesProfile(eff, casterStats, profile) {
+        var mask = eff[4]
+        if (profile == HEAL_PROFILE_SELF) {
+            if (!(mask & EFFECT_TARGET_CASTER)) return false
+            if (!(mask & EFFECT_TARGET_ALLIES)) return false
+            return casterStats.IS_SUMMON ? (mask & EFFECT_TARGET_SUMMONS) : (mask & EFFECT_TARGET_NON_SUMMONS)
+        }
+        if (!(mask & EFFECT_TARGET_ALLIES)) return false
+        return (profile == HEAL_PROFILE_ALLY_SUMMON) ? (mask & EFFECT_TARGET_SUMMONS) : (mask & EFFECT_TARGET_NON_SUMMONS)
+    }
+
+    /* [heal, vitalité] d'un item à une distance d'AoE pour un profil : roll MIN, scalé
+     * sagesse, falloff d'AoE — jamais d'effet ON_CASTER (Vampirization & co). */
+    static getItemHealParts(item, casterStats, distance, profile) {
         var distFactor = 1 - distance * 0.2
         var wisdomFactor = max(0, 1 + casterStats.WISDOM / 100)   // le moteur floor le SOIN, pas la stat : WIS -50 soigne 50%, <= -100 soigne 0
-        var _final = 0
+        var heal = 0
+        var vitality = 0
         for (var eff in ITEMINFO[item].EFFECTS) {
-            // Heal instantané EXTERNE seulement : durée 0 et pas ON_CASTER (Vampirization
-            // soigne son caster, pas la cible -> hors heal map ; même filtre qu'isHealItem).
-            if (eff[0] == EFFECT_HEAL && eff[3] == 0 && !(eff[5] & EFFECT_MODIFIER_ON_CASTER)) {
-                _final += eff[1] * distFactor * wisdomFactor      // eff[1] = roll MIN (pessimiste)
+            if (eff[5] & EFFECT_MODIFIER_ON_CASTER) continue
+            if (!effectMatchesProfile(eff, casterStats, profile)) continue
+            if (eff[0] == EFFECT_HEAL && eff[3] == 0) {
+                heal += eff[1] * distFactor * wisdomFactor        // eff[1] = roll MIN (pessimiste)
+            } else if (eff[0] == EFFECT_BOOST_MAX_LIFE) {
+                vitality += eff[1] * distFactor * wisdomFactor
             }
         }
-        return _final
+        return [heal, vitality]
     }
 
     /* Items de heal castables du caster (cooldown <= 1), cachés par id pour le tour. */
@@ -243,8 +292,12 @@ class HealClass {
 
     static isHealItem(Infos) {
         for (var eff in Infos.EFFECTS) {
-            // Même filtre que getItemHeal : un soin ON_CASTER n'est pas un heal externe.
-            if (eff[0] == EFFECT_HEAL && eff[3] == 0 && !(eff[5] & EFFECT_MODIFIER_ON_CASTER)) return true
+            // Même filtre que getItemHealParts : un effet ON_CASTER n'est pas un heal
+            // externe (Vampirization) ; heal instantané OU vitalité qualifient — un porteur
+            // vitalité-only entre dans le fingerprint des healers.
+            if (eff[5] & EFFECT_MODIFIER_ON_CASTER) continue
+            if (eff[0] == EFFECT_HEAL && eff[3] == 0) return true
+            if (eff[0] == EFFECT_BOOST_MAX_LIFE) return true
         }
         return false
     }

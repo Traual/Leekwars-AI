@@ -22,11 +22,6 @@ include("includes.leek")
 // préparatoire où une entité non-Me dépense TP et cooldowns pour se buffer ou buffer les
 // siens. Choix assumé (simplicité + ne pas consommer fictivement les cooldowns) ; un vrai
 // modèle devra séparer la valeur de support de la consommation réelle des cooldowns.
-// VITALITÉ DANS LA HEAL MAP : EFFECT_BOOST_MAX_LIFE absent VOLONTAIREMENT. Ne pas l'ajouter
-// naïvement à isHealItem/getItemHeal : Loam/Fertilizer valent différemment selon la CIBLE
-// (caster / vrai poireau / summon) alors que la coverage est [caster -> cellule -> valeur]
-// sans classe de cible. Prérequis du vrai chantier : une dimension de type-de-cible dans la
-// couverture et ses clés.
 // PLASMA : EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS évalué avec multiplicateur 1 dans
 // EntityDanger — le vrai facteur dépend de la cellule visée et du nombre d'entités dans
 // l'AoE. À reprendre après l'élagage, avec mesure du coût.
