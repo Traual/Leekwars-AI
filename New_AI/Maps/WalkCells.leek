@@ -235,15 +235,26 @@ class WalkCellsClass {
 	// Helpers d'exécution (une fois par action réelle, à l'émission)
 	// ============================================================================
 
-	/* Se déplace réellement vers `cell`, en jouant les jump/télépos nécessaires. */
+	/*
+	 * Se déplace réellement vers `cell`, en jouant les jump/télépos nécessaires.
+	 * Renvoie [succès, phase, code moteur] et CONTRÔLE chaque étape : moveTowardCell renvoie
+	 * les MP dépensés (0 n'est PAS un échec en soi — déjà sur place), la vérité est donc
+	 * getCell() ; une chip ne réussit que si son résultat est strictement positif. Au
+	 * premier échec, aucune étape suivante n'est exécutée.
+	 */
 	static MoveTo(cell, State, BaseHash) {
 		var layers = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 		var ActionsToGet = getActionsToGet(State[Me].CELL, cell, layers.TELEPORTATION_AND_JUMP, layers.TELEPORTATION, layers.JUMP, layers.WALK)
 		for (var Action in ActionsToGet) {
 			moveTowardCell(Action.From)
-			useChipOnCell(Action.Item, Action.To)
+			if (getCell() != Action.From) return [false, "move_step", getCell()]
+			var r = useChipOnCell(Action.Item, Action.To)
+			if (r <= 0) return [false, "chip", r]
+			if (getCell() != Action.To) return [false, "chip_land", getCell()]
 		}
 		moveTowardCell(cell)
+		if (getCell() != cell) return [false, "final_move", getCell()]
+		return [true, null, 0]
 	}
 
 	static getActionsToGet(from, to, AccesMpTeleportationAndJump, AccesMpTeleportation, AccesMpJump, AccesMpWalk) {

@@ -11,6 +11,11 @@ class Play {
 		// Pas de ReloadCacheNewTurn ici : Main l'exécute AVANT Preload.InitStateClass, et cet
 		// ordre est porteur — InitStateClass peuple des globals de tour entier (inventaires via
 		// TARGETABLECACHE) qui ne doivent pas dériver d'entrées du tour précédent.
+		// Compteur local au tour des échecs d'exécution RÉELLE, clé descriptive : le PREMIER
+		// échec d'une clé replanifie normalement (debug conservé, auto-guérison si l'état
+		// réel a bougé — cellule/TP/MP/arme dans la clé), le DEUXIÈME échec identique arrête
+		// la boucle d'actions (pas de replans impossibles en boucle) sans toucher au BFS.
+		var failCounts = [: ]
 		while (true) {
 			var State = StateClass.Virtualize()
 			// Ancre de replan : ma vraie cellule actuelle — meilleure estimation de ma cellule
@@ -29,41 +34,72 @@ class Play {
 			var To = Action.To
 			var TmpBaseHash = StateClass.getBaseHash(State)
 			debug("Using : " + ITEMINFO[Item].NAME + " from : " + From + " to : " + To)
-			WalkCellsClass.MoveTo(From, State, TmpBaseHash)
-			executeAction(Action)
+			var moveRes = WalkCellsClass.MoveTo(From, State, TmpBaseHash)
+			// Déplacement raté -> l'item n'est PAS lancé.
+			var res = moveRes[0] ? executeAction(Action) : moveRes
+			if (!res[0]) {
+				var failKey = res[1] + "|" + res[2] + "|" + Item + "|" + From + "|" + To
+					+ "|" + Action.RESURRECT_ID + "|" + getCell() + "|" + getTP() + "|" + getMP() + "|" + getWeapon()
+				var seen = (failKey in failCounts) ? failCounts[failKey] : 0
+				failCounts[failKey] = seen + 1
+				if (seen == 0) {
+					debugE("[FAIL] " + failKey + " -> replan")
+				} else {
+					debugE("[FAIL x2] " + failKey + " -> abandon des actions, placement final")
+					break
+				}
+			}
 		}
 		// Plus rien à jouer : re-capture l'état réel et choisit la cellule de fin de tour.
 		var State = StateClass.Virtualize()
 		var this_Base_Hash = StateClass.getBaseHash(State)
 		var this_Final_Cell = FinalCell.get(State, this_Base_Hash)
-		WalkCellsClass.MoveTo(this_Final_Cell, State, this_Base_Hash)
+		var finalMove = WalkCellsClass.MoveTo(this_Final_Cell, State, this_Base_Hash)
+		// Échec du placement final : seulement loggé — aucune nouvelle boucle ici.
+		if (!finalMove[0]) debugE("[FAIL] MoveTo final " + finalMove[1] + " code " + finalMove[2] + " cell " + getCell() + " -> visait " + this_Final_Cell)
 	}
 
-	/* Exécute l'action quelle qu'elle soit : item classique, summon ou résurrection. */
+	/*
+	 * Exécute l'action (item classique, summon ou résurrection) et renvoie
+	 * [succès, phase, code moteur] : un résultat <= 0 (USE_FAILED = 0 compris) est un ÉCHEC.
+	 */
 	executeAction(Action) {
 		var Item = Action.Item
 		var To = Action.To
 		var ItemEffects = ITEMINFO[Item].EFFECTS
 		if (ItemEffects[0][0] != EFFECT_SUMMON && ItemEffects[0][0] != EFFECT_RESURRECT) {
-			useItem(Item, To)
-		} else {
-			if (count(ItemEffects) > 1) debugW("Summon or Resu and Multiple Effects ?! Outdated play in execute Action")
-			if (ItemEffects[0][0] != EFFECT_RESURRECT) {
-				summon(Item, To, Bulb.AI)
-			} else {
-				// Le MÊME candidat que la planification (payload de l'action) : entre la
-				// décision et le cast, seul Me a bougé, et le choix du mort n'en dépend pas.
-				debugC("Resurrecting entity " + Action.RESURRECT_ID, COLOR_GREEN)
-				resurrect(Action.RESURRECT_ID, To)
-			}
+			return useItem(Item, To)
 		}
+		if (count(ItemEffects) > 1) debugW("Summon or Resu and Multiple Effects ?! Outdated play in execute Action")
+		if (ItemEffects[0][0] != EFFECT_RESURRECT) {
+			var r = summon(Item, To, Bulb.AI)
+			if (r <= 0) return [false, "summon", r]
+			return [true, null, 0]
+		}
+		// Le MÊME candidat que la planification (payload de l'action) : entre la
+		// décision et le cast, seul Me a bougé, et le choix du mort n'en dépend pas.
+		debugC("Resurrecting entity " + Action.RESURRECT_ID, COLOR_GREEN)
+		var r = resurrect(Action.RESURRECT_ID, To)
+		if (r <= 0) return [false, "resurrect", r]
+		return [true, null, 0]
 	}
 
-	/* Utilise l'item (équipe l'arme si besoin), chip ou arme. */
+	/*
+	 * Utilise l'item (équipe l'arme si besoin), chip ou arme, et renvoie
+	 * [succès, phase, code]. Un swap d'arme raté (setWeapon renvoie un booléen)
+	 * n'enchaîne PAS l'attaque.
+	 */
 	useItem(Item, To) {
 		if (ITEMINFO[Item].IS_WEAPON) {
-			if (getWeapon() != Item) setWeapon(Item)
-			useWeaponOnCell(To)
-		} else useChipOnCell(Item, To)
+			if (getWeapon() != Item) {
+				if (!setWeapon(Item)) return [false, "setWeapon", 0]
+			}
+			var r = useWeaponOnCell(To)
+			if (r <= 0) return [false, "useWeapon", r]
+			return [true, null, 0]
+		}
+		var r = useChipOnCell(Item, To)
+		if (r <= 0) return [false, "useChip", r]
+		return [true, null, 0]
 	}
 }
