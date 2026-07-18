@@ -10,7 +10,8 @@
  * toujours ≥ BASE_ALIVE. Le SCORE d'un nœud soustrait en plus CAST_COST[action] (coût
  * d'action porté par le chemin -> le score n'est pas strictement Σ termes).
  *
- * importance est FIGÉE au tour (classement des cibles), capability est le canal LIVE des
+ * importance est FIGÉE pendant un replan/BFS (classement des cibles, rafraîchie par Play à
+ * chaque planification réelle), capability est le canal LIVE des
  * buffs/debuffs + shields idle (Importance.leek), drDeterrence le bonus des porteurs de
  * damage return.
  * sqrt est concave (finir les blessés paie plus par HP) ; g(ttk) est relatif à la vie (une

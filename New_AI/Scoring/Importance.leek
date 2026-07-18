@@ -3,11 +3,12 @@
  *
  *   term(e) = sign · ( importance(e) · survival(e)  +  capability(e) )
  *
- * #1 IMPORTANCE — multiplicateur de rang dans [0,1], FIGÉ au début du tour (memo par id).
+ * #1 IMPORTANCE — multiplicateur de rang dans [0,1], FIGÉ pendant un replan/BFS (memo par
+ *    id, vidé par Play à chaque planification réelle).
  *    Son seul rôle : classer QUI compte (focus/protéger — un bulbe ≈ 1/3 d'un vrai poireau).
- *    Figé => un buff en cours de tour ne le bouge pas d'un point ; les changements de stats
- *    paient par capability et par les vrais canaux (contexte danger, formules de dégâts,
- *    heal map).
+ *    Figé => un buff SIMULÉ en branche ne le bouge pas d'un point (un buff RÉEL est visible
+ *    au replan suivant) ; les changements de stats en branche paient par capability et par
+ *    les vrais canaux (contexte danger, formules de dégâts, heal map).
  *
  * #2 CAPABILITY — le canal LIVE des buffs/debuffs, additif et volontairement PETIT :
  *      capability = CAP_SCALE · Σ_S bucket_S · (1 + max(0,stat_S)/100) · (1 + CAP_MP_FACTOR·mp)
