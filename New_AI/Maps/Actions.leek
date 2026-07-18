@@ -224,7 +224,9 @@ class ActionsClass {
 		var attract = isAttract(Infos)
 
 		for (var e: var stat in State) {
-			if (e == Me) continue
+			// Morts exclus AVANT toute géométrie : cellule null dans l'état réel, ou ancienne
+			// cellule conservée dans un State simulé.
+			if (e == Me || stat.LIFE <= 0) continue
 			var EntityCell = stat.CELL
 			var HittableCellsAreaEntity = LaunchWithLos[LaunchType](EntityCell, MinRange, MaxRange)
 			var from = getClosestSortedWalkCellsToHit(HittableCellsAreaEntity, SortedWalkCells)

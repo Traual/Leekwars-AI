@@ -424,7 +424,10 @@ class CellClass {
 		return TmpDist
 	}
 
-	/* LoS "moyenne" (entités réelles incluses comme obstacles, via le builtin). */
+	/* LoS STATIQUE : le 3e argument de lineOfSight est la liste des entités IGNORÉES —
+	 * EVERYONE (rafraîchi à chaque Virtualize) les ignore toutes, le cache persistant ne
+	 * dépend donc que des obstacles de la carte. Obstacles dynamiques du State (summons
+	 * simulés inclus) : getLosWithBaseHash. */
 	static getLos(cell1, cell2) {
 		// Clé CANONIQUE (min, max) : LOS(A,B) == LOS(B,A) -> une seule entrée sert les deux
 		// sens, la map (persistante tout le combat) est divisée par 2.

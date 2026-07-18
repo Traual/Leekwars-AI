@@ -9,8 +9,12 @@ class StateClass {
 	/* Capture l'état réel de toutes les entités depuis le moteur. */
 	static Virtualize() {
 		BenchOps.Start("StateVirtualize")
+		// EVERYONE rafraîchi ici, à CHAQUE replan réel (un seul appel moteur, réutilisé pour
+		// construire le State) : après une vraie invocation, le nouveau summon entre dans la
+		// liste des ignorés de la LoS statique avant tout nouveau calcul.
+		EVERYONE = getAllies() + getEnemies()
 		var _final = [: ]
-		for (var e in getAllies() + getEnemies()) {
+		for (var e in EVERYONE) {
 			_final[e] = new EntityStateClass(e)
 		}
 		BenchOps.Stop("StateVirtualize")

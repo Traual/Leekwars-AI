@@ -6,8 +6,10 @@ include("../includes.leek")
 
 
 
+// Liste des entités réelles, rafraîchie à CHAQUE StateClass.Virtualize (jamais figée ici :
+// le premier Virtualize précède toute génération d'action). Sert d'ignore-list à la LoS
+// statique de CellClass.getLos.
 global EVERYONE
-EVERYONE = getAllies() + getEnemies()
 
 global Me// = getEntity()
 global BASE_INVENTORY// = getWeapons(Me) + getChips(Me)
