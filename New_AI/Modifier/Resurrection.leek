@@ -1,6 +1,7 @@
 /*
- * Résurrection : choisit quel mort allié relever et applique les conséquences
- * (vie, cellule, ordre de tour) sur l'état de simulation.
+ * Résurrection : applique les conséquences d'un revive (vie, cellule, ordre de tour) sur
+ * l'état de simulation. Le CHOIX du mort vit dans le BFS (resurrectIdOf -> ScoringWichId,
+ * une fois par état évalué) et voyage en payload d'action jusqu'au cast réel.
  */
 
 include("../includes.leek")
@@ -13,10 +14,12 @@ class ResurrectionClass {
 		this.SCORE = score
 	}
 
-	static Update(To, State) {
-		var Resurrect_ID = ScoringWichId(State).ID
+	static Update(To, State, Resurrect_ID, clonedIds) {
 		if (Resurrect_ID == null) return;
-		var revived = State[Resurrect_ID]
+		// Clone-on-write du SEUL candidat (plus aucun préclonage des morts alliés) : il entre
+		// dans clonedIds, le patch incrémental BaseHash/context/HFP voit son passage
+		// mort -> vivant, et le State parent garde son cadavre intact.
+		var revived = StateClass.ensureCloned(State, Resurrect_ID, clonedIds)
 
 		// Le moteur ressuscite PROPRE : die() retire tous les effets SUR le mort (stats de
 		// base, zéro shield/poison/DR). Reset par champs — TO_SAVE_<stat> EST la base vraie.
@@ -86,9 +89,9 @@ class ResurrectionClass {
 	 * Le meilleur mort allié à relever (score = son terme post-revive, voir
 	 * ScoringClass.getResurrectionScore).
 	 * Règle moteur (State.resurrectEntity) : ressusciter un VRAI poireau ignore la limite de
-	 * summons ; ressusciter un summon mort exige une place libre. SOURCE UNIQUE du choix —
-	 * le filtre d'actions, la sim (Update) et le vrai cast (Play) passent tous ici, sinon le
-	 * filtre pourrait autoriser un poireau et la sim relever un bulbe mort différent.
+	 * summons ; ressusciter un summon mort exige une place libre. SOURCE UNIQUE du choix,
+	 * appelée UNE fois par état évalué (BFS.resurrectIdOf) — la sim (Update) et le vrai cast
+	 * (Play) reçoivent l'id en payload d'action, jamais de re-choix divergent.
 	 */
 	static ScoringWichId(State) {
 		var summonSlotFree = StateClass.countLivingSummons(State, State[Me].SIDE) < SUMMON_LIMIT

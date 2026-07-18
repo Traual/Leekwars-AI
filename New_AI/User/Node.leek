@@ -45,20 +45,10 @@ class NodeClass {
 		BenchOps.Start("Node")
 		var Targets = ConsequencesClass.ConsequenceTargets(Item, From, To, State, Me, BaseHash)
 		// clonedIds = l'ensemble exact des entités possiblement mutées : cibles + Me pré-clonés ici,
-		// victimes des cascades de kill clonées-on-write dans getConsequences.
+		// victimes des cascades de kill et ressuscité (payload Act.RESURRECT_ID) clonés-on-write
+		// dans getConsequences.
 		var clonedIds = [: ]
 		var ThisActionStats = StateClass.CloneOnlyTargetsAndMe(Targets, State, clonedIds)
-
-		// Résurrection : les cadavres alliés sont pré-clonés car Update écrit leurs scalaires
-		// (LIFE, TOTAL_LIFE, CELL, TURN_ORDER).
-		if (Item == CHIP_RESURRECTION) {
-			for (var e: var stat in State) {
-				if (stat.LIFE <= 0 && stat.SIDE == State[Me].SIDE && !(e in Targets)) {
-					ThisActionStats[e] = StateClass.cloneEntityForSim(stat, false)
-					clonedIds[e] = true
-				}
-			}
-		}
 
 		// Déplacement : retire les MP de la layer utilisée.
 		ThisActionStats[Me].CELL = From
@@ -73,7 +63,7 @@ class NodeClass {
 		}
 		ThisActionStats[Me].TP -= Cost
 		if (Info.IS_WEAPON) ThisActionStats[Me].WEAPON = Item
-		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash, clonedIds)
+		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash, clonedIds, Act.RESURRECT_ID)
 		ThisActionStats[Me].COOLDOWNS[Item] = Info.COOLDOWN
 		ThisActionStats[Me].USES[Item]++
 		// Cooldowns des items de déplacement si la cellule d'arrivée vient d'une layer jump/télépo.

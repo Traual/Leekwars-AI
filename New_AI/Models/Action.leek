@@ -8,6 +8,10 @@ class ActionClass {
 	Item
 	From
 	To
+	// Payload résurrection : l'id du mort choisi pour CETTE évaluation (BFS.resurrectIdOf).
+	// null par défaut — les actions GÉOMÉTRIQUES de ACTIONS_SUMMON_CACHE le gardent null,
+	// getBaseActions recrée un objet neuf avec l'id (jamais de mutation de l'objet caché).
+	RESURRECT_ID
 	constructor(itemUsed, fromCell, toCell) {
 		this.Item = itemUsed
 		this.From = fromCell

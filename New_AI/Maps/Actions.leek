@@ -109,12 +109,12 @@ class ActionsClass {
 		var livingSummons = StateClass.countLivingSummons(State, State[Me].SIDE)
 		var _final = []
 		for (var item in Inventory) {
-			// Bulbe : une place libre suffit. Résurrection : la règle moteur (vrai poireau OK
-			// même à 8, summon mort seulement si place) vit dans ScoringWichId — l'action
-			// n'est proposée que s'il existe un candidat valide.
-			var castable = (item == CHIP_RESURRECTION)
-				? (ResurrectionClass.ScoringWichId(State).ID != null)
-				: (livingSummons < SUMMON_LIMIT)
+			// Bulbe : une place libre suffit. Résurrection : action GÉOMÉTRIQUE pure, TOUJOURS
+			// générée — le filtre "existe-t-il un candidat ?" vit dans le BFS (resurrectIdOf) :
+			// ce cache est partagé par BaseHash, qui n'encode PAS un summon virtuel MORT
+			// ressuscitable (contributions LIFE-gated), un candidat dépendant du State ici
+			// servirait des listes fausses.
+			var castable = (item == CHIP_RESURRECTION) || (livingSummons < SUMMON_LIMIT)
 			if (castable) {
 				var Infos = ITEMINFO[item]
 				var Act = getSummonAction(Infos.LAUNCHTYPE, MyCell, Infos.MINRANGE, Infos.MAXRANGE, LeekCells, item, State, BaseHash)

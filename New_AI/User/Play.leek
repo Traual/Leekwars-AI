@@ -26,7 +26,7 @@ class Play {
 			var TmpBaseHash = StateClass.getBaseHash(State)
 			debug("Using : " + ITEMINFO[Item].NAME + " from : " + From + " to : " + To)
 			WalkCellsClass.MoveTo(From, State, TmpBaseHash)
-			executeAction(Item, To, State)
+			executeAction(Action)
 		}
 		// Plus rien à jouer : re-capture l'état réel et choisit la cellule de fin de tour.
 		var State = StateClass.Virtualize()
@@ -36,7 +36,9 @@ class Play {
 	}
 
 	/* Exécute l'action quelle qu'elle soit : item classique, summon ou résurrection. */
-	executeAction(Item, To, State) {
+	executeAction(Action) {
+		var Item = Action.Item
+		var To = Action.To
 		var ItemEffects = ITEMINFO[Item].EFFECTS
 		if (ItemEffects[0][0] != EFFECT_SUMMON && ItemEffects[0][0] != EFFECT_RESURRECT) {
 			useItem(Item, To)
@@ -45,9 +47,10 @@ class Play {
 			if (ItemEffects[0][0] != EFFECT_RESURRECT) {
 				summon(Item, To, Bulb.AI)
 			} else {
-				var resuId = ResurrectionClass.ScoringWichId(State).ID
-				debugC("Resurrecting entity " + resuId, COLOR_GREEN)
-				resurrect(resuId, To)
+				// Le MÊME candidat que la planification (payload de l'action) : entre la
+				// décision et le cast, seul Me a bougé, et le choix du mort n'en dépend pas.
+				debugC("Resurrecting entity " + Action.RESURRECT_ID, COLOR_GREEN)
+				resurrect(Action.RESURRECT_ID, To)
 			}
 		}
 	}

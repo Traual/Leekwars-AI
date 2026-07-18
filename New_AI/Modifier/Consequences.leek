@@ -401,7 +401,7 @@ class ConsequencesClass {
 	}
 
 	/* Applique tous les effets de l'item sur l'état (From nécessaire pour les lasers). */
-	static getConsequences(State, Item, From, To, Caster, BaseHash, clonedIds) {
+	static getConsequences(State, Item, From, To, Caster, BaseHash, clonedIds, ResurrectId) {
 		BenchOps.Start("Consequences")
 		var Targets = ConsequenceTargets(Item, From, To, State, Caster, BaseHash)
 		var CastStats = State[Caster]
@@ -430,7 +430,7 @@ class ConsequencesClass {
 					State[Id] = EntityStats
 					break
 				case EFFECT_RESURRECT:
-					ResurrectionClass.Update(To, State)
+					ResurrectionClass.Update(To, State, ResurrectId, clonedIds)
 					break
 			}
 			var TmpTargets = RealConsequenceTargets(Targets, Effect, State, CastStats, Caster)

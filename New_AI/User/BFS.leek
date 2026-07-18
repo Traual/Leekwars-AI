@@ -30,13 +30,15 @@ class ActionSuite {
 		var RootHfp = HealClass.buildHfpBySide(State)
 		var RootTerms = ScoringClass.buildTermsMap(State, MySide, BaseHash, RootContext)
 		var RootPoisonKey = ScoringClass.poisonKeyOf(State, BaseHash)
+		var RootResurrectId = resurrectIdOf(State)
 		var initialScore = ScoringClass.sumTerms(RootTerms)
 
-		// Cache par appel : BaseHash -> liste triée d'entrées [act, delta, node, nodeScore].
+		// Cache par appel : scoredKeyOf(BaseHash, candidat résu) -> liste triée
+		// [act, delta, node, nodeScore].
 		var ScoredCache = [:]
 
-		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, RootTerms, RootPoisonKey)
-		ScoredCache[BaseHash] = rootEntries
+		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, RootTerms, RootPoisonKey, RootResurrectId)
+		ScoredCache[scoredKeyOf(BaseHash, RootResurrectId)] = rootEntries
 		BFS_CHAIN_STEPS = 0
 		debugC("--- " + count(rootEntries) + " base actions ---", COLOR_BLUE)
 
@@ -89,13 +91,17 @@ class ActionSuite {
 		if (MyTp < MINIMUM_COST_ITEM) return null
 
 		var BaseHash = Parent.BASE_HASH
+		// Candidat résu de CET état, calculé une fois AVANT la consultation du cache : la clé
+		// locale le porte, un hit garantit donc des entrées au même RESURRECT_ID.
+		var ResurrectId = resurrectIdOf(State)
+		var CacheKey = scoredKeyOf(BaseHash, ResurrectId)
 
 		var Entries
-		if (BaseHash in ScoredCache) {
-			Entries = ScoredCache[BaseHash]
+		if (CacheKey in ScoredCache) {
+			Entries = ScoredCache[CacheKey]
 		} else {
-			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent.TERMS, Parent.POISON_KEY)
-			ScoredCache[BaseHash] = Entries
+			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent.TERMS, Parent.POISON_KEY, ResurrectId)
+			ScoredCache[CacheKey] = Entries
 
 			// Chemin frais : toutes les entrées sont positives et triées pour cet état.
 			if (count(Entries) == 0) return null
@@ -161,8 +167,8 @@ class ActionSuite {
 	 * sub-epsilon sont injouables partout en aval (plancher, chemin frais, borne du tri),
 	 * les dropper ici libère leur nœud immédiatement. Le code aval s'appuie dessus.
 	 */
-	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTerms, ParentPoisonKey) {
-		var basePairs = getBaseActions(State, BaseHash)   // [ [act, coût], ... ] : le coût du filtre est réutilisé
+	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTerms, ParentPoisonKey, ResurrectId) {
+		var basePairs = getBaseActions(State, BaseHash, ResurrectId)   // [ [act, coût], ... ] : le coût du filtre est réutilisé
 		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 		var Entries = []
 		for (var pair in basePairs) {
@@ -185,7 +191,7 @@ class ActionSuite {
 	 * (item + swap d'arme + jump/télépo) sert au filtre et est transmis tel quel aux nœuds.
 	 * Filtre : cooldown, MAX_USES, coût vs TP restants.
 	 */
-	static getBaseActions(State, BaseHash) {
+	static getBaseActions(State, BaseHash, ResurrectId) {
 		var _final = []
 		var MyStats = State[Me]
 		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
@@ -194,6 +200,15 @@ class ActionSuite {
 		for (var Action in Acts) {
 			var Item = Action.Item
 			if (MyStats.COOLDOWNS[Item] > 0 || MyStats.USES[Item] >= ITEMINFO[Item].MAX_USES) continue
+			// Résurrection : l'action cachée est géométrique (RESURRECT_ID null, objet partagé
+			// entre states de même BaseHash). Sans candidat -> exclue ; sinon un objet NEUF
+			// porte l'id choisi pour cette évaluation (l'objet caché n'est jamais muté).
+			if (Item == CHIP_RESURRECTION) {
+				if (ResurrectId == null) continue
+				var resAct = new ActionClass(Item, Action.From, Action.To)
+				resAct.RESURRECT_ID = ResurrectId
+				Action = resAct
+			}
 
 			var From = Action.From
 			var Info = ITEMINFO[Item]
@@ -209,5 +224,29 @@ class ActionSuite {
 			if (Cost <= MyStats.TP) push(_final, [Action, Cost])
 		}
 		return _final
+	}
+
+	/*
+	 * L'id du meilleur ressuscitable de cet état, ou null si Résurrection n'est pas
+	 * utilisable MAINTENANT (chip absente, cooldown, uses, TP insuffisants). UNE évaluation
+	 * de ScoringWichId par State — la sim (Update) et le vrai cast (Play) reçoivent cet id
+	 * en payload d'action, plus personne ne rappelle ScoringWichId.
+	 */
+	static resurrectIdOf(State) {
+		var MyStats = State[Me]
+		if (!(CHIP_RESURRECTION in MyStats.COOLDOWNS)) return null
+		if (MyStats.COOLDOWNS[CHIP_RESURRECTION] > 0) return null
+		if (MyStats.USES[CHIP_RESURRECTION] >= ITEMINFO[CHIP_RESURRECTION].MAX_USES) return null
+		if (MyStats.TP < ITEMINFO[CHIP_RESURRECTION].COST) return null
+		return ResurrectionClass.ScoringWichId(State).ID
+	}
+
+	/*
+	 * Clé locale du ScoredCache : BaseHash salé par le candidat de résurrection. Un summon
+	 * virtuel MORT ne change pas BaseHash (contributions LIFE-gated) alors qu'il change la
+	 * liste d'actions — sans ce sel, deux states partageraient une liste scorée fausse.
+	 */
+	static scoredKeyOf(BaseHash, ResurrectId) {
+		return addValueToBinHash(BaseHash, ResurrectId == null ? 0 : ResurrectId + 1)
 	}
 }
