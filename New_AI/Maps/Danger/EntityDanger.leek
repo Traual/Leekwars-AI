@@ -32,7 +32,7 @@ class EntityDangerClass {
 		if (Hash in DANGER_ENTITY_CACHE) return DANGER_ENTITY_CACHE[Hash]
 		var Tmp = []
 		for (var i in getItemsList(CasterStats)) {
-			var Multiplier = 1 //TODO : Update This for Plasma ?
+			var Multiplier = 1 // Plasma évalué à multiplicateur 1 (compromis, voir README)
 			var Infos = ITEMINFO[i]
 			var CostOfItem = Infos.COST
 			var MaxAoeDist = MapDistPossibles[Infos.AREA]

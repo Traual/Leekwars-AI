@@ -7,13 +7,15 @@
  *   ttk         = rounds avant la mort                // HORIZON : danger net + traînée poison
  *   value       = BASE_ALIVE + W_LIFE · sqrt(afterPeriodic) + W_TTK · g(ttk)
  *               + W_TOTAL_LIFE · sqrt(TOTAL_LIFE)
- * score = Σ sign·value. Les morts (0) => un kill vaut toujours >= BASE_ALIVE.
+ * score = Σ sign·(importance·value + capability + drDeterrence). Les morts contribuent 0
+ * => le plancher effectif d'un kill est importance·BASE_ALIVE.
  */
 
 include("../includes.leek")
 
-// Valeur fixe d'être en vie (plancher du kill). Un kill retire le terme entier, donc tuer
-// vaut toujours >= BASE_ALIVE (monotone, jamais indifférent). Valorise aussi summons/résus.
+// Valeur fixe d'être en vie, dans survival (multiplié ensuite par importance) : le plancher
+// effectif d'un kill est importance·BASE_ALIVE — une faible importance rend volontairement
+// un summon ou une entité faible moins précieux. Valorise aussi summons/résus.
 global BASE_ALIVE = 1000
 
 // Canal STOCK : W_LIFE · sqrt(afterPeriodic) — la vie brute, AUCUNE projection dedans (le

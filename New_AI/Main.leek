@@ -3,28 +3,7 @@ include("includes.leek")
 // s'exécute dans la VM DE L'INVOCATEUR (globals + caches partagés). BulbAI.leek reset donc
 // les caches per-turn AVANT InitStateClass (même ordre que ce Main), et les caches
 // persistants Me-dépendants ont Me dans la clé.
-// DORMANT (doc, pas de fix) : ACTIONS_ON_ME_CACHE est clé par MyCell seule alors que la
-// valeur dépend en théorie de la LoS — inatteignable aujourd'hui (tous les self-items ont
-// MINRANGE 0 -> early-return sans géométrie). Mord seulement si un self-item NEEDLOS entre
-// dans l'inventaire ; fix = folder BaseHash dans la clé comme ACTIONS_ON_VOID_CACHE.
-// TODO : à modifier si un jour un chip de bulbe a 0 CD : id virtuel = SUMMON_ID_BASE +
-// typeOffset -> un resummon même-type dans une branche écraserait le premier bulbe.
-// RÉSIDU ACCEPTÉ (résurrection) : les clés de NETDAMAGE_CACHE / caches de fuite / danger ne
-// pinnent pas le set des vivants du camp ADVERSE, or l'ordre d'un ressuscité en dépend. Un
-// kill réel mid-turn peut servir un net stale dans les branches résurrection du reste du
-// tour (précision de score uniquement, replanifié à chaque action réelle).
-// ABANDONNÉ (trop coûteux en hits de cache) : le danger EFFECT_LIFE_DAMAGE scale avec la
-// LIFE du CASTER mais aucune clé danger ne l'encode -> blesser un porteur d'item
-// life-damage ne réduit pas sa menace perçue dans le tour. Fix éventuel : folder la vie du
-// caster (quantisée) dans contextContribution.
-// ============================= TODO DE DESIGN CONSERVÉES =============================
-// BUFFS FUTURS DES NON-ME : les projections Danger/Heal ne simulent pas une séquence
-// préparatoire où une entité non-Me dépense TP et cooldowns pour se buffer ou buffer les
-// siens. Choix assumé (simplicité + ne pas consommer fictivement les cooldowns) ; un vrai
-// modèle devra séparer la valeur de support de la consommation réelle des cooldowns.
-// PLASMA : EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS évalué avec multiplicateur 1 dans
-// EntityDanger — le vrai facteur dépend de la cellule visée et du nombre d'entités dans
-// l'AoE. À reprendre après l'élagage, avec mesure du coût.
+// Limites et compromis assumés : voir le README à la racine du dépôt.
 if (getTurn() == 1) Preload.InitEverything()
 ReloadCacheNewTurn()
 Preload.InitStateClass()

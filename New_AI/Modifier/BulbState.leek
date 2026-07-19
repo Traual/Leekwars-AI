@@ -175,8 +175,8 @@ class BulbState {
 	 * début du tour, morts inclus) : l'id d'un bulbe virtuel est FIXE par type tout le tour —
 	 * même id <=> même type quel que soit l'ordre des summons entre branches, donc les caches
 	 * clés par id seul ne peuvent pas collisionner entre types. Toujours > tout id réel (pas
-	 * d'écrasement, cadavres ressuscitables inclus). Les chips ont des cooldowns : un resummon
-	 * même-type dans une branche est impossible (voir le TODO 0-CD du Main).
+	 * d'écrasement, cadavres ressuscitables inclus). Les cooldowns actuels des chips rendent
+	 * impossible un second summon virtuel du même type dans une même branche.
 	 */
 	static getTypeOffset(Chip) {
 		switch (Chip) {
