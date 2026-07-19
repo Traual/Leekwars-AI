@@ -5,7 +5,7 @@
  * Par entité VIVANTE — deux canaux, chaque input a UN seul canal :
  *   afterPeriodic = max(0, LIFE − COEF_POISON·netTick)  // STOCK : netTick = poison + aftereffect − HoT
  *   ttk         = rounds avant la mort                // HORIZON : danger net + traînée poison
- *   value       = BASE_ALIVE + W_LIFE · sqrt(afterPoison) + W_TTK · g(ttk)
+ *   value       = BASE_ALIVE + W_LIFE · sqrt(afterPeriodic) + W_TTK · g(ttk)
  *               + W_TOTAL_LIFE · sqrt(TOTAL_LIFE)
  * score = Σ sign·value. Les morts (0) => un kill vaut toujours >= BASE_ALIVE.
  */
@@ -16,7 +16,7 @@ include("../includes.leek")
 // vaut toujours >= BASE_ALIVE (monotone, jamais indifférent). Valorise aussi summons/résus.
 global BASE_ALIVE = 1000
 
-// Canal STOCK : W_LIFE · sqrt(afterPoison) — la vie brute, AUCUNE projection dedans (le
+// Canal STOCK : W_LIFE · sqrt(afterPeriodic) — la vie brute, AUCUNE projection dedans (le
 // danger et la traînée de poison vivent dans le TTK). sqrt est concave -> un HP vaut plus
 // près de la mort (pousse à finir les blessés). Paie le chip damage et les heals même sur
 // des cibles hors de toute menace. (~0.75 de concavité ? sqrt(x·sqrt(x)).)

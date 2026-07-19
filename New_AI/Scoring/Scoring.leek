@@ -5,7 +5,7 @@
  *   netTick       = POISON + AFTEREFFECT − HEAL              // tick périodique net (6 flux séparés)
  *   afterPeriodic = max(0, LIFE − COEF_POISON·netTick)       // STOCK : vie après le tick net
  *   ttk           = rounds avant la mort sous la pression    // HORIZON : danger net + traînée périodique
- *   value       = BASE_ALIVE + W_LIFE·sqrt(afterPoison) + W_TTK·g(ttk) + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)
+ *   value       = BASE_ALIVE + W_LIFE·sqrt(afterPeriodic) + W_TTK·g(ttk) + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)
  *   term        = sign · (importance·value + capability + drDeterrence)
  * score = Σ term.  sign = +1 allié, −1 ennemi. Les morts contribuent 0 -> un kill vaut
  * toujours ≥ BASE_ALIVE. Le SCORE d'un nœud soustrait en plus CAST_COST[action] (coût
