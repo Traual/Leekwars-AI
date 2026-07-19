@@ -37,9 +37,11 @@ global DANGER_COEF = 1.0
 global HEAL_COEF = 0.6
 
 // ----- Canal HORIZON : TTK (kill-horizon) — LE canal de menace -----
-// survivalValue gagne W_TTK · g(ttk), avec g(ttk) = ttk / (ttk + TTK_HALF) ∈ [0,1[ et
-// ttk = rounds avant la mort sous la pression courante (danger net + tick de poison, durée
-// du poison = effPot/tick, donc antidote-remisée — calcul dans survivalValue).
+// survivalValue gagne W_TTK · g en forme DIRECTE : g = horizonLife/(horizonLife +
+// TTK_HALF·pression) ∈ [0,1] — algébriquement ttk/(ttk+TTK_HALF) avec ttk = rounds avant
+// la mort sous la pression courante (danger net + tick de poison, antidote-remisé — calcul
+// dans survivalValue). Pression nulle -> g = 1 exactement : aucun +1 protecteur, une entité
+// vivante sans pression touche tout W_TTK.
 // C'est le SEUL endroit où le danger projeté et la traînée de poison entrent dans la valeur
 // (l'ancien canal pressure/effLife double-comptait ET était concave -> saupoudrage de
 // vulnés ; remplacé).

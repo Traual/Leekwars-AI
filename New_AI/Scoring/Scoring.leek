@@ -179,37 +179,38 @@ class ScoringClass {
         var afterPoison = max(0, stat.LIFE - COEF_POISON * stat.POISON)
         var value = BASE_ALIVE + W_LIFE * sqrt(afterPoison)
 
-        // Canal HORIZON (TTK) : rounds avant la mort sous la pression courante.
-        // tick = poison du prochain tour, il se répète tant que le poison dure ;
-        // duration = effPot/tick = rounds de poison restants (effPot est remisé par la
-        // couverture antidote -> le TTK est antidote-aware). Numérateur = afterPoison :
-        // le tick certain est déjà décompté du stock, l'horizon part d'après lui.
-        // Deux régimes :
-        //   - il meurt PENDANT le poison  : ttk = afterPoison / (danger + tick)
-        //   - le poison EXPIRE avant      : ttk = duration + vie restante / danger seul
-        // Les +1 aux dénominateurs évitent la division par 0 (sans pression : ttk grand
-        // -> g ≈ 1). Tous les inputs (LIFE, POISON, effPot, danger) sont déjà dans la clé
-        // du cache -> calculé sur miss seulement, aucun salage.
+        // Canal HORIZON (TTK) en forme DIRECTE : g = horizonLife / (horizonLife + TTK_HALF ·
+        // pression) — algébriquement identique à g(ttk) = ttk/(ttk+TTK_HALF) avec
+        // ttk = horizonLife/pression, sans calcul intermédiaire de ttk ni dénominateur +1 :
+        // pression nulle -> g = 1 EXACTEMENT (une entité vivante sans pression touche tout
+        // W_TTK, plus de faux dégât fantôme). tick = poison du prochain tour, répété tant que
+        // le poison dure ; effPot est remisé par la couverture antidote -> TTK antidote-aware.
+        // Trois régimes :
+        //   - sans poison persistant : horizonLife = afterPoison,          pression = danger
+        //   - mort PENDANT le poison : horizonLife = afterPoison,          pression = danger + tick
+        //   - poison EXPIRÉ avant    : horizonLife = afterPoison − effPot, pression = danger
+        //     (simplification EXACTE de duration + (afterPoison − (danger+tick)·duration)/danger,
+        //      duration = effPot/tick — vérifiée algébriquement)
+        // Détection sans division : afterPoison·tick <= (danger+tick)·effPot <=> mort pendant.
+        // Tous les inputs (LIFE, POISON, effPot, danger) sont déjà dans la clé du cache
+        // -> calculé sur miss seulement, aucun salage.
         var tick = max(0, stat.POISON)
         var effPot = max(0, pot)
-        var ttk
+        var horizonLife = afterPoison
+        var pressure = danger
         if (tick > 0 && effPot > 0) {
-            var duration = effPot / tick                    // rounds de poison restants
-            var duringPoison = danger + tick                // pression par round pendant le poison
-            if (afterPoison <= duringPoison * duration) {
-                ttk = afterPoison / (duringPoison + 1)      // mort avant l'expiration du poison
+            if (afterPoison * tick <= (danger + tick) * effPot) {
+                pressure = danger + tick                     // il meurt avant l'expiration du poison
             } else {
-                ttk = duration + (afterPoison - duringPoison * duration) / (danger + 1)
+                horizonLife = afterPoison - effPot           // le poison expire, la traînée est payée
             }
-        } else {
-            ttk = afterPoison / (danger + 1)
         }
-        // g(ttk) = ttk/(ttk+TTK_HALF) : 0 (condamné) -> 1 (sûr), pente max près de 0, et
-        // RELATIF (un même danger mord plus une petite vie). Franchir un seuil de kill
-        // (ttk 2 -> 1) est la plus grosse monnaie du canal, puis g s'aplatit (condamné)
-        // -> l'IA empile les vulnés jusqu'au seuil et passe à la cible suivante. L'overkill
-        // garde un gradient (ttk continue de baisser sous 1 : 0.8 -> 0.5 -> 0.3...).
-        value += W_TTK * ttk / (ttk + TTK_HALF)
+        // g : 0 (condamné) -> 1 (sûr), pente max près de 0, RELATIF à la vie (un même danger
+        // mord plus une petite vie). Franchir un seuil de kill est la plus grosse monnaie du
+        // canal, puis g s'aplatit -> stack de vulnés jusqu'au seuil, puis cible suivante ;
+        // l'overkill garde un gradient. Garde : horizonLife <= 0 -> contribution 0 (condamné),
+        // jamais 1 ni epsilon — et jamais de 0/0.
+        if (horizonLife > 0) value += W_TTK * horizonLife / (horizonLife + TTK_HALF * pressure)
 
         SURVIVAL_CACHE[key] = value
         return value + tlTerm
