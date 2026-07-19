@@ -25,7 +25,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.ABSOLUTE_SHIELD += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_ABSOLUTE_VULNERABILITY:
@@ -34,7 +34,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
 					targetStats.ABSOLUTE_SHIELD -= calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 					effectTotal += calculatedValue
 				}
 				break
@@ -63,7 +63,7 @@ class ConsequencesClass {
 					targetStats.AFTEREFFECT_OVER_TIME += calculatedValue * effectDuration
 					// La ligne enregistre la valeur des ticks FUTURS : son retrait déroule
 					// AFTEREFFECT/AFTEREFFECT_OVER_TIME seulement, jamais les dégâts immédiats.
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5])
 					effectTotal += appliedDamage
 				}
 				break
@@ -128,7 +128,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.AGILITY += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_MP:
@@ -139,7 +139,7 @@ class ConsequencesClass {
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.MP += calculatedValue
 					targetStats.TOTAL_MP += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_RESISTANCE:
@@ -149,7 +149,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.RESISTANCE += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_STRENGTH:
@@ -159,7 +159,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.STRENGTH += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_TP:
@@ -170,7 +170,7 @@ class ConsequencesClass {
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.TP += calculatedValue
 					targetStats.TOTAL_TP += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_WISDOM:
@@ -180,7 +180,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.WISDOM += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_DAMAGE_RETURN:
@@ -190,7 +190,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.DAMAGE_RETURN += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_HEAL:
@@ -207,7 +207,7 @@ class ConsequencesClass {
 						targetStats.LIFE += min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
 					}
 					// HoT seulement (durée 0 = soin instantané, le gate du helper l'écarte).
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_POISON:
@@ -219,7 +219,7 @@ class ConsequencesClass {
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.POISON += calculatedValue
 					targetStats.POISON_OVER_TIME += calculatedValue * effectDuration
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5])
 					effectTotal += calculatedValue
 				}
 				break
@@ -230,7 +230,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.RELATIVE_SHIELD += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_DAMAGE:
@@ -283,7 +283,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
 					targetStats.ABSOLUTE_SHIELD += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_AGILITY:
@@ -292,7 +292,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
 					targetStats.AGILITY += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_MAGIC:
@@ -301,7 +301,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
 					targetStats.MAGIC += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_MP:
@@ -311,7 +311,7 @@ class ConsequencesClass {
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
 					targetStats.MP += calculatedValue
 					targetStats.TOTAL_MP += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_POWER:
@@ -320,7 +320,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
 					targetStats.POWER += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_RESISTANCE:
@@ -329,7 +329,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
 					targetStats.RESISTANCE += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_SCIENCE:
@@ -338,7 +338,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
 					targetStats.SCIENCE += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_STRENGTH:
@@ -347,7 +347,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
 					targetStats.STRENGTH += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_TP:
@@ -357,7 +357,7 @@ class ConsequencesClass {
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
 					targetStats.TP += calculatedValue
 					targetStats.TOTAL_TP += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_WISDOM:
@@ -366,7 +366,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
 					targetStats.WISDOM += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_HEAL:
@@ -381,7 +381,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
 					targetStats.RELATIVE_SHIELD += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_REMOVE_SHACKLES:
@@ -395,7 +395,7 @@ class ConsequencesClass {
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.AGILITY -= calculatedValue
 					targetStats.TO_SAVE_SHACKLE_AGILITY += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_SHACKLE_MAGIC:
@@ -406,7 +406,7 @@ class ConsequencesClass {
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.MAGIC -= calculatedValue
 					targetStats.TO_SAVE_SHACKLE_MAGIC += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_SHACKLE_MP:
@@ -418,7 +418,7 @@ class ConsequencesClass {
 					targetStats.MP -= calculatedValue
 					targetStats.TOTAL_MP -= calculatedValue
 					targetStats.TO_SAVE_SHACKLE_TOTAL_MP += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_SHACKLE_STRENGTH:
@@ -429,7 +429,7 @@ class ConsequencesClass {
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.STRENGTH -= calculatedValue
 					targetStats.TO_SAVE_SHACKLE_STRENGTH += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_SHACKLE_TP:
@@ -441,7 +441,7 @@ class ConsequencesClass {
 					targetStats.TP -= calculatedValue
 					targetStats.TOTAL_TP -= calculatedValue
 					targetStats.TO_SAVE_SHACKLE_TOTAL_TP += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_SHACKLE_WISDOM:
@@ -452,7 +452,7 @@ class ConsequencesClass {
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.WISDOM -= calculatedValue
 					targetStats.TO_SAVE_SHACKLE_WISDOM += calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_STEAL_ABSOLUTE_SHIELD:
@@ -463,7 +463,7 @@ class ConsequencesClass {
 				// durée/valeur écartent seuls les variantes instantanées).
 				if (!isEffectStackable) ReplacementChangeStats(Item, Effect, CastStats)
 				CastStats.ABSOLUTE_SHIELD += PrevEffectTotal
-				RecordCastedEffect(CastStats, EffectType, PrevEffectTotal, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+				RecordCastedEffect(CastStats, EffectType, PrevEffectTotal, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				effectTotal = PrevEffectTotal
 				break
 			case EFFECT_STEAL_LIFE:
@@ -482,7 +482,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
 					targetStats.RELATIVE_SHIELD -= calculatedValue
-					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item)
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 					effectTotal += calculatedValue
 				}
 				break
@@ -663,15 +663,17 @@ class ConsequencesClass {
 	/*
 	 * Enregistre un effet PERSISTANT dans le ledger de sa cible — réplique
 	 * Effect.createEffect:232-249 : FUSION avec la première ligne de même (type, item,
-	 * durée, caster) — mergeWith cumule la valeur et GARDE le critique de la ligne
-	 * existante (Effect.java:336-342 : critical non touché) — sinon ajout d'une ligne
-	 * neuve. Gate d'ajout moteur : durée != 0 ET valeur appliquée > 0. Layout runtime :
-	 * [type, value, caster, turns, critical, item]. Tableau et lignes JAMAIS mutés en
-	 * place (partagés avec les parents) : fusion = ligne neuve dans un tableau neuf.
+	 * durée, caster) — mergeWith cumule la valeur et GARDE le critique, la cible et les
+	 * modifiers de la ligne existante (Effect.java:336-342) — sinon ajout d'une ligne
+	 * neuve. Gate d'ajout moteur : durée != 0 ET valeur appliquée > 0. Layout COMPLET du
+	 * moteur (EntityAI.getEffectArray, même format que getEffects) :
+	 * [type, value, caster, turns, critical, item, target, modifiers] — les modifiers
+	 * portent notamment MODIFIER_IRREDUCTIBLE, que Libération respecte ligne à ligne.
+	 * Tableau et lignes JAMAIS mutés en place (partagés avec les parents).
 	 * NB : la clé de fusion (type+item+durée+caster) n'est PAS celle du remplacement
 	 * non-stackable (type+item), déjà passé AVANT l'application (ReplacementChangeStats).
 	 */
-	static RecordCastedEffect(TarStats, EffectType, AppliedValue, CasterId, Duration, Critical, Item) {
+	static RecordCastedEffect(TarStats, EffectType, AppliedValue, CasterId, Duration, Critical, Item, Modifiers) {
 		if (Duration == 0 || AppliedValue <= 0) return;
 		var effects = TarStats.EFFECTS
 		var mergeIdx = -1
@@ -680,14 +682,14 @@ class ConsequencesClass {
 			if (eff[0] == EffectType && eff[5] == Item && eff[3] == Duration && eff[2] == CasterId) { mergeIdx = i; break }
 		}
 		if (mergeIdx == -1) {
-			TarStats.EFFECTS = effects + [[EffectType, AppliedValue, CasterId, Duration, Critical, Item]]
+			TarStats.EFFECTS = effects + [[EffectType, AppliedValue, CasterId, Duration, Critical, Item, TarStats.ID, Modifiers]]
 			return;
 		}
 		var newEffects = []
 		for (var i = 0; i < count(effects); i++) {
 			if (i == mergeIdx) {
 				var old = effects[i]
-				push(newEffects, [old[0], old[1] + AppliedValue, old[2], old[3], old[4], old[5]])
+				push(newEffects, [old[0], old[1] + AppliedValue, old[2], old[3], old[4], old[5], old[6], old[7]])
 			} else {
 				push(newEffects, effects[i])
 			}
@@ -860,7 +862,9 @@ class ConsequencesClass {
 			stats.TP += value
 			stats.TOTAL_TP += value
 		}
-		RecordCastedEffect(stats, rawType, value, stats.ID, duration, false, weapon)
+		// passiveRow[5] = les modifiers de la ligne passive — le RAW_AGILITY du Dark Katana
+		// garde ainsi son bit IRREDUCTIBLE (modifiers 17), que Libération respecte.
+		RecordCastedEffect(stats, rawType, value, stats.ID, duration, false, weapon, passiveRow[5])
 	}
 
 	/* Dégâts DIRECTS encaissés (EFFECT_DAMAGE + EFFECT_LIFE_DAMAGE, après dégâts+érosion,
@@ -957,59 +961,32 @@ class ConsequencesClass {
 	}
 
 	static getEntityDebuffConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
-		// Le moteur RETIRE removal% de chaque effet (Effect.reduce garde 1 − percent), avec
-		// removal = valeur · crit·targetCount (Multiplier) · aoe (EffectDebuff du moteur).
-		// DebuffPower = la fraction CONSERVÉE, clampée à 0 (un débuff >= 100% efface tout).
-		// Le pull (stat − TO_SAVE)·(1−p) plus bas réduit buffs ET shackles uniformément :
-		// TO_SAVE_<stat> est la BASE VRAIE (EntityState y réintègre les shackles initiaux),
-		// donc un débuff REMONTE une stat shacklée, comme le moteur.
-		// RÉSIDU accepté : le moteur SKIPPE les effets MODIFIER_IRREDUCTIBLE (surtout des
-		// effets système : multiplicateur colossus, power de BR) — la sim réduit ses agrégats
-		// sans distinction ; il faudrait un suivi par effet pour l'exactitude.
-		var removal = Effect[1] * Multiplier * (1 - Dist * 0.2)
+		// EffectDebuff.apply : la puissance est un ENTIER positif — value = (int)((v1+jet·v2)
+		// ·aoe·crit·targetCount) — avant reduceEffects. DebuffPower = fraction CONSERVÉE,
+		// clampée à 0 (un débuff >= 100% efface tout le réductible).
+		var removal = floor(Effect[1] * Multiplier * (1 - Dist * 0.2))
 		var DebuffPower = max(0, 1 - removal / 100)
-		TarStats.TO_SAVE_SHACKLE_AGILITY *= DebuffPower
-		TarStats.TO_SAVE_SHACKLE_MAGIC *= DebuffPower
-		TarStats.TO_SAVE_SHACKLE_TOTAL_MP *= DebuffPower
-		TarStats.TO_SAVE_SHACKLE_STRENGTH *= DebuffPower
-		TarStats.TO_SAVE_SHACKLE_TOTAL_TP *= DebuffPower
-		TarStats.TO_SAVE_SHACKLE_WISDOM *= DebuffPower
-
-		TarStats.ABSOLUTE_SHIELD *= DebuffPower
-		TarStats.RELATIVE_SHIELD *= DebuffPower
-		TarStats.DAMAGE_RETURN *= DebuffPower
-		TarStats.POISON *= DebuffPower
-		TarStats.POISON_OVER_TIME *= DebuffPower
-		TarStats.AFTEREFFECT *= DebuffPower
-		TarStats.AFTEREFFECT_OVER_TIME *= DebuffPower
-		TarStats.HEAL *= DebuffPower
-		TarStats.HEAL_OVER_TIME *= DebuffPower
-
-		var InverseDebuffPower = 1 - DebuffPower
-		TarStats.STRENGTH -= (TarStats.STRENGTH - TarStats.TO_SAVE_STRENGTH) * InverseDebuffPower
-		TarStats.WISDOM -= (TarStats.WISDOM - TarStats.TO_SAVE_WISDOM) * InverseDebuffPower
-		TarStats.AGILITY -= (TarStats.AGILITY - TarStats.TO_SAVE_AGILITY) * InverseDebuffPower
-		TarStats.RESISTANCE -= (TarStats.RESISTANCE - TarStats.TO_SAVE_RESISTANCE) * InverseDebuffPower
-		TarStats.SCIENCE -= (TarStats.SCIENCE - TarStats.TO_SAVE_SCIENCE) * InverseDebuffPower
-		TarStats.MAGIC -= (TarStats.MAGIC - TarStats.TO_SAVE_MAGIC) * InverseDebuffPower
-		TarStats.MP -= (TarStats.TOTAL_MP - TarStats.TO_SAVE_TOTAL_MP) * InverseDebuffPower
-		TarStats.TOTAL_MP -= (TarStats.TOTAL_MP - TarStats.TO_SAVE_TOTAL_MP) * InverseDebuffPower
-		TarStats.TP -= (TarStats.TOTAL_TP - TarStats.TO_SAVE_TOTAL_TP) * InverseDebuffPower
-		TarStats.TOTAL_TP -= (TarStats.TOTAL_TP - TarStats.TO_SAVE_TOTAL_TP) * InverseDebuffPower
-
-		// Symétrie ledger <-> agrégats : chaque ligne est réduite comme le moteur
-		// (Effect.reduce : value·(1−p), la ligne SUBSISTE même à 0 — vérifié, reduce ne
-		// supprime jamais). La réduction par ligne des shields ET des vulnés équivaut au ×p
-		// du net agrégé (distributivité). RAW_BUFF_POWER exclu — le calcul ci-dessus ne
-		// réduit pas POWER. Lignes NEUVES (jamais de eff[1] muté en place — partagé avec les
-		// parents). Le résidu MODIFIER_IRREDUCTIBLE documenté plus haut vaut aussi ici.
+		// Passe UNIQUE sur le ledger, fidèle à Entity.reduceEffects:800-816 : une ligne
+		// MODIFIER_IRREDUCTIBLE (eff[7]) est intégralement conservée — ligne ET agrégats
+		// (le POWER système de BR, le multiplicateur colossus, le RAW_AGILITY du Dark Katana
+		// survivent par leur MODIFIER, plus par une exception de type). Sinon : newValue =
+		// round(eff[1]·p) (l'arrondi d'Effect.reduce), la part retirée est déroulée par
+		// removeCastedEffect — l'UNIQUE mécanisme de réduction des agrégats (buffs,
+		// shackles + compteurs, shields, vulnés, DR, six flux périodiques) — et une ligne
+		// tombée à 0 DISPARAÎT (reduceEffects la retire des deux côtés : plus de second
+		// déroulé à la mort de son caster). Les bonus BR simulés non enregistrés restent
+		// intacts : irréductibles par nature. Lignes et tableau NEUFS — jamais de mutation
+		// des containers du parent.
 		var newEffects = []
 		for (var eff in TarStats.EFFECTS) {
-			if (eff[0] == EFFECT_RAW_BUFF_POWER) {
+			if (eff[7] & EFFECT_MODIFIER_IRREDUCTIBLE) {
 				push(newEffects, eff)
-			} else {
-				push(newEffects, [eff[0], eff[1] * DebuffPower, eff[2], eff[3], eff[4], eff[5]])
+				continue
 			}
+			var newValue = round(eff[1] * DebuffPower)
+			var removedValue = eff[1] - newValue
+			if (removedValue != 0) removeCastedEffect(eff[0], TarStats, removedValue, eff[3])
+			if (newValue > 0) push(newEffects, [eff[0], newValue, eff[2], eff[3], eff[4], eff[5], eff[6], eff[7]])
 		}
 		TarStats.EFFECTS = newEffects
 	}
