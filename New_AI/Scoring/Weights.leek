@@ -8,13 +8,13 @@
  *   value       = BASE_ALIVE + W_LIFE · sqrt(afterPeriodic) + W_TTK · g(ttk)
  *               + W_TOTAL_LIFE · sqrt(TOTAL_LIFE)
  * score = Σ sign·(importance·value + capability + drDeterrence). Les morts contribuent 0
- * => le plancher effectif d'un kill est importance·BASE_ALIVE.
+ * => BASE_ALIVE apporte une contribution fixe d'être vivant : importance·BASE_ALIVE.
  */
 
 include("../includes.leek")
 
-// Valeur fixe d'être en vie, dans survival (multiplié ensuite par importance) : le plancher
-// effectif d'un kill est importance·BASE_ALIVE — une faible importance rend volontairement
+// Valeur fixe d'être en vie, dans survival (multiplié ensuite par importance) : contribution
+// de BASE_ALIVE au terme = importance·BASE_ALIVE — une faible importance rend volontairement
 // un summon ou une entité faible moins précieux. Valorise aussi summons/résus.
 global BASE_ALIVE = 1000
 

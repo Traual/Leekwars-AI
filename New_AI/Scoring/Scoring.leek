@@ -7,10 +7,12 @@
  *   ttk           = rounds avant la mort sous la pression    // HORIZON : danger net + traînée périodique
  *   value       = BASE_ALIVE + W_LIFE·sqrt(afterPeriodic) + W_TTK·g(ttk) + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)
  *   term        = sign · (importance·value + capability + drDeterrence)
- * score = Σ term.  sign = +1 allié, −1 ennemi. Les morts contribuent 0 -> le plancher
- * effectif d'un kill est importance·BASE_ALIVE (± capability et drDeterrence). Le SCORE
- * d'un nœud soustrait en plus CAST_COST[action] (coût d'action porté par le chemin -> le
- * score n'est pas strictement Σ termes).
+ * score = Σ term.  sign = +1 allié, −1 ennemi. Les morts contribuent 0 -> BASE_ALIVE
+ * apporte une contribution fixe d'être vivant, importance·BASE_ALIVE (le terme complet
+ * retiré par un kill ajoute le reste de survival, capability — possiblement négative — et
+ * drDeterrence : pas un plancher strict). Le SCORE d'un nœud soustrait en plus
+ * CAST_COST[action] (coût d'action porté par le chemin -> le score n'est pas strictement
+ * Σ termes).
  *
  * importance est FIGÉE pendant un replan/BFS (classement des cibles, rafraîchie par Play à
  * chaque planification réelle), capability est le canal LIVE des

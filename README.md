@@ -17,18 +17,21 @@ après chaque action. Entrée principale : [`New_AI/Main.leek`](New_AI/Main.leek
 - **`ActionsClass`** génère les actions possibles (items × cibles × cellules de lancer),
   dédoublonnées par ensemble de cibles.
 - **`NodeClass`** porte un nœud de recherche (State + hash + termes de score patchés) ;
-  **`ConsequencesClass`** simule l'application exacte d'un cast : dégâts, effets persistants
-  (ledger à huit champs), kills et cascades, passives, push/attract, résurrection.
-- **`ActionSuite`** (BFS glouton) : exploration en largeur des suites d'actions, sélection
-  gloutonne du meilleur score, exécution de la première action puis replan.
+  **`ConsequencesClass`** simule l'application d'un cast : dégâts, effets persistants
+  (ledger à huit champs), kills et cascades, passives, push/attract, résurrection — les
+  mécaniques couvertes suivent le moteur, sous réserve des limites documentées plus bas.
+- **`ActionSuite`** : recherche arborescente gloutonne — toutes les actions racines sont
+  évaluées, puis chaque branche déroule récursivement son meilleur successeur (`unroll`).
+  Ce n'est pas un BFS exhaustif, malgré le nom historique du fichier ; l'IA exécute la
+  première action de la meilleure suite puis replanifie.
 - **Danger / Heal / Delta** projettent la pression future : ce que chaque ennemi peut infliger
   (Danger), ce que chaque allié peut soigner (Heal), agrégés en net séquencé par ordre de tour
   (Delta) — c'est la « pression » consommée par le TTK du scoring.
 - **Gravity / FinalCell** choisissent le placement de fin de tour : meilleure gravity parmi les
   cellules à net nul, sinon net strictement minimal (sécurité d'abord).
 - **Caches et `BaseHash`** : les fonctions coûteuses sont cachées avec des clés qui encodent
-  tous leurs inputs ; `BaseHash` (XOR incrémental de l'état) sert de racine aux clés
-  positionnelles.
+  tous leurs inputs ; `BaseHash` (XOR incrémental des contributions `(id, cellule)` des
+  entités vivantes hors Me) sert de racine aux clés positionnelles.
 - **VM partagée des bulbes** : `summon(chip, cell, Bulb.AI)` passe une fonction de cette IA —
   le bulbe s'exécute dans la VM de l'invocateur (globals + caches partagés). `BulbAI.leek`
   reset donc les caches per-turn avant `InitStateClass` (même ordre que `Main.leek`), et les
@@ -65,8 +68,10 @@ score    = Σ term          (sign = +1 allié, −1 ennemi ; les morts contribue
   minimal.
 
 **Nuance importante** : `BASE_ALIVE` appartient à `survival`, et `survival` est multiplié par
-`importance`. Le plancher effectif d'un kill est donc **`importance × BASE_ALIVE`**, auquel
-s'ajoutent ou se retirent les autres canaux (capability, drDeterrence). Ne jamais écrire qu'un
+`importance`. `BASE_ALIVE` apporte donc une **contribution fixe d'être vivant** de
+`importance × BASE_ALIVE` au terme de l'entité ; la valeur complète retirée par un kill
+contient aussi les autres composantes de survival, capability et drDeterrence — capability
+pouvant être négative, ce n'est pas un plancher universel strict. Ne jamais écrire qu'un
 kill vaut systématiquement au moins 1000 dans le score final : une faible importance rend
 volontairement un summon ou une entité faible moins précieux.
 
@@ -93,7 +98,10 @@ volontairement un summon ou une entité faible moins précieux.
 
 Documentés comme des choix, pas des bugs à corriger immédiatement :
 
-- Critique **binaire** (pire cas déterministe) plutôt que probabiliste.
+- Critique **binaire déterministe**, aucune espérance probabiliste intermédiaire : ce qui
+  joue pour moi ne critique qu'au seuil de quasi-certitude `MIN_AGILITY_TO_FULLY_CRIT`
+  (95 %+) ; ce qui joue contre moi est craint critique dès `MIN_AGILITY_ENEMY_CRIT` (5 %) —
+  doctrine pire-cas-pour-moi, symétrique à 5 % près.
 - Futurs buffs des non-Me non séquencés : Danger/Heal ne simulent pas une séquence
   préparatoire où une entité dépense TP et cooldowns pour (se) buffer.
 - Placement déterministe simplifié des summons et résurrections.
