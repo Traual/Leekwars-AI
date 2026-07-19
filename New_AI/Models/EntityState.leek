@@ -139,7 +139,6 @@ class EntityStateClass extends EntityClass {
 					// --- STRENGTH ---
 				case EFFECT_BUFF_STRENGTH:
 				case EFFECT_RAW_BUFF_STRENGTH:
-				case EFFECT_DAMAGE_TO_STRENGTH:
 					this.TO_SAVE_STRENGTH -= eff[1]
 					break
 				case EFFECT_SHACKLE_STRENGTH:
@@ -159,7 +158,6 @@ class EntityStateClass extends EntityClass {
 
 					// --- MAGIC ---
 				case EFFECT_RAW_BUFF_MAGIC:
-				case EFFECT_NOVA_DAMAGE_TO_MAGIC:
 					this.TO_SAVE_MAGIC -= eff[1]
 					break
 				case EFFECT_SHACKLE_MAGIC:
@@ -169,7 +167,6 @@ class EntityStateClass extends EntityClass {
 
 					// --- SCIENCE ---
 				case EFFECT_RAW_BUFF_SCIENCE:
-				case EFFECT_POISON_TO_SCIENCE:
 					this.TO_SAVE_SCIENCE -= eff[1]
 					break
 
@@ -182,7 +179,6 @@ class EntityStateClass extends EntityClass {
 					// --- MP ---
 				case EFFECT_BUFF_MP:
 				case EFFECT_RAW_BUFF_MP:
-				case EFFECT_MOVED_TO_MP:
 					this.TO_SAVE_TOTAL_MP -= eff[1]
 					break
 				case EFFECT_SHACKLE_MP:
@@ -193,7 +189,6 @@ class EntityStateClass extends EntityClass {
 					// --- TP ---
 				case EFFECT_BUFF_TP:
 				case EFFECT_RAW_BUFF_TP:
-				case EFFECT_KILL_TO_TP:
 					this.TO_SAVE_TOTAL_TP -= eff[1]
 					break
 				case EFFECT_SHACKLE_TP:

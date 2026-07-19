@@ -557,7 +557,6 @@ class ConsequencesClass {
 	static removeCastedEffect(EffectType, StatsTarget, ValueOfEffect, DurationOfEffect) {
 		switch (EffectType) {
 			case EFFECT_ABSOLUTE_SHIELD:
-			case EFFECT_DAMAGE_TO_ABSOLUTE_SHIELD:
 			case EFFECT_RAW_ABSOLUTE_SHIELD:
 			case EFFECT_STEAL_ABSOLUTE_SHIELD:
 				StatsTarget.ABSOLUTE_SHIELD -= ValueOfEffect
@@ -569,13 +568,11 @@ class ConsequencesClass {
 				StatsTarget.AFTEREFFECT -= ValueOfEffect
 				StatsTarget.AFTEREFFECT_OVER_TIME -= ValueOfEffect * DurationOfEffect
 				break
-			case EFFECT_ALLY_KILLED_TO_AGILITY:
 			case EFFECT_BUFF_AGILITY:
 			case EFFECT_RAW_BUFF_AGILITY:
 				StatsTarget.AGILITY -= ValueOfEffect
 				break
 			case EFFECT_BUFF_MP:
-			case EFFECT_MOVED_TO_MP:
 			case EFFECT_RAW_BUFF_MP:
 				StatsTarget.MP -= ValueOfEffect
 				StatsTarget.TOTAL_MP -= ValueOfEffect
@@ -585,12 +582,10 @@ class ConsequencesClass {
 				StatsTarget.RESISTANCE -= ValueOfEffect
 				break
 			case EFFECT_BUFF_STRENGTH:
-			case EFFECT_DAMAGE_TO_STRENGTH:
 			case EFFECT_RAW_BUFF_STRENGTH:
 				StatsTarget.STRENGTH -= ValueOfEffect
 				break
 			case EFFECT_BUFF_TP:
-			case EFFECT_KILL_TO_TP:
 			case EFFECT_RAW_BUFF_TP:
 				StatsTarget.TP -= ValueOfEffect
 				StatsTarget.TOTAL_TP -= ValueOfEffect
@@ -606,7 +601,6 @@ class ConsequencesClass {
 				StatsTarget.HEAL -= ValueOfEffect
 				StatsTarget.HEAL_OVER_TIME -= ValueOfEffect * DurationOfEffect
 				break
-			case EFFECT_NOVA_DAMAGE_TO_MAGIC:
 			case EFFECT_RAW_BUFF_MAGIC:
 				StatsTarget.MAGIC -= ValueOfEffect
 				break
@@ -614,7 +608,6 @@ class ConsequencesClass {
 				StatsTarget.POISON -= ValueOfEffect
 				StatsTarget.POISON_OVER_TIME -= ValueOfEffect * DurationOfEffect
 				break
-			case EFFECT_POISON_TO_SCIENCE:
 			case EFFECT_RAW_BUFF_SCIENCE:
 				StatsTarget.SCIENCE -= ValueOfEffect
 				break
