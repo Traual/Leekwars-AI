@@ -3,7 +3,7 @@
  * sans toucher à la logique.
  *
  * Par entité VIVANTE — deux canaux, chaque input a UN seul canal :
- *   afterPoison = max(0, LIFE − COEF_POISON·POISON)   // STOCK : vie après le tick certain
+ *   afterPeriodic = max(0, LIFE − COEF_POISON·netTick)  // STOCK : netTick = poison + aftereffect − HoT
  *   ttk         = rounds avant la mort                // HORIZON : danger net + traînée poison
  *   value       = BASE_ALIVE + W_LIFE · sqrt(afterPoison) + W_TTK · g(ttk)
  *               + W_TOTAL_LIFE · sqrt(TOTAL_LIFE)
@@ -27,7 +27,8 @@ global W_LIFE = 14.0
 // Vit HORS de SURVIVAL_CACHE (clé pleine) — ajouté après la lecture.
 global W_TOTAL_LIFE = 0.5 * W_LIFE
 
-// Tick de poison immédiat : dégâts certains du prochain tour, soustraits de la vie.
+// Tick périodique NET du prochain tour (poison + aftereffect − heal over time), soustrait
+// de la vie (un HoT dominant le rehausse).
 global COEF_POISON = 0.5
 
 // Le heal amortit le danger dans le net séquencé par ordre de tour (DeltaClass) : chaque

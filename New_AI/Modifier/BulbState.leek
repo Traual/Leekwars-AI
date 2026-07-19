@@ -31,8 +31,10 @@ class BulbState {
 	TLSQ_MEMO
 	POISON
 	POISON_OVER_TIME
-	JUST_POISON
-	JUST_POISON_OVER_TIME
+	AFTEREFFECT
+	AFTEREFFECT_OVER_TIME
+	HEAL
+	HEAL_OVER_TIME
 	TURN_ORDER
 	// Leek Stats
 	LIFE
@@ -93,8 +95,10 @@ class BulbState {
 		this.EFFECTS_ITEM_MAP = [: ]
 		this.POISON = 0
 		this.POISON_OVER_TIME = 0
-		this.JUST_POISON = 0
-		this.JUST_POISON_OVER_TIME = 0
+		this.AFTEREFFECT = 0
+		this.AFTEREFFECT_OVER_TIME = 0
+		this.HEAL = 0
+		this.HEAL_OVER_TIME = 0
 		// Fractionnaire : le moteur INSÈRE le summon juste après son invocateur, donc le plus
 		// RÉCENT joue en PREMIER parmi ceux du même invocateur. 0.5/(1+n) reproduit ça
 		// exactement (1er bulbe +0.5, 2e +0.25, ...) sans jamais collisionner avec les ordres

@@ -22,10 +22,13 @@ class EntityStateClass extends EntityClass {
 	// objet PARTAGÉ est sain : partage => stats identiques => même valeur.
 	CAP_MEMO    // ImportanceClass.capability(stat)
 	TLSQ_MEMO   // W_TOTAL_LIFE * sqrt(max(0, TOTAL_LIFE)) (terme hors cache de survivalValue)
-	POISON
-	POISON_OVER_TIME
-	JUST_POISON
-	JUST_POISON_OVER_TIME
+	// Six flux périodiques SÉPARÉS et POSITIFS (jamais de "poison négatif") :
+	POISON                  // prochain tick des lignes EFFECT_POISON seules
+	POISON_OVER_TIME        // somme valeur × tours restants de ces lignes
+	AFTEREFFECT             // prochain tick des lignes EFFECT_AFTEREFFECT
+	AFTEREFFECT_OVER_TIME
+	HEAL                    // prochain tick des EFFECT_HEAL persistants (HoT)
+	HEAL_OVER_TIME
 	LIFE
 	TOTAL_LIFE
 	STRENGTH
@@ -74,10 +77,13 @@ class EntityStateClass extends EntityClass {
 		}
 		this.EFFECTS = getEffects(id)
 		//this.EFFECTS_ITEM_MAP = getEffectsMapItem(this.EFFECTS)
-		this.POISON = getPoisons(this.EFFECTS)
-		this.POISON_OVER_TIME = getPoisonsOverTime(this.EFFECTS)
-		this.JUST_POISON = getJustPoisons(this.EFFECTS)
-		this.JUST_POISON_OVER_TIME = getJustPoisonsOverTime(this.EFFECTS)
+		// Flux périodiques remplis en UNE passe, dans le déroulé d'effets plus bas.
+		this.POISON = 0
+		this.POISON_OVER_TIME = 0
+		this.AFTEREFFECT = 0
+		this.AFTEREFFECT_OVER_TIME = 0
+		this.HEAL = 0
+		this.HEAL_OVER_TIME = 0
 		this.LIFE = getLife(id)
 		this.TOTAL_LIFE = getTotalLife(id)
 		this.STRENGTH = getStrength(id)
@@ -194,73 +200,31 @@ class EntityStateClass extends EntityClass {
 					this.TO_SAVE_TOTAL_TP += eff[1]
 					this.TO_SAVE_SHACKLE_TOTAL_TP += eff[1]
 					break
+
+					// --- FLUX PÉRIODIQUES (même passe, six agrégats positifs) ---
+				case EFFECT_POISON:
+					this.POISON += eff[1]
+					this.POISON_OVER_TIME += eff[1] * eff[3]
+					break
+				case EFFECT_AFTEREFFECT:
+					this.AFTEREFFECT += eff[1]
+					this.AFTEREFFECT_OVER_TIME += eff[1] * eff[3]
+					break
+				case EFFECT_HEAL:
+					// Persistant seulement — un heal instantané (durée 0) n'entre jamais au
+					// ledger moteur, garde par sécurité.
+					if (eff[3] > 0) {
+						this.HEAL += eff[1]
+						this.HEAL_OVER_TIME += eff[1] * eff[3]
+					}
+					break
 			}
 		}
 
 		this.CELL = getCell(id)
 	}
 
-	/* Tick net du prochain tour : poisons − heals over time. */
-	getPoisons(Effects) {
-		var Poisons = 0
-		for (var eff in Effects) {
-			switch (eff[0]) {
-				case EFFECT_POISON:
-				// Aftereffect actif au début du replan : ses ticks futurs comptent comme un
-				// poison (la sim de branche fait pareil), mais PAS dans JUST_* — le moteur
-				// (clearPoisons) ne le retire pas à l'antidote.
-				case EFFECT_AFTEREFFECT:
-					Poisons += eff[1]
-					break
-				case EFFECT_HEAL:
-					Poisons -= eff[1]
-					break
-			}
-		}
-		return Poisons
-	}
-
-	/* Total restant (valeur × tours), net des heals over time. */
-	getPoisonsOverTime(Effects) {
-		var Poisons = 0
-		for (var eff in Effects) {
-			switch (eff[0]) {
-				case EFFECT_POISON:
-				case EFFECT_AFTEREFFECT:   // ticks futurs (voir getPoisons), hors JUST_*
-					Poisons += eff[1] * eff[3]
-					break
-				case EFFECT_HEAL:
-					Poisons -= eff[1] * eff[3]
-					break
-			}
-		}
-		return Poisons
-	}
-
-	/* Poison seul du prochain tour, sans compenser par les heals. */
-	getJustPoisons(Effects) {
-		var Poisons = 0
-		for (var eff in Effects) {
-			switch (eff[0]) {
-				case EFFECT_POISON:
-					Poisons += eff[1]
-					break
-			}
-		}
-		return Poisons
-	}
-
-	/* Poison seul restant (valeur × tours), sans les heals. */
-	getJustPoisonsOverTime(Effects) {
-		var Poisons = 0
-		for (var eff in Effects) {
-			switch (eff[0]) {
-				case EFFECT_POISON:
-					Poisons += eff[1] * eff[3]
-					break
-			}
-		}
-		return Poisons
-	}
+	// (Les anciens getters getPoisons/getPoisonsOverTime/getJustPoisons* sont supprimés :
+	// les six flux se remplissent dans la passe unique du constructeur.)
 
 }

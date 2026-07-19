@@ -59,20 +59,20 @@ class ConsequencesClass {
 					// Érosion immédiate -> proc nova (EffectAftereffect.java:27). Les ticks
 					// FUTURS et leurs procs restent hors modèle — chantier ticks/ledger.
 					if (targetStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(targetStats, appliedDamage * erosionRate)
-					targetStats.POISON += calculatedValue
-					targetStats.POISON_OVER_TIME += calculatedValue * effectDuration
+					targetStats.AFTEREFFECT += calculatedValue
+					targetStats.AFTEREFFECT_OVER_TIME += calculatedValue * effectDuration
 					// La ligne enregistre la valeur des ticks FUTURS : son retrait déroule
-					// POISON/POISON_OVER_TIME seulement, jamais les dégâts immédiats déjà subis.
+					// AFTEREFFECT/AFTEREFFECT_OVER_TIME seulement, jamais les dégâts immédiats.
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item)
 					effectTotal += appliedDamage
 				}
 				break
 			case EFFECT_ANTIDOTE:
-				// Entity.clearPoisons : retire UNIQUEMENT les lignes EffectPoison — ni
-				// aftereffect, ni HoT. Déroulé PAR LIGNE via removeCastedEffect (source unique :
-				// POISON/POT/JUST_* redescendent exactement, invariant JUST_* == somme des
-				// lignes EFFECT_POISON), puis ledger purgé — plus de second déroulé à la mort
-				// du caster ni au remplacement.
+				// Entity.clearPoisons : retire UNIQUEMENT les lignes EffectPoison — les flux
+				// AFTEREFFECT* et HEAL* restent intacts. Déroulé PAR LIGNE via
+				// removeCastedEffect (source unique : POISON/POISON_OVER_TIME redescendent
+				// exactement), puis ledger purgé — plus de second déroulé à la mort du caster
+				// ni au remplacement.
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					var newEffects = []
@@ -201,8 +201,8 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					if (effectDuration > 0) {
-						targetStats.POISON -= calculatedValue
-						targetStats.POISON_OVER_TIME -= calculatedValue * effectDuration
+						targetStats.HEAL += calculatedValue
+						targetStats.HEAL_OVER_TIME += calculatedValue * effectDuration
 					} else {
 						targetStats.LIFE += min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
 					}
@@ -218,9 +218,7 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.POISON += calculatedValue
-					targetStats.JUST_POISON += calculatedValue
 					targetStats.POISON_OVER_TIME += calculatedValue * effectDuration
-					targetStats.JUST_POISON_OVER_TIME += calculatedValue * effectDuration
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item)
 					effectTotal += calculatedValue
 				}
@@ -568,8 +566,8 @@ class ConsequencesClass {
 				StatsTarget.ABSOLUTE_SHIELD += ValueOfEffect
 				break
 			case EFFECT_AFTEREFFECT:
-				StatsTarget.POISON -= ValueOfEffect
-				StatsTarget.POISON_OVER_TIME -= ValueOfEffect * DurationOfEffect
+				StatsTarget.AFTEREFFECT -= ValueOfEffect
+				StatsTarget.AFTEREFFECT_OVER_TIME -= ValueOfEffect * DurationOfEffect
 				break
 			case EFFECT_ALLY_KILLED_TO_AGILITY:
 			case EFFECT_BUFF_AGILITY:
@@ -605,8 +603,8 @@ class ConsequencesClass {
 				StatsTarget.DAMAGE_RETURN -= ValueOfEffect
 				break
 			case EFFECT_HEAL:
-				StatsTarget.POISON += ValueOfEffect
-				StatsTarget.POISON_OVER_TIME += ValueOfEffect * DurationOfEffect
+				StatsTarget.HEAL -= ValueOfEffect
+				StatsTarget.HEAL_OVER_TIME -= ValueOfEffect * DurationOfEffect
 				break
 			case EFFECT_NOVA_DAMAGE_TO_MAGIC:
 			case EFFECT_RAW_BUFF_MAGIC:
@@ -615,8 +613,6 @@ class ConsequencesClass {
 			case EFFECT_POISON:
 				StatsTarget.POISON -= ValueOfEffect
 				StatsTarget.POISON_OVER_TIME -= ValueOfEffect * DurationOfEffect
-				StatsTarget.JUST_POISON -= ValueOfEffect
-				StatsTarget.JUST_POISON_OVER_TIME -= ValueOfEffect * DurationOfEffect
 				break
 			case EFFECT_POISON_TO_SCIENCE:
 			case EFFECT_RAW_BUFF_SCIENCE:
@@ -983,9 +979,11 @@ class ConsequencesClass {
 		TarStats.RELATIVE_SHIELD *= DebuffPower
 		TarStats.DAMAGE_RETURN *= DebuffPower
 		TarStats.POISON *= DebuffPower
-		TarStats.JUST_POISON *= DebuffPower
 		TarStats.POISON_OVER_TIME *= DebuffPower
-		TarStats.JUST_POISON_OVER_TIME *= DebuffPower
+		TarStats.AFTEREFFECT *= DebuffPower
+		TarStats.AFTEREFFECT_OVER_TIME *= DebuffPower
+		TarStats.HEAL *= DebuffPower
+		TarStats.HEAL_OVER_TIME *= DebuffPower
 
 		var InverseDebuffPower = 1 - DebuffPower
 		TarStats.STRENGTH -= (TarStats.STRENGTH - TarStats.TO_SAVE_STRENGTH) * InverseDebuffPower

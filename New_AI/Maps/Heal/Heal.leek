@@ -15,8 +15,8 @@
  * un caster ne s'y soigne jamais lui-même.
  *
  * Plus simple que le danger :
- *  - EFFECT_HEAL durée 0 (les heals over time sont des "poisons négatifs", Consequences)
- *    + EFFECT_BOOST_MAX_LIFE ; jamais d'effet ON_CASTER (Vampirization reste exclue)
+ *  - EFFECT_HEAL durée 0 (les heals over time vivent dans les flux HEAL/HEAL_OVER_TIME,
+ *    Consequences) + EFFECT_BOOST_MAX_LIFE ; jamais d'effet ON_CASTER (Vampirization exclue)
  *  - pas de shields, pas de chaîne de vulnés
  *  - PESSIMISTE : roll MIN (eff[1]) ; valeur = eff[1] · max(0, 1 + WIS/100) · (1 − 0.2·aoeDist)
  *  - combo = glouton (heal+vitalité)/TP dans TOTAL_TP + MAX_USES, composantes accumulées

@@ -29,8 +29,10 @@ class ResurrectionClass {
 		revived.EFFECTS = []
 		revived.POISON = 0
 		revived.POISON_OVER_TIME = 0
-		revived.JUST_POISON = 0
-		revived.JUST_POISON_OVER_TIME = 0
+		revived.AFTEREFFECT = 0
+		revived.AFTEREFFECT_OVER_TIME = 0
+		revived.HEAL = 0
+		revived.HEAL_OVER_TIME = 0
 		revived.ABSOLUTE_SHIELD = 0
 		revived.RELATIVE_SHIELD = 0
 		revived.DAMAGE_RETURN = 0
