@@ -35,7 +35,7 @@ class ActionsClass {
 		pushAll(_final, getEveryActionsOnMe(MyCell, MY_INVENTORY_ON_ME, State, BaseHash))
 		pushAll(_final, getEveryActionsInVoid(MyCell, MY_INVENTORY_ON_VOID, State, LeekCells, BaseHash))
 		pushAll(_final, getEverySummonActions(MyCell, MY_INVENTORY_SUMMON, State, LeekCells, BaseHash))
-		pushAll(_final, getEveryActionsOnEveryOne(State[Me].CELL, MY_INVENTORY_ON_EVERYONE, State, WalkCells, BaseHash))
+		pushAll(_final, getEveryActionsOnEveryOne(State[Me].CELL, MY_INVENTORY_ON_EVERYONE, State, WalkCells, BaseHash, LeekCells))
 		BenchOps.Stop("Actions")
 		return _final
 	}
@@ -64,7 +64,10 @@ class ActionsClass {
 
 	/* La meilleure façon de me cibler moi-même avec l'item (cellule d'AoE la plus proche si minrange > 0). */
 	static getActionOnMe(MyCell, LaunchType, MinRange, MaxRange, item, NeedLos, State, BaseHash) {
-		//TODO : Check i am the only entity in targets ?
+		// Représentant SELF unique (To = ma cellule) : le collatéral éventuel autour de moi
+		// est volontairement simulé par Consequences, pas dédoublé ici — un seul nœud self
+		// évite de multiplier les branches, et les visées avec une autre cible utile passent
+		// déjà par getActionsOnEveryone.
 		if (MinRange == 0) return new ActionClass(item, MyCell, MyCell)
 		var MinDist = 1000
 		var MinDistCell
@@ -127,9 +130,10 @@ class ActionsClass {
 
 	/* Cellule d'invocation : près des ennemis pour un bulbe offensif (MeanBulbs), près des
 	 * alliés sinon (bulbe doux / résurrection). */
-	static getSummonAction(LaunchType, basefrom, MinRange, MaxRange, LeekCells, item, State, base_hash) { //TODO : Debug and Cache
+	// Pas de cache local : le résultat est déjà couvert par ACTIONS_SUMMON_CACHE (clé
+	// BaseHash + cellule), et les distances moyennes ont leurs propres caches.
+	static getSummonAction(LaunchType, basefrom, MinRange, MaxRange, LeekCells, item, State, base_hash) {
 
-		var CellsUsables = []
 		var CellToSummon
 		var BestScore = MAX_VALUE
 		var entity_side = State[Me].SIDE
@@ -171,7 +175,7 @@ class ActionsClass {
 	}
 
 	/* Actions offensives/soutien sur les autres entités, dédoublonnées par hash de cibles. */
-	static getEveryActionsOnEveryOne(MyCell, Inventory, State, WalkCells, BaseHash) {
+	static getEveryActionsOnEveryOne(MyCell, Inventory, State, WalkCells, BaseHash, LeekCells) {
 		var combined = (State[Me].MP << 20) | MyCell
 		var Hash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), combined)
 		if (Hash in ENTITY_ACTIONS_CACHE) return ENTITY_ACTIONS_CACHE[Hash]
@@ -183,7 +187,7 @@ class ActionsClass {
 			if (Infos.AREA == AREA_FIRST_INLINE) { //Special case where i don't want to hit caster but a cell
 				pushAll(_final, getFirstInlineActions(State, Infos, item, SortedWalkCells, BaseHash))
 			} else { //Normal case
-				pushAll(_final, getActionsOnEveryone(State, item, BaseHash, SortedWalkCells))
+				pushAll(_final, getActionsOnEveryone(State, item, BaseHash, SortedWalkCells, LeekCells))
 			}
 		}
 		ENTITY_ACTIONS_CACHE[Hash] = _final
@@ -192,12 +196,20 @@ class ActionsClass {
 
 	/* Pour un item : une action par ensemble de cibles DISTINCT (DoneHashs dédoublonne les
 	 * (from, to) qui touchent exactement les mêmes entités aux mêmes distances), en partant
-	 * des cellules les moins chères en déplacement. */
-	static getActionsOnEveryone(State, Item, BaseHash, SortedWalkCells) {
+	 * des cellules les moins chères en déplacement.
+	 * LASERS (AREA_LASER_LINE) : la ZONE traverse les entités, seule la LoS du CAST s'arrête
+	 * à To — quand la LoS dynamique d'un candidat est bloquée par une entité (LoS statique
+	 * vraie), on vise la PREMIÈRE entité bloquante (endpoint valide) : le laser continue
+	 * derrière et Consequences touche toute la ligne. Fallback payé UNIQUEMENT sur les
+	 * candidats laser réellement bloqués par une entité. */
+	static getActionsOnEveryone(State, Item, BaseHash, SortedWalkCells, LeekCells) {
 
 		var HashedMapAoe = LoadHashedMapAoe(State, Item, BaseHash)
 		var DoneHashs = [: ]
 		var _final = []
+		var isLaser = ITEMINFO[Item].AREA == AREA_LASER_LINE
+		var MinRange = ITEMINFO[Item].MINRANGE
+		var laserDone = [: ]   // dédup exact (from << 10) | actualTo — lasers seulement
 
 		for (var from in SortedWalkCells) {
 			if (from in HashedMapAoe) {
@@ -206,7 +218,28 @@ class ActionsClass {
 					if (CellClass.getLosWithBaseHash(from, to, State, BaseHash)) {
 						push(_final, new ActionClass(Item, from, to))
 						DoneHashs[toHash] = true
+						// Enregistré aussi pour qu'un fallback ultérieur identique ne duplique pas.
+						if (isLaser) laserDone[(from << 10) | to] = true
+						continue
 					}
+					if (!isLaser) continue
+					// LoS statique fausse = obstacle de CARTE : aucune visée possible.
+					if (!CellClass.getLos(from, to)) continue
+					// Première entité vivante STRICTEMENT entre from et to (l'endpoint exclu).
+					var blockers = CellClass.getFirstInlineAoe(from, to, 1, CellClass.getDist(from, to) - 1, LeekCells)
+					var actualTo = null
+					for (var c: var _b in blockers) { actualTo = c; break }
+					if (actualTo == null) continue   // garde : LoS divergentes sans bloqueur trouvé
+					// Bloqueur avant MIN_RANGE : sa cellule est invisible ET il bloque toute
+					// cellule légale derrière -> aucune visée.
+					if (CellClass.getDist(from, actualTo) < MinRange) continue
+					var actualKey = (from << 10) | actualTo
+					if (!(actualKey in laserDone)) {
+						laserDone[actualKey] = true
+						push(_final, new ActionClass(Item, from, actualTo))
+					}
+					// Le hash de cibles est traité, comme l'aurait fait la première action valide.
+					DoneHashs[toHash] = true
 				}
 			}
 		}
