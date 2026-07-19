@@ -24,29 +24,6 @@ include("../includes.leek")
 class ScoringClass {
 
     /*
-     * Score complet d'un état.
-     *
-     * @param State [id -> stats]
-     * @param MySide side de Me
-     * @param BaseHash hash (id, cellule) des vivants
-     * @param contextBySide [side -> hash de l'équipe adverse]
-     * @return score total signé
-     */
-    static getStateScore(State, MySide, BaseHash, contextBySide) {
-        BenchOps.Start("Scoring")
-        var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash, contextBySide)
-        var poisonKey = poisonKeyOf(State, BaseHash)
-        var _score = 0
-        for (var e: var stat in State) {
-            if (stat.LIFE <= 0) continue
-            var sign = (stat.SIDE == MySide) ? 1 : -1
-            _score += sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e], State, poisonKey) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
-        }
-        BenchOps.Stop("Scoring")
-        return _score
-    }
-
-    /*
      * Map complète des termes [id -> terme SIGNÉ] (score == sumTerms(map)).
      * Utilisée à la racine du BFS, puis portée de nœud en nœud et patchée.
      */

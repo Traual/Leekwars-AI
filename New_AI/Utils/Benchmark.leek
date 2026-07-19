@@ -7,6 +7,11 @@
  *     ... code to measure ...
  *     BenchOps.Stop("WalkCells")
  *
+ *   ENABLED = false : mode PRODUCTION — aucune collecte, aucune sortie ; le seul coût
+ *   restant des appels Start/Stop est l'appel de fonction + le test booléen.
+ *   ENABLED = true : mesures et Dump complets, comportement historique intact.
+ *   L'activation se fait TEMPORAIREMENT lors d'un combat de mesure, puis on remet false.
+ *
  *   The same category can be started/stopped multiple times in a turn; the
  *   totals and call counts accumulate. Call BenchOps.Dump() at end of turn to
  *   print the breakdown sorted by total ops. BenchOps.Reset() clears all
@@ -20,15 +25,18 @@
 **/
 
 class BenchOps {
+	static ENABLED = false
 	static STARTS = [: ]
 	static TOTALS = [: ]
 	static CALLS  = [: ]
 
 	static Start(name) {
+		if (!ENABLED) return;
 		STARTS[name] = getOperations()
 	}
 
 	static Stop(name) {
+		if (!ENABLED) return;
 		var elapsed = getOperations() - STARTS[name]
 		if (name in TOTALS) {
 			TOTALS[name] += elapsed
@@ -40,12 +48,14 @@ class BenchOps {
 	}
 
 	static Reset() {
+		if (!ENABLED) return;
 		STARTS = [: ]
 		TOTALS = [: ]
 		CALLS  = [: ]
 	}
 
 	static Dump() {
+		if (!ENABLED) return;
 		var entries = []
 		var total = 0
 		for (var name: var ops in TOTALS) {
