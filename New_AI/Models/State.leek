@@ -163,13 +163,16 @@ class StateClass {
 	 */
 	static validateDerivedMemos(parentStat, childStat) {
 		if (parentStat == null) return;
-		if (childStat.TOTAL_LIFE != parentStat.TOTAL_LIFE) childStat.TLSQ_MEMO = null
-		if (childStat.STRENGTH != parentStat.STRENGTH || childStat.MAGIC != parentStat.MAGIC
+		// Un mémo déjà null n'a rien à invalider : les comparaisons ne sont payées que si
+		// le mémo copié porte une valeur.
+		if (childStat.TLSQ_MEMO != null && childStat.TOTAL_LIFE != parentStat.TOTAL_LIFE) childStat.TLSQ_MEMO = null
+		if (childStat.CAP_MEMO != null
+			&& (childStat.STRENGTH != parentStat.STRENGTH || childStat.MAGIC != parentStat.MAGIC
 			|| childStat.WISDOM != parentStat.WISDOM || childStat.SCIENCE != parentStat.SCIENCE
 			|| childStat.AGILITY != parentStat.AGILITY || childStat.RESISTANCE != parentStat.RESISTANCE
 			|| childStat.TOTAL_TP != parentStat.TOTAL_TP || childStat.TOTAL_MP != parentStat.TOTAL_MP
 			|| childStat.ABSOLUTE_SHIELD != parentStat.ABSOLUTE_SHIELD
-			|| childStat.RELATIVE_SHIELD != parentStat.RELATIVE_SHIELD) {
+			|| childStat.RELATIVE_SHIELD != parentStat.RELATIVE_SHIELD)) {
 			childStat.CAP_MEMO = null
 		}
 	}

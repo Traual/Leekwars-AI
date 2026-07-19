@@ -118,9 +118,8 @@ class NodeClass {
 				result.BASE_HASH = StateClass.getBaseHash(ThisActionStats)
 				result.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(ThisActionStats)
 				result.HFP_BY_SIDE = HealClass.buildHfpBySide(ThisActionStats)
-				// Ce fallback court-circuite la boucle de patch : les mémos des clonés
-				// doivent quand même être validés ici.
-				for (var tar: var _c in clonedIds) StateClass.validateDerivedMemos(State[tar], ThisActionStats[tar])
+				// Pas de re-validation des mémos ici : la boucle de patch ci-dessus a DÉJÀ
+				// validé tous les clonés existants, et le bulbe neuf n'a pas de parent.
 				BenchOps.Stop("Node")
 				return result
 			}
