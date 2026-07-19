@@ -168,8 +168,11 @@ class ActionSuite {
 	 * les dropper ici libère leur nœud immédiatement. Le code aval s'appuie dessus.
 	 */
 	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTerms, ParentPoisonKey, ResurrectId) {
-		var basePairs = getBaseActions(State, BaseHash, ResurrectId)   // [ [act, coût], ... ] : le coût du filtre est réutilisé
+		// getAllLayers calculé UNE fois et partagé avec getBaseActions (les maps internes
+		// sont cachées par layer, mais les checks de capacité + le LayersClass étaient
+		// reconstruits deux fois sur chaque chemin frais).
 		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
+		var basePairs = getBaseActions(State, BaseHash, ResurrectId, MyWalkCells)   // [ [act, coût], ... ] : le coût du filtre est réutilisé
 		var Entries = []
 		for (var pair in basePairs) {
 			var act = pair[0]
@@ -191,10 +194,9 @@ class ActionSuite {
 	 * (item + swap d'arme + jump/télépo) sert au filtre et est transmis tel quel aux nœuds.
 	 * Filtre : cooldown, MAX_USES, coût vs TP restants.
 	 */
-	static getBaseActions(State, BaseHash, ResurrectId) {
+	static getBaseActions(State, BaseHash, ResurrectId, MyWalkCells) {
 		var _final = []
 		var MyStats = State[Me]
-		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 		var Acts = ActionsClass.getEveryActionsInAState(State, MyWalkCells, MyStats.CELL, BaseHash)
 
 		for (var Action in Acts) {
