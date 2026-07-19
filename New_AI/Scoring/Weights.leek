@@ -3,7 +3,7 @@
  * sans toucher à la logique.
  *
  * Par entité VIVANTE — deux canaux, chaque input a UN seul canal :
- *   afterPeriodic = max(0, LIFE − COEF_POISON·netTick)  // STOCK : netTick = poison + aftereffect − HoT
+ *   afterPeriodic = max(0, LIFE − COEF_PERIODIC_TICK·netTick)  // STOCK : netTick = poison + aftereffect − HoT
  *   ttk         = rounds avant la mort                // HORIZON : danger net + traînée poison
  *   value       = BASE_ALIVE + W_LIFE · sqrt(afterPeriodic) + W_TTK · g(ttk)
  *               + W_TOTAL_LIFE · sqrt(TOTAL_LIFE)
@@ -29,7 +29,7 @@ global W_TOTAL_LIFE = 0.5 * W_LIFE
 
 // Tick périodique NET du prochain tour (poison + aftereffect − heal over time), soustrait
 // de la vie (un HoT dominant le rehausse).
-global COEF_POISON = 0.5
+global COEF_PERIODIC_TICK = 0.5
 
 // Le heal amortit le danger dans le net séquencé par ordre de tour (DeltaClass) : chaque
 // heal ne compte qu'à HEAL_COEF de son potentiel (un soin est moins CERTAIN qu'un dégât —
@@ -40,8 +40,10 @@ global HEAL_COEF = 0.6
 // ----- Canal HORIZON : TTK (kill-horizon) — LE canal de menace -----
 // survivalValue gagne W_TTK · g en forme DIRECTE : g = horizonLife/(horizonLife +
 // TTK_HALF·pression) ∈ [0,1] — algébriquement ttk/(ttk+TTK_HALF) avec ttk = rounds avant
-// la mort sous la pression courante (danger net + tick de poison, antidote-remisé — calcul
-// dans survivalValue). Pression nulle -> g = 1 exactement : aucun +1 protecteur, une entité
+// la mort sous la pression courante : danger net + traînée périodique NUISIBLE,
+// harmfulRemaining = max(0, coefAntidote·POISON_OVER_TIME + AFTEREFFECT_OVER_TIME −
+// HEAL_OVER_TIME) — le coef antidote ne porte que sur le VRAI poison (calcul dans
+// survivalValue). Pression nulle -> g = 1 exactement : aucun +1 protecteur, une entité
 // vivante sans pression touche tout W_TTK.
 // C'est le SEUL endroit où le danger projeté et la traînée de poison entrent dans la valeur
 // (l'ancien canal pressure/effLife double-comptait ET était concave -> saupoudrage de
@@ -87,7 +89,8 @@ global CAST_COST = [
 	CHIP_MANUMISSION: 2
 ]
 
-// Poison antidote-aware : la pression POT utilise effPot = coef(entité)·POT, avec
+// Poison antidote-aware : harmfulRemaining utilise coef(entité)·POISON_OVER_TIME (le coef
+// ne touche NI l'aftereffect NI les soins futurs), avec
 // coef = 1/(1 + POISON_CLEANSE_W · protection). protection = son antidote 1/(1+cd) + chaque
 // porteur allié 1/(1+cd) DILUÉ par le nombre de coéquipiers qu'il couvre (un antidote
 // nettoie ~une cible par cycle de cd de 4 tours — un porteur seul couvrant 4 protège chacun

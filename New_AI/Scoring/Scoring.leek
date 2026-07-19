@@ -3,7 +3,7 @@
  *
  * Par entité VIVANTE — deux canaux, chaque input a UN seul canal :
  *   netTick       = POISON + AFTEREFFECT − HEAL              // tick périodique net (6 flux séparés)
- *   afterPeriodic = max(0, LIFE − COEF_POISON·netTick)       // STOCK : vie après le tick net
+ *   afterPeriodic = max(0, LIFE − COEF_PERIODIC_TICK·netTick)  // STOCK : vie après le tick net
  *   ttk           = rounds avant la mort sous la pression    // HORIZON : danger net + traînée périodique
  *   value       = BASE_ALIVE + W_LIFE·sqrt(afterPeriodic) + W_TTK·g(ttk) + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)
  *   term        = sign · (importance·value + capability + drDeterrence)
@@ -171,10 +171,10 @@ class ScoringClass {
             tlTerm = W_TOTAL_LIFE * sqrt(max(0, stat.TOTAL_LIFE))
             stat.TLSQ_MEMO = tlTerm
         }
-        var pot = stat.POISON_OVER_TIME
-        if (pot > 0) pot = poisonCoefOf(stat, State, PoisonKey) * pot
+        var effectivePoisonRemaining = stat.POISON_OVER_TIME
+        if (effectivePoisonRemaining > 0) effectivePoisonRemaining = poisonCoefOf(stat, State, PoisonKey) * effectivePoisonRemaining
         var netTick = stat.POISON + stat.AFTEREFFECT - stat.HEAL
-        var harmfulRemaining = max(0, pot + stat.AFTEREFFECT_OVER_TIME - stat.HEAL_OVER_TIME)
+        var harmfulRemaining = max(0, effectivePoisonRemaining + stat.AFTEREFFECT_OVER_TIME - stat.HEAL_OVER_TIME)
         var key = (stat.LIFE << 48) | ((netTick & 0x3FFF) << 34) | ((harmfulRemaining & 0x1FFFF) << 17) | (danger & 0x1FFFF)
         if (key in SURVIVAL_CACHE) return SURVIVAL_CACHE[key] + tlTerm
 
@@ -183,7 +183,7 @@ class ScoringClass {
         // le danger et la traînée périodique vivent exclusivement dans le canal TTK
         // (chaque input a UN canal, pas de double compte). sqrt concave : un HP vaut plus
         // près de la mort -> finir les blessés.
-        var afterPeriodic = max(0, stat.LIFE - COEF_POISON * netTick)
+        var afterPeriodic = max(0, stat.LIFE - COEF_PERIODIC_TICK * netTick)
         var value = BASE_ALIVE + W_LIFE * sqrt(afterPeriodic)
 
         // Canal HORIZON (TTK) en forme DIRECTE : g = horizonLife / (horizonLife + TTK_HALF ·
@@ -191,25 +191,23 @@ class ScoringClass {
         // ttk = horizonLife/pression, sans calcul intermédiaire de ttk ni dénominateur +1 :
         // pression nulle -> g = 1 EXACTEMENT (une entité vivante sans pression touche tout
         // W_TTK, plus de faux dégât fantôme). tick = poison du prochain tour, répété tant que
-        // le poison dure ; effPot est remisé par la couverture antidote -> TTK antidote-aware.
-        // Trois régimes :
-        //   - sans traînée persistante : horizonLife = afterPeriodic,          pression = danger
-        //   - mort PENDANT la traînée  : horizonLife = afterPeriodic,          pression = danger + tick
-        //   - traînée EXPIRÉE avant    : horizonLife = afterPeriodic − effPot, pression = danger
+        // la traînée dure ; harmfulRemaining est remisé par la couverture antidote (poison
+        // seul) -> TTK antidote-aware. Trois régimes :
+        //   - sans traînée persistante : horizonLife = afterPeriodic,           pression = danger
+        //   - mort PENDANT la traînée  : horizonLife = afterPeriodic,           pression = danger + tick
+        //   - traînée EXPIRÉE avant    : horizonLife = afterPeriodic − traînée, pression = danger
         //     (simplification EXACTE de duration + (afterPeriodic − (danger+tick)·duration)/danger,
-        //      duration = effPot/tick — vérifiée algébriquement)
-        // Détection sans division : afterPeriodic·tick <= (danger+tick)·effPot <=> mort pendant.
-        // tick = max(0, netTick) ; effPot = harmfulRemaining (déjà >= 0, antidote-remisé côté
-        // poison seul). Tous les inputs sont déjà dans la clé du cache -> miss seulement.
+        //      duration = harmfulRemaining/tick — vérifiée algébriquement)
+        // Détection sans division : afterPeriodic·tick <= (danger+tick)·harmfulRemaining.
+        // tick = max(0, netTick). Tous les inputs sont déjà dans la clé du cache -> miss seulement.
         var tick = max(0, netTick)
-        var effPot = harmfulRemaining
         var horizonLife = afterPeriodic
         var pressure = danger
-        if (tick > 0 && effPot > 0) {
-            if (afterPeriodic * tick <= (danger + tick) * effPot) {
-                pressure = danger + tick                     // il meurt avant l'expiration de la traînée
+        if (tick > 0 && harmfulRemaining > 0) {
+            if (afterPeriodic * tick <= (danger + tick) * harmfulRemaining) {
+                pressure = danger + tick                       // il meurt avant l'expiration de la traînée
             } else {
-                horizonLife = afterPeriodic - effPot         // la traînée expire, elle est payée
+                horizonLife = afterPeriodic - harmfulRemaining // la traînée expire, elle est payée
             }
         }
         // g : 0 (condamné) -> 1 (sûr), pente max près de 0, RELATIF à la vie (un même danger

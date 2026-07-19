@@ -179,7 +179,7 @@ global AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
 
 // SCORING
 
-// Valeur de survie, clé packée (LIFE, POISON, effPot, danger). Reset au tour.
+// Valeur de survie, clé packée (LIFE, netTick, harmfulRemaining, danger). Reset au tour.
 global SURVIVAL_CACHE = [: ]
 
 // Importance FIGÉE par replan réel : [id -> importance], vidée par Play à CHAQUE replan
