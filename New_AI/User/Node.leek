@@ -87,6 +87,9 @@ class NodeClass {
 		var ctxSides = mapKeys(ctx)
 		var hfpMap = clone(ParentHfp, 1)
 		for (var tar: var _c in clonedIds) {
+			// Mémos dérivés : copiés au clone, validés ICI contre le parent (Me compris —
+			// il est seulement exclu des hashs, pas de la validation).
+			StateClass.validateDerivedMemos(State[tar], ThisActionStats[tar])
 			if (tar == Me) continue          // Me est exclu des trois hashs
 			var oldStat = State[tar]
 			var newStat = ThisActionStats[tar]
@@ -115,6 +118,9 @@ class NodeClass {
 				result.BASE_HASH = StateClass.getBaseHash(ThisActionStats)
 				result.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(ThisActionStats)
 				result.HFP_BY_SIDE = HealClass.buildHfpBySide(ThisActionStats)
+				// Ce fallback court-circuite la boucle de patch : les mémos des clonés
+				// doivent quand même être validés ici.
+				for (var tar: var _c in clonedIds) StateClass.validateDerivedMemos(State[tar], ThisActionStats[tar])
 				BenchOps.Stop("Node")
 				return result
 			}

@@ -27,7 +27,7 @@ class BulbState {
 	SPECIAL_WEAPON
 	EFFECTS
 	EFFECTS_ITEM_MAP
-	CAP_MEMO    // memos de champs dérivés, même contrat qu'EntityState (null = calcul lazy)
+	CAP_MEMO    // memos de champs dérivés, même contrat qu'EntityState (copiés au clone puis validés)
 	TLSQ_MEMO
 	POISON
 	POISON_OVER_TIME

@@ -16,10 +16,10 @@ class EntityStateClass extends EntityClass {
 	USES
 	EFFECTS
 	EFFECTS_ITEM_MAP
-	// Memos de champs dérivés (scoring), calculés paresseusement. Valides tant que les stats
-	// ne changent pas — garanti par le clone-on-write : toute mutation passe par un clone
-	// frais, et les sites de clone remettent ces deux champs à null. Écrire un memo sur un
-	// objet PARTAGÉ est sain : partage => stats identiques => même valeur.
+	// Memos de champs dérivés (scoring), calculés paresseusement. COPIÉS au clone puis
+	// VALIDÉS après l'action (StateClass.validateDerivedMemos, appelé par Node sur chaque
+	// cloné) : un clone dont les inputs n'ont pas bougé garde ses mémos. Écrire un memo sur
+	// un objet PARTAGÉ est sain : partage => stats identiques => même valeur.
 	CAP_MEMO    // ImportanceClass.capability(stat)
 	TLSQ_MEMO   // W_TOTAL_LIFE * sqrt(max(0, TOTAL_LIFE)) (terme hors cache de survivalValue)
 	// Six flux périodiques SÉPARÉS et POSITIFS (jamais de "poison négatif") :
@@ -32,7 +32,7 @@ class EntityStateClass extends EntityClass {
 	LIFE
 	TOTAL_LIFE
 	STRENGTH
-	TO_SAVE_STRENGTH // POS et NEG séparés : Manumission retire les shackles, Libération retire 60% des deux
+	TO_SAVE_STRENGTH // base VRAIE (sert surtout la résurrection) ; TO_SAVE_SHACKLE_* sert Manumission
 	TO_SAVE_SHACKLE_STRENGTH
 	WISDOM
 	TO_SAVE_WISDOM
@@ -99,10 +99,10 @@ class EntityStateClass extends EntityClass {
 		this.TOTAL_TP = getTotalTP(id)
 
 		// Stats de BASE VRAIE + total shacklé, reconstitués en dépliant les effets actifs :
-		// TO_SAVE_<stat> = courante − buffs + shackles = la stat sans AUCUN effet. Ainsi
-		// (stat − TO_SAVE) = le delta NET des effets, et le pull du débuff
-		// (getEntityDebuffConsequences) réduit buffs ET shackles uniformément — un débuff
-		// REMONTE une stat shacklée, comme le moteur. Manumission consomme TO_SAVE_SHACKLE_*.
+		// TO_SAVE_<stat> = courante − buffs + shackles = la stat sans AUCUN effet. Sert
+		// surtout la RÉSURRECTION (reset aux bases vraies) ; Libération travaille désormais
+		// ligne à ligne sur le ledger (getEntityDebuffConsequences), plus par pull.
+		// Manumission consomme TO_SAVE_SHACKLE_* via removeCastedEffect.
 		this.TO_SAVE_STRENGTH = this.STRENGTH
 		this.TO_SAVE_SHACKLE_STRENGTH = 0
 		this.TO_SAVE_WISDOM = this.WISDOM

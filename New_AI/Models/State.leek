@@ -143,9 +143,35 @@ class StateClass {
 			c.COOLDOWNS = clone(stat.COOLDOWNS)   // les deux seuls containers écrits en sim — Me only
 			c.USES = clone(stat.USES)
 		}
-		c.CAP_MEMO = null
-		c.TLSQ_MEMO = null
+		// CAP_MEMO / TLSQ_MEMO : COPIÉS par clone(stat, 1) puis VALIDÉS après l'action
+		// (validateDerivedMemos dans Node) — plus d'invalidation systématique au clonage.
 		return c
+	}
+
+	/*
+	 * Valide les mémos dérivés d'un clone contre son parent, APRÈS l'action : une
+	 * comparaison de champs remplace le recalcul (buckets + sqrt) des clones dont les
+	 * inputs n'ont pas bougé (Me est cloné à CHAQUE nœud pour TP/cooldowns — hors inputs).
+	 * Dépendances EXACTES, par valeur (jamais de hash probabiliste) :
+	 *   TLSQ_MEMO <- TOTAL_LIFE seule.
+	 *   CAP_MEMO  <- STR/MAG/WIS/SCI/AGI/RES, TOTAL_TP (aussi la clé du combo), TOTAL_MP,
+	 *                ABSOLUTE_SHIELD, RELATIVE_SHIELD.
+	 * Volontairement HORS dépendances : LIFE, TP/MP courants, CELL, POWER, DAMAGE_RETURN,
+	 * cooldowns/uses de branche (items de capability FIGÉS par CAPABILITY_ITEMS_BY_ID au
+	 * replan), flux périodiques. Un mémo copié déjà null reste null naturellement.
+	 * parentStat null (summon né en branche) -> mémos laissés tels quels (null d'origine).
+	 */
+	static validateDerivedMemos(parentStat, childStat) {
+		if (parentStat == null) return;
+		if (childStat.TOTAL_LIFE != parentStat.TOTAL_LIFE) childStat.TLSQ_MEMO = null
+		if (childStat.STRENGTH != parentStat.STRENGTH || childStat.MAGIC != parentStat.MAGIC
+			|| childStat.WISDOM != parentStat.WISDOM || childStat.SCIENCE != parentStat.SCIENCE
+			|| childStat.AGILITY != parentStat.AGILITY || childStat.RESISTANCE != parentStat.RESISTANCE
+			|| childStat.TOTAL_TP != parentStat.TOTAL_TP || childStat.TOTAL_MP != parentStat.TOTAL_MP
+			|| childStat.ABSOLUTE_SHIELD != parentStat.ABSOLUTE_SHIELD
+			|| childStat.RELATIVE_SHIELD != parentStat.RELATIVE_SHIELD) {
+			childStat.CAP_MEMO = null
+		}
 	}
 
 	/* État de simulation : cibles + Me clonés, tout le reste partagé avec le parent. */
