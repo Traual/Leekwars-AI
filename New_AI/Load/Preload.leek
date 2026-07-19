@@ -28,8 +28,10 @@ class Preload {
 	}
 
     static InitItemInfo() {
-		for (var i = 0; i < 500; i++) {
-			ITEMINFO[i] = [: ]
+		// Catalogue moteur complet (getAllChips + getAllWeapons) : uniquement les vrais items,
+		// aucune borne d'id en dur — un item récent à id haut (ex : Bazooka au plutonium, 506)
+		// est couvert d'office.
+		for (var i in getAllChips() + getAllWeapons()) {
 			var Iinfo = new ItemClass(i)
 			ITEMINFO[i] = Iinfo
 			// PASSIVE_INFO[arme][type] = ligne au layout de getWeaponPassiveEffects (eff[1] =

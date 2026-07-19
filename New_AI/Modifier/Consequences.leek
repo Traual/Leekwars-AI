@@ -855,6 +855,8 @@ class ConsequencesClass {
 			stats.MAGIC += value
 		} else if (rawType == EFFECT_RAW_BUFF_AGILITY) {
 			stats.AGILITY += value
+		} else if (rawType == EFFECT_RAW_BUFF_RESISTANCE) {
+			stats.RESISTANCE += value
 		} else if (rawType == EFFECT_RAW_BUFF_MP) {
 			stats.MP += value
 			stats.TOTAL_MP += value
@@ -868,7 +870,8 @@ class ConsequencesClass {
 	}
 
 	/* Dégâts DIRECTS encaissés (EFFECT_DAMAGE + EFFECT_LIFE_DAMAGE, après dégâts+érosion,
-	 * avant lifesteal/retour) : Revoked M-Laser -> STRENGTH, Mysterious Electrisor -> shield. */
+	 * avant lifesteal/retour) : Revoked M-Laser -> STRENGTH, Mysterious Electrisor -> shield,
+	 * Bazooka au plutonium -> RESISTANCE. */
 	static applyOnDirectDamagePassive(stats, appliedDamage) {
 		if (stats.LIFE <= 0 || appliedDamage <= 0) return;
 		// Double arrondi moteur : onDirectDamage reçoit un ENTIER, puis l'effet RAW_* arrondit
@@ -881,6 +884,9 @@ class ConsequencesClass {
 		} else if (stats.SPECIAL_WEAPON == WEAPON_MYSTERIOUS_ELECTRISOR) {
 			var row = PASSIVE_INFO[WEAPON_MYSTERIOUS_ELECTRISOR][EFFECT_DAMAGE_TO_ABSOLUTE_SHIELD]
 			applyPassiveRawEffect(stats, EFFECT_RAW_ABSOLUTE_SHIELD, round(dmg * row[1] / 100), WEAPON_MYSTERIOUS_ELECTRISOR, row, false)
+		} else if (stats.SPECIAL_WEAPON == WEAPON_PLUTONIUM_BAZOOKA) {
+			var row = PASSIVE_INFO[WEAPON_PLUTONIUM_BAZOOKA][EFFECT_DAMAGE_TO_RESISTANCE]
+			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_RESISTANCE, round(dmg * row[1] / 100), WEAPON_PLUTONIUM_BAZOOKA, row, false)
 		}
 	}
 

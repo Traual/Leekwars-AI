@@ -1,6 +1,6 @@
 /*
  * Item : toutes les caractéristiques d'un chip ou d'une arme, lues une fois du moteur
- * (peuplé pour les 500 ids dans Preload.InitItemInfo -> ITEMINFO).
+ * (peuplé pour tout le catalogue moteur dans Preload.InitItemInfo -> ITEMINFO).
  */
 
 

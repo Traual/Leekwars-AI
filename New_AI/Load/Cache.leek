@@ -110,8 +110,8 @@ global ITEMINFO = [: ]
 
 // PASSIVE_INFO[arme][type d'effet passif] = ligne complète au layout de
 // getWeaponPassiveEffects (eff[1] = value1) — PAS celui des effets runtime de getEffects.
-// Peuplé une fois dans Preload.InitItemInfo — les procs de passifs (Enhanced, Dark, Revoked,
-// Mysterious, Unbridled, Unstable, Explorer) lisent leurs valeurs ici, jamais en dur.
+// Peuplé une fois dans Preload.InitItemInfo pour toute arme du catalogue portant des effets
+// passifs — les procs simulés dans Consequences lisent leurs valeurs ici, jamais en dur.
 global PASSIVE_INFO = [: ]
 
 // TARGET
