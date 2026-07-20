@@ -23,6 +23,7 @@ class ItemClass {
 	AREA_MAX
 	IS_WEAPON
 	STACKABLE
+	IS_VULNERABILITY
 	//SHOULD_CASTER_GET_HIT
 	constructor(id) {
 		if (isChip(id) || isWeapon(id)) {
@@ -42,6 +43,15 @@ class ItemClass {
 			this.AREA_MAX = AreaMax(id, this.AREA)
 			this.IS_WEAPON = isWeapon(id)
 			this.STACKABLE = this.EFFECTS[0][5] & EFFECT_MODIFIER_STACKABLE   // flag du premier effet
+			// L'item pose-t-il une vulné/debuff ? (candidat à jouer AVANT les items de dégâts
+			// dans les combos Danger) — classifié UNE fois ici, lu par getFirstComboVulneFrom.
+			this.IS_VULNERABILITY = false
+			for (var eff in this.EFFECTS) {
+				if (eff[0] == EFFECT_DEBUFF || eff[0] == EFFECT_VULNERABILITY || eff[0] == EFFECT_ABSOLUTE_VULNERABILITY) {
+					this.IS_VULNERABILITY = true
+					break
+				}
+			}
 		}
 	}
 

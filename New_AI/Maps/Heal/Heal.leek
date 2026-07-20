@@ -158,8 +158,10 @@ class HealClass {
         _final[HEAL_PROFILE_ALLY_LEEK] = [: ]
         _final[HEAL_PROFILE_ALLY_SUMMON] = [: ]
         for (var cell: var itemAoeMap in mapCellItemAoe) {
+            // Hash de contenu calculé UNE fois par cellule, partagé entre les deux profils.
+            var contentHash = DangerClass.getHashFromItemAoeMap(itemAoeMap)
             for (var profile = HEAL_PROFILE_ALLY_LEEK; profile <= HEAL_PROFILE_ALLY_SUMMON; profile++) {
-                var combo = comboAtCell(itemAoeMap, casterStats, profile)
+                var combo = comboAtCell(itemAoeMap, casterStats, profile, contentHash)
                 if (combo[0] > 0 || combo[1] > 0) {
                     _final[profile][cell] = [combo[0] * critFactor, combo[1] * critFactor]
                 }
@@ -199,38 +201,48 @@ class HealClass {
      * contenu est dépendant de l'ordre d'itération : deux maps de même contenu construites
      * dans des ordres différents FRAGMENTENT seulement, jamais de collision.
      */
-    static comboAtCell(itemAoeMap, casterStats, profile) {
-        var comboKey = addValueToBinHash(OFFSET_BASIS ^ DangerClass.getHashFromItemAoeMap(itemAoeMap),
+    static comboAtCell(itemAoeMap, casterStats, profile, contentHash) {
+        // contentHash = fold de contenu de itemAoeMap, calculé par l'appelant (une fois par
+        // cellule, partagé entre les deux profils) — clé bit-identique à l'ancienne.
+        var comboKey = addValueToBinHash(OFFSET_BASIS ^ contentHash,
             (profile << 34) | (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
         if (comboKey in HEAL_COMBO_CACHE) return HEAL_COMBO_CACHE[comboKey]
 
+        // Facteur sagesse invariant du miss, calculé une fois (le moteur floor le SOIN, pas
+        // la stat : WIS -50 soigne 50%, <= -100 soigne 0).
+        var wisdomFactor = max(0, 1 + casterStats.WISDOM / 100)
         var items = []
         for (var item: var aoeDist in itemAoeMap) {
-            var parts = getItemHealParts(item, casterStats, aoeDist, profile)
+            var parts = getItemHealParts(item, wisdomFactor, aoeDist, profile)
             var gain = parts[0] + parts[1]
             if (gain <= 0) continue
-            push(items, [item, parts[0], parts[1], gain, ITEMINFO[item].COST])
+            // [item, heal, vitalité, efficacité, coût] — efficacité = (heal+vitalité)/TP
+            // pré-calculée une fois (même division que l'ancien comparateur, mêmes floats).
+            var cost = ITEMINFO[item].COST
+            push(items, [item, parts[0], parts[1], gain / cost, cost])
         }
         if (count(items) == 0) {
             var zero = [0, 0]
             HEAL_COMBO_CACHE[comboKey] = zero
             return zero
         }
-        items = arraySort(items, function(a, b) { return (b[3] / b[4]) - (a[3] / a[4]) })  // (heal+vitalité)/TP desc
+        items = arraySort(items, function(a, b) { return b[3] - a[3] })  // efficacité desc
 
         var remainingTp = casterStats.TOTAL_TP
-        var uses = clone(casterStats.USES)
         var totalHeal = 0
         var totalVitality = 0
         for (var it in items) {
             var item = it[0]
             var cost = it[4]
             var maxUses = ITEMINFO[item].MAX_USES
-            while (remainingTp >= cost && uses[item] < maxUses) {
+            // Chaque item n'apparaît qu'une fois dans la liste -> un scalaire local de uses
+            // suffit ; casterStats.USES n'est jamais muté ni cloné.
+            var itemUses = casterStats.USES[item]
+            while (remainingTp >= cost && itemUses < maxUses) {
                 totalHeal += it[1]
                 totalVitality += it[2]
                 remainingTp -= cost
-                uses[item]++
+                itemUses++
             }
         }
         var res = [totalHeal, totalVitality]
@@ -251,10 +263,10 @@ class HealClass {
     }
 
     /* [heal, vitalité] d'un item à une distance d'AoE pour un profil : roll MIN, scalé
-     * sagesse, falloff d'AoE — jamais d'effet ON_CASTER (Vampirization & co). */
-    static getItemHealParts(item, casterStats, distance, profile) {
+     * sagesse (wisdomFactor pré-calculé par l'appelant), falloff d'AoE — jamais d'effet
+     * ON_CASTER (Vampirization & co). */
+    static getItemHealParts(item, wisdomFactor, distance, profile) {
         var distFactor = 1 - distance * 0.2
-        var wisdomFactor = max(0, 1 + casterStats.WISDOM / 100)   // le moteur floor le SOIN, pas la stat : WIS -50 soigne 50%, <= -100 soigne 0
         var heal = 0
         var vitality = 0
         for (var eff in ITEMINFO[item].EFFECTS) {

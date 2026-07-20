@@ -132,7 +132,7 @@ class DangerClass {
 		// restants de ce tour — stable d'un step de BFS à l'autre.
 		var BaseTp = CasterStats.TOTAL_TP
 		var BaseUses = CasterStats.USES
-		var _final = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, BaseTp, clone(BaseUses))
+		var _final = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
 		var ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
 		while ((ComboWithVulne instanceof DangerClass) && (ComboWithVulne.EndValueDamage > _final)) {
 			_final = ComboWithVulne.EndValueDamage
@@ -164,7 +164,7 @@ class DangerClass {
 		var _final
 		for (var item: var aoe in ItemAoeMap) {
 			var Infos = ITEMINFO[item]
-			if (BaseUses[item] < Infos.MAX_USES && BaseTp >= Infos.COST && IsVulnerabilityItem(Infos)) {
+			if (BaseUses[item] < Infos.MAX_USES && BaseTp >= Infos.COST && Infos.IS_VULNERABILITY) {
 				var CDangerClass = getCellDangerClassFromItem(TargetStats, Infos, BaseTp, BaseUses, ItemAoeMap, CasterStats, item)
 				var Damages = CDangerClass.EndValueDamage
 				if (MaxDamages < Damages) {
@@ -208,7 +208,7 @@ class DangerClass {
 		var ThisUses = clone(BaseUses)
 		var ThisItemMyStats = getRoughVulneConsequences(clone(TargetStats, 2), Infos, critFactorOf(CasterStats), CasterStats)
 		ThisUses[Item]++
-		var DamagesWithThisItemVulne = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, ThisItemMyStats, ThisTp, clone(ThisUses))
+		var DamagesWithThisItemVulne = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, ThisItemMyStats, ThisTp, ThisUses)
 		return new DangerClass(ThisItemMyStats, ThisTp, ThisUses, DamagesWithThisItemVulne)
 	}
 
@@ -242,11 +242,13 @@ class DangerClass {
 
 	/*
 	 * Combo glouton sans vulné : empile les items par dégâts (liste triée d'EntityDanger)
-	 * dans le budget TP + MAX_USES.
+	 * dans le budget TP + MAX_USES. BaseUses est READ-ONLY (jamais muté ni cloné) : une
+	 * seule entrée (item, aoe) de la liste peut matcher ItemAoeMap[item] par item — un
+	 * scalaire local de uses par entrée suffit.
 	 *
 	 * @return dégâts totaux du combo
 	 */
-	static getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, CasterTP, ClonedEntityUses) {
+	static getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, CasterTP, BaseUses) {
 		var EntityDangerArray = EntityDangerClass.get(CasterStats, TargetStats)
 		var ComboHash = getGreedyComboHash(ItemAoeMap, EntityDangerArray, CasterTP)
 		if (ComboHash in COMBO_DAMAGE_CACHE) return COMBO_DAMAGE_CACHE[ComboHash]
@@ -256,10 +258,11 @@ class DangerClass {
 			if (ItemAoeMap[ItemEntityDanger] == EntityDanger.Aoe) {
 				var CostEntityDanger = EntityDanger.Cost
 				var MaxUsesOfItem = ITEMINFO[ItemEntityDanger].MAX_USES
-				while (CasterTP >= CostEntityDanger && ClonedEntityUses[ItemEntityDanger] < MaxUsesOfItem) {
+				var itemUses = BaseUses[ItemEntityDanger]
+				while (CasterTP >= CostEntityDanger && itemUses < MaxUsesOfItem) {
 					_final += EntityDanger.Damages
 					CasterTP -= CostEntityDanger
-					ClonedEntityUses[ItemEntityDanger]++
+					itemUses++
 				}
 			}
 		}
@@ -396,20 +399,6 @@ class DangerClass {
 		EFFECT_DAMAGE: true,
 		EFFECT_LIFE_DAMAGE: true,
 		EFFECT_POISON: true,
-		EFFECT_DEBUFF: true,
-		EFFECT_ABSOLUTE_VULNERABILITY: true,
-		EFFECT_VULNERABILITY: true
-	]
-
-	/* L'item peut-il poser une vulné/debuff ? (candidat à jouer AVANT les items de dégâts) */
-	static IsVulnerabilityItem(ItemInfosVar) {
-		for (var eff in ItemInfosVar.EFFECTS) {
-			if (MapLoadForVulne[eff[0]]) return true
-		}
-		return false
-	}
-
-	static MapLoadForVulne = [
 		EFFECT_DEBUFF: true,
 		EFFECT_ABSOLUTE_VULNERABILITY: true,
 		EFFECT_VULNERABILITY: true
