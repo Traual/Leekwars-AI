@@ -299,13 +299,46 @@ class DangerClass {
 	 * MP < 1024 (10 bits), mp clampé (shacklé négatif == 0).
 	 */
 	static getMapCellItemAoe(EntityStats, EntityWalkCells) {
-		var EntityStartCell = EntityStats.CELL
 		var usesJumpLayer = WalkCellsClass.canJumpNextTurn(EntityStats) ? 1 : 0
-		var TmpHash = (EntityStats.ID << 21) | (usesJumpLayer << 20) | (EntityStartCell << 10) | max(0, EntityStats.TOTAL_MP)
+		var TmpHash = (EntityStats.ID << 21) | (usesJumpLayer << 20) | (EntityStats.CELL << 10) | max(0, EntityStats.TOTAL_MP)
 		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
+		var _final = buildMapCellItemAoe(EntityDangerClass.getItemsList(EntityStats), EntityWalkCells)
+		MAP_CELL_ITEM_AOE_CACHE[TmpHash] = _final
+		return _final
+	}
+
+	/*
+	 * Assemblage commun Danger/Heal : [cell -> [item -> minAoeDist]] pour une liste d'items
+	 * et les walkcells du caster. Mutualisation LOCALE au build (aucun cache global
+	 * dépendant des WalkCells — les deux maps meurent à la fin) : items de même
+	 * FULL_GEOMETRY_KEY partagent toute la map d'AoE, items de même LAUNCH_GEOMETRY_KEY
+	 * partagent l'union des cellules directement lançables. Maps partagées read-only.
+	 * L'ordre d'insertion des items = l'ordre de la liste (le fold dépendant de l'ordre de
+	 * getHashFromItemAoeMap, les clés de combo et l'ordre glouton en dépendent).
+	 */
+	static buildMapCellItemAoe(items, walkCellsMap) {
+		var launchCellsByKey = [: ]
+		var fullGeometryByKey = [: ]
 		var _final = [: ]
-		for (var Item in EntityDangerClass.getItemsList(EntityStats)) {
-			for (var Cell: var MinAoeDist in getMapAoeForItem(Item, ITEMINFO[Item], EntityWalkCells, EntityStartCell)) {
+		for (var Item in items) {
+			var Infos = ITEMINFO[Item]
+			var fullKey = Infos.FULL_GEOMETRY_KEY
+			var itemMap
+			if (fullKey in fullGeometryByKey) {
+				itemMap = fullGeometryByKey[fullKey]
+			} else {
+				var launchKey = Infos.LAUNCH_GEOMETRY_KEY
+				var directCells
+				if (launchKey in launchCellsByKey) {
+					directCells = launchCellsByKey[launchKey]
+				} else {
+					directCells = getMapHittableCellsTotal(Infos, walkCellsMap)
+					launchCellsByKey[launchKey] = directCells
+				}
+				itemMap = getMapAoeForItem(Infos, directCells)
+				fullGeometryByKey[fullKey] = itemMap
+			}
+			for (var Cell: var MinAoeDist in itemMap) {
 				if (Cell in _final) {
 					_final[Cell][Item] = MinAoeDist
 				} else {
@@ -314,23 +347,23 @@ class DangerClass {
 				}
 			}
 		}
-		MAP_CELL_ITEM_AOE_CACHE[TmpHash] = _final
 		return _final
 	}
 
 	/*
 	 * [cellule -> distance d'AoE minimale] pour un item : les cellules touchables en direct
-	 * valent 0, puis l'expansion d'AoE remplit le reste au plus près.
+	 * (MapCellsBool, déjà calculées par l'appelant) valent 0, puis l'expansion d'AoE remplit
+	 * le reste au plus près. Ne dépend que de la map directe, d'AREA et d'AREA_MAX.
 	 */
-	static getMapAoeForItem(Item, ItemInfos, WalkCellsMap, StartCell) {
+	static getMapAoeForItem(ItemInfos, MapCellsBool) {
 		var _final = [: ]
-		var MapCellsBool = getMapHittableCellsTotal(ItemInfos, WalkCellsMap, StartCell)
 		for (var cell: var bool in MapCellsBool) {
 			_final[cell] = 0
 		}
 		if (ItemInfos.AREA_MAX > 0) {
+			var area = ItemInfos.AREA
 			for (var cell: var bool in MapCellsBool) {
-				for (var Aoe: var AoeDist in ActionsClass.AoeDistItem(Item, cell)) {
+				for (var Aoe: var AoeDist in CellClass.getAreaDist(area, cell)) {
 					var ActualCellDist = _final[Aoe]
 					if (ActualCellDist == null || ActualCellDist > AoeDist) {
 						_final[Aoe] = AoeDist
@@ -345,7 +378,7 @@ class DangerClass {
 	 * [cellule -> true] : toutes les cellules touchables en direct par l'item depuis
 	 * n'importe quelle cellule accessible du caster.
 	 */
-	static getMapHittableCellsTotal(ItemInfos, WalkCellsMap, StartCell) {
+	static getMapHittableCellsTotal(ItemInfos, WalkCellsMap) {
 		var _final = [: ]
 		var LaunchType = ItemInfos.LAUNCHTYPE
 		var MinRange = ItemInfos.MINRANGE

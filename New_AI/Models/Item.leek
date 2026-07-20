@@ -24,6 +24,8 @@ class ItemClass {
 	IS_WEAPON
 	STACKABLE
 	IS_VULNERABILITY
+	LAUNCH_GEOMETRY_KEY
+	FULL_GEOMETRY_KEY
 	//SHOULD_CASTER_GET_HIT
 	constructor(id) {
 		if (isChip(id) || isWeapon(id)) {
@@ -52,6 +54,12 @@ class ItemClass {
 					break
 				}
 			}
+			// Signatures immuables de géométrie (mutualisation des builds Danger/Heal) : même
+			// clé de lancement -> mêmes cellules directement lançables, même clé complète ->
+			// même expansion d'AoE. Packs injectifs : launch types 1..7 (4 bits), portées
+			// < 1024 (10 bits), AREA 1..15 (5 bits).
+			this.LAUNCH_GEOMETRY_KEY = ((this.NEEDLOS ? 1 : 0) << 24) | (this.LAUNCHTYPE << 20) | (this.MINRANGE << 10) | this.MAXRANGE
+			this.FULL_GEOMETRY_KEY = (this.LAUNCH_GEOMETRY_KEY << 5) | this.AREA
 		}
 	}
 

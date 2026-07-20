@@ -178,22 +178,10 @@ class HealClass {
         return _final
     }
 
-    /* [cell -> [item -> minAoeDist]] : quelles cellules chaque item de heal atteint
-     * (réutilise la géométrie de la danger map). */
+    /* [cell -> [item -> minAoeDist]] : quelles cellules chaque item de heal atteint —
+     * même assemblage mutualisé que la danger map (source unique). */
     static getMapCellItemAoe(casterStats, walkCells) {
-        var startCell = casterStats.CELL
-        var _final = [: ]
-        for (var item in getHealItemsList(casterStats)) {
-            for (var cell: var minAoeDist in DangerClass.getMapAoeForItem(item, ITEMINFO[item], walkCells, startCell)) {
-                if (cell in _final) {
-                    _final[cell][item] = minAoeDist
-                } else {
-                    _final[cell] = [: ]
-                    _final[cell][item] = minAoeDist
-                }
-            }
-        }
-        return _final
+        return DangerClass.buildMapCellItemAoe(getHealItemsList(casterStats), walkCells)
     }
 
     /*
