@@ -144,12 +144,15 @@ class HealClass {
         // fois par appel froid : la géométrie dépend de (id, cellule, MP, couche) — un
         // buff/shackle TP franchissant le coût de Jump change la couche sans toucher le reste.
         var usesJumpLayer = WalkCellsClass.canJumpNextTurn(casterStats) ? 1 : 0
-        var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, (usesJumpLayer << 20) | (casterStats.CELL << 10) | max(0, casterStats.TOTAL_MP))
+        // movementKey (21 bits, sans ID) : le contexte de déplacement partagé avec Danger —
+        // clé des géométries persistantes du builder commun.
+        var movementKey = (usesJumpLayer << 20) | (casterStats.CELL << 10) | max(0, casterStats.TOTAL_MP)
+        var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, movementKey)
         key = addValueToBinHash(key, ((critFactor > 1 ? 1 : 0) << 30) | (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
         if (key in HEAL_COVERAGE_CACHE) return HEAL_COVERAGE_CACHE[key]
 
-        // Couche géométrie — clé (id, couche, cellule, MP), même pack que la danger map.
-        var geomKey = (casterStats.ID << 21) | (usesJumpLayer << 20) | (casterStats.CELL << 10) | max(0, casterStats.TOTAL_MP)
+        // Couche assemblage — clé (id, couche, cellule, MP), même pack que la danger map.
+        var geomKey = (casterStats.ID << 21) | movementKey
         var mapCellItemAoe
         if (geomKey in HEAL_CELL_ITEM_AOE_CACHE) {
             mapCellItemAoe = HEAL_CELL_ITEM_AOE_CACHE[geomKey]
@@ -157,7 +160,7 @@ class HealClass {
             // Le booléen déjà calculé choisit la couche directement — pas de second
             // canJumpNextTurn via getMaxWalkOrJumpNoEntitiesFull.
             var walkCells = usesJumpLayer ? WalkCellsClass.getJumpNoEntitiesFull(casterStats) : WalkCellsClass.getWalkNoEntitiesFull(casterStats)
-            mapCellItemAoe = getMapCellItemAoe(casterStats, walkCells)
+            mapCellItemAoe = getMapCellItemAoe(casterStats, walkCells, movementKey)
             HEAL_CELL_ITEM_AOE_CACHE[geomKey] = mapCellItemAoe
         }
 
@@ -179,9 +182,10 @@ class HealClass {
     }
 
     /* [cell -> [item -> minAoeDist]] : quelles cellules chaque item de heal atteint —
-     * même assemblage mutualisé que la danger map (source unique). */
-    static getMapCellItemAoe(casterStats, walkCells) {
-        return DangerClass.buildMapCellItemAoe(getHealItemsList(casterStats), walkCells)
+     * même assemblage mutualisé que la danger map (source unique, géométries persistantes
+     * partagées via movementKey). */
+    static getMapCellItemAoe(casterStats, walkCells, movementKey) {
+        return DangerClass.buildMapCellItemAoe(getHealItemsList(casterStats), walkCells, movementKey)
     }
 
     /*

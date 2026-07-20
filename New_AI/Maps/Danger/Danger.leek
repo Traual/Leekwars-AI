@@ -300,43 +300,48 @@ class DangerClass {
 	 */
 	static getMapCellItemAoe(EntityStats, EntityWalkCells) {
 		var usesJumpLayer = WalkCellsClass.canJumpNextTurn(EntityStats) ? 1 : 0
-		var TmpHash = (EntityStats.ID << 21) | (usesJumpLayer << 20) | (EntityStats.CELL << 10) | max(0, EntityStats.TOTAL_MP)
+		// movementKey (21 bits, sans ID) décrit exactement la map NoEntities reçue :
+		// couche marche/saut, cellule de départ, budget MP.
+		var movementKey = (usesJumpLayer << 20) | (EntityStats.CELL << 10) | max(0, EntityStats.TOTAL_MP)
+		var TmpHash = (EntityStats.ID << 21) | movementKey
 		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
-		var _final = buildMapCellItemAoe(EntityDangerClass.getItemsList(EntityStats), EntityWalkCells)
+		var _final = buildMapCellItemAoe(EntityDangerClass.getItemsList(EntityStats), EntityWalkCells, movementKey)
 		MAP_CELL_ITEM_AOE_CACHE[TmpHash] = _final
 		return _final
 	}
 
 	/*
 	 * Assemblage commun Danger/Heal : [cell -> [item -> minAoeDist]] pour une liste d'items
-	 * et les walkcells du caster. Mutualisation LOCALE au build (aucun cache global
-	 * dépendant des WalkCells — les deux maps meurent à la fin) : items de même
-	 * FULL_GEOMETRY_KEY partagent toute la map d'AoE, items de même LAUNCH_GEOMETRY_KEY
-	 * partagent l'union des cellules directement lançables. Maps partagées read-only.
-	 * L'ordre d'insertion des items = l'ordre de la liste (le fold dépendant de l'ordre de
-	 * getHashFromItemAoeMap, les clés de combo et l'ordre glouton en dépendent).
+	 * et les walkcells du caster. Les géométries vivent dans deux caches PERSISTANTS
+	 * (jamais vidés au tour) clés par (movementKey, signature) — movementKey détermine
+	 * exactement la map NoEntities, elle-même statique : même contexte au tour suivant ou
+	 * chez un autre caster -> géométrie réutilisée telle quelle. Même FULL_GEOMETRY_KEY ->
+	 * toute la map d'AoE partagée ; même LAUNCH_GEOMETRY_KEY -> l'union des cellules
+	 * directement lançables partagée. Maps cachées STRICTEMENT read-only.
+	 * Seul l'ASSEMBLAGE dépend de la liste d'items (cooldown-filtrée par tour) — il reste
+	 * caché par tour chez les appelants. L'ordre d'insertion des items = l'ordre de la
+	 * liste (le fold dépendant de l'ordre de getHashFromItemAoeMap, les clés de combo et
+	 * l'ordre glouton en dépendent).
 	 */
-	static buildMapCellItemAoe(items, walkCellsMap) {
-		var launchCellsByKey = [: ]
-		var fullGeometryByKey = [: ]
+	static buildMapCellItemAoe(items, walkCellsMap, movementKey) {
 		var _final = [: ]
 		for (var Item in items) {
 			var Infos = ITEMINFO[Item]
-			var fullKey = Infos.FULL_GEOMETRY_KEY
+			var fullKey = (movementKey << 30) | Infos.FULL_GEOMETRY_KEY
 			var itemMap
-			if (fullKey in fullGeometryByKey) {
-				itemMap = fullGeometryByKey[fullKey]
+			if (fullKey in ITEM_FULL_GEOMETRY_CACHE) {
+				itemMap = ITEM_FULL_GEOMETRY_CACHE[fullKey]
 			} else {
-				var launchKey = Infos.LAUNCH_GEOMETRY_KEY
+				var launchKey = (movementKey << 25) | Infos.LAUNCH_GEOMETRY_KEY
 				var directCells
-				if (launchKey in launchCellsByKey) {
-					directCells = launchCellsByKey[launchKey]
+				if (launchKey in ITEM_LAUNCH_GEOMETRY_CACHE) {
+					directCells = ITEM_LAUNCH_GEOMETRY_CACHE[launchKey]
 				} else {
 					directCells = getMapHittableCellsTotal(Infos, walkCellsMap)
-					launchCellsByKey[launchKey] = directCells
+					ITEM_LAUNCH_GEOMETRY_CACHE[launchKey] = directCells
 				}
 				itemMap = getMapAoeForItem(Infos, directCells)
-				fullGeometryByKey[fullKey] = itemMap
+				ITEM_FULL_GEOMETRY_CACHE[fullKey] = itemMap
 			}
 			for (var Cell: var MinAoeDist in itemMap) {
 				if (Cell in _final) {

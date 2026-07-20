@@ -76,6 +76,18 @@ global TMPOBSTACLES = [: ]
 // PERSISTANT tout le combat (la carte ne change jamais) — jamais vidé au tour.
 global AREA_DIST_CACHE = [: ]
 
+// Géométries d'items PERSISTANTES, communes à Danger et Heal (buildMapCellItemAoe) — ne
+// dépendent QUE de la map de déplacement statique sans entités (movementKey =
+// (coucheJump << 20) | (cellule << 10) | max(0, MP) — 21 bits, sans ID/camp/cooldowns/stats),
+// de la signature de lancement et de la zone. Read-only, jamais vidées au tour :
+//  - ITEM_LAUNCH_GEOMETRY_CACHE [(movementKey << 25) | LAUNCH_GEOMETRY_KEY -> cellules
+//    directement lançables] ;
+//  - ITEM_FULL_GEOMETRY_CACHE [(movementKey << 30) | FULL_GEOMETRY_KEY -> [cell -> minAoeDist]].
+// L'ASSEMBLAGE par caster (liste d'items cooldown-filtrée) reste, lui, un cache de tour
+// (MAP_CELL_ITEM_AOE_CACHE / HEAL_CELL_ITEM_AOE_CACHE).
+global ITEM_LAUNCH_GEOMETRY_CACHE = [: ]
+global ITEM_FULL_GEOMETRY_CACHE = [: ]
+
 global DISTANCE_CACHE = [: ]
 global LOS_CACHE = [: ]
 global LOS_WITH_BASE_HASH_CACHE = [: ]
