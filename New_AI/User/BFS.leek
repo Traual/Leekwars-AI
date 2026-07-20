@@ -52,15 +52,20 @@ class ActionSuite {
 		// [act, delta, node, nodeScore].
 		var ScoredCache = [:]
 
-		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, RootTerms, RootPoisonKey, MyWalkCells, basePairs)
+		// noPlay = plancher "ne rien jouer" ET racine de la chaîne de termes : il porte la
+		// map complète, chaque nœud n'empile ensuite qu'un PATCH (TERMS_PARENT).
+		var noPlay = new NodeClass(null, State, null)
+		noPlay.TERMS = RootTerms
+		noPlay.TERMS_PARENT = null
+		noPlay.SCORE = initialScore
+
+		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, RootPoisonKey, MyWalkCells, basePairs)
 		ScoredCache[scoredKeyOf(BaseHash, RootResurrectId)] = rootEntries
 		BFS_CHAIN_STEPS = 0
 		debugC("--- " + count(rootEntries) + " base actions ---", COLOR_BLUE)
 
-		// Plancher "ne rien jouer", puis déroulé de chaque action de base. La marge
-		// BFS_DELTA_EPSILON empêche les résidus float de battre le plancher.
-		var noPlay = new NodeClass(null, State, null)
-		noPlay.SCORE = initialScore
+		// Déroulé de chaque action de base. La marge BFS_DELTA_EPSILON empêche les résidus
+		// float de battre le plancher.
 		var best = noPlay
 
 		for (var entry in rootEntries) {
@@ -118,7 +123,7 @@ class ActionSuite {
 			// Miss : WalkCells + jouables produits UNE seule fois pour ce nouvel état, puis scorés.
 			var FreshWalk = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 			var freshPairs = getBaseActions(State, BaseHash, ResurrectId, FreshWalk)
-			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent.TERMS, Parent.POISON_KEY, FreshWalk, freshPairs)
+			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, Parent.POISON_KEY, FreshWalk, freshPairs)
 			ScoredCache[CacheKey] = Entries
 
 			// Chemin frais : toutes les entrées sont positives et triées pour cet état.
@@ -165,7 +170,7 @@ class ActionSuite {
 			if (cost > MyTp) continue
 
 			var candidate = NodeClass.ActionToNodeInTree(act, State, from, MyWalkCells, cost, Info, item, act.To, BaseHash, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE)
-			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, ParentScore, Parent.TERMS, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, MySide, Parent.POISON_KEY)
+			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, ParentScore, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, MySide, Parent.POISON_KEY)
 			var deltaFromParent = candidateScore - ParentScore
 
 			if (deltaFromParent > BestDeltaFromParent) {
@@ -181,18 +186,20 @@ class ActionSuite {
 	/*
 	 * Applique + score chaque action JOUABLE reçue (basePairs = sortie de getBaseActions,
 	 * produite une seule fois par l'appelant avec MyWalkCells), trie par delta décroissant.
-	 * Renvoie des entrées [act, delta, node, nodeScore], node avec PARENT=null.
+	 * Renvoie des entrées [act, delta, node, nodeScore], node avec PARENT=null mais
+	 * TERMS_PARENT = ParentTermNode (la chaîne de termes est posée ici et jamais réassignée,
+	 * contrairement à PARENT que le déroulé reconstruit).
 	 * INVARIANT : toute entrée renvoyée a delta > BFS_DELTA_EPSILON — jouable (basePairs)
 	 * n'implique donc pas retenu ; les sub-epsilon sont injouables partout en aval
 	 * (plancher, chemin frais, borne du tri), les dropper ici libère leur nœud immédiatement.
 	 */
-	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTerms, ParentPoisonKey, MyWalkCells, basePairs) {
+	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTermNode, ParentPoisonKey, MyWalkCells, basePairs) {
 		var Entries = []
 		for (var pair in basePairs) {
 			var act = pair[0]
 			var Item = act.Item
 			var node = NodeClass.ActionToNodeInTree(act, State, act.From, MyWalkCells, pair[1], ITEMINFO[Item], Item, act.To, BaseHash, null, ParentContext, ParentHfp)
-			var nodeScore = ScoringClass.getStateScoreFromParent(node, ReferenceScore, ParentTerms, ParentContext, ParentHfp, MySide, ParentPoisonKey)
+			var nodeScore = ScoringClass.getStateScoreFromParent(node, ReferenceScore, ParentTermNode, ParentContext, ParentHfp, MySide, ParentPoisonKey)
 			var delta = nodeScore - ReferenceScore
 			if (delta <= BFS_DELTA_EPSILON) continue
 			push(Entries, [act, delta, node, nodeScore])

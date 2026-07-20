@@ -14,7 +14,10 @@ class NodeClass {
 	CONTEXT_BY_SIDE   // par side : hash de l'équipe adverse (clé des caches danger)
 	HFP_BY_SIDE       // par side : fingerprint des healers (clé de la heal map)
 	CLONED            // [id -> true] : ensemble EXACT des entités possiblement mutées par l'action
-	TERMS             // [id -> terme signé] : termes du scoring, clonés du parent puis patchés
+	TERMS             // [id -> terme signé] : PATCH local — les seuls termes recalculés par CE nœud
+	                  // (la racine noPlay porte la map complète). Résolution via ScoringClass.termOf.
+	TERMS_PARENT      // nœud portant le snapshot de termes précédent — chaîne IMMUABLE, indépendante
+	                  // de PARENT (que le déroulé du BFS réassigne) ; null = racine des termes
 	POISON_KEY        // clé de couverture antidote de END_STATS (posée par getStateScoreFromParent, 0 sans antidote)
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act

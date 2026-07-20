@@ -58,10 +58,11 @@ class ScoringClass {
      * et pour la couverture antidote (POISON_KEY) les seuls porteurs de POISON_OVER_TIME.
      * Détection purement par comparaison de hashs. Une morte NON clonée est skippée (ancien
      * et nouveau terme valent déjà 0) ; une morte clonée est traitée (kill), une résurrection
-     * aussi (le ressuscité est dans CLONED). Les anciens termes viennent de node.TERMS,
-     * porté de parent en enfant.
+     * aussi (le ressuscité est dans CLONED). Les anciens termes sont résolus dans la CHAÎNE
+     * de snapshots (termOf sur ParentTermNode) ; le nœud n'écrit qu'un PATCH local — aucun
+     * clone de la map complète.
      */
-    static getStateScoreFromParent(node, ParentScore, ParentTerms, ParentContext, ParentHfp, MySide, ParentPoisonKey) {
+    static getStateScoreFromParent(node, ParentScore, ParentTermNode, ParentContext, ParentHfp, MySide, ParentPoisonKey) {
         BenchOps.Start("Scoring")
         var State = node.END_STATS
         var cloned = node.CLONED
@@ -99,12 +100,13 @@ class ScoringClass {
         var coefChanged = node.POISON_KEY != ParentPoisonKey
 
         var delta = 0
-        var terms = clone(ParentTerms, 1)
+        var termsPatch = [: ]
+        node.TERMS_PARENT = ParentTermNode
 
         if (dangerChanged == null && healChanged == null && !coefChanged) {
             // Cas courant : seules les entités clonées peuvent avoir un terme différent.
             for (var e: var _c in cloned) {
-                delta += termDelta(e, State, node, terms, healMap, MySide)
+                delta += termDelta(e, State, node, termsPatch, ParentTermNode, healMap, MySide)
             }
         } else {
             for (var e: var stat in State) {
@@ -115,11 +117,11 @@ class ScoringClass {
                     || (dangerChanged != null && stat.SIDE in dangerChanged)
                     || (healChanged != null && stat.SIDE in healChanged)
                     || (coefChanged && stat.POISON_OVER_TIME > 0)) {
-                    delta += termDelta(e, State, node, terms, healMap, MySide)
+                    delta += termDelta(e, State, node, termsPatch, ParentTermNode, healMap, MySide)
                 }
             }
         }
-        node.TERMS = terms
+        node.TERMS = termsPatch
         BenchOps.Stop("Scoring")
 
         // Coût de cast des items d'économie (CAST_COST, Weights.leek) : soustrait au SCORE,
@@ -127,8 +129,9 @@ class ScoringClass {
         return ParentScore + delta - ((node.ACTION.Item in CAST_COST) ? CAST_COST[node.ACTION.Item] : 0)
     }
 
-    /* newTerm(e) − oldTerm(e) ; l'ancien terme est lu dans la map portée, puis écrasé. */
-    static termDelta(e, State, node, terms, healMap, MySide) {
+    /* newTerm(e) − oldTerm(e) ; l'ancien terme est résolu dans la chaîne de snapshots
+     * (termOf), le nouveau n'est écrit QUE dans le patch local du nœud. */
+    static termDelta(e, State, node, termsPatch, ParentTermNode, healMap, MySide) {
         var stat = State[e]
         var newTerm = 0
         if (stat.LIFE > 0) {
@@ -136,9 +139,24 @@ class ScoringClass {
             var net = DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)
             newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, net, State, node.POISON_KEY) + ImportanceClass.capability(stat) + drDeterrence(stat, net, State))
         }
-        var oldTerm = (e in terms) ? terms[e] : 0
-        terms[e] = newTerm
+        var oldTerm = termOf(ParentTermNode, e)
+        termsPatch[e] = newTerm
         return newTerm - oldTerm
+    }
+
+    /*
+     * Terme courant d'une entité dans la chaîne de snapshots : le patch le plus PROCHE qui
+     * la contient gagne (dernier recalcul sur le chemin), la racine (noPlay) porte la map
+     * complète. Absente de toute la chaîne -> 0 (morte à la racine, summon virtuel pas
+     * encore né, ressuscité inconnu de la map racine).
+     */
+    static termOf(termNode, entityId) {
+        var n = termNode
+        while (n != null) {
+            if (entityId in n.TERMS) return n.TERMS[entityId]
+            n = n.TERMS_PARENT
+        }
+        return 0
     }
 
     /*
