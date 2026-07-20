@@ -29,11 +29,12 @@ class ScoringClass {
     /*
      * Map complète des termes [id -> terme SIGNÉ] (score == sumTerms(map)).
      * Utilisée à la racine du BFS, puis portée de nœud en nœud et patchée.
+     * hfpBySide et poisonKey sont construits UNE seule fois par l'appelant (racine du BFS)
+     * et réutilisés ici, jamais reconstruits.
      */
-    static buildTermsMap(State, MySide, BaseHash, contextBySide) {
+    static buildTermsMap(State, MySide, BaseHash, contextBySide, hfpBySide, poisonKey) {
         BenchOps.Start("Scoring")
-        var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash, contextBySide)
-        var poisonKey = poisonKeyOf(State, BaseHash)
+        var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash, contextBySide, hfpBySide)
         var terms = [: ]
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
@@ -52,10 +53,13 @@ class ScoringClass {
 
     /*
      * Score incrémental : score(enfant) = score(parent) + Δ sur le recompute-set.
-     * Recompute-set = node.CLONED (les entités mutées par l'action) ∪ les vivants de chaque
-     * side dont un input a changé vs le parent : danger (CONTEXT_BY_SIDE), heal (HFP_BY_SIDE)
-     * ou couverture antidote (POISON_KEY). Détection purement par comparaison de
-     * hashs. Les anciens termes viennent de node.TERMS, porté de parent en enfant.
+     * Recompute-set = node.CLONED (les entités mutées par l'action) ∪ les entités de chaque
+     * side dont un input a changé vs le parent : danger (CONTEXT_BY_SIDE), heal (HFP_BY_SIDE),
+     * et pour la couverture antidote (POISON_KEY) les seuls porteurs de POISON_OVER_TIME.
+     * Détection purement par comparaison de hashs. Une morte NON clonée est skippée (ancien
+     * et nouveau terme valent déjà 0) ; une morte clonée est traitée (kill), une résurrection
+     * aussi (le ressuscité est dans CLONED). Les anciens termes viennent de node.TERMS,
+     * porté de parent en enfant.
      */
     static getStateScoreFromParent(node, ParentScore, ParentTerms, ParentContext, ParentHfp, MySide, ParentPoisonKey) {
         BenchOps.Start("Scoring")
@@ -88,8 +92,9 @@ class ScoringClass {
         // Couverture antidote : POISON_KEY (poisonKeyOf — BaseHash, porteurs, ancre, Me
         // vivant) comparée à celle du parent. Déclenche exactement sur les vrais événements
         // (kill, summon, résu, push, cd/MP d'un porteur, mort de Me), jamais sur mes moves ni
-        // mes casts ordinaires. Clé globale -> les DEUX camps sont relus quand elle bouge
-        // (large d'un cran ; découpage par camp si les mesures l'exigent).
+        // mes casts ordinaires. Le coef antidote ne module que le VRAI poison restant
+        // (POISON_OVER_TIME, survivalValue) — AFTEREFFECT et HEAL_OVER_TIME ne le lisent
+        // pas : seuls les porteurs de POT > 0 sont relus quand la clé bouge.
         node.POISON_KEY = poisonKeyOf(State, node.BASE_HASH)
         var coefChanged = node.POISON_KEY != ParentPoisonKey
 
@@ -103,9 +108,13 @@ class ScoringClass {
             }
         } else {
             for (var e: var stat in State) {
-                if ((e in cloned) || coefChanged
+                // Morte non clonée : ancien et nouveau terme valent déjà 0, rien à recalculer
+                // (une morte CLONÉE passe — c'est potentiellement le kill de cette action).
+                if (stat.LIFE <= 0 && !(e in cloned)) continue
+                if ((e in cloned)
                     || (dangerChanged != null && stat.SIDE in dangerChanged)
-                    || (healChanged != null && stat.SIDE in healChanged)) {
+                    || (healChanged != null && stat.SIDE in healChanged)
+                    || (coefChanged && stat.POISON_OVER_TIME > 0)) {
                     delta += termDelta(e, State, node, terms, healMap, MySide)
                 }
             }

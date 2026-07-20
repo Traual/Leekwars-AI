@@ -27,31 +27,24 @@ class DeltaClass {
      * @param State [id -> stats]
      * @param BaseHash hash (id, cellule) des vivants
      * @param contextBySide [side -> hash de l'équipe adverse], patché sur les nœuds
+     * @param hfpBySide [side -> fingerprint des healers], construit par l'appelant
      * @return [id -> net]
      */
-    static getNetDamageMap(State, BaseHash, contextBySide) {
+    static getNetDamageMap(State, BaseHash, contextBySide, hfpBySide) {
         BenchOps.Start("Delta")
 
-        // Fingerprints des healers des DEUX camps, foldés en un seul scan : le split par side
-        // sale NETDAMAGE_CACHE (toucher un healer n'invalide que son side), le fold combiné
-        // est la clé de HEAL_MAP_CACHE.
-        var healersFingerprintBySide = [: ]
+        // Fingerprint combiné = fold XOR des fps par side reçus (même source unique
+        // healerContribution — le split par side sale NETDAMAGE_CACHE, le fold combiné est
+        // la clé de HEAL_MAP_CACHE). Sur un hit de heal map, AUCUN scan des entités ; au
+        // miss, getHealMapByFp rescanne l'état pour retrouver les casters.
         var combinedFp = 0
-        var healCasters = []
-        for (var e: var stat in State) {
-            var c = HealClass.healerContributionOf(stat, e)
-            if (c != 0) {
-                combinedFp ^= c
-                healersFingerprintBySide[stat.SIDE] = ((stat.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[stat.SIDE] : 0) ^ c
-                push(healCasters, e)
-            }
-        }
-        var healMap = HealClass.getHealMapPrecomputed(State, combinedFp, healCasters)
+        for (var s: var h in hfpBySide) combinedFp ^= h
+        var healMap = HealClass.getHealMapByFp(State, combinedFp)
 
         var _final = [: ]
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
-            _final[e] = netOf(e, stat, State, BaseHash, contextBySide, healersFingerprintBySide, healMap)
+            _final[e] = netOf(e, stat, State, BaseHash, contextBySide, hfpBySide, healMap)
         }
 
         BenchOps.Stop("Delta")

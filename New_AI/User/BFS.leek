@@ -44,8 +44,8 @@ class ActionSuite {
 		}
 		var RootContext = DeltaClass.buildContextBySide(State)
 		var RootHfp = HealClass.buildHfpBySide(State)
-		var RootTerms = ScoringClass.buildTermsMap(State, MySide, BaseHash, RootContext)
 		var RootPoisonKey = ScoringClass.poisonKeyOf(State, BaseHash)
+		var RootTerms = ScoringClass.buildTermsMap(State, MySide, BaseHash, RootContext, RootHfp, RootPoisonKey)
 		var initialScore = ScoringClass.sumTerms(RootTerms)
 
 		// Cache par appel : scoredKeyOf(BaseHash, candidat résu) -> liste triée
