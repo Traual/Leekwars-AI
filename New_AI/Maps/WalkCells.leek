@@ -304,7 +304,7 @@ class WalkCellsClass {
 				// compute neighbours for this ability
 				var neighs
 				if (ability == 'jump') {
-					neighs = ALLCELLINFO[cur].CIRCLE_THREE_DIST
+					neighs = CellClass.getAreaDist(AREA_CIRCLE_3, cur)
 				} else { // ability == 'tp'
 					var tpInfo = ITEMINFO[CHIP_TELEPORTATION]
 					neighs = CellClass.getDisc(cur, tpInfo.MINRANGE, tpInfo.MAXRANGE)
@@ -333,7 +333,7 @@ class WalkCellsClass {
 			if (progressed) continue
 
 			// 2) fallback: walk one step in same layer (no Action recorded here)
-			for (var neigh:var dist in ALLCELLINFO[cur].CIRCLE_ONE_DIST) {
+			for (var neigh:var dist in CellClass.getAreaDist(AREA_CIRCLE_1, cur)) {
 				if (neigh in maps[layer] && maps[layer][neigh] < curCost) {
 					cur = neigh
 					progressed = true

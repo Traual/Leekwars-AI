@@ -428,53 +428,11 @@ class ActionsClass {
 		}
 	}
 
-	/* [cellule touchée -> distance d'AoE] de l'item centré sur to (lasers exclus). */
+	/* [cellule touchée -> distance d'AoE] de l'item centré sur to (lasers exclus) —
+	 * délégué à la source unique paresseuse CellClass.getAreaDist (AREA_PLUS_1 compris). */
 	static AoeDistItem(item, to) {
-		var AoeType = ITEMINFO[item].AREA
-		return MapOptiDistItem[AoeType](to)
+		return CellClass.getAreaDist(ITEMINFO[item].AREA, to)
 	}
-
-	static MapOptiDistItem = [
-		AREA_POINT: function(to) {
-			return [to: 0]
-		},
-		AREA_FIRST_INLINE: function(to) {
-			return [to: 0]
-		},
-		AREA_LASER_LINE: function(to) {
-			return [to: 0]
-		},
-		AREA_CIRCLE_1: function(to) {
-			return ALLCELLINFO[to].CIRCLE_ONE_DIST
-		},
-		AREA_CIRCLE_2: function(to) {
-			return ALLCELLINFO[to].CIRCLE_TWO_DIST
-		},
-		AREA_CIRCLE_3: function(to) {
-			return ALLCELLINFO[to].CIRCLE_THREE_DIST
-		},
-		AREA_SQUARE_1: function(to) {
-			return ALLCELLINFO[to].SQUARE_ONE_DIST
-		},
-		AREA_SQUARE_2: function(to) {
-			return ALLCELLINFO[to].SQUARE_TWO_DIST
-		},
-		AREA_PLUS_2: function(to) {
-			return ALLCELLINFO[to].PLUS_TWO_DIST
-		},
-		AREA_PLUS_3: function(to) {
-			return ALLCELLINFO[to].PLUS_THREE_DIST
-		},
-		AREA_X_1: function(to) {
-			return ALLCELLINFO[to].X_ONE_DIST
-		},
-		AREA_X_2: function(to) {
-			return ALLCELLINFO[to].X_TWO_DIST
-		},
-		AREA_X_3: function(to) {
-			return ALLCELLINFO[to].X_THREE_DIST
-		}
-	]
 
 	static LaunchWithLos = [
 		LAUNCH_TYPE_CIRCLE: function(to, MinRange, MaxRange) {

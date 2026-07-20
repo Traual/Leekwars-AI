@@ -7,60 +7,51 @@
 include("../includes.leek")
 
 class CellClass {
-	OBSTACLE
-	CELL
-	X
-	Y
-	//Area map (cell:true)
-	CIRCLE_ONE
-	CIRCLE_TWO
-	CIRCLE_THREE
-	SQUARE_ONE
-	SQUARE_TWO
-	PLUS_TWO
-	PLUS_THREE
-	X_ONE
-	X_TWO
-	X_THREE
-	//Area map (cell:dist)
-	CIRCLE_ONE_DIST
-	CIRCLE_TWO_DIST
-	CIRCLE_THREE_DIST
-	SQUARE_ONE_DIST
-	SQUARE_TWO_DIST
-	PLUS_TWO_DIST
-	PLUS_THREE_DIST
-	X_ONE_DIST
-	X_TWO_DIST
-	X_THREE_DIST
 
-	constructor(cell) {
-		this.OBSTACLE = TMPOBSTACLES[cell]
-		this.CELL = cell
-		this.X = CELL_X[cell]
-		this.Y = CELL_Y[cell]
-		//Area map (cell:true)
-		this.CIRCLE_ONE = getDisc(cell, 0, 1)
-		this.CIRCLE_TWO = getDisc(cell, 0, 2)
-		this.CIRCLE_THREE = getDisc(cell, 0, 3)
-		this.SQUARE_ONE = getSquare(cell, 1)
-		this.SQUARE_TWO = getSquare(cell, 2)
-		this.PLUS_TWO = getLine(cell, 0, 2)
-		this.PLUS_THREE = getLine(cell, 0, 3)
-		this.X_ONE = getDiagonal(cell, 0, 2)
-		this.X_TWO = getDiagonal(cell, 0, 4)
-		this.X_THREE = getDiagonal(cell, 0, 6)
-		//Area map (cell:dist)
-		this.CIRCLE_ONE_DIST = getDistMapFromBoolMap(this.CIRCLE_ONE, cell)
-		this.CIRCLE_TWO_DIST = getDistMapFromBoolMap(this.CIRCLE_TWO, cell)
-		this.CIRCLE_THREE_DIST = getDistMapFromBoolMap(this.CIRCLE_THREE, cell)
-		this.SQUARE_ONE_DIST = getDistMapFromBoolMap(this.SQUARE_ONE, cell)
-		this.SQUARE_TWO_DIST = getDistMapFromBoolMap(this.SQUARE_TWO, cell)
-		this.PLUS_TWO_DIST = getDistMapFromBoolMap(this.PLUS_TWO, cell)
-		this.PLUS_THREE_DIST = getDistMapFromBoolMap(this.PLUS_THREE, cell)
-		this.X_ONE_DIST = getDistMapFromBoolMap(this.X_ONE, cell)
-		this.X_TWO_DIST = getDistMapFromBoolMap(this.X_TWO, cell)
-		this.X_THREE_DIST = getDistMapFromBoolMap(this.X_THREE, cell)
+	/*
+	 * [cellule -> distance d'AoE] d'une forme centrée sur centerCell — SOURCE UNIQUE des
+	 * zones d'items (AoeDistItem) et des voisinages cercle de WalkCells. Cache PERSISTANT
+	 * (la carte ne change jamais), construit paresseusement : seul chaque couple
+	 * (type de zone, centre) réellement demandé est produit, puis conservé tout le combat.
+	 * Clé injective (areaType << 10) | centerCell (cellule < 1024). Distances calculées
+	 * directement |dx| + |dy| (== getCellDistance moteur : Pathfinding.getCaseDistance,
+	 * le décalage constant de getCellX s'annule dans la différence) — sans getDist, pour ne
+	 * pas remplir DISTANCE_CACHE de couples créés uniquement pour les AoE.
+	 * Maps partagées READ-ONLY par contrat : aucun lecteur ne les mute.
+	 */
+	static getAreaDist(areaType, centerCell) {
+		var key = (areaType << 10) | centerCell
+		if (key in AREA_DIST_CACHE) return AREA_DIST_CACHE[key]
+
+		var boolMap = null
+		if (areaType == AREA_CIRCLE_1) boolMap = getDisc(centerCell, 0, 1)
+		else if (areaType == AREA_CIRCLE_2) boolMap = getDisc(centerCell, 0, 2)
+		else if (areaType == AREA_CIRCLE_3) boolMap = getDisc(centerCell, 0, 3)
+		else if (areaType == AREA_SQUARE_1) boolMap = getSquare(centerCell, 1)
+		else if (areaType == AREA_SQUARE_2) boolMap = getSquare(centerCell, 2)
+		// Alias moteur : AREA_PLUS_1 == AREA_CIRCLE_1 (même valeur, même forme de 5 cellules)
+		// -> la branche cercle sert les deux ; celle-ci documente l'intention et couvrirait
+		// un éventuel dé-aliasing des constantes.
+		else if (areaType == AREA_PLUS_1) boolMap = getLine(centerCell, 0, 1)
+		else if (areaType == AREA_PLUS_2) boolMap = getLine(centerCell, 0, 2)
+		else if (areaType == AREA_PLUS_3) boolMap = getLine(centerCell, 0, 3)
+		else if (areaType == AREA_X_1) boolMap = getDiagonal(centerCell, 0, 2)
+		else if (areaType == AREA_X_2) boolMap = getDiagonal(centerCell, 0, 4)
+		else if (areaType == AREA_X_3) boolMap = getDiagonal(centerCell, 0, 6)
+
+		var _final = [: ]
+		if (boolMap == null) {
+			// AREA_POINT / AREA_FIRST_INLINE / AREA_LASER_LINE : le centre seul, distance 0.
+			_final[centerCell] = 0
+		} else {
+			var cx = CELL_X[centerCell]
+			var cy = CELL_Y[centerCell]
+			for (var c: var b in boolMap) {
+				_final[c] = abs(CELL_X[c] - cx) + abs(CELL_Y[c] - cy)
+			}
+		}
+		AREA_DIST_CACHE[key] = _final
+		return _final
 	}
 
 	static getDisc(cell, minradius, radius) {
@@ -387,14 +378,6 @@ class CellClass {
 					break
 				}
 			}
-		}
-		return _final
-	}
-
-	static getDistMapFromBoolMap(BoolMap, cell) {
-		var _final = [: ]
-		for (var c: var bool in BoolMap) {
-			_final[c] = getDist(c, cell)
 		}
 		return _final
 	}

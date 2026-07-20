@@ -70,7 +70,11 @@ global CELL_X = [: ]
 global CELL_Y = [: ]
 
 global TMPOBSTACLES = [: ]
-global ALLCELLINFO = [: ]
+
+// [(areaType << 10) | centerCell -> [cellule -> distance d'AoE]] : les zones d'items,
+// construites paresseusement par couple réellement demandé (CellClass.getAreaDist).
+// PERSISTANT tout le combat (la carte ne change jamais) — jamais vidé au tour.
+global AREA_DIST_CACHE = [: ]
 
 global DISTANCE_CACHE = [: ]
 global LOS_CACHE = [: ]

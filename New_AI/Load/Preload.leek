@@ -93,10 +93,6 @@ class Preload {
 			}
 			push(CELL_BY_LSB, m)
 		}
-		for (var c = 0; c < 613; c++) {
-			var cInfo = new CellClass(c)
-			ALLCELLINFO[c] = cInfo
-		}
 	}
 
 	static InitStateClass() {
