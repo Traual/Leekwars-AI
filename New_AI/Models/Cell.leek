@@ -23,27 +23,28 @@ class CellClass {
 		var key = (areaType << 10) | centerCell
 		if (key in AREA_DIST_CACHE) return AREA_DIST_CACHE[key]
 
-		var boolMap = null
-		if (areaType == AREA_CIRCLE_1) boolMap = getDisc(centerCell, 0, 1)
-		else if (areaType == AREA_CIRCLE_2) boolMap = getDisc(centerCell, 0, 2)
-		else if (areaType == AREA_CIRCLE_3) boolMap = getDisc(centerCell, 0, 3)
-		else if (areaType == AREA_SQUARE_1) boolMap = getSquare(centerCell, 1)
-		else if (areaType == AREA_SQUARE_2) boolMap = getSquare(centerCell, 2)
-		// Alias moteur : AREA_PLUS_1 == AREA_CIRCLE_1 (même valeur, même forme de 5 cellules)
-		// -> la branche cercle sert les deux ; celle-ci documente l'intention et couvrirait
-		// un éventuel dé-aliasing des constantes.
-		else if (areaType == AREA_PLUS_1) boolMap = getLine(centerCell, 0, 1)
-		else if (areaType == AREA_PLUS_2) boolMap = getLine(centerCell, 0, 2)
-		else if (areaType == AREA_PLUS_3) boolMap = getLine(centerCell, 0, 3)
-		else if (areaType == AREA_X_1) boolMap = getDiagonal(centerCell, 0, 2)
-		else if (areaType == AREA_X_2) boolMap = getDiagonal(centerCell, 0, 4)
-		else if (areaType == AREA_X_3) boolMap = getDiagonal(centerCell, 0, 6)
-
 		var _final = [: ]
-		if (boolMap == null) {
-			// AREA_POINT / AREA_FIRST_INLINE / AREA_LASER_LINE : le centre seul, distance 0.
+		if (areaType == AREA_POINT || areaType == AREA_FIRST_INLINE || areaType == AREA_LASER_LINE) {
+			// Zones volontairement ponctuelles : le centre seul, distance 0.
 			_final[centerCell] = 0
 		} else {
+			var boolMap = null
+			// AREA_CIRCLE_1 couvre aussi AREA_PLUS_1, alias moteur de même valeur et même forme.
+			if (areaType == AREA_CIRCLE_1) boolMap = getDisc(centerCell, 0, 1)
+			else if (areaType == AREA_CIRCLE_2) boolMap = getDisc(centerCell, 0, 2)
+			else if (areaType == AREA_CIRCLE_3) boolMap = getDisc(centerCell, 0, 3)
+			else if (areaType == AREA_SQUARE_1) boolMap = getSquare(centerCell, 1)
+			else if (areaType == AREA_SQUARE_2) boolMap = getSquare(centerCell, 2)
+			else if (areaType == AREA_PLUS_2) boolMap = getLine(centerCell, 0, 2)
+			else if (areaType == AREA_PLUS_3) boolMap = getLine(centerCell, 0, 3)
+			else if (areaType == AREA_X_1) boolMap = getDiagonal(centerCell, 0, 2)
+			else if (areaType == AREA_X_2) boolMap = getDiagonal(centerCell, 0, 4)
+			else if (areaType == AREA_X_3) boolMap = getDiagonal(centerCell, 0, 6)
+			if (boolMap == null) {
+				// Type de zone non géré : échec explicite (jamais assimilé à un point).
+				debugE("getAreaDist : type de zone non géré " + areaType)
+				return null
+			}
 			var cx = CELL_X[centerCell]
 			var cy = CELL_Y[centerCell]
 			for (var c: var b in boolMap) {
