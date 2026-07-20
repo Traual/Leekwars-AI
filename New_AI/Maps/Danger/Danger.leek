@@ -36,10 +36,9 @@ class DangerClass {
 		var Hash = addValueToBinHash(OFFSET_BASIS ^ thisStatsHashForDanger, (entity_id << 10) | entity_state.CELL)
 		if (Hash in ENTITY_DANGER_CACHE_FOR_OTHERS) return ENTITY_DANGER_CACHE_FOR_OTHERS[Hash]
 		BenchOps.Start("Danger")
-		// Me est skippé comme caster : ma propre menace est explorée par le BFS, jamais
-		// comptée en danger ambiant.
-		var thisToSkipMap = clone(DangerClass.EntitiesToSkip(entity_state, state, base_hash))
-		thisToSkipMap[Me] = true
+		// Me est déjà dans la map d'EntitiesToSkip (source unique) : lecture directe,
+		// sans clone ni patch local — la map cachée reste read-only.
+		var thisToSkipMap = DangerClass.EntitiesToSkip(entity_state, state, base_hash)
 		var thisEnemiesWalkableCellsMap = LoadEnemiesWalkableCellsMap(state, entity_id, thisToSkipMap, base_hash, thisStatsHashForDanger)
 		var thisCastersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(state, entity_state.ID)
 		var tmp = DangerClass.get(entity_state.CELL, state, entity_state, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
@@ -91,8 +90,9 @@ class DangerClass {
 			if (Caster in ToSkipMap) continue
 			var CasterStats = State[Caster]
 			var MapCellItemAoe = getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster])
-			var MapThisCellItemAoe = Cell in MapCellItemAoe ? MapCellItemAoe[Cell] : [: ]
-			var combo = getComboFromItemAoe(MapThisCellItemAoe, CasterStats, chainTarget)
+			// Caster incapable d'atteindre cette cellule : aucun combo ni map vide alloués.
+			if (!(Cell in MapCellItemAoe)) continue
+			var combo = getComboFromItemAoe(MapCellItemAoe[Cell], CasterStats, chainTarget)
 			if (combo[0] > 0) {
 				// Le crit est appliqué EN PROFONDEUR (getItemDanger avant les shields + vulnés
 				// de chaîne critées), pas ici : (d − ABS)·1.3 ≠ d·1.3 − ABS.
@@ -356,13 +356,16 @@ class DangerClass {
 	}
 
 	/*
-	 * [id -> true] des entités à skipper pour le danger d'une cible : son propre camp,
-	 * les morts, et les casters sans item menaçant. Clé (BaseHash, id).
+	 * [id -> true] des entités à skipper pour le danger d'une cible : Me (ma menace est le
+	 * travail du BFS, jamais du danger ambiant — valide pour tous les appelants), son propre
+	 * camp, les morts, et les casters sans item menaçant. Clé (BaseHash, id). Map cachée
+	 * read-only : aucun appelant ne la clone ni ne la patche.
 	 */
 	static EntitiesToSkip(EntityState, State, BaseHash) {
 		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), EntityState.ID)
 		if (ThisHash in TO_SKIP_MAP_CACHE) return TO_SKIP_MAP_CACHE[ThisHash]
 		var _final = [: ]
+		_final[Me] = true
 		var entity_side = EntityState.SIDE
 		for (var caster: var caststats in State) {
 			if ((entity_side == caststats.SIDE) || caststats.LIFE <= 0 || !HaveAnHittableItem(caststats.COOLDOWNS, caster)) {

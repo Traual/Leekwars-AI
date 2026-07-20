@@ -87,6 +87,11 @@ class DeltaClass {
         if (ndKey in NETDAMAGE_CACHE) return NETDAMAGE_CACHE[ndKey]
 
         var dangerToT = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
+        // Danger vide -> net 0 sans dérouler l'ordre de tour ni le séquenceur.
+        if (mapIsEmpty(dangerToT)) {
+            NETDAMAGE_CACHE[ndKey] = 0
+            return 0
+        }
         // Les casters frappent dans l'ordre où ils jouent APRÈS la cible ce round.
         var afterOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, e)
         var nd = netDamage(stat, dangerToT, healMap, State, afterOrder, stat.CELL)
@@ -135,7 +140,8 @@ class DeltaClass {
                     castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
                 }
                 var dangerAtCell = DangerClass.get(cell, State, MeStats, enemyWalkCells, toSkipMap, statsHash, castersInOrder)
-                delta = netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
+                // Danger vide -> delta 0 direct (déclenche l'early exit "imbattable" dessous).
+                delta = mapIsEmpty(dangerAtCell) ? 0 : netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
                 CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
             }
             if (delta < minDelta) {
@@ -154,7 +160,18 @@ class DeltaClass {
      * une vitalité à pleine vie reste utile contre les dégâts suivants.
      */
     static netDamage(stat, dangerToT, healMap, State, turnOrder, cell) {
+        // Sans danger entrant, un heal/une vitalité ne peut jamais produire un net positif
+        // (la vie ne fait que monter, net = max(0, LIFE − life)) : 0 direct.
+        if (mapIsEmpty(dangerToT)) return 0
         var life = stat.LIFE
+        // Sans healer nulle part : mêmes soustractions successives (comportement flottant
+        // conservé — pas de somme globale), sans les tests de side/couverture heal.
+        if (mapIsEmpty(healMap)) {
+            for (var caster in turnOrder) {
+                if (caster in dangerToT) life -= DANGER_COEF * dangerToT[caster]
+            }
+            return max(0, stat.LIFE - life)
+        }
         var totalLife = stat.TOTAL_LIFE
         // turnOrder = les casters jouant APRÈS la cible, cible EXCLUE (rotation de
         // getEntitiesInTurnOrderAfterEntity) -> jamais de self-heal ici, profil par type.
