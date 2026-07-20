@@ -5,10 +5,15 @@
 include("../includes.leek")
 
 class Preload {
+	/*
+	 * Préchargements du tour 1 UNIQUEMENT : catalogue d'items, géométrie statique et ordre
+	 * initial. L'état de tour (Me, inventaires, MINIMUM_COST_ITEM, SUMMON_ID_BASE) est le
+	 * travail d'InitStateClass, que Main exécute APRÈS ReloadCacheNewTurn — l'appeler ici
+	 * ferait tout ce travail deux fois au tour 1 pour un résultat aussitôt écrasé.
+	 */
     static InitEverything() {
         InitItemInfo()
 		InitCellClass()
-		InitStateClass()
 		InitInitialTurnOrder()
     }
 
