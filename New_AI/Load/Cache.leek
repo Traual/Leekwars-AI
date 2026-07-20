@@ -208,10 +208,12 @@ global CAPABILITY_COMBO_CACHE = [: ]
 // HEAL MAP — trois couches, miroir de la danger map :
 //  - HEAL_COVERAGE_CACHE : la couverture complète d'un caster, PAR PROFIL de cible
 //    [ALLY_LEEK | ALLY_SUMMON -> [cell -> [heal, vitalité]]] (pas de SELF : le séquenceur
-//    exclut la cible de sa liste de casters), clé (id, cell, mp, wis, tp) — le fast path.
+//    exclut la cible de sa liste de casters), clé (id, couche marche/saut, cell, mp, wis,
+//    tp) — le fast path.
 //  - HEAL_CELL_ITEM_AOE_CACHE : la GÉOMÉTRIE [cell -> [item -> aoeDist]], clé
-//    (id<<20)|(cell<<10)|max(0,mp) — position seule, COMMUNE aux deux profils, un
-//    buff/shackle WIS/TP ne reconstruit plus la géométrie, seulement la couche valeur.
+//    (id<<21)|(coucheJump<<20)|(cell<<10)|max(0,mp) — position + couche marche/saut future
+//    (canJumpNextTurn), COMMUNE aux deux profils ; un buff/shackle WIS/TP ne reconstruit
+//    que la couche valeur, SAUF franchissement du coût de Jump (couche géométrique).
 //  - HEAL_COMBO_CACHE : la VALEUR [heal, vitalité], memoïsée par CONTENU (fold des entrées
 //    [item -> dist] + wis/tp + PROFIL) — deux profils ne partagent jamais un combo, deux
 //    casters de types différents partagent un combo allié identique.

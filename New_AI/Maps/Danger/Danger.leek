@@ -289,14 +289,19 @@ class DangerClass {
 
 	/*
 	 * [cellule -> [item -> plus petite distance d'AoE]] : ce que le caster peut atteindre.
-	 * Clé (ID, cellule, TOTAL_MP) — l'ID est OBLIGATOIRE : la valeur embarque la liste d'items
-	 * du caster, deux ennemis déplacés sur la même cellule (attract/push) avec le même MP ne
-	 * doivent pas partager d'entrée. Pack direct injectif : cellule <= 612 (10 bits),
-	 * MP < 1024 (10 bits). mp clampé (shacklé négatif == 0).
+	 * Clé (ID, couche marche/saut, cellule, TOTAL_MP) — l'ID est OBLIGATOIRE : la valeur
+	 * embarque la liste d'items du caster, deux ennemis déplacés sur la même cellule
+	 * (attract/push) avec le même MP ne doivent pas partager d'entrée. usesJumpLayer =
+	 * canJumpNextTurn (source unique) : EntityWalkCells reçu est la couche marche OU
+	 * marche+Jump — un buff/shackle TP franchissant le coût de Jump en branche change la
+	 * couche sans toucher ID/cellule/MP, le bit garantit que la map reçue et la clé
+	 * décrivent la même couche. Pack direct injectif : cellule <= 612 (10 bits),
+	 * MP < 1024 (10 bits), mp clampé (shacklé négatif == 0).
 	 */
 	static getMapCellItemAoe(EntityStats, EntityWalkCells) {
 		var EntityStartCell = EntityStats.CELL
-		var TmpHash = (EntityStats.ID << 20) | (EntityStartCell << 10) | max(0, EntityStats.TOTAL_MP)
+		var usesJumpLayer = WalkCellsClass.canJumpNextTurn(EntityStats) ? 1 : 0
+		var TmpHash = (EntityStats.ID << 21) | (usesJumpLayer << 20) | (EntityStartCell << 10) | max(0, EntityStats.TOTAL_MP)
 		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
 		var _final = [: ]
 		for (var Item in EntityDangerClass.getItemsList(EntityStats)) {
