@@ -157,8 +157,9 @@ class ImportanceClass {
         var id = stat.ID
         if (id in CAPABILITY_ITEMS_BY_ID) return CAPABILITY_ITEMS_BY_ID[id]
         var items = []
-        for (var i: var cd in stat.COOLDOWNS) {
-            if (cd > 1) continue
+        // Parcourt INVENTORY (même ordre que l'ancienne map de cooldowns) + cooldown effectif.
+        for (var i in stat.INVENTORY) {
+            if (StateClass.cooldownOf(stat, i) > 1) continue
             var hpValue = 0
             for (var eff in ITEMINFO[i].EFFECTS) {
                 if (eff[0] in CAP_HP_W) hpValue += eff[1] * CAP_HP_W[eff[0]]

@@ -138,8 +138,6 @@ class ActionSuite {
 		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 		var MyOnlyWalk = MyWalkCells.WALK
 		var MyMax = MyWalkCells.MAX
-		var MyCooldowns = MyStats.COOLDOWNS
-		var MyUses = MyStats.USES
 		var MyWeapon = MyStats.WEAPON
 		var ParentScore = Parent.SCORE
 		var JumpCost = ITEMINFO[CHIP_JUMP].COST
@@ -155,9 +153,9 @@ class ActionSuite {
 			var act = entry[0]
 			var item = act.Item
 
-			if (MyCooldowns[item] > 0) continue
+			if (StateClass.cooldownOf(MyStats, item) > 0) continue
 			var Info = ITEMINFO[item]
-			if (MyUses[item] >= Info.MAX_USES) continue
+			if (StateClass.usesOf(MyStats, item) >= Info.MAX_USES) continue
 			var from = act.From
 			if (!(from in MyMax)) continue
 
@@ -222,7 +220,7 @@ class ActionSuite {
 
 		for (var Action in Acts) {
 			var Item = Action.Item
-			if (MyStats.COOLDOWNS[Item] > 0 || MyStats.USES[Item] >= ITEMINFO[Item].MAX_USES) continue
+			if (StateClass.cooldownOf(MyStats, Item) > 0 || StateClass.usesOf(MyStats, Item) >= ITEMINFO[Item].MAX_USES) continue
 			// Résurrection : l'action cachée est géométrique (RESURRECT_ID null, objet partagé
 			// entre states de même BaseHash). Sans candidat -> exclue ; sinon un objet NEUF
 			// porte l'id choisi pour cette évaluation (l'objet caché n'est jamais muté).
@@ -257,9 +255,9 @@ class ActionSuite {
 	 */
 	static resurrectIdOf(State) {
 		var MyStats = State[Me]
-		if (!(CHIP_RESURRECTION in MyStats.COOLDOWNS)) return null
-		if (MyStats.COOLDOWNS[CHIP_RESURRECTION] > 0) return null
-		if (MyStats.USES[CHIP_RESURRECTION] >= ITEMINFO[CHIP_RESURRECTION].MAX_USES) return null
+		var resCd = StateClass.cooldownOf(MyStats, CHIP_RESURRECTION)
+		if (resCd == null || resCd > 0) return null
+		if (StateClass.usesOf(MyStats, CHIP_RESURRECTION) >= ITEMINFO[CHIP_RESURRECTION].MAX_USES) return null
 		if (MyStats.TP < ITEMINFO[CHIP_RESURRECTION].COST) return null
 		return ResurrectionClass.ScoringWichId(State).ID
 	}

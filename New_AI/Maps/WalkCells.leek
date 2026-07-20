@@ -36,14 +36,14 @@ class WalkCellsClass {
 	// ============================================================================
 
 	static canJump(stats) {
-		if (!(CHIP_JUMP in stats.COOLDOWNS)) return false // entity doesn't have jump equipped
-		var cd = stats.COOLDOWNS[CHIP_JUMP]
+		var cd = StateClass.cooldownOf(stats, CHIP_JUMP)
+		if (cd == null) return false // pas de Jump équipé
 		return (cd == 0 || (stats.ID != Me && cd <= 1)) && stats.TP >= ITEMINFO[CHIP_JUMP].COST
 	}
 
 	static canTele(stats) {
-		if (!(CHIP_TELEPORTATION in stats.COOLDOWNS)) return false // entity doesn't have teleport equipped
-		var cd = stats.COOLDOWNS[CHIP_TELEPORTATION]
+		var cd = StateClass.cooldownOf(stats, CHIP_TELEPORTATION)
+		if (cd == null) return false // pas de Télépo équipée
 		return (cd == 0 || (stats.ID != Me && cd <= 1)) && stats.TP >= ITEMINFO[CHIP_TELEPORTATION].COST
 	}
 
@@ -139,8 +139,8 @@ class WalkCellsClass {
 	 * seront rechargés -> TOTAL_TP, cooldown <= 1 (il aura tourné d'ici là). Ne pas confondre
 	 * avec canJump (TP réellement restants), qui reste le filtre du BFS de Me. */
 	static canJumpNextTurn(stats) {
-		if (!(CHIP_JUMP in stats.COOLDOWNS)) return false
-		return stats.COOLDOWNS[CHIP_JUMP] <= 1 && stats.TOTAL_TP >= ITEMINFO[CHIP_JUMP].COST
+		var cd = StateClass.cooldownOf(stats, CHIP_JUMP)
+		return cd != null && cd <= 1 && stats.TOTAL_TP >= ITEMINFO[CHIP_JUMP].COST
 	}
 
 	static getMaxWalkOrJumpNoEntitiesFull(stats) {
@@ -192,10 +192,9 @@ class WalkCellsClass {
 	static HashWalkCellsWithItemsWithoutBaseHash(entity_state) {
 		var Entity = entity_state.ID
 		var Tp = entity_state.TP
-		var EntityCooldowns = entity_state.COOLDOWNS
-		var JumpCooldown = EntityCooldowns[CHIP_JUMP]
+		var JumpCooldown = StateClass.cooldownOf(entity_state, CHIP_JUMP)
 		var JumpCost = ITEMINFO[CHIP_JUMP].COST
-		var TeleportationCooldown = EntityCooldowns[CHIP_TELEPORTATION]
+		var TeleportationCooldown = StateClass.cooldownOf(entity_state, CHIP_TELEPORTATION)
 		var TeleportationCost = ITEMINFO[CHIP_TELEPORTATION].COST
 		var CanJump = (JumpCooldown == 0 || Entity != Me && JumpCooldown <= 1) && Tp >= JumpCost
 		var CanTeleport = (TeleportationCooldown == 0 || Entity != Me && TeleportationCooldown <= 1) && Tp >= TeleportationCost

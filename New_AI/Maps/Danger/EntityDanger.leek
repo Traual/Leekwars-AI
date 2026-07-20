@@ -50,13 +50,14 @@ class EntityDangerClass {
 		return _final
 	}
 
-	/* Items menaçants castables de l'entité (cooldown <= 1), cachés par id pour le tour. */
+	/* Items menaçants castables de l'entité (cooldown <= 1), cachés par id pour le tour.
+	 * Parcourt INVENTORY (même ordre que l'ancienne map de cooldowns) + cooldown effectif. */
 	static getItemsList(EntityStats) {
 		var Hash = EntityStats.ID
 		if (Hash in DANGER_ENTITY_INVENTORY) return DANGER_ENTITY_INVENTORY[Hash]
 		var _final = []
-		for (var i: var cd in EntityStats.COOLDOWNS) {
-			if (cd > 1) continue
+		for (var i in EntityStats.INVENTORY) {
+			if (StateClass.cooldownOf(EntityStats, i) > 1) continue
 			if (IsToCheck(ITEMINFO[i])) {
 				push(_final, i)
 			}
@@ -87,7 +88,8 @@ class EntityDangerClass {
 	static MapHash(EntityStats, MyStats) {
 		var hash_value = (OFFSET_BASIS ^ EntityStats.ID)
 
-		var antidoteCdMe = (CHIP_ANTIDOTE in MyStats.COOLDOWNS) ? MyStats.COOLDOWNS[CHIP_ANTIDOTE] : 99
+		var effAntidoteCdMe = StateClass.cooldownOf(MyStats, CHIP_ANTIDOTE)
+		var antidoteCdMe = (effAntidoteCdMe == null) ? 99 : effAntidoteCdMe
 		// Bit 50 = type de la cible (poireau/summon) : getItemDanger filtre les effets par
 		// leurs masques NON_SUMMONS/SUMMONS — deux types ne partagent jamais une liste.
 		var combinedMe = ((MyStats.IS_SUMMON ? 1 : 0) << 50) | ((MyStats.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((MyStats.RELATIVE_SHIELD & 0x7FFF) << 15) | antidoteCdMe

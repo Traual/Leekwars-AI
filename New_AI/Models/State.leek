@@ -132,20 +132,79 @@ class StateClass {
 	 * LE clone de simulation — source unique. Les containers sont PARTAGÉS par défaut :
 	 * personne n'écrit INVENTORY / EFFECTS_ITEM_MAP pendant la sim ; EFFECTS est partagé
 	 * mais JAMAIS muté en place — toute modification (remplacement, mort du caster, revive)
-	 * REBINDE un tableau neuf sur le clone, le parent garde le sien ; COOLDOWNS / USES ne
-	 * sont écrits que pour ME (comptabilité de cast). Si un jour un effet mute un container
-	 * d'une CIBLE en place, le deep-clone se fait ICI (point unique), jamais au site de
-	 * l'effet. Les memos dérivés (CAP_MEMO / TLSQ_MEMO) sont invalidés ici.
+	 * REBINDE un tableau neuf sur le clone, le parent garde le sien. COOLDOWNS / USES (les
+	 * deux seuls containers écrits en sim, Me only) deviennent des OVERLAYS différentiels :
+	 * le clone de Me ne porte que ses écritures locales, les valeurs héritées se résolvent
+	 * en remontant ITEM_STATE_PARENT (chaîne immuable — cooldownOf/usesOf). Si un jour un
+	 * effet mute un container d'une CIBLE en place, le deep-clone se fait ICI (point
+	 * unique), jamais au site de l'effet.
 	 */
 	static cloneEntityForSim(stat, isMe) {
 		var c = clone(stat, 1)                    // scalaires copiés, containers partagés
 		if (isMe) {
-			c.COOLDOWNS = clone(stat.COOLDOWNS)   // les deux seuls containers écrits en sim — Me only
-			c.USES = clone(stat.USES)
+			c.ITEM_STATE_PARENT = stat
+			c.COOLDOWNS = [: ]
+			c.USES = [: ]
 		}
 		// CAP_MEMO / TLSQ_MEMO : COPIÉS par clone(stat, 1) puis VALIDÉS après l'action
 		// (validateDerivedMemos dans Node) — plus d'invalidation systématique au clonage.
 		return c
+	}
+
+	// ============================================================================
+	// Inventaire différentiel — SOURCES UNIQUES de lecture/écriture de COOLDOWNS/USES.
+	// Racine (état réel, virtuel ou non-Me) : ITEM_STATE_PARENT = null, maps complètes.
+	// Clone simulé de Me : maps = patches locaux, héritage via la chaîne.
+	// Personne ne lit stat.COOLDOWNS[item] / stat.USES[item] en dehors d'ici et des
+	// constructeurs ; les setters n'écrivent JAMAIS un parent.
+	// ============================================================================
+
+	/* Cooldown effectif : premier patch de la chaîne contenant l'item, sinon la racine.
+	 * null = item non équipé (absent de la map complète de la racine). */
+	static cooldownOf(stat, item) {
+		var s = stat
+		while (s != null) {
+			if (item in s.COOLDOWNS) return s.COOLDOWNS[item]
+			s = s.ITEM_STATE_PARENT
+		}
+		return null
+	}
+
+	/* Uses effectifs, même résolution ; 0 si l'item est absent de toute la chaîne. */
+	static usesOf(stat, item) {
+		var s = stat
+		while (s != null) {
+			if (item in s.USES) return s.USES[item]
+			s = s.ITEM_STATE_PARENT
+		}
+		return 0
+	}
+
+	/* L'entité a-t-elle cet item équipé ? (la racine porte tout l'inventaire) */
+	static hasInventoryItem(stat, item) {
+		return cooldownOf(stat, item) != null
+	}
+
+	static setCooldown(stat, item, value) {
+		stat.COOLDOWNS[item] = value
+	}
+
+	static setUses(stat, item, value) {
+		stat.USES[item] = value
+	}
+
+	static incrementUses(stat, item) {
+		stat.USES[item] = usesOf(stat, item) + 1
+	}
+
+	/*
+	 * Map USES COMPLÈTE d'une entité SANS patch : l'inventaire d'un non-Me n'est jamais
+	 * écrit en sim (ITEM_STATE_PARENT reste null), la map du champ est la map moteur.
+	 * Réservé aux machineries qui threadent la map entière (combos Danger : clone local
+	 * ThisUses/EndUses).
+	 */
+	static rootUsesMap(stat) {
+		return stat.USES
 	}
 
 	/*

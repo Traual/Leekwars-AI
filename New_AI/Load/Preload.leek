@@ -114,7 +114,7 @@ class Preload {
 		// recherche.
 		var cheapest = 100
 		for (var i in BASE_INVENTORY) {
-			if (myStateOnMe.COOLDOWNS[i] > 0) continue
+			if (StateClass.cooldownOf(myStateOnMe, i) > 0) continue
 			var c = isChip(i) ? getChipCost(i) : getWeaponCost(i)
 			if (c < cheapest) cheapest = c
 		}

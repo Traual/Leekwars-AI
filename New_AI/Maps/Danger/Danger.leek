@@ -131,7 +131,7 @@ class DangerClass {
 		// TOTAL_TP : le danger représente le potentiel max du prochain tour, pas les TP
 		// restants de ce tour — stable d'un step de BFS à l'autre.
 		var BaseTp = CasterStats.TOTAL_TP
-		var BaseUses = CasterStats.USES
+		var BaseUses = StateClass.rootUsesMap(CasterStats)   // caster jamais Me -> map complète
 		var _final = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
 		var ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
 		while ((ComboWithVulne instanceof DangerClass) && (ComboWithVulne.EndValueDamage > _final)) {
@@ -185,7 +185,8 @@ class DangerClass {
 	static getStatsHashForDangerOneCaster(TargetStats, CasterStats, TmpHash) {
 		var hash_value = (OFFSET_BASIS ^ TmpHash)
 
-		var antidoteCdTar = (CHIP_ANTIDOTE in TargetStats.COOLDOWNS) ? TargetStats.COOLDOWNS[CHIP_ANTIDOTE] : 99
+		var effAntidoteCdTar = StateClass.cooldownOf(TargetStats, CHIP_ANTIDOTE)
+		var antidoteCdTar = (effAntidoteCdTar == null) ? 99 : effAntidoteCdTar
 		// Bit 50 = type de la cible (poireau/summon) : les masques NON_SUMMONS/SUMMONS
 		// changent les effets applicables — l'ID reste HORS clé exprès, deux cibles de même
 		// type et mêmes shields partagent leur combo (LIFE lue seulement > 0, SIDE toujours
@@ -414,7 +415,7 @@ class DangerClass {
 		_final[Me] = true
 		var entity_side = EntityState.SIDE
 		for (var caster: var caststats in State) {
-			if ((entity_side == caststats.SIDE) || caststats.LIFE <= 0 || !HaveAnHittableItem(caststats.COOLDOWNS, caster)) {
+			if ((entity_side == caststats.SIDE) || caststats.LIFE <= 0 || !HaveAnHittableItem(caststats, caster)) {
 				_final[caster] = true
 			}
 		}
@@ -422,11 +423,12 @@ class DangerClass {
 		return _final
 	}
 
-	/* L'entité a-t-elle un item à compter dans la danger map ? (cooldown <= 1, effet menaçant) */
-	static HaveAnHittableItem(CooldownMap, CasterID) {
+	/* L'entité a-t-elle un item à compter dans la danger map ? (cooldown <= 1, effet menaçant)
+	 * Parcourt INVENTORY (même ordre que l'ancienne map de cooldowns) + cooldown effectif. */
+	static HaveAnHittableItem(CasterStats, CasterID) {
 		if (CasterID in HAVE_AN_HITTABLE_ITEM_CACHE) return HAVE_AN_HITTABLE_ITEM_CACHE[CasterID]
-		for (var i: var cd in CooldownMap) {
-			if (cd > 1) continue
+		for (var i in CasterStats.INVENTORY) {
+			if (StateClass.cooldownOf(CasterStats, i) > 1) continue
 			for (var eff in ITEMINFO[i].EFFECTS) {
 				if (MapHittables[eff[0]]) {
 					HAVE_AN_HITTABLE_ITEM_CACHE[CasterID] = true

@@ -14,6 +14,10 @@ class EntityStateClass extends EntityClass {
 	WEAPON
 	COOLDOWNS
 	USES
+	// Overlay différentiel de l'inventaire : null = racine (COOLDOWNS/USES complets) ;
+	// sur un clone simulé de Me, pointe l'état précédent et les maps ne portent que les
+	// patches locaux (résolution par StateClass.cooldownOf/usesOf, chaîne immuable).
+	ITEM_STATE_PARENT
 	EFFECTS
 	EFFECTS_ITEM_MAP
 	// Memos de champs dérivés (scoring), calculés paresseusement. COPIÉS au clone puis
@@ -66,6 +70,7 @@ class EntityStateClass extends EntityClass {
 		this.DAMAGE_RETURN = getDamageReturn(id)
 		this.POWER = getPower(id)
 		this.WEAPON = getWeapon(id)
+		this.ITEM_STATE_PARENT = null   // état réel = racine : maps complètes
 		this.COOLDOWNS = [: ]
 		this.USES = [: ]
 		for (var i in this.INVENTORY) {

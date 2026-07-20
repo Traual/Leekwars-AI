@@ -67,17 +67,19 @@ class NodeClass {
 		ThisActionStats[Me].TP -= Cost
 		if (Info.IS_WEAPON) ThisActionStats[Me].WEAPON = Item
 		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash, clonedIds, Act.RESURRECT_ID)
-		ThisActionStats[Me].COOLDOWNS[Item] = Info.COOLDOWN
-		ThisActionStats[Me].USES[Item]++
+		// Écritures d'inventaire via les setters différentiels : elles ne touchent que le
+		// patch local du clone de Me, jamais un ancêtre.
+		StateClass.setCooldown(ThisActionStats[Me], Item, Info.COOLDOWN)
+		StateClass.incrementUses(ThisActionStats[Me], Item)
 		// Cooldowns des items de déplacement si la cellule d'arrivée vient d'une layer jump/télépo.
 		if (!(From in MyWalkCells.WALK)) {
 			if (From in MyWalkCells.JUMP) {
-				ThisActionStats[Me].COOLDOWNS[CHIP_JUMP] = ITEMINFO[CHIP_JUMP].COOLDOWN
+				StateClass.setCooldown(ThisActionStats[Me], CHIP_JUMP, ITEMINFO[CHIP_JUMP].COOLDOWN)
 			} else if (From in MyWalkCells.TELEPORTATION) {
-				ThisActionStats[Me].COOLDOWNS[CHIP_TELEPORTATION] = ITEMINFO[CHIP_TELEPORTATION].COOLDOWN
+				StateClass.setCooldown(ThisActionStats[Me], CHIP_TELEPORTATION, ITEMINFO[CHIP_TELEPORTATION].COOLDOWN)
 			} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
-				ThisActionStats[Me].COOLDOWNS[CHIP_JUMP] = ITEMINFO[CHIP_JUMP].COOLDOWN
-				ThisActionStats[Me].COOLDOWNS[CHIP_TELEPORTATION] = ITEMINFO[CHIP_TELEPORTATION].COOLDOWN
+				StateClass.setCooldown(ThisActionStats[Me], CHIP_JUMP, ITEMINFO[CHIP_JUMP].COOLDOWN)
+				StateClass.setCooldown(ThisActionStats[Me], CHIP_TELEPORTATION, ITEMINFO[CHIP_TELEPORTATION].COOLDOWN)
 			}
 		}
 		var result = new NodeClass(Act, ThisActionStats, Parent)

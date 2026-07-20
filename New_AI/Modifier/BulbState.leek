@@ -18,6 +18,7 @@ class BulbState {
 	INVENTORY
 	COOLDOWNS
 	USES
+	ITEM_STATE_PARENT   // null = racine (même contrat qu'EntityState) — un bulbe n'est jamais patché
 	SIDE
 	EVERYONE
 	IS_ALLY
@@ -84,6 +85,7 @@ class BulbState {
 		this.IS_SUMMON = true
 		this.ID = id
 		this.INVENTORY = getBulbChips(Chip)
+		this.ITEM_STATE_PARENT = null   // racine : maps complètes
 		this.COOLDOWNS = [: ]
 		this.USES = [: ]
 		for (var i in this.INVENTORY) {

@@ -235,8 +235,8 @@ class HealClass {
             var cost = it[4]
             var maxUses = ITEMINFO[item].MAX_USES
             // Chaque item n'apparaît qu'une fois dans la liste -> un scalaire local de uses
-            // suffit ; casterStats.USES n'est jamais muté ni cloné.
-            var itemUses = casterStats.USES[item]
+            // suffit ; les USES du caster ne sont jamais mutés ni clonés.
+            var itemUses = StateClass.usesOf(casterStats, item)
             while (remainingTp >= cost && itemUses < maxUses) {
                 totalHeal += it[1]
                 totalVitality += it[2]
@@ -280,12 +280,13 @@ class HealClass {
         return [heal, vitality]
     }
 
-    /* Items de heal castables du caster (cooldown <= 1), cachés par id pour le tour. */
+    /* Items de heal castables du caster (cooldown <= 1), cachés par id pour le tour.
+     * Parcourt INVENTORY (même ordre que l'ancienne map de cooldowns) + cooldown effectif. */
     static getHealItemsList(casterStats) {
         if (casterStats.ID in HEAL_ENTITY_INVENTORY) return HEAL_ENTITY_INVENTORY[casterStats.ID]
         var _final = []
-        for (var i: var cd in casterStats.COOLDOWNS) {
-            if (cd > 1) continue
+        for (var i in casterStats.INVENTORY) {
+            if (StateClass.cooldownOf(casterStats, i) > 1) continue
             if (isHealItem(ITEMINFO[i])) push(_final, i)
         }
         HEAL_ENTITY_INVENTORY[casterStats.ID] = _final

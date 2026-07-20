@@ -1130,7 +1130,8 @@ class ConsequencesClass {
 		var shieldFactor = 1 - targetstats.RELATIVE_SHIELD / 100
 		// 99 = pas d'antidote dans l'inventaire (jamais de cure -> le poison compte sa durée
 		// PLEINE), distinct d'un antidote prêt (0).
-		var antidoteCd = (CHIP_ANTIDOTE in targetstats.COOLDOWNS) ? targetstats.COOLDOWNS[CHIP_ANTIDOTE] : 99
+		var effAntidoteCd = StateClass.cooldownOf(targetstats, CHIP_ANTIDOTE)
+		var antidoteCd = (effAntidoteCd == null) ? 99 : effAntidoteCd
 		for (var eff in Info.EFFECTS) {
 			if (eff[5] & EFFECT_MODIFIER_ON_CASTER) continue
 			if (!isHitable(eff, targetstats, casterstats, false)) continue
