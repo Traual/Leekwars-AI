@@ -78,8 +78,8 @@ global DR_RETURN_EXPECT = 0.4
 // danger réel — ce petit terme donne au shield préventif son ticket d'exploration quand il
 // n'y a rien de mieux à faire. NON clampé : une vulné (shield négatif) paie le même canal
 // en sens inverse (déshabiller un ennemi score même sans allié pour en profiter).
-global W_IDLE_ABS = 0.2   // par point de shield absolu
-global W_IDLE_REL = 1.0   // par % de shield relatif
+global W_IDLE_ABS = 0.02   // par point de shield absolu
+global W_IDLE_REL = 0.1    // par % de shield relatif
 
 // Coût de cast à la main pour quelques items d'économie : soustrait au SCORE du nœud qui
 // les caste (coût d'ACTION porté par le chemin, hors TERMS). L'item doit rapporter PLUS que
