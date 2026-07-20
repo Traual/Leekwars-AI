@@ -24,20 +24,35 @@ class ActionSuite {
 	 */
 	static getBestAction(State) {
 		BenchOps.Start("BFS")
-		var MySide = State[Me].SIDE
+		var MyStats = State[Me]
+		// Fast-path racine : sous le coût du moindre item jouable du tour (même garde que
+		// findBestNextNode), aucune action de base n'existe — rien à calculer, pas même BaseHash.
+		if (MyStats.TP < MINIMUM_COST_ITEM) {
+			BenchOps.Stop("BFS")
+			return null
+		}
+		var MySide = MyStats.SIDE
 		var BaseHash = StateClass.getBaseHash(State)
+		var RootResurrectId = resurrectIdOf(State)
+		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
+		var basePairs = getBaseActions(State, BaseHash, RootResurrectId, MyWalkCells)
+		// basePairs = les actions réellement JOUABLES. Vide -> rien à scorer : sortie avant
+		// Context/HFP/Terms (le gros du coût racine).
+		if (count(basePairs) == 0) {
+			BenchOps.Stop("BFS")
+			return null
+		}
 		var RootContext = DeltaClass.buildContextBySide(State)
 		var RootHfp = HealClass.buildHfpBySide(State)
 		var RootTerms = ScoringClass.buildTermsMap(State, MySide, BaseHash, RootContext)
 		var RootPoisonKey = ScoringClass.poisonKeyOf(State, BaseHash)
-		var RootResurrectId = resurrectIdOf(State)
 		var initialScore = ScoringClass.sumTerms(RootTerms)
 
 		// Cache par appel : scoredKeyOf(BaseHash, candidat résu) -> liste triée
 		// [act, delta, node, nodeScore].
 		var ScoredCache = [:]
 
-		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, RootTerms, RootPoisonKey, RootResurrectId)
+		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, RootTerms, RootPoisonKey, MyWalkCells, basePairs)
 		ScoredCache[scoredKeyOf(BaseHash, RootResurrectId)] = rootEntries
 		BFS_CHAIN_STEPS = 0
 		debugC("--- " + count(rootEntries) + " base actions ---", COLOR_BLUE)
@@ -100,7 +115,10 @@ class ActionSuite {
 		if (CacheKey in ScoredCache) {
 			Entries = ScoredCache[CacheKey]
 		} else {
-			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent.TERMS, Parent.POISON_KEY, ResurrectId)
+			// Miss : WalkCells + jouables produits UNE seule fois pour ce nouvel état, puis scorés.
+			var FreshWalk = WalkCellsClass.getAllLayers(State, Me, BaseHash)
+			var freshPairs = getBaseActions(State, BaseHash, ResurrectId, FreshWalk)
+			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent.TERMS, Parent.POISON_KEY, FreshWalk, freshPairs)
 			ScoredCache[CacheKey] = Entries
 
 			// Chemin frais : toutes les entrées sont positives et triées pour cet état.
@@ -161,18 +179,14 @@ class ActionSuite {
 	}
 
 	/*
-	 * Énumère les actions de base, applique + score chacune, trie par delta décroissant.
+	 * Applique + score chaque action JOUABLE reçue (basePairs = sortie de getBaseActions,
+	 * produite une seule fois par l'appelant avec MyWalkCells), trie par delta décroissant.
 	 * Renvoie des entrées [act, delta, node, nodeScore], node avec PARENT=null.
-	 * INVARIANT : toute entrée renvoyée a delta > BFS_DELTA_EPSILON — les actions
-	 * sub-epsilon sont injouables partout en aval (plancher, chemin frais, borne du tri),
-	 * les dropper ici libère leur nœud immédiatement. Le code aval s'appuie dessus.
+	 * INVARIANT : toute entrée renvoyée a delta > BFS_DELTA_EPSILON — jouable (basePairs)
+	 * n'implique donc pas retenu ; les sub-epsilon sont injouables partout en aval
+	 * (plancher, chemin frais, borne du tri), les dropper ici libère leur nœud immédiatement.
 	 */
-	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTerms, ParentPoisonKey, ResurrectId) {
-		// getAllLayers calculé UNE fois et partagé avec getBaseActions (les maps internes
-		// sont cachées par layer, mais les checks de capacité + le LayersClass étaient
-		// reconstruits deux fois sur chaque chemin frais).
-		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
-		var basePairs = getBaseActions(State, BaseHash, ResurrectId, MyWalkCells)   // [ [act, coût], ... ] : le coût du filtre est réutilisé
+	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTerms, ParentPoisonKey, MyWalkCells, basePairs) {
 		var Entries = []
 		for (var pair in basePairs) {
 			var act = pair[0]
