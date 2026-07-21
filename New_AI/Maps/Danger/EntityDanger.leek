@@ -27,8 +27,8 @@ class EntityDangerClass {
 	 * Liste triée (dégâts/TP décroissant) des (item, aoeDist, dégâts) du caster sur la cible.
 	 * Cachée par MapHash (stats offensives du caster + shields/antidote de la cible).
 	 */
-	static get(CasterStats, TargetStats) {
-		var Hash = MapHash(CasterStats, TargetStats)
+	static get(CasterStats, TargetStats, curAbs, curRel) {
+		var Hash = MapHash(CasterStats, TargetStats, curAbs, curRel)
 		if (Hash in DANGER_ENTITY_CACHE) return DANGER_ENTITY_CACHE[Hash]
 		var Tmp = []
 		for (var i in getItemsList(CasterStats)) {
@@ -38,7 +38,7 @@ class EntityDangerClass {
 			var MaxAoeDist = MapDistPossibles[Infos.AREA]
 			var AddingDist = MapAdditionDist[Infos.AREA]
 			for (var aoe = 0; aoe <= MaxAoeDist; aoe += AddingDist) {
-				var Damage = ConsequencesClass.getItemDanger(i, CasterStats, TargetStats, aoe, Multiplier)
+				var Damage = ConsequencesClass.getItemDanger(i, CasterStats, TargetStats, aoe, Multiplier, curAbs, curRel)
 				if (Damage <= 0) continue
 				var DamagesPerTpOfItem = Damage / CostOfItem
 				var DangerMap = new EntityDangerClass(i, aoe, Damage, CostOfItem, DamagesPerTpOfItem)
@@ -85,14 +85,15 @@ class EntityDangerClass {
 	 * leur slot : une vulné est un shield négatif ; antidote 99 = pas de chip, distinct
 	 * de prêt).
 	 */
-	static MapHash(EntityStats, MyStats) {
+	static MapHash(EntityStats, MyStats, curAbs, curRel) {
 		var hash_value = (OFFSET_BASIS ^ EntityStats.ID)
 
 		var effAntidoteCdMe = StateClass.cooldownOf(MyStats, CHIP_ANTIDOTE)
 		var antidoteCdMe = (effAntidoteCdMe == null) ? 99 : effAntidoteCdMe
 		// Bit 50 = type de la cible (poireau/summon) : getItemDanger filtre les effets par
-		// leurs masques NON_SUMMONS/SUMMONS — deux types ne partagent jamais une liste.
-		var combinedMe = ((MyStats.IS_SUMMON ? 1 : 0) << 50) | ((MyStats.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((MyStats.RELATIVE_SHIELD & 0x7FFF) << 15) | antidoteCdMe
+		// leurs masques NON_SUMMONS/SUMMONS — deux types ne partagent jamais une liste. Les
+		// shields sont ceux COURANTS de la chaîne (scalaires), pas l'objet cible.
+		var combinedMe = ((MyStats.IS_SUMMON ? 1 : 0) << 50) | ((curAbs & 0xFFFFF) << 30) | ((curRel & 0x7FFF) << 15) | antidoteCdMe
 		hash_value = addValueToBinHash(hash_value, combinedMe)
 
 		// Bit 62 = classe de crit du caster (les valeurs d'items en dépendent depuis que

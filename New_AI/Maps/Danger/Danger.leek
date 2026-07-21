@@ -6,12 +6,17 @@
 include("../../includes.leek")
 
 class DangerClass {
-	EndState
+	// La chaîne de vulnés ne fait bouger que les DEUX shields (scalaires) — plus aucun
+	// snapshot d'EntityState transporté. LIFE/SIDE/IS_SUMMON/Antidote restent lus sur la
+	// cible originale, jamais mutée.
+	EndAbsoluteShield
+	EndRelativeShield
 	EndTp
 	EndUses
 	EndValueDamage
-	constructor(TmpStats, TmpTp, TmpUses, TmpValueDamage) {
-		this.EndState = TmpStats
+	constructor(TmpAbs, TmpRel, TmpTp, TmpUses, TmpValueDamage) {
+		this.EndAbsoluteShield = TmpAbs
+		this.EndRelativeShield = TmpRel
 		this.EndTp = TmpTp
 		this.EndUses = TmpUses
 		this.EndValueDamage = TmpValueDamage
@@ -85,19 +90,23 @@ class DangerClass {
 		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), (TargetStats.ID << 10) | Cell)
 		if (ThisHash in CELL_DANGER_GET_CACHE) return CELL_DANGER_GET_CACHE[ThisHash]
 		var _final = [: ]   // par caster, pas sommé : le net séquence par ordre de tour
-		var chainTarget = TargetStats
+		// La cible n'est jamais mutée : seuls ses deux shields COURANTS évoluent le long de la
+		// chaîne, en scalaires. TargetStats reste lu en métadonnées (LIFE/SIDE/type/Antidote).
+		var chainAbs = TargetStats.ABSOLUTE_SHIELD
+		var chainRel = TargetStats.RELATIVE_SHIELD
 		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
 			var CasterStats = State[Caster]
 			var MapCellItemAoe = getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster])
 			// Caster incapable d'atteindre cette cellule : aucun combo ni map vide alloués.
 			if (!(Cell in MapCellItemAoe)) continue
-			var combo = getComboFromItemAoe(MapCellItemAoe[Cell], CasterStats, chainTarget)
+			var combo = getComboFromItemAoe(MapCellItemAoe[Cell], CasterStats, TargetStats, chainAbs, chainRel)
 			if (combo[0] > 0) {
 				// Le crit est appliqué EN PROFONDEUR (getItemDanger avant les shields + vulnés
 				// de chaîne critées), pas ici : (d − ABS)·1.3 ≠ d·1.3 − ABS.
 				_final[Caster] = combo[0]
-				chainTarget = combo[1]   // le caster suivant voit la cible post-vulné/debuff
+				chainAbs = combo[1]   // le caster suivant voit les shields post-vulné/debuff
+				chainRel = combo[2]
 			}
 		}
 		CELL_DANGER_GET_CACHE[ThisHash] = _final
@@ -119,35 +128,34 @@ class DangerClass {
 	 * en premier tant que ça améliore les dégâts).
 	 *
 	 * @param ItemAoeMap [item -> minAoeDist] des items qui atteignent la cellule
-	 * @param TargetStats JAMAIS muté (tout chemin de mutation clone d'abord)
-	 * @return l'ENTRÉE de cache [dégâtsCombo, étatFinalCible] — READ-ONLY pour les appelants
-	 *         (partagée avec le cache). L'état final nourrit le caster suivant de get().
+	 * @param TargetStats métadonnées de la cible (LIFE/SIDE/IS_SUMMON/Antidote) — JAMAIS muté
+	 * @param curAbs/curRel shields COURANTS de la cible (scalaires portés par la chaîne)
+	 * @return l'ENTRÉE de cache [dégâtsCombo, absFinal, relFinal] — que des scalaires, aucune
+	 *         référence vers une entité du State ni du workspace transactionnel.
 	 */
-	static getComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats) {
-		if (mapIsEmpty(ItemAoeMap)) return [0, TargetStats]
+	static getComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, curAbs, curRel) {
+		if (mapIsEmpty(ItemAoeMap)) return [0, curAbs, curRel]
 		var HashedItemAoeMap = getHashFromItemAoeMap(ItemAoeMap)
-		var HashWithShield = getStatsHashForDangerOneCaster(TargetStats, CasterStats, HashedItemAoeMap)
+		var HashWithShield = getStatsHashForDangerOneCaster(TargetStats, CasterStats, HashedItemAoeMap, curAbs, curRel)
 		if (HashWithShield in COMBO_FROM_ITEM_AOE_CACHE) return COMBO_FROM_ITEM_AOE_CACHE[HashWithShield]
 		// TOTAL_TP : le danger représente le potentiel max du prochain tour, pas les TP
 		// restants de ce tour — stable d'un step de BFS à l'autre.
 		var BaseTp = CasterStats.TOTAL_TP
 		var BaseUses = StateClass.rootUsesMap(CasterStats)   // caster jamais Me -> map complète
-		var _final = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
-		var ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
+		var _final = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses, curAbs, curRel)
+		var ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses, curAbs, curRel)
 		while ((ComboWithVulne instanceof DangerClass) && (ComboWithVulne.EndValueDamage > _final)) {
 			_final = ComboWithVulne.EndValueDamage
-			TargetStats = ComboWithVulne.EndState
+			curAbs = ComboWithVulne.EndAbsoluteShield
+			curRel = ComboWithVulne.EndRelativeShield
 			BaseUses = ComboWithVulne.EndUses
 			BaseTp = ComboWithVulne.EndTp
-			ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
+			ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses, curAbs, curRel)
 		}
-		// SNAPSHOT obligatoire : sans vulné jouée, TargetStats est encore l'objet VIVANT de
-		// l'appelant — donc, pendant le scoring d'un candidat, une entité du State mutée
-		// TEMPORAIREMENT. Ce cache est persistant au tour et sa clé fige les shields de la
-		// cible ; garder la référence ferait diverger la valeur de sa propre clé dès la
-		// restauration. Le clone ne coûte que sur un miss.
-		var entry = [_final, clone(TargetStats, 1)]   // état post-combo, figé
-		entry[1].ACTIVE_DELTA = null
+		// Entrée en SCALAIRES : le cache ne retient plus aucune référence vers une entité,
+		// donc plus rien à figer par un clone (sans vulné jouée, on stocke les shields
+		// d'entrée tels quels).
+		var entry = [_final, curAbs, curRel]
 		COMBO_FROM_ITEM_AOE_CACHE[HashWithShield] = entry
 		return entry
 	}
@@ -165,13 +173,13 @@ class DangerClass {
 	 * Meilleur item de vulné jouable en premier : renvoie le DangerClass (état/TP/uses/dégâts
 	 * après vulné + combo) du plus rentable, ou null si aucun.
 	 */
-	static getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses) {
+	static getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses, curAbs, curRel) {
 		var MaxDamages = 0
 		var _final
 		for (var item: var aoe in ItemAoeMap) {
 			var Infos = ITEMINFO[item]
 			if (BaseUses[item] < Infos.MAX_USES && BaseTp >= Infos.COST && Infos.IS_VULNERABILITY) {
-				var CDangerClass = getCellDangerClassFromItem(TargetStats, Infos, BaseTp, BaseUses, ItemAoeMap, CasterStats, item)
+				var CDangerClass = getCellDangerClassFromItem(TargetStats, Infos, BaseTp, BaseUses, ItemAoeMap, CasterStats, item, curAbs, curRel)
 				var Damages = CDangerClass.EndValueDamage
 				if (MaxDamages < Damages) {
 					MaxDamages = Damages
@@ -188,7 +196,7 @@ class DangerClass {
 	 * négatif : non masqué, le signe absorberait les champs hauts) ; antidote 99 = pas de chip,
 	 * distinct de prêt (0) ; stats du caster clampées à 0 (le moteur plancher à l'usage).
 	 */
-	static getStatsHashForDangerOneCaster(TargetStats, CasterStats, TmpHash) {
+	static getStatsHashForDangerOneCaster(TargetStats, CasterStats, TmpHash, curAbs, curRel) {
 		var hash_value = (OFFSET_BASIS ^ TmpHash)
 
 		var effAntidoteCdTar = StateClass.cooldownOf(TargetStats, CHIP_ANTIDOTE)
@@ -196,8 +204,9 @@ class DangerClass {
 		// Bit 50 = type de la cible (poireau/summon) : les masques NON_SUMMONS/SUMMONS
 		// changent les effets applicables — l'ID reste HORS clé exprès, deux cibles de même
 		// type et mêmes shields partagent leur combo (LIFE lue seulement > 0, SIDE toujours
-		// ennemi du caster dans cette machinerie : constants, pas des inputs).
-		var Mycombined = ((TargetStats.IS_SUMMON ? 1 : 0) << 50) | ((TargetStats.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((TargetStats.RELATIVE_SHIELD & 0x7FFF) << 15) | antidoteCdTar
+		// ennemi du caster dans cette machinerie : constants, pas des inputs). Les shields
+		// sont ceux COURANTS de la chaîne (scalaires), pas l'objet cible.
+		var Mycombined = ((TargetStats.IS_SUMMON ? 1 : 0) << 50) | ((curAbs & 0xFFFFF) << 30) | ((curRel & 0x7FFF) << 15) | antidoteCdTar
 		hash_value = addValueToBinHash(hash_value, Mycombined)
 
 		// TOTAL_TP : potentiel max du prochain tour, comme le contexte de statsHashFor.
@@ -209,47 +218,41 @@ class DangerClass {
 		return hash_value
 	}
 
-	/* État/TP/uses/dégâts après avoir joué cet item de vulné puis le meilleur combo derrière. */
-	static getCellDangerClassFromItem(TargetStats, Infos, BaseTp, BaseUses, ItemAoeMap, CasterStats, Item) {
+	/* Deux shields finaux / TP / uses / dégâts après avoir joué cet item de vulné puis le
+	 * meilleur combo derrière. Le clone de BaseUses reste (comptabilité d'uses de la vulné),
+	 * mais la cible n'est plus jamais clonée : ses deux shields sont des scalaires. */
+	static getCellDangerClassFromItem(TargetStats, Infos, BaseTp, BaseUses, ItemAoeMap, CasterStats, Item, curAbs, curRel) {
 		var ThisTp = BaseTp - Infos.COST
 		var ThisUses = clone(BaseUses)
-		var ThisItemMyStats = getRoughVulneConsequences(clone(TargetStats, 2), Infos, critFactorOf(CasterStats), CasterStats)
+		var newShields = getRoughVulneConsequences(TargetStats, curAbs, curRel, Infos, critFactorOf(CasterStats), CasterStats)
 		ThisUses[Item]++
-		var DamagesWithThisItemVulne = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, ThisItemMyStats, ThisTp, ThisUses)
-		return new DangerClass(ThisItemMyStats, ThisTp, ThisUses, DamagesWithThisItemVulne)
+		var DamagesWithThisItemVulne = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, ThisTp, ThisUses, newShields[0], newShields[1])
+		return new DangerClass(newShields[0], newShields[1], ThisTp, ThisUses, DamagesWithThisItemVulne)
 	}
 
-	/* Applique les effets de vulné/debuff d'un item aux shields de la cible (clonée en
-	 * amont), CritFactor compris — les vulnés critent dans le moteur (× criticalPower).
-	 * Targetabilité PAR EFFET (le moteur filtre chaque effet, Attack.java) : un effet qui ne
-	 * touche pas ce profil de cible (masques eff[4]) ne modifie pas l'état approximatif. */
-	static getRoughVulneConsequences(TargetStats, Infos, CritFactor, CasterStats) {
-		// Clone LOCAL d'une cible qui peut être temporairement suivie par la simulation : on
-		// coupe son journal, sinon les mutations approximatives ci-dessous seraient prises
-		// pour des écritures de l'action en cours.
-		TargetStats.ACTIVE_DELTA = null
+	/* Applique les effets de vulné/debuff d'un item aux DEUX shields (scalaires abs/rel) —
+	 * plus aucun clone d'EntityState. Ordre des effets de l'item, facteur critique et
+	 * isHitable par effet CONSERVÉS. TargetStats sert uniquement à isHitable (LIFE/SIDE/
+	 * IS_SUMMON) et n'est jamais muté. Retourne [abs, rel]. */
+	static getRoughVulneConsequences(TargetStats, curAbs, curRel, Infos, CritFactor, CasterStats) {
+		var abs = curAbs
+		var rel = curRel
 		for (var eff in Infos.EFFECTS) {
 			var EffType = eff[0]
-			if (!(EffType in MapChange)) continue
+			if (EffType != EFFECT_DEBUFF && EffType != EFFECT_VULNERABILITY && EffType != EFFECT_ABSOLUTE_VULNERABILITY) continue
 			if (!ConsequencesClass.isHitable(eff, TargetStats, CasterStats, false)) continue
-			MapChange[EffType](TargetStats, eff, CritFactor)
+			if (EffType == EFFECT_DEBUFF) {
+				var keep = max(0, 1 - (eff[1] * CritFactor / 100))   // clampé : un débuff crité peut dépasser 100%
+				abs *= keep   // ABS puis REL, même ordre qu'avant
+				rel *= keep
+			} else if (EffType == EFFECT_VULNERABILITY) {
+				rel -= eff[1] * CritFactor
+			} else {   // EFFECT_ABSOLUTE_VULNERABILITY
+				abs -= eff[1] * CritFactor
+			}
 		}
-		return TargetStats
+		return [abs, rel]
 	}
-
-	static MapChange = [
-		EFFECT_DEBUFF: function(TargetStats, eff, CritFactor) {
-			var keep = max(0, 1 - (eff[1] * CritFactor / 100))   // clampé : un débuff crité peut dépasser 100%
-			TargetStats.ABSOLUTE_SHIELD *= keep
-			TargetStats.RELATIVE_SHIELD *= keep
-		},
-		EFFECT_VULNERABILITY: function(TargetStats, eff, CritFactor) {
-			TargetStats.RELATIVE_SHIELD -= eff[1] * CritFactor
-		},
-		EFFECT_ABSOLUTE_VULNERABILITY: function(TargetStats, eff, CritFactor) {
-			TargetStats.ABSOLUTE_SHIELD -= eff[1] * CritFactor
-		}
-	]
 
 	/*
 	 * Combo glouton sans vulné : empile les items par dégâts (liste triée d'EntityDanger)
@@ -259,8 +262,8 @@ class DangerClass {
 	 *
 	 * @return dégâts totaux du combo
 	 */
-	static getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, CasterTP, BaseUses) {
-		var EntityDangerArray = EntityDangerClass.get(CasterStats, TargetStats)
+	static getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, CasterTP, BaseUses, curAbs, curRel) {
+		var EntityDangerArray = EntityDangerClass.get(CasterStats, TargetStats, curAbs, curRel)
 		var ComboHash = getGreedyComboHash(ItemAoeMap, EntityDangerArray, CasterTP)
 		if (ComboHash in COMBO_DAMAGE_CACHE) return COMBO_DAMAGE_CACHE[ComboHash]
 		var _final = 0

@@ -1231,7 +1231,7 @@ class ConsequencesClass {
 	 * map). Targetabilité PAR EFFET, comme le moteur (Attack.java:219-235 filtre chaque
 	 * effet par ses masques) — l'autorité du premier effet était fragile pour un item aux
 	 * masques hétérogènes. Coût limité aux constructions froides de DANGER_ENTITY_CACHE. */
-	static getItemDanger(item, casterstats, targetstats, Distance, Multiplier) {
+	static getItemDanger(item, casterstats, targetstats, Distance, Multiplier, targetAbs, targetRel) {
 		var Info = ITEMINFO[item]
 		var _final = 0
 		var distFactor = 1 - (Distance * 0.2)
@@ -1240,7 +1240,8 @@ class ConsequencesClass {
 		// Crit binaire asymétrique (Constants), appliqué AVANT les shields comme le moteur :
 		// (d·1.3 − ABS) ≠ (d − ABS)·1.3.
 		var critFactor = DangerClass.critFactorOf(casterstats)
-		var shieldFactor = 1 - targetstats.RELATIVE_SHIELD / 100
+		// Shields de la cible passés en SCALAIRES (la chaîne de vulnés ne mute jamais l'objet).
+		var shieldFactor = 1 - targetRel / 100
 		// 99 = pas d'antidote dans l'inventaire (jamais de cure -> le poison compte sa durée
 		// PLEINE), distinct d'un antidote prêt (0).
 		var effAntidoteCd = StateClass.cooldownOf(targetstats, CHIP_ANTIDOTE)
@@ -1250,10 +1251,10 @@ class ConsequencesClass {
 			if (!isHitable(eff, targetstats, casterstats, false)) continue
 			switch (eff[0]) {
 				case EFFECT_DAMAGE:
-					_final += (eff[2] * distFactor * Multiplier * powerFactor * strengthFactor * critFactor * shieldFactor - targetstats.ABSOLUTE_SHIELD)
+					_final += (eff[2] * distFactor * Multiplier * powerFactor * strengthFactor * critFactor * shieldFactor - targetAbs)
 					break
 				case EFFECT_LIFE_DAMAGE:
-					_final += (eff[2] * powerFactor * (casterstats.LIFE / 100) * critFactor * shieldFactor - targetstats.ABSOLUTE_SHIELD)
+					_final += (eff[2] * powerFactor * (casterstats.LIFE / 100) * critFactor * shieldFactor - targetAbs)
 					break
 				case EFFECT_POISON:
 					_final += eff[2] * powerFactor * distFactor * (1 + max(0, casterstats.MAGIC) / 100) * critFactor * min(eff[3], antidoteCd + 1)
