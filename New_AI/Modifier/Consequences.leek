@@ -527,6 +527,13 @@ class ConsequencesClass {
 			var Multiplier = (Effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) ? mapSize(TmpTargets) : 1 //Saving Multiplier
 			if (CAST_IS_CRITICAL) Multiplier *= CRITICAL_FACTOR
 			var RealTargets = Effect[5] & EFFECT_MODIFIER_ON_CASTER ? [Caster: 0] : TmpTargets
+			// Clonage PARESSEUX : chaque cible réellement applicable est clonée au premier
+			// effet qui la touche (garde d'ensureCloned — clonedIds conserve l'état d'AVANT
+			// le cast entier). Les filtres ci-dessus ont lu l'état courant, identique en
+			// valeur ; la mutation d'applyEffect n'écrit que le clone rebindé.
+			for (var lazyTarget: var lazyDist in RealTargets) {
+				StateClass.ensureCloned(State, lazyTarget, clonedIds)
+			}
 			prevEffectTotal = applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds, prevEffectTotal)
 		}
 		BenchOps.Stop("Consequences")

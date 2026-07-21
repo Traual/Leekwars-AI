@@ -236,19 +236,19 @@ class StateClass {
 		}
 	}
 
-	/* État de simulation : cibles + Me clonés, tout le reste partagé avec le parent.
-	 * clonedIds[id] = l'ANCIEN EntityState (référence read-only, jamais clonée ni mutée) —
-	 * le recompute-set du scoring compare les inputs locaux du terme contre lui. */
-	static CloneOnlyTargetsAndMe(Targets, EveryStats, clonedIds) {
-		var _final = [: ]
-		for (var tar: var dist in Targets + [Me: 0]) {
-			var parentStat = EveryStats[tar]
-			_final[tar] = cloneEntityForSim(parentStat, tar == Me)
-			clonedIds[tar] = parentStat
-		}
-		for (var tar: var stats in EveryStats) {
-			if (!(tar in _final)) _final[tar] = stats
-		}
+	/*
+	 * État de simulation : copie superficielle de la map extérieure du State (mêmes
+	 * références EntityState pour tous les non-Me), Me SEUL cloné d'office — sa cellule,
+	 * ses TP/MP, son arme, ses cooldowns et ses uses bougent à chaque action. Les cibles
+	 * réellement touchées sont clonées PARESSEUSEMENT par getConsequences (ensureCloned au
+	 * premier effet applicable) : une entité seulement traversée par la géométrie n'est
+	 * jamais clonée. clonedIds[id] = l'ANCIEN EntityState (référence read-only).
+	 */
+	static CloneStateAndMe(EveryStats, clonedIds) {
+		var _final = clone(EveryStats, 1)   // map extérieure copiée, EntityState partagés
+		var parentMe = EveryStats[Me]
+		_final[Me] = cloneEntityForSim(parentMe, true)
+		clonedIds[Me] = parentMe
 		return _final
 	}
 

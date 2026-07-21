@@ -48,12 +48,11 @@ class NodeClass {
 	 */
 	static ActionToNodeInTree(Act, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, ParentContext, ParentHfp) {
 		BenchOps.Start("Node")
-		var Targets = ConsequencesClass.ConsequenceTargets(Item, From, To, State, Me, BaseHash)
-		// clonedIds = l'ensemble exact des entités possiblement mutées : cibles + Me pré-clonés ici,
-		// victimes des cascades de kill et ressuscité (payload Act.RESURRECT_ID) clonés-on-write
-		// dans getConsequences.
+		// clonedIds = l'ensemble exact des entités effectivement mutables : Me pré-cloné ici ;
+		// cibles réellement touchées, victimes des cascades de kill et ressuscité (payload
+		// Act.RESURRECT_ID) clonés PARESSEUSEMENT (ensureCloned) dans getConsequences.
 		var clonedIds = [: ]
-		var ThisActionStats = StateClass.CloneOnlyTargetsAndMe(Targets, State, clonedIds)
+		var ThisActionStats = StateClass.CloneStateAndMe(State, clonedIds)
 
 		// Déplacement : retire les MP de la layer utilisée.
 		ThisActionStats[Me].CELL = From
