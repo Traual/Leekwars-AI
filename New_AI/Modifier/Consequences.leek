@@ -511,6 +511,13 @@ class ConsequencesClass {
 					var nPriorVirtuals = 0
 					for (var vid: var vstat in State) if (vid > SUMMON_ID_BASE && vstat.SUMMONER == Caster) nPriorVirtuals++
 					var EntityStats = new BulbState(Id, SUMMONER_LEVEL_TIMES, Item, To, Caster, CastStats, nPriorVirtuals)
+					// SEULE mutation de la map extérieure faite ici : elle s'enregistre à la
+					// SOURCE, comme ensureCloned pour une entité mutée — ancien état s'il y en
+					// avait un (collision d'id : le workspace le retrouvera à la restauration),
+					// null sinon (entité NÉE dans l'action -> retirée du workspace). Jamais
+					// d'écrasement d'une entrée déjà enregistrée : clonedIds garde l'état
+					// d'AVANT le cast entier.
+					if (!(Id in clonedIds)) clonedIds[Id] = (Id in State) ? State[Id] : null
 					State[Id] = EntityStats
 					break
 				case EFFECT_RESURRECT:

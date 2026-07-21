@@ -49,7 +49,6 @@ class NodeClass {
 	 * @param Act Action à transformer en nœud
 	 * @param Workspace map de travail — copie superficielle du State parent, partagée par tous
 	 *        les candidats du même parent et restaurée après chacun
-	 * @param ParentState état PARENT non muté (référence de taille et test de collision d'id)
 	 * @param From cellule de lancement (Act.From)
 	 * @param MyWalkCells layers de déplacement de Me (déjà calculés par l'appelant)
 	 * @param Cost coût TP total : item + swap d'arme + jump/télépo (déjà calculé par l'appelant)
@@ -64,7 +63,7 @@ class NodeClass {
 	 *
 	 * @return le nouveau nœud, hashs et patch remplis
 	 */
-	static ActionToNodeInTree(Act, Workspace, ParentState, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, StateParent, ParentContext, ParentHfp) {
+	static ActionToNodeInTree(Act, Workspace, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, StateParent, ParentContext, ParentHfp) {
 		BenchOps.Start("Node")
 		// clonedIds = l'ensemble exact des entités effectivement mutables : Me pré-cloné ici ;
 		// cibles réellement touchées, victimes des cascades de kill et ressuscité (payload
@@ -106,9 +105,9 @@ class NodeClass {
 		var result = new NodeClass(Act, null, Parent)
 		result.STATE_PARENT = StateParent
 
-		// Patch incrémental des trois hashs : old ^ new pour chaque entité de clonedIds.
-		// Un ressuscité était mort dans le parent -> ses contributions old valent 0 (fonctions
-		// LIFE-gated). Un bulbe né dans la branche est absent du parent -> ajouté plus bas.
+		// Patch incrémental des trois hashs, piloté par le SEUL clonedIds : old ^ new pour une
+		// entité préexistante, ajout pur pour une entité née dans l'action (valeur null). Un
+		// ressuscité était mort dans le parent -> ses contributions old valent 0 (LIFE-gated).
 		var bh = BaseHash
 		var ctx = clone(ParentContext, 1)    // copie : le contexte du parent n'est jamais muté
 		var ctxSides = mapKeys(ctx)
@@ -116,6 +115,21 @@ class NodeClass {
 		var localTermDirty = [: ]
 		for (var tar: var parentStat in clonedIds) {
 			var newStat = ThisActionStats[tar]
+			// Entité NÉE dans l'action (summon) : aucune contribution ancienne à retirer, on
+			// AJOUTE simplement les siennes. clonedIds est enregistré à la source par
+			// Consequences, donc Node n'a plus à deviner la nature de l'action.
+			if (parentStat == null) {
+				localTermDirty[tar] = true
+				if (tar == Me) continue      // impossible en pratique : Me préexiste toujours
+				bh ^= StateClass.baseContribution(newStat, tar)
+				var addCtx = DeltaClass.contextContribution(newStat, tar)
+				if (addCtx != 0) {
+					for (var s in ctxSides) if (s != newStat.SIDE) ctx[s] ^= addCtx
+				}
+				var addHfp = HealClass.healerContributionOf(newStat, tar)
+				if (addHfp != 0) hfpMap[newStat.SIDE] = ((newStat.SIDE in hfpMap) ? hfpMap[newStat.SIDE] : 0) ^ addHfp
+				continue
+			}
 			// Masque différentiel UNIQUE : une seule comparaison parent/clone pilote les
 			// trois patchs de hash ET le terme local, et invalide les mémos dérivés
 			// (Me compris — il est seulement exclu des trois hashs).
@@ -137,55 +151,6 @@ class NodeClass {
 					hfpMap[hfpSide] = ((hfpSide in hfpMap) ? hfpMap[hfpSide] : 0) ^ deltaHfp
 				}
 			}
-		}
-
-		// Taille et appartenance testées contre l'état PARENT non muté : le workspace, lui,
-		// porte déjà l'ajout éventuel.
-		var entityAdded = mapSize(ThisActionStats) != mapSize(ParentState)   // seul un summon ajoute un id
-		if (entityAdded) {
-			// Ajout du bulbe né dans la branche (id dérivé du chip, même formule que Consequences).
-			// Garde-fou : si l'id n'est pas né ici (collision id réel / virtuel), rebuild complet.
-			var newId = SUMMON_ID_BASE + BulbState.getTypeOffset(Item)
-			if (!(newId in ThisActionStats) || (newId in ParentState)) {
-				debugE("[SUMMON PATCH] id " + newId + " not born in this branch (item " + Item + ") -> full rebuild fallback")
-				// Le workspace est PARTAGÉ par tous les candidats du parent : on enregistre ici
-				// l'id RÉELLEMENT né (pas le newId supposé, qui peut être faux dans ce chemin)
-				// pour qu'il soit retiré à la restauration. Un id DÉJÀ présent dans le parent
-				// n'est jamais marqué null : le marquer supprimerait une entité légitime du
-				// workspace pour toutes les actions sœurs suivantes.
-				for (var id: var stat in ThisActionStats) {
-					if (!(id in clonedIds) && !(id in ParentState)) {
-						clonedIds[id] = null   // né en branche : pas d'ancien état
-						localTermDirty[id] = true
-					}
-				}
-				result.CLONED = clonedIds
-				result.BASE_HASH = StateClass.getBaseHash(ThisActionStats)
-				result.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(ThisActionStats)
-				result.HFP_BY_SIDE = HealClass.buildHfpBySide(ThisActionStats)
-				// Pas de re-invalidation des mémos ici : la boucle de masque ci-dessus a DÉJÀ
-				// traité tous les clonés existants, et le bulbe neuf n'a pas de parent.
-				// Me : mêmes checks que le chemin normal, contre le BaseHash reconstruit.
-				if (!(Me in localTermDirty)
-					&& (result.BASE_HASH != BaseHash
-						|| WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(clonedIds[Me]) != WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(ThisActionStats[Me]))) {
-					localTermDirty[Me] = true
-				}
-				result.LOCAL_TERM_DIRTY = localTermDirty
-				capturePatch(result, ThisActionStats, clonedIds)
-				BenchOps.Stop("Node")
-				return result
-			}
-			var newStat = ThisActionStats[newId]
-			bh ^= StateClass.baseContribution(newStat, newId)
-			var addCtx = DeltaClass.contextContribution(newStat, newId)
-			if (addCtx != 0) {
-				for (var s in ctxSides) if (s != newStat.SIDE) ctx[s] ^= addCtx
-			}
-			var addHfp = HealClass.healerContributionOf(newStat, newId)
-			if (addHfp != 0) hfpMap[newStat.SIDE] = ((newStat.SIDE in hfpMap) ? hfpMap[newStat.SIDE] : 0) ^ addHfp
-			clonedIds[newId] = null   // le bulbe entre dans le recompute-set (né en branche : pas d'ancien état)
-			localTermDirty[newId] = true
 		}
 
 		// Me : exclu des trois hashs, mais son terme dépend du domaine de fuite — BaseHash
