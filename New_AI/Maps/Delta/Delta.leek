@@ -227,11 +227,17 @@ class DeltaClass {
      * id/cellule) pour que deux entités aux mêmes stats ne s'annulent jamais.
      */
     static contextContribution(stat, id) {
-        if (stat.LIFE <= 0) return 0
+        return contextContributionFrom(id, stat.LIFE, stat.CELL, stat.AGILITY, stat.STRENGTH, stat.MAGIC, stat.TOTAL_MP, stat.TOTAL_TP, stat.POWER)
+    }
+
+    /* Même contribution à partir des VALEURS — permet de reconstruire celle du parent sans
+     * ancien EntityState. SOURCE UNIQUE du packing : contextContribution délègue ici. */
+    static contextContributionFrom(id, life, cell, agility, strength, magic, totalMp, totalTp, power) {
+        if (life <= 0) return 0
         // critClass (2 bits, cases 60-61 — libres tant que STRENGTH < 4096) : la seule
         // composante d'AGILITÉ que le danger consomme (les seuils de crit binaires). Sans
         // elle, un buff/shackle d'AGI traversant un seuil en branche servirait du danger stale.
-        var critClass = (stat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((stat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-        return mix64(mix64((id << 10) | stat.CELL) ^ ((critClass << 60) | (max(0, stat.STRENGTH) << 48) | (max(0, stat.MAGIC) << 36) | (max(0, stat.TOTAL_MP) << 24) | (max(0, stat.TOTAL_TP) << 12) | stat.POWER))
+        var critClass = (agility >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((agility >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
+        return mix64(mix64((id << 10) | cell) ^ ((critClass << 60) | (max(0, strength) << 48) | (max(0, magic) << 36) | (max(0, totalMp) << 24) | (max(0, totalTp) << 12) | power))
     }
 }

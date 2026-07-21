@@ -43,13 +43,19 @@ class HealClass {
      * clampées elles absorberaient les champs hauts.
      */
     static healerContribution(stat, id) {
+        return healerContributionFrom(id, stat.CELL, stat.AGILITY, stat.WISDOM, stat.TOTAL_TP, stat.TOTAL_MP)
+    }
+
+    /* Même contribution à partir des VALEURS — permet de reconstruire celle du parent sans
+     * ancien EntityState. SOURCE UNIQUE du packing : healerContribution délègue ici. */
+    static healerContributionFrom(id, cell, agility, wisdom, totalTp, totalMp) {
         // critClass (bits 10-11, libres : cellule < 1024) : le facteur de crit du healer
         // dépend de son AGI par seuils — sans ces bits, un buff/shackle d'AGI traversant
         // un seuil en branche servirait une couverture stale.
-        var critClass = (stat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((stat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
+        var critClass = (agility >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((agility >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
         // Clé WIS = max(0, WIS + 100) : le facteur moteur est max(0, 1 + WIS/100), donc -50
         // (soigne 50%) doit se distinguer de 0 (100%) ; -100 et -150 partagent 0 (facteur nul).
-        return addValueToBinHash(OFFSET_BASIS ^ id, (max(0, stat.WISDOM + 100) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | (critClass << 10) | stat.CELL)
+        return addValueToBinHash(OFFSET_BASIS ^ id, (max(0, wisdom + 100) << 32) | (max(0, totalTp) << 22) | (max(0, totalMp) << 12) | (critClass << 10) | cell)
     }
 
     /*

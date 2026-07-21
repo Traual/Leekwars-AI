@@ -139,11 +139,11 @@ global DELTA_TURN_ORDER = 25
 global DELTA_COOLDOWNS = 26
 global DELTA_USES = 27
 global DELTA_ITEM_STATE_PARENT = 28
-global DELTA_FREQUENCY = 29
 // Mémos dérivés : suivis UNIQUEMENT pour la restauration temporaire et l'invalidation, ils
-// ne sont pas des données sémantiques du patch persistant (recalculables sur l'enfant).
-global DELTA_CAP_MEMO = 30
-global DELTA_TLSQ_MEMO = 31
+// ne sont pas des données sémantiques du patch persistant (recalculables sur l'enfant) et
+// n'entrent JAMAIS dans CHANGED.
+global DELTA_CAP_MEMO = 29
+global DELTA_TLSQ_MEMO = 30
 
 // Groupes d'inputs des trois contributions incrémentales : dès qu'un de ces champs est
 // touché pour la première fois, l'ancienne contribution du groupe est capturée AVANT la

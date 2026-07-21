@@ -136,12 +136,28 @@ class NodeClass {
 				localTermDirty[tar] = true
 				if (tar == Me) continue      // impossible en pratique : Me préexiste toujours
 				// L'occupant remplacé a pu être muté AVANT son remplacement : ses contributions
-				// capturées par touchField priment sur une relecture de l'objet (qui rendrait
-				// l'état muté, pas l'état parent).
+				// d'ORIGINE se reconstruisent depuis ses paires journalisées, jamais depuis
+				// l'objet (qui porte l'état muté).
 				var oldEnt = d.OLD_ENTITY
-				var oldB = d.HAS_OLD_BASE ? d.OLD_BASE : ((oldEnt != null) ? StateClass.baseContribution(oldEnt, tar) : 0)
-				var oldC = d.HAS_OLD_CONTEXT ? d.OLD_CONTEXT : ((oldEnt != null) ? DeltaClass.contextContribution(oldEnt, tar) : 0)
-				var oldH = d.HAS_OLD_HFP ? d.OLD_HFP : ((oldEnt != null) ? HealClass.healerContributionOf(oldEnt, tar) : 0)
+				var oldB = 0
+				var oldC = 0
+				var oldH = 0
+				if (oldEnt != null) {
+					var rLife = StateClass.oldValueOf(d, DELTA_LIFE, oldEnt.LIFE)
+					var rCell = StateClass.oldValueOf(d, DELTA_CELL, oldEnt.CELL)
+					var rAgi = StateClass.oldValueOf(d, DELTA_AGILITY, oldEnt.AGILITY)
+					var rWis = StateClass.oldValueOf(d, DELTA_WISDOM, oldEnt.WISDOM)
+					var rMp = StateClass.oldValueOf(d, DELTA_TOTAL_MP, oldEnt.TOTAL_MP)
+					var rTp = StateClass.oldValueOf(d, DELTA_TOTAL_TP, oldEnt.TOTAL_TP)
+					oldB = StateClass.baseContributionFrom(tar, rLife, rCell)
+					oldC = DeltaClass.contextContributionFrom(tar, rLife, rCell, rAgi,
+						StateClass.oldValueOf(d, DELTA_STRENGTH, oldEnt.STRENGTH),
+						StateClass.oldValueOf(d, DELTA_MAGIC, oldEnt.MAGIC), rMp, rTp,
+						StateClass.oldValueOf(d, DELTA_POWER, oldEnt.POWER))
+					if (rLife > 0 && tar != Me && HealClass.hasHealItem(oldEnt)) {
+						oldH = HealClass.healerContributionFrom(tar, rCell, rAgi, rWis, rTp, rMp)
+					}
+				}
 				bh ^= oldB ^ StateClass.baseContribution(newStat, tar)
 				var deltaCtxNew = oldC ^ DeltaClass.contextContribution(newStat, tar)
 				if (deltaCtxNew != 0) {
@@ -164,16 +180,56 @@ class NodeClass {
 				}
 				continue                     // Me est exclu des trois hashs
 			}
-			if (changed & DELTA_MASK_BASE) bh ^= d.OLD_BASE ^ StateClass.baseContribution(newStat, tar)
-			if (changed & DELTA_MASK_CONTEXT) {
-				var deltaCtx = d.OLD_CONTEXT ^ DeltaClass.contextContribution(newStat, tar)
+			// Anciennes valeurs des inputs des trois contributions, reconstruites depuis le
+			// journal (un champ non touché vaut sa valeur courante). On PROUVE d'abord qu'une
+			// contribution change vraiment, et seulement alors on la calcule : LIFE 100 -> 50
+			// sur place ne coûte AUCUN hash.
+			var oldLife = StateClass.oldValueOf(d, DELTA_LIFE, newStat.LIFE)
+			var oldCell = StateClass.oldValueOf(d, DELTA_CELL, newStat.CELL)
+			var oldAlive = oldLife > 0
+			var newAlive = newStat.LIFE > 0
+			var aliveChanged = oldAlive != newAlive
+			var bothAlive = oldAlive && newAlive
+			var cellChanged = oldCell != newStat.CELL
+
+			if (aliveChanged || (bothAlive && cellChanged)) {
+				bh ^= StateClass.baseContributionFrom(tar, oldLife, oldCell) ^ StateClass.baseContribution(newStat, tar)
+			}
+
+			// Formes EFFECTIVES : deux valeurs brutes différentes peuvent donner le même
+			// input (AGI sans franchir de seuil, stat négative des deux côtés).
+			var oldAgi = StateClass.oldValueOf(d, DELTA_AGILITY, newStat.AGILITY)
+			var oldTotalMp = StateClass.oldValueOf(d, DELTA_TOTAL_MP, newStat.TOTAL_MP)
+			var oldTotalTp = StateClass.oldValueOf(d, DELTA_TOTAL_TP, newStat.TOTAL_TP)
+			var oldCrit = (oldAgi >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((oldAgi >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
+			var newCrit = (newStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((newStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
+			var critChanged = oldCrit != newCrit
+			var mpChanged = max(0, oldTotalMp) != max(0, newStat.TOTAL_MP)
+			var tpChanged = max(0, oldTotalTp) != max(0, newStat.TOTAL_TP)
+
+			var oldStr = StateClass.oldValueOf(d, DELTA_STRENGTH, newStat.STRENGTH)
+			var oldMag = StateClass.oldValueOf(d, DELTA_MAGIC, newStat.MAGIC)
+			var oldPow = StateClass.oldValueOf(d, DELTA_POWER, newStat.POWER)
+			if (aliveChanged || (bothAlive && (cellChanged || critChanged || mpChanged || tpChanged
+				|| max(0, oldStr) != max(0, newStat.STRENGTH)
+				|| max(0, oldMag) != max(0, newStat.MAGIC)
+				|| oldPow != newStat.POWER))) {
+				var deltaCtx = DeltaClass.contextContributionFrom(tar, oldLife, oldCell, oldAgi, oldStr, oldMag, oldTotalMp, oldTotalTp, oldPow)
+					^ DeltaClass.contextContribution(newStat, tar)
 				if (deltaCtx != 0) {
 					var side = newStat.SIDE
 					for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx   // contextes des sides ADVERSES
 				}
 			}
-			if (changed & DELTA_MASK_HFP) {
-				var deltaHfp = d.OLD_HFP ^ HealClass.healerContributionOf(newStat, tar)
+
+			var oldWis = StateClass.oldValueOf(d, DELTA_WISDOM, newStat.WISDOM)
+			if (aliveChanged || (bothAlive && (cellChanged || critChanged || mpChanged || tpChanged
+				|| max(0, oldWis + 100) != max(0, newStat.WISDOM + 100)))) {
+				// La qualification de healer est immuable pour le replan (liste d'items cachée
+				// par id) : elle se lit sur l'objet courant et vaut pour les deux côtés.
+				var oldHfp = (oldAlive && tar != Me && HealClass.hasHealItem(newStat))
+					? HealClass.healerContributionFrom(tar, oldCell, oldAgi, oldWis, oldTotalTp, oldTotalMp) : 0
+				var deltaHfp = oldHfp ^ HealClass.healerContributionOf(newStat, tar)
 				if (deltaHfp != 0) {             // fingerprint du side de l'entité elle-même
 					var hfpSide = newStat.SIDE
 					hfpMap[hfpSide] = ((hfpSide in hfpMap) ? hfpMap[hfpSide] : 0) ^ deltaHfp
@@ -184,12 +240,22 @@ class NodeClass {
 		// Me : exclu des trois hashs, mais son terme dépend du domaine de fuite — BaseHash
 		// FINAL différent -> dirty ; sinon comparaison du fingerprint WalkCells capturé avant
 		// sa première mutation (une dépense de TP sans franchir de seuil ne salit rien).
+		// Le fingerprint n'est calculé QUE si Me n'est pas déjà sale ET que le terrain n'a pas
+		// bougé : l'ancien est reconstruit depuis le journal et l'ancien maillon d'inventaire
+		// (qui porte les cooldowns d'avant l'action).
 		if (!(Me in localTermDirty)) {
-			var meDelta = entityDeltas[Me]
-			if (bh != BaseHash
-				|| (meDelta.HAS_OLD_WALK_FP
-					&& meDelta.OLD_WALK_FP != WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(meStat))) {
+			if (bh != BaseHash) {
 				localTermDirty[Me] = true
+			} else {
+				var meDelta = entityDeltas[Me]
+				var oldLink = meStat.ITEM_STATE_PARENT
+				var oldFp = WalkCellsClass.WalkFingerprintFrom(Me,
+					StateClass.oldValueOf(meDelta, DELTA_CELL, meStat.CELL),
+					StateClass.oldValueOf(meDelta, DELTA_MP, meStat.MP),
+					StateClass.oldValueOf(meDelta, DELTA_TP, meStat.TP),
+					StateClass.cooldownOf(oldLink, CHIP_JUMP),
+					StateClass.cooldownOf(oldLink, CHIP_TELEPORTATION))
+				if (oldFp != WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(meStat)) localTermDirty[Me] = true
 			}
 		}
 

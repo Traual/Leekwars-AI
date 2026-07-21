@@ -98,7 +98,13 @@ class StateClass {
 	 * l'entité 0 sur la cellule 0 contribuerait 0 = la sentinelle "morte".
 	 */
 	static baseContribution(stat, id) {
-		return stat.LIFE > 0 ? mix64(((id + 1) << 32) | stat.CELL) : 0
+		return baseContributionFrom(id, stat.LIFE, stat.CELL)
+	}
+
+	/* Même contribution à partir des VALEURS — permet de reconstruire celle du parent sans
+	 * ancien EntityState. SOURCE UNIQUE du packing : baseContribution délègue ici. */
+	static baseContributionFrom(id, life, cell) {
+		return life > 0 ? mix64(((id + 1) << 32) | cell) : 0
 	}
 
 	/* [cellule -> true] des vivants hors Me (obstacles dynamiques). */
@@ -156,30 +162,23 @@ class StateClass {
 		var bit = 1 << field
 		if (d.TOUCHED_MASK & bit) return;
 		d.TOUCHED_MASK |= bit
-		push(d.TOUCHED_FIELDS, field)
-		d.OLD_VALUES[field] = oldValue
-		// Contributions ANCIENNES : capturées avant la toute première mutation d'un de leurs
-		// inputs. Me est exclu des trois hashs (Node ne les lui calcule jamais) mais garde son
-		// fingerprint de fuite.
-		if (stat.ID == Me) {
-			if (!d.HAS_OLD_WALK_FP) {
-				d.OLD_WALK_FP = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(stat)
-				d.HAS_OLD_WALK_FP = true
-			}
-			return;
+		push(d.TOUCHED, field)
+		push(d.TOUCHED, oldValue)
+	}
+
+	/*
+	 * Ancienne valeur d'un champ : celle journalisée s'il a été touché, sinon la valeur
+	 * courante (le champ n'a pas bougé). Chemin FROID — patch de hashs et de dirty
+	 * uniquement, jamais dans les lectures de Consequences ni du scoring.
+	 */
+	static oldValueOf(d, field, currentValue) {
+		if (!(d.TOUCHED_MASK & (1 << field))) return currentValue
+		var t = d.TOUCHED
+		var n = count(t)
+		for (var i = 0; i < n; i += 2) {
+			if (t[i] == field) return t[i + 1]
 		}
-		if ((bit & DELTA_MASK_BASE) && !d.HAS_OLD_BASE) {
-			d.OLD_BASE = baseContribution(stat, stat.ID)
-			d.HAS_OLD_BASE = true
-		}
-		if ((bit & DELTA_MASK_CONTEXT) && !d.HAS_OLD_CONTEXT) {
-			d.OLD_CONTEXT = DeltaClass.contextContribution(stat, stat.ID)
-			d.HAS_OLD_CONTEXT = true
-		}
-		if ((bit & DELTA_MASK_HFP) && !d.HAS_OLD_HFP) {
-			d.OLD_HFP = HealClass.healerContributionOf(stat, stat.ID)
-			d.HAS_OLD_HFP = true
-		}
+		return currentValue
 	}
 
 	/* Valeur courante d'un champ suivi — utilisée par la finalisation, la restauration et la
@@ -214,7 +213,6 @@ class StateClass {
 		if (field == DELTA_COOLDOWNS) return stat.COOLDOWNS
 		if (field == DELTA_USES) return stat.USES
 		if (field == DELTA_ITEM_STATE_PARENT) return stat.ITEM_STATE_PARENT
-		if (field == DELTA_FREQUENCY) return stat.FREQUENCY
 		if (field == DELTA_CAP_MEMO) return stat.CAP_MEMO
 		return stat.TLSQ_MEMO   // DELTA_TLSQ_MEMO
 	}
@@ -250,7 +248,6 @@ class StateClass {
 		if (field == DELTA_COOLDOWNS) { stat.COOLDOWNS = value ; return; }
 		if (field == DELTA_USES) { stat.USES = value ; return; }
 		if (field == DELTA_ITEM_STATE_PARENT) { stat.ITEM_STATE_PARENT = value ; return; }
-		if (field == DELTA_FREQUENCY) { stat.FREQUENCY = value ; return; }
 		if (field == DELTA_CAP_MEMO) { stat.CAP_MEMO = value ; return; }
 		stat.TLSQ_MEMO = value   // DELTA_TLSQ_MEMO
 	}
@@ -378,27 +375,30 @@ class StateClass {
 	/*
 	 * Fin de l'action, AVANT le scoring : ne retient que les champs RÉELLEMENT différents,
 	 * en valeurs ABSOLUES finales. Un champ touché puis revenu à sa valeur d'origine
-	 * disparaît du patch. Ne parcourt que TOUCHED_FIELDS, jamais les 31 champs.
+	 * disparaît du patch. Ne parcourt que les paires de TOUCHED, jamais les 31 champs.
 	 */
 	static finalizeDeltas(Workspace, entityDeltas) {
 		for (var id: var d in entityDeltas) {
 			if (d.IS_NEW || d.IS_REPLACEMENT) continue   // objet complet : rien à comparer
 			var stat = Workspace[id]
-			for (var field in d.TOUCHED_FIELDS) {
+			var t = d.TOUCHED
+			var n = count(t)
+			for (var i = 0; i < n; i += 2) {
+				var field = t[i]
 				// Les mémos ne sont pas des données sémantiques : ils sont restaurés sur le
-				// parent et recalculés sur l'enfant matérialisé.
+				// parent et recalculés sur l'enfant matérialisé — jamais dans CHANGED.
 				if (field == DELTA_CAP_MEMO || field == DELTA_TLSQ_MEMO) continue
 				var newValue = readField(stat, field)
-				if (newValue == d.OLD_VALUES[field]) continue
+				if (newValue == t[i + 1]) continue
 				d.CHANGED_MASK |= 1 << field
-				push(d.CHANGED_FIELDS, field)
-				d.NEW_VALUES[field] = newValue
+				push(d.CHANGED, field)
+				push(d.CHANGED, newValue)
 			}
 			// Mémos dérivés : le scoring qui suit va les RECALCULER sur les valeurs
 			// temporaires et les écrire dans l'objet PARENT. On journalise donc l'ancien
 			// avant de l'invalider — sans quoi la restauration rendrait au parent un mémo
 			// calculé sur l'état de l'enfant. (Deuxième passe : touchField pousse dans
-			// TOUCHED_FIELDS, qu'on vient de parcourir.)
+			// TOUCHED, dont la longueur d'origine a déjà été parcourue.)
 			if (d.CHANGED_MASK & DELTA_MASK_CAPABILITY) {
 				touchField(stat, DELTA_CAP_MEMO, stat.CAP_MEMO)
 				stat.CAP_MEMO = null
@@ -421,21 +421,42 @@ class StateClass {
 		for (var id: var d in entityDeltas) {
 			if (d.IS_NEW) {
 				mapRemove(Workspace, id)
+				releaseJournal(d)
 				continue
 			}
 			if (d.IS_REPLACEMENT) {
 				// L'ancienne entité a pu être mutée AVANT d'être remplacée : ses champs
 				// touchés sont restaurés avant que sa référence ne reprenne sa place.
 				var old = d.OLD_ENTITY
-				for (var field in d.TOUCHED_FIELDS) writeField(old, field, d.OLD_VALUES[field])
+				restoreTouched(old, d)
 				old.ACTIVE_DELTA = null
 				Workspace[id] = old
+				d.OLD_ENTITY = null   // le nœud ne retient plus aucune entité PARENT
+				releaseJournal(d)
 				continue
 			}
 			var stat = Workspace[id]
-			for (var field in d.TOUCHED_FIELDS) writeField(stat, field, d.OLD_VALUES[field])
+			restoreTouched(stat, d)
 			stat.ACTIVE_DELTA = null
+			releaseJournal(d)
 		}
+	}
+
+	/* Réécrit les anciennes valeurs journalisées (paires plates). */
+	static restoreTouched(stat, d) {
+		var t = d.TOUCHED
+		var n = count(t)
+		for (var i = 0; i < n; i += 2) writeField(stat, t[i], t[i + 1])
+	}
+
+	/*
+	 * Le parent est restauré : le journal d'ANNULATION n'a plus de raison d'être. Le nœud ne
+	 * garde que CHANGED (et l'objet complet d'une naissance/d'un remplacement) — plus aucune
+	 * ancienne valeur ni référence vers une entité parent ne survit dans l'arbre.
+	 */
+	static releaseJournal(d) {
+		d.TOUCHED = []
+		d.TOUCHED_MASK = 0
 	}
 
 	/*
@@ -457,7 +478,9 @@ class StateClass {
 			// avec le parent (aucun clone à payer).
 			if (d.CHANGED_MASK == 0) continue
 			var c = clone(_final[id], 1)    // scalaires copiés, containers partagés
-			for (var field in d.CHANGED_FIELDS) writeField(c, field, d.NEW_VALUES[field])
+			var ch = d.CHANGED
+			var n = count(ch)
+			for (var i = 0; i < n; i += 2) writeField(c, ch[i], ch[i + 1])
 			// Mémos dérivés : invalidés si un de leurs inputs a changé, recalculés à la
 			// demande sur l'enfant (jamais transportés depuis la simulation).
 			if (d.CHANGED_MASK & DELTA_MASK_CAPABILITY) c.CAP_MEMO = null
