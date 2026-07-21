@@ -130,7 +130,7 @@ class StateClass {
 
 	/*
 	 * LE clone de simulation — source unique. Les containers sont PARTAGÉS par défaut :
-	 * personne n'écrit INVENTORY / EFFECTS_ITEM_MAP pendant la sim ; EFFECTS est partagé
+	 * personne n'écrit INVENTORY ni BASE_STATS pendant la sim ; EFFECTS est partagé
 	 * mais JAMAIS muté en place — toute modification (remplacement, mort du caster, revive)
 	 * REBINDE un tableau neuf sur le clone, le parent garde le sien. COOLDOWNS / USES (les
 	 * deux seuls containers écrits en sim, Me only) deviennent des OVERLAYS différentiels :

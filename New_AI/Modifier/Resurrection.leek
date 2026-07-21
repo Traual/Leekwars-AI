@@ -22,7 +22,7 @@ class ResurrectionClass {
 		var revived = StateClass.ensureCloned(State, Resurrect_ID, clonedIds)
 
 		// Le moteur ressuscite PROPRE : die() retire tous les effets SUR le mort (stats de
-		// base, zéro shield/poison/DR). Reset par champs — TO_SAVE_<stat> EST la base vraie.
+		// base, zéro shield/poison/DR). Reset par champs — BASE_STATS EST la base vraie.
 		// EFFECTS : REBINDÉ sur un tableau neuf (pas muté — le container est partagé avec les
 		// états parents, mais le revived est un clone frais : l'assignation ne touche que lui).
 		// Plus d'effets fantômes pour un ReplacementChangeStats ultérieur.
@@ -37,22 +37,17 @@ class ResurrectionClass {
 		revived.RELATIVE_SHIELD = 0
 		revived.DAMAGE_RETURN = 0
 		revived.POWER = 0
-		revived.STRENGTH   = revived.TO_SAVE_STRENGTH
-		revived.WISDOM     = revived.TO_SAVE_WISDOM
-		revived.AGILITY    = revived.TO_SAVE_AGILITY
-		revived.MAGIC      = revived.TO_SAVE_MAGIC
-		revived.RESISTANCE = revived.TO_SAVE_RESISTANCE
-		revived.SCIENCE    = revived.TO_SAVE_SCIENCE
-		revived.TOTAL_MP = revived.TO_SAVE_TOTAL_MP
-		revived.MP       = revived.TO_SAVE_TOTAL_MP
-		revived.TOTAL_TP = revived.TO_SAVE_TOTAL_TP
-		revived.TP       = revived.TO_SAVE_TOTAL_TP
-		revived.TO_SAVE_SHACKLE_STRENGTH = 0
-		revived.TO_SAVE_SHACKLE_WISDOM = 0
-		revived.TO_SAVE_SHACKLE_AGILITY = 0
-		revived.TO_SAVE_SHACKLE_MAGIC = 0
-		revived.TO_SAVE_SHACKLE_TOTAL_MP = 0
-		revived.TO_SAVE_SHACKLE_TOTAL_TP = 0
+		var bases = revived.BASE_STATS   // map IMMUABLE, partagée avec les états parents
+		revived.STRENGTH   = bases[STAT_STRENGTH]
+		revived.WISDOM     = bases[STAT_WISDOM]
+		revived.AGILITY    = bases[STAT_AGILITY]
+		revived.MAGIC      = bases[STAT_MAGIC]
+		revived.RESISTANCE = bases[STAT_RESISTANCE]
+		revived.SCIENCE    = bases[STAT_SCIENCE]
+		revived.TOTAL_MP = bases[STAT_MP]
+		revived.MP       = bases[STAT_MP]
+		revived.TOTAL_TP = bases[STAT_TP]
+		revived.TP       = bases[STAT_TP]
 
 		// Vie ressuscitée engine-exacte : source unique reviveTotalLife/reviveLife (l'ordre
 		// des arrondis du moteur y est répliqué), partagée avec getResurrectionScore.

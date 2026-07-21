@@ -27,7 +27,6 @@ class BulbState {
 	IS_STRENGTH_ENEMIES
 	SPECIAL_WEAPON
 	EFFECTS
-	EFFECTS_ITEM_MAP
 	CAP_MEMO    // memos de champs dérivés, même contrat qu'EntityState (copiés au clone puis validés)
 	TLSQ_MEMO
 	POISON
@@ -40,33 +39,18 @@ class BulbState {
 	// Leek Stats
 	LIFE
 	TOTAL_LIFE
+	BASE_STATS   // bases vraies par constante STAT_* (même contrat qu'EntityState : immuable)
 	STRENGTH
-	TO_SAVE_STRENGTH
-	TO_SAVE_SHACKLE_STRENGTH
 	WISDOM
-	TO_SAVE_WISDOM
-	TO_SAVE_SHACKLE_WISDOM
 	AGILITY
-	TO_SAVE_AGILITY
-	TO_SAVE_SHACKLE_AGILITY
 	RESISTANCE
-	TO_SAVE_RESISTANCE
 	SCIENCE
-	TO_SAVE_SCIENCE
 	MAGIC
-	TO_SAVE_MAGIC
-	TO_SAVE_SHACKLE_MAGIC
 	FREQUENCY
 	MP
-	TO_SAVE_MP
 	TOTAL_MP
-	TO_SAVE_TOTAL_MP
-	TO_SAVE_SHACKLE_TOTAL_MP
 	TP
-	TO_SAVE_TP
 	TOTAL_TP
-	TO_SAVE_TOTAL_TP
-	TO_SAVE_SHACKLE_TOTAL_TP
 	NAME
 	// Map Stats
 	CELL
@@ -94,7 +78,6 @@ class BulbState {
 		}
 		this.SIDE = SummonerStats.SIDE
 		this.EFFECTS = []
-		this.EFFECTS_ITEM_MAP = [: ]
 		this.POISON = 0
 		this.POISON_OVER_TIME = 0
 		this.AFTEREFFECT = 0
@@ -124,23 +107,17 @@ class BulbState {
 		this.TOTAL_TP = this.TP
 		this.NAME = getNameFromChip(Chip)
 
-		// === Original Stats for Liberation / Manumission ===
-		this.TO_SAVE_STRENGTH = this.STRENGTH
-		this.TO_SAVE_SHACKLE_STRENGTH = 0
-		this.TO_SAVE_WISDOM = this.WISDOM
-		this.TO_SAVE_SHACKLE_WISDOM = 0
-		this.TO_SAVE_AGILITY = this.AGILITY
-		this.TO_SAVE_SHACKLE_AGILITY = 0
-		this.TO_SAVE_RESISTANCE = this.RESISTANCE
-		this.TO_SAVE_SCIENCE = this.SCIENCE
-		this.TO_SAVE_MAGIC = this.MAGIC
-		this.TO_SAVE_SHACKLE_MAGIC = 0
-		this.TO_SAVE_MP = this.MP
-		this.TO_SAVE_TOTAL_MP = this.TOTAL_MP
-		this.TO_SAVE_SHACKLE_TOTAL_MP = 0
-		this.TO_SAVE_TP = this.TP
-		this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
-		this.TO_SAVE_SHACKLE_TOTAL_TP = 0
+		// === Bases vraies (résurrection) — un bulbe naît sans aucun effet ===
+		this.BASE_STATS = [
+			STAT_STRENGTH:   this.STRENGTH,
+			STAT_WISDOM:     this.WISDOM,
+			STAT_AGILITY:    this.AGILITY,
+			STAT_RESISTANCE: this.RESISTANCE,
+			STAT_SCIENCE:    this.SCIENCE,
+			STAT_MAGIC:      this.MAGIC,
+			STAT_MP:         this.TOTAL_MP,
+			STAT_TP:         this.TOTAL_TP
+		]
 
 		// === Map Stats ===
 		this.CELL = To

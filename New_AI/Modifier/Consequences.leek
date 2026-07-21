@@ -394,7 +394,6 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.AGILITY -= calculatedValue
-					targetStats.TO_SAVE_SHACKLE_AGILITY += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
@@ -405,7 +404,6 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.MAGIC -= calculatedValue
-					targetStats.TO_SAVE_SHACKLE_MAGIC += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
@@ -417,7 +415,6 @@ class ConsequencesClass {
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.MP -= calculatedValue
 					targetStats.TOTAL_MP -= calculatedValue
-					targetStats.TO_SAVE_SHACKLE_TOTAL_MP += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
@@ -428,7 +425,6 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.STRENGTH -= calculatedValue
-					targetStats.TO_SAVE_SHACKLE_STRENGTH += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
@@ -440,7 +436,6 @@ class ConsequencesClass {
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.TP -= calculatedValue
 					targetStats.TOTAL_TP -= calculatedValue
-					targetStats.TO_SAVE_SHACKLE_TOTAL_TP += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
@@ -451,7 +446,6 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					targetStats.WISDOM -= calculatedValue
-					targetStats.TO_SAVE_SHACKLE_WISDOM += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
@@ -625,34 +619,28 @@ class ConsequencesClass {
 			case EFFECT_RELATIVE_SHIELD:
 				StatsTarget.RELATIVE_SHIELD -= ValueOfEffect
 				break
-			// Shackles : la stat est restaurée ET le compteur TO_SAVE_SHACKLE_* redescend —
-			// symétrique de l'application, sinon un remplacement/mort du caster laisserait un
-			// compteur gonflé et Libération sur-restaurerait.
+			// Shackles : la stat est restaurée, symétrique de l'application. Le retrait passe
+			// TOUJOURS par ligne du ledger (Libération, Manumission, remplacement, mort du
+			// caster) — aucun compteur agrégé à maintenir.
 			case EFFECT_SHACKLE_AGILITY:
 				StatsTarget.AGILITY += ValueOfEffect
-				StatsTarget.TO_SAVE_SHACKLE_AGILITY -= ValueOfEffect
 				break
 			case EFFECT_SHACKLE_MAGIC:
 				StatsTarget.MAGIC += ValueOfEffect
-				StatsTarget.TO_SAVE_SHACKLE_MAGIC -= ValueOfEffect
 				break
 			case EFFECT_SHACKLE_MP:
 				StatsTarget.MP += ValueOfEffect
 				StatsTarget.TOTAL_MP += ValueOfEffect
-				StatsTarget.TO_SAVE_SHACKLE_TOTAL_MP -= ValueOfEffect
 				break
 			case EFFECT_SHACKLE_STRENGTH:
 				StatsTarget.STRENGTH += ValueOfEffect
-				StatsTarget.TO_SAVE_SHACKLE_STRENGTH -= ValueOfEffect
 				break
 			case EFFECT_SHACKLE_TP:
 				StatsTarget.TP += ValueOfEffect
 				StatsTarget.TOTAL_TP += ValueOfEffect
-				StatsTarget.TO_SAVE_SHACKLE_TOTAL_TP -= ValueOfEffect
 				break
 			case EFFECT_SHACKLE_WISDOM:
 				StatsTarget.WISDOM += ValueOfEffect
-				StatsTarget.TO_SAVE_SHACKLE_WISDOM -= ValueOfEffect
 				break
 			case EFFECT_VULNERABILITY:
 				StatsTarget.RELATIVE_SHIELD += ValueOfEffect
@@ -999,11 +987,10 @@ class ConsequencesClass {
 
 	/*
 	 * Manumission/Rémission — Entity.removeShackles : retire TOUTES les lignes des six
-	 * familles de shackles. Déroulé PAR LIGNE via removeCastedEffect (stat restaurée ET
-	 * compteur TO_SAVE_SHACKLE_* redescendu — l'invariant compteur == somme des lignes
-	 * tient de l'unfold au debuff), puis ledger purgé : la mort ultérieure du casteur des
-	 * shackles ne restaure plus une seconde fois. L'ancienne restauration globale par
-	 * compteurs est REMPLACÉE (sinon double restauration).
+	 * familles de shackles. Déroulé PAR LIGNE via removeCastedEffect (stat restaurée), puis
+	 * ledger purgé : la mort ultérieure du casteur des shackles ne restaure plus une seconde
+	 * fois. L'ancienne restauration globale par compteurs a été REMPLACÉE par ce déroulé
+	 * (sinon double restauration) — d'où l'absence de tout compteur agrégé de shackles.
 	 */
 	static getEntityRemoveShacklesConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
 		var newEffects = []

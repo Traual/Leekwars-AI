@@ -19,7 +19,6 @@ class EntityStateClass extends EntityClass {
 	// patches locaux (résolution par StateClass.cooldownOf/usesOf, chaîne immuable).
 	ITEM_STATE_PARENT
 	EFFECTS
-	EFFECTS_ITEM_MAP
 	// Memos de champs dérivés (scoring), calculés paresseusement. COPIÉS au clone puis
 	// VALIDÉS après l'action (StateClass.diffMaskOf, appelé par Node sur chaque
 	// cloné) : un clone dont les inputs n'ont pas bougé garde ses mémos. Écrire un memo sur
@@ -35,33 +34,21 @@ class EntityStateClass extends EntityClass {
 	HEAL_OVER_TIME
 	LIFE
 	TOTAL_LIFE
+	// Bases VRAIES (stat sans aucun effet), une seule map indexée par les constantes
+	// STAT_* du moteur au lieu de huit champs froids : lue uniquement par la Résurrection,
+	// IMMUABLE pendant toute la simulation -> clone(stat, 1) en partage la référence.
+	BASE_STATS
 	STRENGTH
-	TO_SAVE_STRENGTH // base VRAIE (sert surtout la résurrection) ; TO_SAVE_SHACKLE_* sert Manumission
-	TO_SAVE_SHACKLE_STRENGTH
 	WISDOM
-	TO_SAVE_WISDOM
-	TO_SAVE_SHACKLE_WISDOM
 	AGILITY
-	TO_SAVE_AGILITY
-	TO_SAVE_SHACKLE_AGILITY
 	RESISTANCE
-	TO_SAVE_RESISTANCE
-	//TO_SAVE_SHACKLE_RESISTANCE //Does not exist (yet)
 	SCIENCE
-	TO_SAVE_SCIENCE
-	//TO_SAVE_SHACKLE_SCIENCE //Does not exist (yet)
 	MAGIC
-	TO_SAVE_MAGIC
-	TO_SAVE_SHACKLE_MAGIC
-	FREQUENCY // pas de TO_SAVE : inutile pour Libération/Manumission
+	FREQUENCY // pas de base vraie : inutile pour Libération/Manumission
 	MP
 	TOTAL_MP
-	TO_SAVE_TOTAL_MP
-	TO_SAVE_SHACKLE_TOTAL_MP
 	TP
 	TOTAL_TP
-	TO_SAVE_TOTAL_TP
-	TO_SAVE_SHACKLE_TOTAL_TP
 	CELL
 	constructor(id) {
 		super(id)
@@ -81,7 +68,6 @@ class EntityStateClass extends EntityClass {
 			this.USES[i] = id == Me ? getItemUses(i) : 0
 		}
 		this.EFFECTS = getEffects(id)
-		//this.EFFECTS_ITEM_MAP = getEffectsMapItem(this.EFFECTS)
 		// Flux périodiques remplis en UNE passe, dans le déroulé d'effets plus bas.
 		this.POISON = 0
 		this.POISON_OVER_TIME = 0
@@ -103,102 +89,86 @@ class EntityStateClass extends EntityClass {
 		this.TP = getTP(id)
 		this.TOTAL_TP = getTotalTP(id)
 
-		// Stats de BASE VRAIE + total shacklé, reconstitués en dépliant les effets actifs :
-		// TO_SAVE_<stat> = courante − buffs + shackles = la stat sans AUCUN effet. Sert
-		// surtout la RÉSURRECTION (reset aux bases vraies) ; Libération travaille désormais
-		// ligne à ligne sur le ledger (getEntityDebuffConsequences), plus par pull.
-		// Manumission consomme TO_SAVE_SHACKLE_* via removeCastedEffect.
-		this.TO_SAVE_STRENGTH = this.STRENGTH
-		this.TO_SAVE_SHACKLE_STRENGTH = 0
-		this.TO_SAVE_WISDOM = this.WISDOM
-		this.TO_SAVE_SHACKLE_WISDOM = 0
-		this.TO_SAVE_AGILITY = this.AGILITY
-		this.TO_SAVE_SHACKLE_AGILITY = 0
-		this.TO_SAVE_RESISTANCE = this.RESISTANCE
-		//this.TO_SAVE_SHACKLE_RESISTANCE = 0
-		this.TO_SAVE_SCIENCE = this.SCIENCE
-		//this.TO_SAVE_SHACKLE_SCIENCE = 0
-		this.TO_SAVE_MAGIC = this.MAGIC
-		this.TO_SAVE_SHACKLE_MAGIC = 0
-		//this.TO_SAVE_MP = this.MP
-		//this.TO_SAVE_SHACKLE_MP = 0
-		this.TO_SAVE_TOTAL_MP = this.TOTAL_MP
-		this.TO_SAVE_SHACKLE_TOTAL_MP = 0
-		//this.TO_SAVE_TP = this.TP
-		//this.TO_SAVE_SHACKLE_TP = 0
-		this.TO_SAVE_TOTAL_TP = this.TOTAL_TP
-		this.TO_SAVE_SHACKLE_TOTAL_TP = 0
+		// Stats de BASE VRAIE, reconstituées en dépliant les effets actifs :
+		// base = courante − buffs + shackles = la stat sans AUCUN effet. Sert la
+		// RÉSURRECTION (reset aux bases vraies) ; Libération travaille ligne à ligne sur le
+		// ledger (getEntityDebuffConsequences) et Manumission par ligne via
+		// removeCastedEffect, aucune des deux ne passe par une base.
+		this.BASE_STATS = [
+			STAT_STRENGTH:   this.STRENGTH,
+			STAT_WISDOM:     this.WISDOM,
+			STAT_AGILITY:    this.AGILITY,
+			STAT_RESISTANCE: this.RESISTANCE,
+			STAT_SCIENCE:    this.SCIENCE,
+			STAT_MAGIC:      this.MAGIC,
+			STAT_MP:         this.TOTAL_MP,
+			STAT_TP:         this.TOTAL_TP
+		]
 
 		for (var eff in this.EFFECTS) {
 			switch (eff[0]) {
 				// --- AGILITY ---
 				case EFFECT_BUFF_AGILITY:
 				case EFFECT_RAW_BUFF_AGILITY:
-					this.TO_SAVE_AGILITY -= eff[1]
+					this.BASE_STATS[STAT_AGILITY] -= eff[1]
 					break
 				case EFFECT_SHACKLE_AGILITY:
-					this.TO_SAVE_AGILITY += eff[1]
-					this.TO_SAVE_SHACKLE_AGILITY += eff[1]
+					this.BASE_STATS[STAT_AGILITY] += eff[1]
 					break
 
 					// --- STRENGTH ---
 				case EFFECT_BUFF_STRENGTH:
 				case EFFECT_RAW_BUFF_STRENGTH:
-					this.TO_SAVE_STRENGTH -= eff[1]
+					this.BASE_STATS[STAT_STRENGTH] -= eff[1]
 					break
 				case EFFECT_SHACKLE_STRENGTH:
-					this.TO_SAVE_STRENGTH += eff[1]
-					this.TO_SAVE_SHACKLE_STRENGTH += eff[1]
+					this.BASE_STATS[STAT_STRENGTH] += eff[1]
 					break
 
 					// --- WISDOM ---
 				case EFFECT_BUFF_WISDOM:
 				case EFFECT_RAW_BUFF_WISDOM:
-					this.TO_SAVE_WISDOM -= eff[1]
+					this.BASE_STATS[STAT_WISDOM] -= eff[1]
 					break
 				case EFFECT_SHACKLE_WISDOM:
-					this.TO_SAVE_WISDOM += eff[1]
-					this.TO_SAVE_SHACKLE_WISDOM += eff[1]
+					this.BASE_STATS[STAT_WISDOM] += eff[1]
 					break
 
 					// --- MAGIC ---
 				case EFFECT_RAW_BUFF_MAGIC:
-					this.TO_SAVE_MAGIC -= eff[1]
+					this.BASE_STATS[STAT_MAGIC] -= eff[1]
 					break
 				case EFFECT_SHACKLE_MAGIC:
-					this.TO_SAVE_MAGIC += eff[1]
-					this.TO_SAVE_SHACKLE_MAGIC += eff[1]
+					this.BASE_STATS[STAT_MAGIC] += eff[1]
 					break
 
 					// --- SCIENCE ---
 				case EFFECT_RAW_BUFF_SCIENCE:
-					this.TO_SAVE_SCIENCE -= eff[1]
+					this.BASE_STATS[STAT_SCIENCE] -= eff[1]
 					break
 
 					// --- RESISTANCE ---
 				case EFFECT_BUFF_RESISTANCE:
 				case EFFECT_RAW_BUFF_RESISTANCE:
-					this.TO_SAVE_RESISTANCE -= eff[1]
+					this.BASE_STATS[STAT_RESISTANCE] -= eff[1]
 					break
 
 					// --- MP ---
 				case EFFECT_BUFF_MP:
 				case EFFECT_RAW_BUFF_MP:
-					this.TO_SAVE_TOTAL_MP -= eff[1]
+					this.BASE_STATS[STAT_MP] -= eff[1]
 					break
 				case EFFECT_SHACKLE_MP:
-					this.TO_SAVE_TOTAL_MP += eff[1]
-					this.TO_SAVE_SHACKLE_TOTAL_MP += eff[1]
+					this.BASE_STATS[STAT_MP] += eff[1]
 					break
 
 					// --- TP ---
 				case EFFECT_BUFF_TP:
 				case EFFECT_RAW_BUFF_TP:
-					this.TO_SAVE_TOTAL_TP -= eff[1]
+					this.BASE_STATS[STAT_TP] -= eff[1]
 					break
 				case EFFECT_SHACKLE_TP:
-					this.TO_SAVE_TOTAL_TP += eff[1]
-					this.TO_SAVE_SHACKLE_TOTAL_TP += eff[1]
+					this.BASE_STATS[STAT_TP] += eff[1]
 					break
 
 					// --- FLUX PÉRIODIQUES (même passe, six agrégats positifs) ---
