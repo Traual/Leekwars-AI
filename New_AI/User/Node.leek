@@ -180,59 +180,91 @@ class NodeClass {
 				}
 				continue                     // Me est exclu des trois hashs
 			}
-			// Anciennes valeurs des inputs des trois contributions, reconstruites depuis le
-			// journal (un champ non touché vaut sa valeur courante). On PROUVE d'abord qu'une
-			// contribution change vraiment, et seulement alors on la calcule : LIFE 100 -> 50
-			// sur place ne coûte AUCUN hash.
-			var oldLife = StateClass.oldValueOf(d, DELTA_LIFE, newStat.LIFE)
-			var oldCell = StateClass.oldValueOf(d, DELTA_CELL, newStat.CELL)
+			// SORTIE RAPIDE : aucun input des trois contributions n'a changé (shield,
+			// TOTAL_LIFE, retour de dégâts, flux périodique...) -> zéro reconstruction.
+			var hashRelevant = changed & (DELTA_MASK_BASE | DELTA_MASK_CONTEXT | DELTA_MASK_HFP)
+			if (hashRelevant == 0) continue
+
+			// LIFE n'est qu'une GATE des trois contributions : seule la transition
+			// vivant<->mort compte. Un seul oldValueOf, et seulement si LIFE a bougé.
+			var lifeBit = 1 << DELTA_LIFE
+			var oldLife = (changed & lifeBit) ? StateClass.oldValueOf(d, DELTA_LIFE, newStat.LIFE) : newStat.LIFE
 			var oldAlive = oldLife > 0
 			var newAlive = newStat.LIFE > 0
 			var aliveChanged = oldAlive != newAlive
+			// LIFE seul input de hash touché, sans transition (LIFE 100 -> 50, même avec
+			// érosion de TOTAL_LIFE) : rien à recalculer. Deux morts : tout vaut 0 des deux
+			// côtés, rien non plus.
+			if (!aliveChanged && hashRelevant == lifeBit) continue
+			if (!oldAlive && !newAlive) continue
 			var bothAlive = oldAlive && newAlive
+
+			// Cellule : reconstruite seulement si son bit est présent.
+			var cellBit = 1 << DELTA_CELL
+			var oldCell = (changed & cellBit) ? StateClass.oldValueOf(d, DELTA_CELL, newStat.CELL) : newStat.CELL
 			var cellChanged = oldCell != newStat.CELL
 
 			if (aliveChanged || (bothAlive && cellChanged)) {
 				bh ^= StateClass.baseContributionFrom(tar, oldLife, oldCell) ^ StateClass.baseContribution(newStat, tar)
 			}
 
+			// Champs PARTAGÉS par Context et HFP : un seul oldValueOf chacun, et seulement
+			// si leur bit est présent (sinon la valeur courante EST l'ancienne).
+			var agiBit = 1 << DELTA_AGILITY
+			var mpBit = 1 << DELTA_TOTAL_MP
+			var tpBit = 1 << DELTA_TOTAL_TP
+			var oldAgi = (changed & agiBit) ? StateClass.oldValueOf(d, DELTA_AGILITY, newStat.AGILITY) : newStat.AGILITY
+			var oldTotalMp = (changed & mpBit) ? StateClass.oldValueOf(d, DELTA_TOTAL_MP, newStat.TOTAL_MP) : newStat.TOTAL_MP
+			var oldTotalTp = (changed & tpBit) ? StateClass.oldValueOf(d, DELTA_TOTAL_TP, newStat.TOTAL_TP) : newStat.TOTAL_TP
 			// Formes EFFECTIVES : deux valeurs brutes différentes peuvent donner le même
 			// input (AGI sans franchir de seuil, stat négative des deux côtés).
-			var oldAgi = StateClass.oldValueOf(d, DELTA_AGILITY, newStat.AGILITY)
-			var oldTotalMp = StateClass.oldValueOf(d, DELTA_TOTAL_MP, newStat.TOTAL_MP)
-			var oldTotalTp = StateClass.oldValueOf(d, DELTA_TOTAL_TP, newStat.TOTAL_TP)
-			var oldCrit = (oldAgi >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((oldAgi >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-			var newCrit = (newStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((newStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-			var critChanged = oldCrit != newCrit
-			var mpChanged = max(0, oldTotalMp) != max(0, newStat.TOTAL_MP)
-			var tpChanged = max(0, oldTotalTp) != max(0, newStat.TOTAL_TP)
+			var critChanged = false
+			if ((changed & agiBit) != 0) {
+				var oldCrit = (oldAgi >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((oldAgi >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
+				var newCrit = (newStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((newStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
+				critChanged = oldCrit != newCrit
+			}
+			var mpChanged = (changed & mpBit) != 0 && max(0, oldTotalMp) != max(0, newStat.TOTAL_MP)
+			var tpChanged = (changed & tpBit) != 0 && max(0, oldTotalTp) != max(0, newStat.TOTAL_TP)
 
-			var oldStr = StateClass.oldValueOf(d, DELTA_STRENGTH, newStat.STRENGTH)
-			var oldMag = StateClass.oldValueOf(d, DELTA_MAGIC, newStat.MAGIC)
-			var oldPow = StateClass.oldValueOf(d, DELTA_POWER, newStat.POWER)
-			if (aliveChanged || (bothAlive && (cellChanged || critChanged || mpChanged || tpChanged
-				|| max(0, oldStr) != max(0, newStat.STRENGTH)
-				|| max(0, oldMag) != max(0, newStat.MAGIC)
-				|| oldPow != newStat.POWER))) {
-				var deltaCtx = DeltaClass.contextContributionFrom(tar, oldLife, oldCell, oldAgi, oldStr, oldMag, oldTotalMp, oldTotalTp, oldPow)
-					^ DeltaClass.contextContribution(newStat, tar)
-				if (deltaCtx != 0) {
-					var side = newStat.SIDE
-					for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx   // contextes des sides ADVERSES
+			// Context : transition, ou au moins un bit NON-LIFE de son groupe.
+			var ctxBits = changed & DELTA_MASK_CONTEXT
+			if (aliveChanged || (bothAlive && ctxBits != 0 && ctxBits != lifeBit)) {
+				var strBit = 1 << DELTA_STRENGTH
+				var magBit = 1 << DELTA_MAGIC
+				var powBit = 1 << DELTA_POWER
+				var oldStr = (changed & strBit) ? StateClass.oldValueOf(d, DELTA_STRENGTH, newStat.STRENGTH) : newStat.STRENGTH
+				var oldMag = (changed & magBit) ? StateClass.oldValueOf(d, DELTA_MAGIC, newStat.MAGIC) : newStat.MAGIC
+				var oldPow = (changed & powBit) ? StateClass.oldValueOf(d, DELTA_POWER, newStat.POWER) : newStat.POWER
+				if (aliveChanged || cellChanged || critChanged || mpChanged || tpChanged
+					|| max(0, oldStr) != max(0, newStat.STRENGTH)
+					|| max(0, oldMag) != max(0, newStat.MAGIC)
+					|| oldPow != newStat.POWER) {
+					var deltaCtx = DeltaClass.contextContributionFrom(tar, oldLife, oldCell, oldAgi, oldStr, oldMag, oldTotalMp, oldTotalTp, oldPow)
+						^ DeltaClass.contextContribution(newStat, tar)
+					if (deltaCtx != 0) {
+						var side = newStat.SIDE
+						for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx   // contextes des sides ADVERSES
+					}
 				}
 			}
 
-			var oldWis = StateClass.oldValueOf(d, DELTA_WISDOM, newStat.WISDOM)
-			if (aliveChanged || (bothAlive && (cellChanged || critChanged || mpChanged || tpChanged
-				|| max(0, oldWis + 100) != max(0, newStat.WISDOM + 100)))) {
-				// La qualification de healer est immuable pour le replan (liste d'items cachée
-				// par id) : elle se lit sur l'objet courant et vaut pour les deux côtés.
-				var oldHfp = (oldAlive && tar != Me && HealClass.hasHealItem(newStat))
-					? HealClass.healerContributionFrom(tar, oldCell, oldAgi, oldWis, oldTotalTp, oldTotalMp) : 0
-				var deltaHfp = oldHfp ^ HealClass.healerContributionOf(newStat, tar)
-				if (deltaHfp != 0) {             // fingerprint du side de l'entité elle-même
-					var hfpSide = newStat.SIDE
-					hfpMap[hfpSide] = ((hfpSide in hfpMap) ? hfpMap[hfpSide] : 0) ^ deltaHfp
+			// HFP : même principe, WISDOM reconstruite seulement si son bit a changé.
+			var hfpBits = changed & DELTA_MASK_HFP
+			if (aliveChanged || (bothAlive && hfpBits != 0 && hfpBits != lifeBit)) {
+				var wisBit = 1 << DELTA_WISDOM
+				var oldWis = (changed & wisBit) ? StateClass.oldValueOf(d, DELTA_WISDOM, newStat.WISDOM) : newStat.WISDOM
+				if (aliveChanged || cellChanged || critChanged || mpChanged || tpChanged
+					|| max(0, oldWis + 100) != max(0, newStat.WISDOM + 100)) {
+					// La qualification de healer est immuable pour le replan (liste d'items cachée
+					// par id) : elle se lit sur l'objet courant et vaut pour les deux côtés.
+					var oldHfp = (oldAlive && HealClass.hasHealItem(newStat))
+						? HealClass.healerContributionFrom(tar, oldCell, oldAgi, oldWis, oldTotalTp, oldTotalMp) : 0
+					var deltaHfp = oldHfp ^ HealClass.healerContributionOf(newStat, tar)
+					if (deltaHfp != 0) {             // fingerprint du side de l'entité elle-même
+						var hfpSide = newStat.SIDE
+						hfpMap[hfpSide] = ((hfpSide in hfpMap) ? hfpMap[hfpSide] : 0) ^ deltaHfp
+					}
 				}
 			}
 		}

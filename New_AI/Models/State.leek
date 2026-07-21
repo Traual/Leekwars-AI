@@ -150,9 +150,9 @@ class StateClass {
 
 	/*
 	 * Barrière d'écriture : journalise l'ancienne valeur du champ la PREMIÈRE fois qu'il est
-	 * écrit dans l'action courante, et capture au passage les contributions du parent aux
-	 * hashs dont ce champ est un input (elles ne seront plus reconstructibles ensuite).
-	 * Appels suivants sur le même champ : un test de bit, rien d'autre.
+	 * écrit dans l'action courante — et RIEN d'autre. Aucune contribution de hash n'est
+	 * calculée ici : Node les reconstruit après coup, et seulement pour les champs qui ont
+	 * réellement changé. Appels suivants sur le même champ : un test de bit.
 	 * Entité non suivie (ACTIVE_DELTA null) : no-op — c'est le cas des entités neuves
 	 * (summon), dont l'objet complet est déjà porté par le delta.
 	 */

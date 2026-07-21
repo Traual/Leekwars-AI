@@ -145,9 +145,11 @@ global DELTA_ITEM_STATE_PARENT = 28
 global DELTA_CAP_MEMO = 29
 global DELTA_TLSQ_MEMO = 30
 
-// Groupes d'inputs des trois contributions incrémentales : dès qu'un de ces champs est
-// touché pour la première fois, l'ancienne contribution du groupe est capturée AVANT la
-// mutation (Node ne peut plus reconstruire un ancien EntityState).
+// Groupes d'inputs des trois contributions incrémentales. Node teste ces masques contre
+// CHANGED_MASK : si aucun input du groupe n'a réellement changé, il ne reconstruit RIEN et
+// n'appelle aucune fonction de contribution. Sinon il ne reconstruit que les anciennes
+// valeurs des champs effectivement changés (StateClass.oldValueOf) — aucune contribution
+// n'est capturée pendant la simulation.
 global DELTA_MASK_BASE = (1 << DELTA_LIFE) | (1 << DELTA_CELL)
 global DELTA_MASK_CONTEXT = (1 << DELTA_LIFE) | (1 << DELTA_CELL) | (1 << DELTA_AGILITY)
 	| (1 << DELTA_STRENGTH) | (1 << DELTA_MAGIC) | (1 << DELTA_TOTAL_MP) | (1 << DELTA_TOTAL_TP)
