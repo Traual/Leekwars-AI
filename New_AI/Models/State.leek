@@ -147,7 +147,7 @@ class StateClass {
 			c.USES = [: ]
 		}
 		// CAP_MEMO / TLSQ_MEMO : COPIÉS par clone(stat, 1) puis VALIDÉS après l'action
-		// (validateDerivedMemos dans Node) — plus d'invalidation systématique au clonage.
+		// (diffMaskOf dans la boucle de masque du Node) — plus d'invalidation au clonage.
 		return c
 	}
 
@@ -208,32 +208,89 @@ class StateClass {
 	}
 
 	/*
-	 * Valide les mémos dérivés d'un clone contre son parent, APRÈS l'action : une
-	 * comparaison de champs remplace le recalcul (buckets + sqrt) des clones dont les
-	 * inputs n'ont pas bougé (Me est cloné à CHAQUE nœud pour TP/cooldowns — hors inputs).
-	 * Dépendances EXACTES, par valeur (jamais de hash probabiliste) :
-	 *   TLSQ_MEMO <- TOTAL_LIFE seule.
-	 *   CAP_MEMO  <- STR/MAG/WIS/SCI/AGI/RES, TOTAL_TP (aussi la clé du combo), TOTAL_MP,
-	 *                ABSOLUTE_SHIELD, RELATIVE_SHIELD.
-	 * Volontairement HORS dépendances : LIFE, TP/MP courants, CELL, POWER, DAMAGE_RETURN,
-	 * cooldowns/uses de branche (items de capability FIGÉS par CAPABILITY_ITEMS_BY_ID au
-	 * replan), flux périodiques. Un mémo copié déjà null reste null naturellement.
-	 * parentStat null (summon né en branche) -> mémos laissés tels quels (null d'origine).
+	 * Masque différentiel d'une entité clonée, APRÈS l'action — SOURCE UNIQUE de la
+	 * comparaison parent/clone (absorbe l'ancien validateDerivedMemos : les mémos dérivés
+	 * sont invalidés ICI, sur les mêmes champs, jamais comparés deux fois).
+	 *   DIFF_BASE       : la contribution BaseHash peut réellement changer — vivant<->mort,
+	 *                     ou deux vivants et cellule différente (deux morts : jamais).
+	 *   DIFF_CONTEXT    : un input EFFECTIF de contextContribution a changé — vivant/mort,
+	 *                     cellule, classe critique (deux seuils d'AGI), STR/MAG/MP/TP
+	 *                     clampés à 0, POWER. LIFE restant vivante, AGI sans franchir de
+	 *                     seuil ou STR négative des deux côtés : inchangé.
+	 *   DIFF_HFP        : un input EFFECTIF de healerContribution a changé — vivant/mort,
+	 *                     cellule, max(0, WIS+100), TP/MP totaux, classe critique (la
+	 *                     qualification de healer est immuable pour le replan).
+	 *   DIFF_LOCAL_TERM : un input LOCAL du terme de scoring a bougé — LIFE, TOTAL_LIFE
+	 *                     (plafond de soin Delta), CELL, DAMAGE_RETURN, six flux
+	 *                     périodiques, cooldown effectif d'Antidote, et tout input de
+	 *                     capability (même effet que l'ancienne invalidation de CAP_MEMO).
+	 * Mémos : TLSQ_MEMO <- TOTAL_LIFE seule ; CAP_MEMO <- les dix inputs de capability
+	 * (STR/MAG/WIS/SCI/AGI/RES/TOTAL_TP/TOTAL_MP/ABS/REL). Un mémo déjà null reste null.
+	 * Les checks propres à Me (BaseHash parent/enfant, fingerprint WalkCells) vivent dans
+	 * Node, après construction du hash final. parentStat null (summon né en branche) ->
+	 * tout dirty, mémos laissés tels quels (null d'origine).
 	 */
-	static validateDerivedMemos(parentStat, childStat) {
-		if (parentStat == null) return;
-		// Un mémo déjà null n'a rien à invalider : les comparaisons ne sont payées que si
-		// le mémo copié porte une valeur.
-		if (childStat.TLSQ_MEMO != null && childStat.TOTAL_LIFE != parentStat.TOTAL_LIFE) childStat.TLSQ_MEMO = null
-		if (childStat.CAP_MEMO != null
-			&& (childStat.STRENGTH != parentStat.STRENGTH || childStat.MAGIC != parentStat.MAGIC
-			|| childStat.WISDOM != parentStat.WISDOM || childStat.SCIENCE != parentStat.SCIENCE
-			|| childStat.AGILITY != parentStat.AGILITY || childStat.RESISTANCE != parentStat.RESISTANCE
-			|| childStat.TOTAL_TP != parentStat.TOTAL_TP || childStat.TOTAL_MP != parentStat.TOTAL_MP
-			|| childStat.ABSOLUTE_SHIELD != parentStat.ABSOLUTE_SHIELD
-			|| childStat.RELATIVE_SHIELD != parentStat.RELATIVE_SHIELD)) {
-			childStat.CAP_MEMO = null
+	static diffMaskOf(parentStat, childStat) {
+		if (parentStat == null) return DIFF_BASE | DIFF_CONTEXT | DIFF_HFP | DIFF_LOCAL_TERM
+		var mask = 0
+
+		var oldAlive = parentStat.LIFE > 0
+		var newAlive = childStat.LIFE > 0
+		var aliveChanged = oldAlive != newAlive
+		var cellChanged = parentStat.CELL != childStat.CELL
+
+		if (aliveChanged || (oldAlive && newAlive && cellChanged)) mask |= DIFF_BASE
+
+		// Classe critique (deux seuils) : input commun du contexte et du HFP.
+		var oldCrit = (parentStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((parentStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
+		var newCrit = (childStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((childStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
+		var critChanged = oldCrit != newCrit
+
+		if (aliveChanged || (oldAlive && newAlive && (cellChanged || critChanged
+			|| max(0, parentStat.STRENGTH) != max(0, childStat.STRENGTH)
+			|| max(0, parentStat.MAGIC) != max(0, childStat.MAGIC)
+			|| max(0, parentStat.TOTAL_MP) != max(0, childStat.TOTAL_MP)
+			|| max(0, parentStat.TOTAL_TP) != max(0, childStat.TOTAL_TP)
+			|| parentStat.POWER != childStat.POWER))) {
+			mask |= DIFF_CONTEXT
 		}
+
+		if (aliveChanged || (oldAlive && newAlive && (cellChanged || critChanged
+			|| max(0, parentStat.WISDOM + 100) != max(0, childStat.WISDOM + 100)
+			|| max(0, parentStat.TOTAL_TP) != max(0, childStat.TOTAL_TP)
+			|| max(0, parentStat.TOTAL_MP) != max(0, childStat.TOTAL_MP)))) {
+			mask |= DIFF_HFP
+		}
+
+		var totalLifeChanged = parentStat.TOTAL_LIFE != childStat.TOTAL_LIFE
+		if (totalLifeChanged && childStat.TLSQ_MEMO != null) childStat.TLSQ_MEMO = null
+
+		var capChanged = parentStat.STRENGTH != childStat.STRENGTH
+			|| parentStat.MAGIC != childStat.MAGIC
+			|| parentStat.WISDOM != childStat.WISDOM
+			|| parentStat.SCIENCE != childStat.SCIENCE
+			|| parentStat.AGILITY != childStat.AGILITY
+			|| parentStat.RESISTANCE != childStat.RESISTANCE
+			|| parentStat.TOTAL_TP != childStat.TOTAL_TP
+			|| parentStat.TOTAL_MP != childStat.TOTAL_MP
+			|| parentStat.ABSOLUTE_SHIELD != childStat.ABSOLUTE_SHIELD
+			|| parentStat.RELATIVE_SHIELD != childStat.RELATIVE_SHIELD
+		if (capChanged && childStat.CAP_MEMO != null) childStat.CAP_MEMO = null
+
+		if (capChanged || totalLifeChanged || cellChanged
+			|| parentStat.LIFE != childStat.LIFE
+			|| parentStat.DAMAGE_RETURN != childStat.DAMAGE_RETURN
+			|| parentStat.POISON != childStat.POISON
+			|| parentStat.POISON_OVER_TIME != childStat.POISON_OVER_TIME
+			|| parentStat.AFTEREFFECT != childStat.AFTEREFFECT
+			|| parentStat.AFTEREFFECT_OVER_TIME != childStat.AFTEREFFECT_OVER_TIME
+			|| parentStat.HEAL != childStat.HEAL
+			|| parentStat.HEAL_OVER_TIME != childStat.HEAL_OVER_TIME
+			|| cooldownOf(parentStat, CHIP_ANTIDOTE) != cooldownOf(childStat, CHIP_ANTIDOTE)) {
+			mask |= DIFF_LOCAL_TERM
+		}
+
+		return mask
 	}
 
 	/*

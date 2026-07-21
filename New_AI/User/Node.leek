@@ -15,7 +15,11 @@ class NodeClass {
 	HFP_BY_SIDE       // par side : fingerprint des healers (clé de la heal map)
 	CLONED            // [id -> ANCIEN EntityState] : ensemble EXACT des entités possiblement mutées
 	                  // par l'action — la valeur est la référence read-only à l'état d'avant clonage
-	                  // (null pour un summon né en branche), base des comparaisons du recompute-set
+	                  // (null pour un summon né en branche). Sert au clone-on-write, plus au choix
+	                  // des termes à recalculer (voir LOCAL_TERM_DIRTY)
+	LOCAL_TERM_DIRTY  // [id -> true] : entités dont un input LOCAL du terme a réellement changé
+	                  // (masque diffMaskOf + checks Me BaseHash/fingerprint) — le recompute-set
+	                  // du scoring l'itère directement
 	TERMS             // [id -> terme signé] : PATCH local — les seuls termes recalculés par CE nœud
 	                  // (la racine noPlay porte la map complète). Résolution via ScoringClass.termOf.
 	TERMS_PARENT      // nœud portant le snapshot de termes précédent — chaîne IMMUABLE, indépendante
@@ -92,23 +96,29 @@ class NodeClass {
 		var ctx = clone(ParentContext, 1)    // copie : le contexte du parent n'est jamais muté
 		var ctxSides = mapKeys(ctx)
 		var hfpMap = clone(ParentHfp, 1)
-		for (var tar: var _c in clonedIds) {
-			// Mémos dérivés : copiés au clone, validés ICI contre le parent (Me compris —
-			// il est seulement exclu des hashs, pas de la validation).
-			StateClass.validateDerivedMemos(State[tar], ThisActionStats[tar])
-			if (tar == Me) continue          // Me est exclu des trois hashs
-			var oldStat = State[tar]
+		var localTermDirty = [: ]
+		for (var tar: var parentStat in clonedIds) {
 			var newStat = ThisActionStats[tar]
-			bh ^= StateClass.baseContribution(oldStat, tar) ^ StateClass.baseContribution(newStat, tar)
-			var deltaCtx = DeltaClass.contextContribution(oldStat, tar) ^ DeltaClass.contextContribution(newStat, tar)
-			if (deltaCtx != 0) {
-				var side = newStat.SIDE
-				for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx   // contextes des sides ADVERSES
+			// Masque différentiel UNIQUE : une seule comparaison parent/clone pilote les
+			// trois patchs de hash ET le terme local, et invalide les mémos dérivés
+			// (Me compris — il est seulement exclu des trois hashs).
+			var mask = StateClass.diffMaskOf(parentStat, newStat)
+			if (mask & DIFF_LOCAL_TERM) localTermDirty[tar] = true
+			if (tar == Me) continue          // Me est exclu des trois hashs
+			if (mask & DIFF_BASE) bh ^= StateClass.baseContribution(parentStat, tar) ^ StateClass.baseContribution(newStat, tar)
+			if (mask & DIFF_CONTEXT) {
+				var deltaCtx = DeltaClass.contextContribution(parentStat, tar) ^ DeltaClass.contextContribution(newStat, tar)
+				if (deltaCtx != 0) {
+					var side = newStat.SIDE
+					for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx   // contextes des sides ADVERSES
+				}
 			}
-			var deltaHfp = HealClass.healerContributionOf(oldStat, tar) ^ HealClass.healerContributionOf(newStat, tar)
-			if (deltaHfp != 0) {             // fingerprint du side de l'entité elle-même
-				var hfpSide = newStat.SIDE
-				hfpMap[hfpSide] = ((hfpSide in hfpMap) ? hfpMap[hfpSide] : 0) ^ deltaHfp
+			if (mask & DIFF_HFP) {
+				var deltaHfp = HealClass.healerContributionOf(parentStat, tar) ^ HealClass.healerContributionOf(newStat, tar)
+				if (deltaHfp != 0) {             // fingerprint du side de l'entité elle-même
+					var hfpSide = newStat.SIDE
+					hfpMap[hfpSide] = ((hfpSide in hfpMap) ? hfpMap[hfpSide] : 0) ^ deltaHfp
+				}
 			}
 		}
 
@@ -119,13 +129,23 @@ class NodeClass {
 			var newId = SUMMON_ID_BASE + BulbState.getTypeOffset(Item)
 			if (!(newId in ThisActionStats) || (newId in State)) {
 				debugE("[SUMMON PATCH] id " + newId + " not born in this branch (item " + Item + ") -> full rebuild fallback")
-				if (newId in ThisActionStats) clonedIds[newId] = null   // né en branche : pas d'ancien état
+				if (newId in ThisActionStats) {
+					clonedIds[newId] = null   // né en branche : pas d'ancien état
+					localTermDirty[newId] = true
+				}
 				result.CLONED = clonedIds
 				result.BASE_HASH = StateClass.getBaseHash(ThisActionStats)
 				result.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(ThisActionStats)
 				result.HFP_BY_SIDE = HealClass.buildHfpBySide(ThisActionStats)
-				// Pas de re-validation des mémos ici : la boucle de patch ci-dessus a DÉJÀ
-				// validé tous les clonés existants, et le bulbe neuf n'a pas de parent.
+				// Pas de re-invalidation des mémos ici : la boucle de masque ci-dessus a DÉJÀ
+				// traité tous les clonés existants, et le bulbe neuf n'a pas de parent.
+				// Me : mêmes checks que le chemin normal, contre le BaseHash reconstruit.
+				if (!(Me in localTermDirty)
+					&& (result.BASE_HASH != BaseHash
+						|| WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(clonedIds[Me]) != WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(ThisActionStats[Me]))) {
+					localTermDirty[Me] = true
+				}
+				result.LOCAL_TERM_DIRTY = localTermDirty
 				BenchOps.Stop("Node")
 				return result
 			}
@@ -138,9 +158,20 @@ class NodeClass {
 			var addHfp = HealClass.healerContributionOf(newStat, newId)
 			if (addHfp != 0) hfpMap[newStat.SIDE] = ((newStat.SIDE in hfpMap) ? hfpMap[newStat.SIDE] : 0) ^ addHfp
 			clonedIds[newId] = null   // le bulbe entre dans le recompute-set (né en branche : pas d'ancien état)
+			localTermDirty[newId] = true
+		}
+
+		// Me : exclu des trois hashs, mais son terme dépend du domaine de fuite — BaseHash
+		// FINAL différent -> dirty ; sinon UNE comparaison des fingerprints WalkCells
+		// old/new (une dépense de TP sans franchir de seuil de mobilité ne salit rien).
+		if (!(Me in localTermDirty)
+			&& (bh != BaseHash
+				|| WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(clonedIds[Me]) != WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(ThisActionStats[Me]))) {
+			localTermDirty[Me] = true
 		}
 
 		result.CLONED = clonedIds
+		result.LOCAL_TERM_DIRTY = localTermDirty
 		result.BASE_HASH = bh
 		result.CONTEXT_BY_SIDE = ctx
 		result.HFP_BY_SIDE = hfpMap

@@ -21,7 +21,7 @@ class EntityStateClass extends EntityClass {
 	EFFECTS
 	EFFECTS_ITEM_MAP
 	// Memos de champs dérivés (scoring), calculés paresseusement. COPIÉS au clone puis
-	// VALIDÉS après l'action (StateClass.validateDerivedMemos, appelé par Node sur chaque
+	// VALIDÉS après l'action (StateClass.diffMaskOf, appelé par Node sur chaque
 	// cloné) : un clone dont les inputs n'ont pas bougé garde ses mémos. Écrire un memo sur
 	// un objet PARTAGÉ est sain : partage => stats identiques => même valeur.
 	CAP_MEMO    // ImportanceClass.capability(stat)
