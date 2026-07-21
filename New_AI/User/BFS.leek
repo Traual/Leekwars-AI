@@ -58,6 +58,7 @@ class ActionSuite {
 		noPlay.TERMS = RootTerms
 		noPlay.TERMS_PARENT = null
 		noPlay.SCORE = initialScore
+		noPlay.BASE_HASH = BaseHash   // terrain de la racine des termes (comparaison parent/enfant pour Me)
 
 		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, RootPoisonKey, MyWalkCells, basePairs)
 		ScoredCache[scoredKeyOf(BaseHash, RootResurrectId)] = rootEntries

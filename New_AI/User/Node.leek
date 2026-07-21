@@ -13,7 +13,9 @@ class NodeClass {
 	BASE_HASH         // BaseHash de END_STATS
 	CONTEXT_BY_SIDE   // par side : hash de l'équipe adverse (clé des caches danger)
 	HFP_BY_SIDE       // par side : fingerprint des healers (clé de la heal map)
-	CLONED            // [id -> true] : ensemble EXACT des entités possiblement mutées par l'action
+	CLONED            // [id -> ANCIEN EntityState] : ensemble EXACT des entités possiblement mutées
+	                  // par l'action — la valeur est la référence read-only à l'état d'avant clonage
+	                  // (null pour un summon né en branche), base des comparaisons du recompute-set
 	TERMS             // [id -> terme signé] : PATCH local — les seuls termes recalculés par CE nœud
 	                  // (la racine noPlay porte la map complète). Résolution via ScoringClass.termOf.
 	TERMS_PARENT      // nœud portant le snapshot de termes précédent — chaîne IMMUABLE, indépendante
@@ -118,7 +120,7 @@ class NodeClass {
 			var newId = SUMMON_ID_BASE + BulbState.getTypeOffset(Item)
 			if (!(newId in ThisActionStats) || (newId in State)) {
 				debugE("[SUMMON PATCH] id " + newId + " not born in this branch (item " + Item + ") -> full rebuild fallback")
-				if (newId in ThisActionStats) clonedIds[newId] = true
+				if (newId in ThisActionStats) clonedIds[newId] = null   // né en branche : pas d'ancien état
 				result.CLONED = clonedIds
 				result.BASE_HASH = StateClass.getBaseHash(ThisActionStats)
 				result.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(ThisActionStats)
@@ -136,7 +138,7 @@ class NodeClass {
 			}
 			var addHfp = HealClass.healerContributionOf(newStat, newId)
 			if (addHfp != 0) hfpMap[newStat.SIDE] = ((newStat.SIDE in hfpMap) ? hfpMap[newStat.SIDE] : 0) ^ addHfp
-			clonedIds[newId] = true   // le bulbe entre dans le recompute-set du scoring
+			clonedIds[newId] = null   // le bulbe entre dans le recompute-set (né en branche : pas d'ancien état)
 		}
 
 		result.CLONED = clonedIds

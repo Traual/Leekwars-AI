@@ -236,12 +236,15 @@ class StateClass {
 		}
 	}
 
-	/* État de simulation : cibles + Me clonés, tout le reste partagé avec le parent. */
+	/* État de simulation : cibles + Me clonés, tout le reste partagé avec le parent.
+	 * clonedIds[id] = l'ANCIEN EntityState (référence read-only, jamais clonée ni mutée) —
+	 * le recompute-set du scoring compare les inputs locaux du terme contre lui. */
 	static CloneOnlyTargetsAndMe(Targets, EveryStats, clonedIds) {
 		var _final = [: ]
 		for (var tar: var dist in Targets + [Me: 0]) {
-			_final[tar] = cloneEntityForSim(EveryStats[tar], tar == Me)
-			clonedIds[tar] = true
+			var parentStat = EveryStats[tar]
+			_final[tar] = cloneEntityForSim(parentStat, tar == Me)
+			clonedIds[tar] = parentStat
 		}
 		for (var tar: var stats in EveryStats) {
 			if (!(tar in _final)) _final[tar] = stats
@@ -253,13 +256,15 @@ class StateClass {
 	 * Clone-on-write pour les effets de bord des kills (cascade de summons, retrait de buffs,
 	 * procs d'armes) : ils mutent des entités HORS du set pré-cloné, donc des objets PARTAGÉS
 	 * avec l'état parent — les muter en place corromprait toute la recherche. Clone au premier
-	 * toucher et enregistre dans clonedIds, qui reste ainsi l'ensemble EXACT des entités
-	 * possiblement mutées (le patch de hashs du nœud l'itère).
+	 * toucher et enregistre dans clonedIds l'ANCIEN état (référence read-only) — clonedIds
+	 * reste ainsi l'ensemble EXACT des entités possiblement mutées (le patch de hashs du
+	 * nœud l'itère, le recompute-set du scoring compare contre ses valeurs).
 	 */
 	static ensureCloned(EveryStats, id, clonedIds) {
 		if (!(id in clonedIds)) {
-			EveryStats[id] = cloneEntityForSim(EveryStats[id], id == Me)
-			clonedIds[id] = true
+			var parentStat = EveryStats[id]
+			EveryStats[id] = cloneEntityForSim(parentStat, id == Me)
+			clonedIds[id] = parentStat
 		}
 		return EveryStats[id]
 	}
