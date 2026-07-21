@@ -179,8 +179,8 @@ class ActionSuite {
 			if (Workspace == null) Workspace = clone(State, 1)
 			var candidate = NodeClass.ActionToNodeInTree(act, Workspace, from, MyWalkCells, cost, Info, item, act.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE)
 			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, Workspace, ParentScore, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, MySide, Parent.POISON_KEY)
-			StateClass.restoreWorkspace(Workspace, candidate.CLONED)
-			candidate.CLONED = null
+			StateClass.restoreWorkspace(Workspace, candidate.ENTITY_DELTAS)
+			candidate.ENTITY_DELTAS = null
 			var deltaFromParent = candidateScore - ParentScore
 
 			if (deltaFromParent > BestDeltaFromParent) {
@@ -217,10 +217,10 @@ class ActionSuite {
 			if (Workspace == null) Workspace = clone(State, 1)
 			var node = NodeClass.ActionToNodeInTree(act, Workspace, act.From, MyWalkCells, pair[1], ITEMINFO[Item], Item, act.To, BaseHash, null, ParentTermNode, ParentContext, ParentHfp)
 			var nodeScore = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, ParentTermNode, ParentContext, ParentHfp, MySide, ParentPoisonKey)
-			// Scoring fait : le workspace redevient le State parent pour le candidat suivant,
-			// et CLONED est libéré (STATE_PATCH porte désormais les entités modifiées).
-			StateClass.restoreWorkspace(Workspace, node.CLONED)
-			node.CLONED = null
+			// Scoring fait : le State parent est restauré champ par champ pour le candidat
+			// suivant, et le journal est libéré (STATE_PATCH porte les patches scalaires).
+			StateClass.restoreWorkspace(Workspace, node.ENTITY_DELTAS)
+			node.ENTITY_DELTAS = null
 			var delta = nodeScore - ReferenceScore
 			if (delta <= BFS_DELTA_EPSILON) continue
 			push(Entries, [act, delta, node, nodeScore])

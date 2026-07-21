@@ -128,27 +128,131 @@ class StateClass {
 		return n
 	}
 
+	// ============================================================================
+	// SIMULATION TRANSACTIONNELLE — les EntityState du State parent sont mutés
+	// TEMPORAIREMENT, chaque champ écrit journalise son ancienne valeur, puis tout est
+	// restauré. Aucun clone d'entité sur le chemin candidat.
+	//
+	// CONTRAT ABSOLU : toute écriture simulée sur une entité PRÉEXISTANTE doit être
+	// précédée de touchField(stat, DELTA_X, stat.X) — la barrière capture l'ancienne
+	// valeur AVANT la mutation. Une écriture non instrumentée corrompt définitivement
+	// l'état parent et toutes les branches sœurs. Les LECTURES restent directes
+	// (stat.LIFE, stat.STRENGTH...) : aucun getter n'est introduit.
+	// Seules écritures non instrumentées autorisées : constructeurs d'état réel,
+	// construction d'un BulbState neuf, et les helpers centraux ci-dessous.
+	// ============================================================================
+
 	/*
-	 * LE clone de simulation — source unique. Les containers sont PARTAGÉS par défaut :
-	 * personne n'écrit INVENTORY ni BASE_STATS pendant la sim ; EFFECTS est partagé
-	 * mais JAMAIS muté en place — toute modification (remplacement, mort du caster, revive)
-	 * REBINDE un tableau neuf sur le clone, le parent garde le sien. COOLDOWNS / USES (les
-	 * deux seuls containers écrits en sim, Me only) deviennent des OVERLAYS différentiels :
-	 * le clone de Me ne porte que ses écritures locales, les valeurs héritées se résolvent
-	 * en remontant ITEM_STATE_PARENT (chaîne immuable — cooldownOf/usesOf). Si un jour un
-	 * effet mute un container d'une CIBLE en place, le deep-clone se fait ICI (point
-	 * unique), jamais au site de l'effet.
+	 * Barrière d'écriture : journalise l'ancienne valeur du champ la PREMIÈRE fois qu'il est
+	 * écrit dans l'action courante, et capture au passage les contributions du parent aux
+	 * hashs dont ce champ est un input (elles ne seront plus reconstructibles ensuite).
+	 * Appels suivants sur le même champ : un test de bit, rien d'autre.
+	 * Entité non suivie (ACTIVE_DELTA null) : no-op — c'est le cas des entités neuves
+	 * (summon), dont l'objet complet est déjà porté par le delta.
 	 */
-	static cloneEntityForSim(stat, isMe) {
-		var c = clone(stat, 1)                    // scalaires copiés, containers partagés
-		if (isMe) {
-			c.ITEM_STATE_PARENT = stat
-			c.COOLDOWNS = [: ]
-			c.USES = [: ]
+	static touchField(stat, field, oldValue) {
+		var d = stat.ACTIVE_DELTA
+		if (d == null) return;
+		var bit = 1 << field
+		if (d.TOUCHED_MASK & bit) return;
+		d.TOUCHED_MASK |= bit
+		push(d.TOUCHED_FIELDS, field)
+		d.OLD_VALUES[field] = oldValue
+		// Contributions ANCIENNES : capturées avant la toute première mutation d'un de leurs
+		// inputs. Me est exclu des trois hashs (Node ne les lui calcule jamais) mais garde son
+		// fingerprint de fuite.
+		if (stat.ID == Me) {
+			if (!d.HAS_OLD_WALK_FP) {
+				d.OLD_WALK_FP = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(stat)
+				d.HAS_OLD_WALK_FP = true
+			}
+			return;
 		}
-		// CAP_MEMO / TLSQ_MEMO : COPIÉS par clone(stat, 1) puis VALIDÉS après l'action
-		// (diffMaskOf dans la boucle de masque du Node) — plus d'invalidation au clonage.
-		return c
+		if ((bit & DELTA_MASK_BASE) && !d.HAS_OLD_BASE) {
+			d.OLD_BASE = baseContribution(stat, stat.ID)
+			d.HAS_OLD_BASE = true
+		}
+		if ((bit & DELTA_MASK_CONTEXT) && !d.HAS_OLD_CONTEXT) {
+			d.OLD_CONTEXT = DeltaClass.contextContribution(stat, stat.ID)
+			d.HAS_OLD_CONTEXT = true
+		}
+		if ((bit & DELTA_MASK_HFP) && !d.HAS_OLD_HFP) {
+			d.OLD_HFP = HealClass.healerContributionOf(stat, stat.ID)
+			d.HAS_OLD_HFP = true
+		}
+	}
+
+	/* Valeur courante d'un champ suivi — utilisée par la finalisation, la restauration et la
+	 * matérialisation UNIQUEMENT (jamais sur un chemin de lecture chaud). */
+	static readField(stat, field) {
+		if (field == DELTA_CELL) return stat.CELL
+		if (field == DELTA_LIFE) return stat.LIFE
+		if (field == DELTA_TOTAL_LIFE) return stat.TOTAL_LIFE
+		if (field == DELTA_STRENGTH) return stat.STRENGTH
+		if (field == DELTA_WISDOM) return stat.WISDOM
+		if (field == DELTA_AGILITY) return stat.AGILITY
+		if (field == DELTA_RESISTANCE) return stat.RESISTANCE
+		if (field == DELTA_SCIENCE) return stat.SCIENCE
+		if (field == DELTA_MAGIC) return stat.MAGIC
+		if (field == DELTA_MP) return stat.MP
+		if (field == DELTA_TOTAL_MP) return stat.TOTAL_MP
+		if (field == DELTA_TP) return stat.TP
+		if (field == DELTA_TOTAL_TP) return stat.TOTAL_TP
+		if (field == DELTA_ABSOLUTE_SHIELD) return stat.ABSOLUTE_SHIELD
+		if (field == DELTA_RELATIVE_SHIELD) return stat.RELATIVE_SHIELD
+		if (field == DELTA_DAMAGE_RETURN) return stat.DAMAGE_RETURN
+		if (field == DELTA_POWER) return stat.POWER
+		if (field == DELTA_WEAPON) return stat.WEAPON
+		if (field == DELTA_EFFECTS) return stat.EFFECTS
+		if (field == DELTA_POISON) return stat.POISON
+		if (field == DELTA_POISON_OVER_TIME) return stat.POISON_OVER_TIME
+		if (field == DELTA_AFTEREFFECT) return stat.AFTEREFFECT
+		if (field == DELTA_AFTEREFFECT_OVER_TIME) return stat.AFTEREFFECT_OVER_TIME
+		if (field == DELTA_HEAL) return stat.HEAL
+		if (field == DELTA_HEAL_OVER_TIME) return stat.HEAL_OVER_TIME
+		if (field == DELTA_TURN_ORDER) return stat.TURN_ORDER
+		if (field == DELTA_COOLDOWNS) return stat.COOLDOWNS
+		if (field == DELTA_USES) return stat.USES
+		if (field == DELTA_ITEM_STATE_PARENT) return stat.ITEM_STATE_PARENT
+		if (field == DELTA_FREQUENCY) return stat.FREQUENCY
+		if (field == DELTA_CAP_MEMO) return stat.CAP_MEMO
+		return stat.TLSQ_MEMO   // DELTA_TLSQ_MEMO
+	}
+
+	/* Écrit un champ suivi — finalisation/restauration/matérialisation UNIQUEMENT. */
+	static writeField(stat, field, value) {
+		if (field == DELTA_CELL) { stat.CELL = value ; return; }
+		if (field == DELTA_LIFE) { stat.LIFE = value ; return; }
+		if (field == DELTA_TOTAL_LIFE) { stat.TOTAL_LIFE = value ; return; }
+		if (field == DELTA_STRENGTH) { stat.STRENGTH = value ; return; }
+		if (field == DELTA_WISDOM) { stat.WISDOM = value ; return; }
+		if (field == DELTA_AGILITY) { stat.AGILITY = value ; return; }
+		if (field == DELTA_RESISTANCE) { stat.RESISTANCE = value ; return; }
+		if (field == DELTA_SCIENCE) { stat.SCIENCE = value ; return; }
+		if (field == DELTA_MAGIC) { stat.MAGIC = value ; return; }
+		if (field == DELTA_MP) { stat.MP = value ; return; }
+		if (field == DELTA_TOTAL_MP) { stat.TOTAL_MP = value ; return; }
+		if (field == DELTA_TP) { stat.TP = value ; return; }
+		if (field == DELTA_TOTAL_TP) { stat.TOTAL_TP = value ; return; }
+		if (field == DELTA_ABSOLUTE_SHIELD) { stat.ABSOLUTE_SHIELD = value ; return; }
+		if (field == DELTA_RELATIVE_SHIELD) { stat.RELATIVE_SHIELD = value ; return; }
+		if (field == DELTA_DAMAGE_RETURN) { stat.DAMAGE_RETURN = value ; return; }
+		if (field == DELTA_POWER) { stat.POWER = value ; return; }
+		if (field == DELTA_WEAPON) { stat.WEAPON = value ; return; }
+		if (field == DELTA_EFFECTS) { stat.EFFECTS = value ; return; }
+		if (field == DELTA_POISON) { stat.POISON = value ; return; }
+		if (field == DELTA_POISON_OVER_TIME) { stat.POISON_OVER_TIME = value ; return; }
+		if (field == DELTA_AFTEREFFECT) { stat.AFTEREFFECT = value ; return; }
+		if (field == DELTA_AFTEREFFECT_OVER_TIME) { stat.AFTEREFFECT_OVER_TIME = value ; return; }
+		if (field == DELTA_HEAL) { stat.HEAL = value ; return; }
+		if (field == DELTA_HEAL_OVER_TIME) { stat.HEAL_OVER_TIME = value ; return; }
+		if (field == DELTA_TURN_ORDER) { stat.TURN_ORDER = value ; return; }
+		if (field == DELTA_COOLDOWNS) { stat.COOLDOWNS = value ; return; }
+		if (field == DELTA_USES) { stat.USES = value ; return; }
+		if (field == DELTA_ITEM_STATE_PARENT) { stat.ITEM_STATE_PARENT = value ; return; }
+		if (field == DELTA_FREQUENCY) { stat.FREQUENCY = value ; return; }
+		if (field == DELTA_CAP_MEMO) { stat.CAP_MEMO = value ; return; }
+		stat.TLSQ_MEMO = value   // DELTA_TLSQ_MEMO
 	}
 
 	// ============================================================================
@@ -208,173 +312,161 @@ class StateClass {
 	}
 
 	/*
-	 * Masque différentiel d'une entité clonée, APRÈS l'action — SOURCE UNIQUE de la
-	 * comparaison parent/clone (absorbe l'ancien validateDerivedMemos : les mémos dérivés
-	 * sont invalidés ICI, sur les mêmes champs, jamais comparés deux fois).
-	 *   DIFF_BASE       : la contribution BaseHash peut réellement changer — vivant<->mort,
-	 *                     ou deux vivants et cellule différente (deux morts : jamais).
-	 *   DIFF_CONTEXT    : un input EFFECTIF de contextContribution a changé — vivant/mort,
-	 *                     cellule, classe critique (deux seuils d'AGI), STR/MAG/MP/TP
-	 *                     clampés à 0, POWER. LIFE restant vivante, AGI sans franchir de
-	 *                     seuil ou STR négative des deux côtés : inchangé.
-	 *   DIFF_HFP        : un input EFFECTIF de healerContribution a changé — vivant/mort,
-	 *                     cellule, max(0, WIS+100), TP/MP totaux, classe critique (la
-	 *                     qualification de healer est immuable pour le replan).
-	 *   DIFF_LOCAL_TERM : un input LOCAL du terme de scoring a bougé — LIFE, TOTAL_LIFE
-	 *                     (plafond de soin Delta), CELL, DAMAGE_RETURN, six flux
-	 *                     périodiques, cooldown effectif d'Antidote, et tout input de
-	 *                     capability (même effet que l'ancienne invalidation de CAP_MEMO).
-	 * Mémos : TLSQ_MEMO <- TOTAL_LIFE seule ; CAP_MEMO <- les dix inputs de capability
-	 * (STR/MAG/WIS/SCI/AGI/RES/TOTAL_TP/TOTAL_MP/ABS/REL). Un mémo déjà null reste null.
-	 * isMe : Me est cloné à CHAQUE nœud mais exclu des trois hashs (Node le saute juste
-	 * après) -> la fonction rend son masque dès la partie locale, sans jamais calculer
-	 * BASE/CONTEXT/HFP ni leurs formes effectives. Ses checks supplémentaires (BaseHash
-	 * parent/enfant, fingerprint WalkCells) vivent dans Node, après le hash final.
-	 * parentStat null (summon né en branche) -> tout dirty, mémos laissés tels quels.
+	 * Ouvre le SUIVI d'une entité : aucun clone, aucun rebind de la map — l'objet du parent
+	 * est muté temporairement et son journal enregistre ce qui change. Remplace l'ancien
+	 * l'ancien ensureCloned et garde sa signature de retour (l'EntityState sur lequel écrire).
+	 * entityDeltas[id] = son EntityDeltaClass.
 	 */
-	static diffMaskOf(parentStat, childStat, isMe) {
-		if (parentStat == null) return DIFF_BASE | DIFF_CONTEXT | DIFF_HFP | DIFF_LOCAL_TERM
-		var mask = 0
-		var cellChanged = parentStat.CELL != childStat.CELL
-
-		// ---- Partie LOCALE (toutes les entités) ----
-		var totalLifeChanged = parentStat.TOTAL_LIFE != childStat.TOTAL_LIFE
-		if (totalLifeChanged && childStat.TLSQ_MEMO != null) childStat.TLSQ_MEMO = null
-
-		var capChanged = parentStat.STRENGTH != childStat.STRENGTH
-			|| parentStat.MAGIC != childStat.MAGIC
-			|| parentStat.WISDOM != childStat.WISDOM
-			|| parentStat.SCIENCE != childStat.SCIENCE
-			|| parentStat.AGILITY != childStat.AGILITY
-			|| parentStat.RESISTANCE != childStat.RESISTANCE
-			|| parentStat.TOTAL_TP != childStat.TOTAL_TP
-			|| parentStat.TOTAL_MP != childStat.TOTAL_MP
-			|| parentStat.ABSOLUTE_SHIELD != childStat.ABSOLUTE_SHIELD
-			|| parentStat.RELATIVE_SHIELD != childStat.RELATIVE_SHIELD
-		if (capChanged && childStat.CAP_MEMO != null) childStat.CAP_MEMO = null
-
-		// Antidote : SEUL Me peut voir son cooldown bouger en simulation — les setters
-		// n'écrivent que sur son patch local, neuf et vide à chaque nœud. Une entrée
-		// présente dans ce patch = une écriture de CE nœud ; absente = valeur héritée,
-		// donc identique au parent. Un non-Me ne paie aucune remontée de chaîne.
-		// INVARIANT : si un futur effet simulé modifie le cooldown d'une CIBLE non-Me,
-		// il devra étendre cette détection (sinon le terme de la cible resterait stale).
-		var antidoteChanged = false
-		if (isMe && (CHIP_ANTIDOTE in childStat.COOLDOWNS)) {
-			antidoteChanged = childStat.COOLDOWNS[CHIP_ANTIDOTE] != cooldownOf(parentStat, CHIP_ANTIDOTE)
+	static ensureTracked(EveryStats, id, entityDeltas) {
+		var stat = EveryStats[id]
+		if (!(id in entityDeltas)) {
+			var d = new EntityDeltaClass(id)
+			stat.ACTIVE_DELTA = d
+			entityDeltas[id] = d
 		}
-
-		if (capChanged || totalLifeChanged || cellChanged || antidoteChanged
-			|| parentStat.LIFE != childStat.LIFE
-			|| parentStat.DAMAGE_RETURN != childStat.DAMAGE_RETURN
-			|| parentStat.POISON != childStat.POISON
-			|| parentStat.POISON_OVER_TIME != childStat.POISON_OVER_TIME
-			|| parentStat.AFTEREFFECT != childStat.AFTEREFFECT
-			|| parentStat.AFTEREFFECT_OVER_TIME != childStat.AFTEREFFECT_OVER_TIME
-			|| parentStat.HEAL != childStat.HEAL
-			|| parentStat.HEAL_OVER_TIME != childStat.HEAL_OVER_TIME) {
-			mask |= DIFF_LOCAL_TERM
-		}
-
-		// Me est exclu des trois hashs (Node le saute juste après) : rien d'autre à calculer.
-		if (isMe) return mask
-
-		// ---- Contributions (non-Me seulement) ----
-		var oldAlive = parentStat.LIFE > 0
-		var newAlive = childStat.LIFE > 0
-		var aliveChanged = oldAlive != newAlive
-		var bothAlive = oldAlive && newAlive
-
-		if (aliveChanged || (bothAlive && cellChanged)) mask |= DIFF_BASE
-
-		// Formes EFFECTIVES, calculées UNE fois et partagées par les deux contributions.
-		// Court-circuit exact : les dix inputs de capability contiennent AGI, STR, MAG, WIS,
-		// TOTAL_TP et TOTAL_MP — capChanged faux => classes critiques et valeurs clampées
-		// forcément identiques, seules la cellule et POWER peuvent encore bouger.
-		var contextStatsChanged = false
-		var healStatsChanged = false
-		if (capChanged) {
-			var oldCrit = (parentStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((parentStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-			var newCrit = (childStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((childStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-			var critChanged = oldCrit != newCrit
-			var effectiveTotalMpChanged = max(0, parentStat.TOTAL_MP) != max(0, childStat.TOTAL_MP)
-			var effectiveTotalTpChanged = max(0, parentStat.TOTAL_TP) != max(0, childStat.TOTAL_TP)
-			contextStatsChanged = critChanged || effectiveTotalMpChanged || effectiveTotalTpChanged
-				|| max(0, parentStat.STRENGTH) != max(0, childStat.STRENGTH)
-				|| max(0, parentStat.MAGIC) != max(0, childStat.MAGIC)
-			healStatsChanged = critChanged || effectiveTotalTpChanged || effectiveTotalMpChanged
-				|| max(0, parentStat.WISDOM + 100) != max(0, childStat.WISDOM + 100)
-		}
-
-		if (aliveChanged || (bothAlive && (cellChanged || contextStatsChanged
-			|| parentStat.POWER != childStat.POWER))) {
-			mask |= DIFF_CONTEXT
-		}
-
-		if (aliveChanged || (bothAlive && (cellChanged || healStatsChanged))) mask |= DIFF_HFP
-
-		return mask
+		return stat
 	}
 
 	/*
-	 * Ouvre la simulation d'une action DANS le workspace (map extérieure réutilisée par tous
-	 * les candidats d'un même parent, restaurée après chacun) : Me SEUL est cloné d'office —
-	 * sa cellule, ses TP/MP, son arme, ses cooldowns et ses uses bougent à chaque action. Les
-	 * cibles réellement touchées sont clonées PARESSEUSEMENT par getConsequences (ensureCloned
-	 * au premier effet applicable). clonedIds[id] = l'ANCIEN EntityState (référence read-only,
-	 * null pour une entité NÉE dans l'action) — il pilote la capture du patch ET la
-	 * restauration du workspace.
+	 * Ouvre la simulation d'une action : Me est suivi d'office (sa cellule, ses TP/MP, son
+	 * arme, ses cooldowns et ses uses bougent à chaque action) et reçoit ses overlays
+	 * d'inventaire. Les cibles réellement touchées sont suivies PARESSEUSEMENT par
+	 * getConsequences (ensureTracked au premier effet applicable).
+	 * Overlays : on ne peut pas pointer ITEM_STATE_PARENT vers Me lui-même (ses maps sont
+	 * remplacées juste après : ce serait une boucle) — un maillon immuable porte les trois
+	 * anciennes références, et cooldownOf/usesOf le traversent sans changer de sémantique.
 	 */
-	static beginActionOnWorkspace(Workspace, clonedIds) {
-		var parentMe = Workspace[Me]
-		Workspace[Me] = cloneEntityForSim(parentMe, true)
-		clonedIds[Me] = parentMe
+	static beginActionOnWorkspace(Workspace, entityDeltas) {
+		var meStat = ensureTracked(Workspace, Me, entityDeltas)
+		touchField(meStat, DELTA_COOLDOWNS, meStat.COOLDOWNS)
+		touchField(meStat, DELTA_USES, meStat.USES)
+		touchField(meStat, DELTA_ITEM_STATE_PARENT, meStat.ITEM_STATE_PARENT)
+		var link = new ItemStateLinkClass(meStat.COOLDOWNS, meStat.USES, meStat.ITEM_STATE_PARENT)
+		meStat.COOLDOWNS = [: ]
+		meStat.USES = [: ]
+		meStat.ITEM_STATE_PARENT = link
 	}
 
 	/*
-	 * Remet le workspace EXACTEMENT dans l'état du parent, après simulation ET scoring d'un
-	 * candidat : chaque entité touchée retrouve sa référence d'avant l'action, chaque entité
-	 * née dans l'action disparaît. À appeler sur TOUS les chemins (candidat retenu, rejeté
-	 * sous epsilon, gagnant ou perdant du chemin ScoredCache, fallback de collision d'id) —
-	 * un seul oubli corromprait tous les candidats suivants du même parent.
+	 * Rebind d'une ENTRÉE de la map extérieure (summon neuf, ou remplacement complet) —
+	 * SOURCE UNIQUE, enregistrée comme telle : naissance -> retrait à la restauration,
+	 * remplacement -> ancienne référence remise. Un objet complet n'a pas de journal champ
+	 * par champ (il n'a pas de parent sur lequel appliquer un patch).
 	 */
-	static restoreWorkspace(Workspace, clonedIds) {
-		for (var id: var oldStat in clonedIds) {
-			if (oldStat == null) mapRemove(Workspace, id)
-			else Workspace[id] = oldStat
+	static replaceEntityInWorkspace(Workspace, id, newEntity, entityDeltas) {
+		var d = null
+		if (id in entityDeltas) {
+			d = entityDeltas[id]
+		} else {
+			d = new EntityDeltaClass(id)
+			entityDeltas[id] = d
+		}
+		// Une entité déjà SUIVIE puis remplacée garde son journal : la restauration remettra
+		// d'abord ses champs, puis sa référence (elle a pu être mutée avant le remplacement).
+		if (!d.IS_NEW && !d.IS_REPLACEMENT) {
+			if (id in Workspace) {
+				d.IS_REPLACEMENT = true
+				d.OLD_ENTITY = Workspace[id]
+			} else {
+				d.IS_NEW = true
+			}
+		}
+		d.NEW_ENTITY = newEntity
+		Workspace[id] = newEntity
+	}
+
+	/*
+	 * Fin de l'action, AVANT le scoring : ne retient que les champs RÉELLEMENT différents,
+	 * en valeurs ABSOLUES finales. Un champ touché puis revenu à sa valeur d'origine
+	 * disparaît du patch. Ne parcourt que TOUCHED_FIELDS, jamais les 31 champs.
+	 */
+	static finalizeDeltas(Workspace, entityDeltas) {
+		for (var id: var d in entityDeltas) {
+			if (d.IS_NEW || d.IS_REPLACEMENT) continue   // objet complet : rien à comparer
+			var stat = Workspace[id]
+			for (var field in d.TOUCHED_FIELDS) {
+				// Les mémos ne sont pas des données sémantiques : ils sont restaurés sur le
+				// parent et recalculés sur l'enfant matérialisé.
+				if (field == DELTA_CAP_MEMO || field == DELTA_TLSQ_MEMO) continue
+				var newValue = readField(stat, field)
+				if (newValue == d.OLD_VALUES[field]) continue
+				d.CHANGED_MASK |= 1 << field
+				push(d.CHANGED_FIELDS, field)
+				d.NEW_VALUES[field] = newValue
+			}
+			// Mémos dérivés : le scoring qui suit va les RECALCULER sur les valeurs
+			// temporaires et les écrire dans l'objet PARENT. On journalise donc l'ancien
+			// avant de l'invalider — sans quoi la restauration rendrait au parent un mémo
+			// calculé sur l'état de l'enfant. (Deuxième passe : touchField pousse dans
+			// TOUCHED_FIELDS, qu'on vient de parcourir.)
+			if (d.CHANGED_MASK & DELTA_MASK_CAPABILITY) {
+				touchField(stat, DELTA_CAP_MEMO, stat.CAP_MEMO)
+				stat.CAP_MEMO = null
+			}
+			if (d.CHANGED_MASK & (1 << DELTA_TOTAL_LIFE)) {
+				touchField(stat, DELTA_TLSQ_MEMO, stat.TLSQ_MEMO)
+				stat.TLSQ_MEMO = null
+			}
+		}
+	}
+
+	/*
+	 * Remet le State parent EXACTEMENT dans son état d'avant le candidat, après simulation ET
+	 * scoring : chaque champ touché retrouve son ancienne valeur, les mémos leur valeur
+	 * parente, ACTIVE_DELTA redevient null, une naissance est retirée de la map et un
+	 * remplacement retrouve sa référence. À appeler sur TOUS les chemins — un seul oubli
+	 * corromprait le parent et toutes les branches suivantes.
+	 */
+	static restoreWorkspace(Workspace, entityDeltas) {
+		for (var id: var d in entityDeltas) {
+			if (d.IS_NEW) {
+				mapRemove(Workspace, id)
+				continue
+			}
+			if (d.IS_REPLACEMENT) {
+				// L'ancienne entité a pu être mutée AVANT d'être remplacée : ses champs
+				// touchés sont restaurés avant que sa référence ne reprenne sa place.
+				var old = d.OLD_ENTITY
+				for (var field in d.TOUCHED_FIELDS) writeField(old, field, d.OLD_VALUES[field])
+				old.ACTIVE_DELTA = null
+				Workspace[id] = old
+				continue
+			}
+			var stat = Workspace[id]
+			for (var field in d.TOUCHED_FIELDS) writeField(stat, field, d.OLD_VALUES[field])
+			stat.ACTIVE_DELTA = null
 		}
 	}
 
 	/*
 	 * État complet d'un nœud, matérialisé PARESSEUSEMENT et caché : un candidat ne porte que
-	 * son patch (STATE_PATCH) et son état parent (STATE_PARENT) ; la map complète n'est
-	 * reconstruite que si le nœud est réellement développé. Les morts restent dans le State
-	 * (LIFE <= 0), un summon est une simple entrée neuve du patch, et les références
-	 * EntityState des patches sont réutilisées telles quelles (aucun reclonage).
+	 * ses patches scalaires (STATE_PATCH) et son état parent (STATE_PARENT). Seules les
+	 * entités modifiées par CE nœud sont clonées, puis reçoivent leurs overrides ABSOLUS ;
+	 * tout le reste est partagé avec le parent. Les morts restent dans le State (LIFE <= 0),
+	 * une entité née ou remplacée est insérée telle quelle.
 	 */
 	static materializeNodeState(node) {
 		if (node.END_STATS != null) return node.END_STATS
 		var _final = clone(materializeNodeState(node.STATE_PARENT), 1)
-		for (var id: var stat in node.STATE_PATCH) _final[id] = stat
+		for (var id: var d in node.STATE_PATCH) {
+			if (d.NEW_ENTITY != null) {
+				_final[id] = d.NEW_ENTITY   // naissance ou remplacement : objet complet
+				continue
+			}
+			// Touchée puis revenue à l'identique : rien à appliquer, l'entité reste PARTAGÉE
+			// avec le parent (aucun clone à payer).
+			if (d.CHANGED_MASK == 0) continue
+			var c = clone(_final[id], 1)    // scalaires copiés, containers partagés
+			for (var field in d.CHANGED_FIELDS) writeField(c, field, d.NEW_VALUES[field])
+			// Mémos dérivés : invalidés si un de leurs inputs a changé, recalculés à la
+			// demande sur l'enfant (jamais transportés depuis la simulation).
+			if (d.CHANGED_MASK & DELTA_MASK_CAPABILITY) c.CAP_MEMO = null
+			if (d.CHANGED_MASK & (1 << DELTA_TOTAL_LIFE)) c.TLSQ_MEMO = null
+			c.ACTIVE_DELTA = null
+			_final[id] = c
+		}
 		node.END_STATS = _final
 		return _final
-	}
-
-	/*
-	 * Clone-on-write pour les effets de bord des kills (cascade de summons, retrait de buffs,
-	 * procs d'armes) : ils mutent des entités HORS du set pré-cloné, donc des objets PARTAGÉS
-	 * avec l'état parent — les muter en place corromprait toute la recherche. Clone au premier
-	 * toucher et enregistre dans clonedIds l'ANCIEN état (référence read-only) — clonedIds
-	 * reste ainsi l'ensemble EXACT des entités possiblement mutées (le patch de hashs du
-	 * nœud l'itère, le recompute-set du scoring compare contre ses valeurs).
-	 */
-	static ensureCloned(EveryStats, id, clonedIds) {
-		if (!(id in clonedIds)) {
-			var parentStat = EveryStats[id]
-			EveryStats[id] = cloneEntityForSim(parentStat, id == Me)
-			clonedIds[id] = parentStat
-		}
-		return EveryStats[id]
 	}
 
 	/*

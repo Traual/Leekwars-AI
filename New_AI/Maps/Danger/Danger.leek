@@ -141,7 +141,13 @@ class DangerClass {
 			BaseTp = ComboWithVulne.EndTp
 			ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses)
 		}
-		var entry = [_final, TargetStats]   // TargetStats rebindé = l'état post-combo
+		// SNAPSHOT obligatoire : sans vulné jouée, TargetStats est encore l'objet VIVANT de
+		// l'appelant — donc, pendant le scoring d'un candidat, une entité du State mutée
+		// TEMPORAIREMENT. Ce cache est persistant au tour et sa clé fige les shields de la
+		// cible ; garder la référence ferait diverger la valeur de sa propre clé dès la
+		// restauration. Le clone ne coûte que sur un miss.
+		var entry = [_final, clone(TargetStats, 1)]   // état post-combo, figé
+		entry[1].ACTIVE_DELTA = null
 		COMBO_FROM_ITEM_AOE_CACHE[HashWithShield] = entry
 		return entry
 	}
@@ -218,6 +224,10 @@ class DangerClass {
 	 * Targetabilité PAR EFFET (le moteur filtre chaque effet, Attack.java) : un effet qui ne
 	 * touche pas ce profil de cible (masques eff[4]) ne modifie pas l'état approximatif. */
 	static getRoughVulneConsequences(TargetStats, Infos, CritFactor, CasterStats) {
+		// Clone LOCAL d'une cible qui peut être temporairement suivie par la simulation : on
+		// coupe son journal, sinon les mutations approximatives ci-dessous seraient prises
+		// pour des écritures de l'action en cours.
+		TargetStats.ACTIVE_DELTA = null
 		for (var eff in Infos.EFFECTS) {
 			var EffType = eff[0]
 			if (!(EffType in MapChange)) continue

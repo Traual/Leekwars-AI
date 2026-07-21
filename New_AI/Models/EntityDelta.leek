@@ -1,0 +1,90 @@
+/*
+ * EntityDelta : le JOURNAL des mutations d'une entité pendant la simulation d'UNE action.
+ *
+ * Le State n'est plus cloné par candidat : les EntityState du parent sont mutés
+ * TEMPORAIREMENT, chaque champ écrit enregistre paresseusement son ancienne valeur ici, le
+ * scoring lit ces valeurs temporaires, puis tout est restauré à l'identique. Ce qui SURVIT
+ * dans le nœud est le patch des champs réellement DIFFÉRENTS, en valeurs ABSOLUES finales
+ * (LIFE = 120, jamais LIFE + 100) — ce qui rend exacts les caps, resets, remplacements,
+ * morts et résurrections.
+ *
+ * Deux masques, deux listes, deux tableaux sparse — jamais de map par champ :
+ *   TOUCHED_* : ce que l'action a ÉCRIT (base de la restauration) ;
+ *   CHANGED_* : ce qui a réellement CHANGÉ (base du patch persistant et des hashs).
+ * Les listes évitent de balayer les 31 champs : finalisation, restauration et
+ * matérialisation ne parcourent QUE les champs concernés.
+ *
+ * Une entité NÉE dans l'action (summon) ou REMPLACÉE porte son objet complet dans
+ * NEW_ENTITY : aucun journal champ par champ n'a de sens pour elle.
+ */
+
+include("../includes.leek")
+
+class EntityDeltaClass {
+	ID
+	IS_NEW            // entité née dans l'action : restauration = retrait de la map
+	IS_REPLACEMENT    // entrée rebindée sur un id préexistant : restauration = ancienne référence
+	OLD_ENTITY        // référence d'origine (remplacement) — jamais mutée
+	NEW_ENTITY        // objet complet (naissance ou remplacement)
+
+	TOUCHED_MASK      // bit-set des champs écrits au moins une fois
+	TOUCHED_FIELDS    // leur liste, dans l'ordre du premier toucher
+	OLD_VALUES        // [DELTA_X -> valeur d'AVANT l'action] (sparse)
+
+	CHANGED_MASK      // bit-set des champs réellement différents après finalisation
+	CHANGED_FIELDS
+	NEW_VALUES        // [DELTA_X -> valeur ABSOLUE finale] (sparse)
+
+	// Contributions du PARENT aux trois hashs, capturées AVANT la première mutation d'un de
+	// leurs inputs (l'ancien EntityState n'existe plus : il n'y a rien à reconstruire).
+	OLD_BASE
+	OLD_CONTEXT
+	OLD_HFP
+	HAS_OLD_BASE
+	HAS_OLD_CONTEXT
+	HAS_OLD_HFP
+	// Fingerprint de fuite de Me, capturé avant sa première mutation (son terme en dépend).
+	OLD_WALK_FP
+	HAS_OLD_WALK_FP
+
+	constructor(id) {
+		this.ID = id
+		this.IS_NEW = false
+		this.IS_REPLACEMENT = false
+		this.OLD_ENTITY = null
+		this.NEW_ENTITY = null
+		this.TOUCHED_MASK = 0
+		this.TOUCHED_FIELDS = []
+		this.OLD_VALUES = [: ]
+		this.CHANGED_MASK = 0
+		this.CHANGED_FIELDS = []
+		this.NEW_VALUES = [: ]
+		this.OLD_BASE = 0
+		this.OLD_CONTEXT = 0
+		this.OLD_HFP = 0
+		this.HAS_OLD_BASE = false
+		this.HAS_OLD_CONTEXT = false
+		this.HAS_OLD_HFP = false
+		this.OLD_WALK_FP = 0
+		this.HAS_OLD_WALK_FP = false
+	}
+}
+
+/*
+ * Maillon d'inventaire : porte les références COOLDOWNS / USES / ITEM_STATE_PARENT que
+ * l'entité avait AVANT l'action. On ne peut pas pointer ITEM_STATE_PARENT vers l'entité
+ * elle-même (elle est mutée temporairement : ce serait une boucle sur des maps déjà
+ * remplacées) — ce maillon immuable joue ce rôle, et cooldownOf/usesOf le traversent sans
+ * changer de sémantique.
+ */
+class ItemStateLinkClass {
+	COOLDOWNS
+	USES
+	ITEM_STATE_PARENT
+
+	constructor(cooldowns, uses, parent) {
+		this.COOLDOWNS = cooldowns
+		this.USES = uses
+		this.ITEM_STATE_PARENT = parent
+	}
+}

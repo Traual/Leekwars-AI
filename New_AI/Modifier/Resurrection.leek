@@ -14,46 +14,70 @@ class ResurrectionClass {
 		this.SCORE = score
 	}
 
-	static Update(To, State, Resurrect_ID, clonedIds) {
+	static Update(To, State, Resurrect_ID, entityDeltas) {
 		if (Resurrect_ID == null) return;
 		// Clone-on-write du SEUL candidat (plus aucun préclonage des morts alliés) : il entre
-		// dans clonedIds, le patch incrémental BaseHash/context/HFP voit son passage
+		// dans entityDeltas, le patch incrémental BaseHash/context/HFP voit son passage
 		// mort -> vivant, et le State parent garde son cadavre intact.
-		var revived = StateClass.ensureCloned(State, Resurrect_ID, clonedIds)
+		var revived = StateClass.ensureTracked(State, Resurrect_ID, entityDeltas)
 
 		// Le moteur ressuscite PROPRE : die() retire tous les effets SUR le mort (stats de
 		// base, zéro shield/poison/DR). Reset par champs — BASE_STATS EST la base vraie.
 		// EFFECTS : REBINDÉ sur un tableau neuf (pas muté — le container est partagé avec les
 		// états parents, mais le revived est un clone frais : l'assignation ne touche que lui).
 		// Plus d'effets fantômes pour un ReplacementChangeStats ultérieur.
+		StateClass.touchField(revived, DELTA_EFFECTS, revived.EFFECTS)
 		revived.EFFECTS = []
+		StateClass.touchField(revived, DELTA_POISON, revived.POISON)
 		revived.POISON = 0
+		StateClass.touchField(revived, DELTA_POISON_OVER_TIME, revived.POISON_OVER_TIME)
 		revived.POISON_OVER_TIME = 0
+		StateClass.touchField(revived, DELTA_AFTEREFFECT, revived.AFTEREFFECT)
 		revived.AFTEREFFECT = 0
+		StateClass.touchField(revived, DELTA_AFTEREFFECT_OVER_TIME, revived.AFTEREFFECT_OVER_TIME)
 		revived.AFTEREFFECT_OVER_TIME = 0
+		StateClass.touchField(revived, DELTA_HEAL, revived.HEAL)
 		revived.HEAL = 0
+		StateClass.touchField(revived, DELTA_HEAL_OVER_TIME, revived.HEAL_OVER_TIME)
 		revived.HEAL_OVER_TIME = 0
+		StateClass.touchField(revived, DELTA_ABSOLUTE_SHIELD, revived.ABSOLUTE_SHIELD)
 		revived.ABSOLUTE_SHIELD = 0
+		StateClass.touchField(revived, DELTA_RELATIVE_SHIELD, revived.RELATIVE_SHIELD)
 		revived.RELATIVE_SHIELD = 0
+		StateClass.touchField(revived, DELTA_DAMAGE_RETURN, revived.DAMAGE_RETURN)
 		revived.DAMAGE_RETURN = 0
+		StateClass.touchField(revived, DELTA_POWER, revived.POWER)
 		revived.POWER = 0
 		var bases = revived.BASE_STATS   // map IMMUABLE, partagée avec les états parents
+		StateClass.touchField(revived, DELTA_STRENGTH, revived.STRENGTH)
 		revived.STRENGTH   = bases[STAT_STRENGTH]
+		StateClass.touchField(revived, DELTA_WISDOM, revived.WISDOM)
 		revived.WISDOM     = bases[STAT_WISDOM]
+		StateClass.touchField(revived, DELTA_AGILITY, revived.AGILITY)
 		revived.AGILITY    = bases[STAT_AGILITY]
+		StateClass.touchField(revived, DELTA_MAGIC, revived.MAGIC)
 		revived.MAGIC      = bases[STAT_MAGIC]
+		StateClass.touchField(revived, DELTA_RESISTANCE, revived.RESISTANCE)
 		revived.RESISTANCE = bases[STAT_RESISTANCE]
+		StateClass.touchField(revived, DELTA_SCIENCE, revived.SCIENCE)
 		revived.SCIENCE    = bases[STAT_SCIENCE]
+		StateClass.touchField(revived, DELTA_TOTAL_MP, revived.TOTAL_MP)
 		revived.TOTAL_MP = bases[STAT_MP]
+		StateClass.touchField(revived, DELTA_MP, revived.MP)
 		revived.MP       = bases[STAT_MP]
+		StateClass.touchField(revived, DELTA_TOTAL_TP, revived.TOTAL_TP)
 		revived.TOTAL_TP = bases[STAT_TP]
+		StateClass.touchField(revived, DELTA_TP, revived.TP)
 		revived.TP       = bases[STAT_TP]
 
 		// Vie ressuscitée engine-exacte : source unique reviveTotalLife/reviveLife (l'ordre
 		// des arrondis du moteur y est répliqué), partagée avec getResurrectionScore.
 		var newTotalLife = reviveTotalLife(revived.TOTAL_LIFE, State)
+		StateClass.touchField(revived, DELTA_TOTAL_LIFE, revived.TOTAL_LIFE)
 		revived.TOTAL_LIFE = newTotalLife
+		StateClass.touchField(revived, DELTA_LIFE, revived.LIFE)
 		revived.LIFE = reviveLife(newTotalLife)
+		StateClass.touchField(revived, DELTA_CELL, revived.CELL)
 		revived.CELL = To
 
 		// Ordre de tour fidèle au moteur : le ressuscité est réinséré juste AVANT la prochaine
@@ -79,6 +103,7 @@ class ResurrectionClass {
 				}
 			}
 		}
+		StateClass.touchField(revived, DELTA_TURN_ORDER, revived.TURN_ORDER)
 		revived.TURN_ORDER = (followerOrder != null) ? followerOrder - 0.25 : maxOrder + 1
 	}
 

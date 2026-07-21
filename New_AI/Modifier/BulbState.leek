@@ -19,6 +19,7 @@ class BulbState {
 	COOLDOWNS
 	USES
 	ITEM_STATE_PARENT   // null = racine (même contrat qu'EntityState) — un bulbe n'est jamais patché
+	ACTIVE_DELTA        // journal de mutations en cours (même contrat qu'EntityState)
 	SIDE
 	EVERYONE
 	IS_ALLY
@@ -70,6 +71,7 @@ class BulbState {
 		this.ID = id
 		this.INVENTORY = getBulbChips(Chip)
 		this.ITEM_STATE_PARENT = null   // racine : maps complètes
+		this.ACTIVE_DELTA = null        // aucune simulation en cours
 		this.COOLDOWNS = [: ]
 		this.USES = [: ]
 		for (var i in this.INVENTORY) {

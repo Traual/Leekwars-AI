@@ -18,11 +18,16 @@ class EntityStateClass extends EntityClass {
 	// sur un clone simulé de Me, pointe l'état précédent et les maps ne portent que les
 	// patches locaux (résolution par StateClass.cooldownOf/usesOf, chaîne immuable).
 	ITEM_STATE_PARENT
+	// Journal des mutations en cours (EntityDeltaClass), posé par StateClass.ensureTracked le
+	// temps d'UNE action simulée puis remis à null par la restauration. TOUJOURS null hors
+	// simulation et sur un nœud conservé — il n'est jamais copié dans un patch.
+	ACTIVE_DELTA
 	EFFECTS
 	// Memos de champs dérivés (scoring), calculés paresseusement. COPIÉS au clone puis
-	// VALIDÉS après l'action (StateClass.diffMaskOf, appelé par Node sur chaque
-	// cloné) : un clone dont les inputs n'ont pas bougé garde ses mémos. Écrire un memo sur
-	// un objet PARTAGÉ est sain : partage => stats identiques => même valeur.
+	// INVALIDÉS après l'action quand un de leurs inputs a réellement changé
+	// (StateClass.finalizeDeltas journalise l'ancien avant de l'invalider, la restauration
+	// le rend au parent). Écrire un memo sur un objet PARTAGÉ non muté est sain :
+	// mêmes stats => même valeur dérivée.
 	CAP_MEMO    // ImportanceClass.capability(stat)
 	TLSQ_MEMO   // W_TOTAL_LIFE * sqrt(max(0, TOTAL_LIFE)) (terme hors cache de survivalValue)
 	// Six flux périodiques SÉPARÉS et POSITIFS (jamais de "poison négatif") :
@@ -58,6 +63,7 @@ class EntityStateClass extends EntityClass {
 		this.POWER = getPower(id)
 		this.WEAPON = getWeapon(id)
 		this.ITEM_STATE_PARENT = null   // état réel = racine : maps complètes
+		this.ACTIVE_DELTA = null        // aucune simulation en cours
 		this.COOLDOWNS = [: ]
 		this.USES = [: ]
 		for (var i in this.INVENTORY) {
