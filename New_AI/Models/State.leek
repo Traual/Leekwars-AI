@@ -226,42 +226,18 @@ class StateClass {
 	 *                     capability (même effet que l'ancienne invalidation de CAP_MEMO).
 	 * Mémos : TLSQ_MEMO <- TOTAL_LIFE seule ; CAP_MEMO <- les dix inputs de capability
 	 * (STR/MAG/WIS/SCI/AGI/RES/TOTAL_TP/TOTAL_MP/ABS/REL). Un mémo déjà null reste null.
-	 * Les checks propres à Me (BaseHash parent/enfant, fingerprint WalkCells) vivent dans
-	 * Node, après construction du hash final. parentStat null (summon né en branche) ->
-	 * tout dirty, mémos laissés tels quels (null d'origine).
+	 * isMe : Me est cloné à CHAQUE nœud mais exclu des trois hashs (Node le saute juste
+	 * après) -> la fonction rend son masque dès la partie locale, sans jamais calculer
+	 * BASE/CONTEXT/HFP ni leurs formes effectives. Ses checks supplémentaires (BaseHash
+	 * parent/enfant, fingerprint WalkCells) vivent dans Node, après le hash final.
+	 * parentStat null (summon né en branche) -> tout dirty, mémos laissés tels quels.
 	 */
-	static diffMaskOf(parentStat, childStat) {
+	static diffMaskOf(parentStat, childStat, isMe) {
 		if (parentStat == null) return DIFF_BASE | DIFF_CONTEXT | DIFF_HFP | DIFF_LOCAL_TERM
 		var mask = 0
-
-		var oldAlive = parentStat.LIFE > 0
-		var newAlive = childStat.LIFE > 0
-		var aliveChanged = oldAlive != newAlive
 		var cellChanged = parentStat.CELL != childStat.CELL
 
-		if (aliveChanged || (oldAlive && newAlive && cellChanged)) mask |= DIFF_BASE
-
-		// Classe critique (deux seuils) : input commun du contexte et du HFP.
-		var oldCrit = (parentStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((parentStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-		var newCrit = (childStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((childStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-		var critChanged = oldCrit != newCrit
-
-		if (aliveChanged || (oldAlive && newAlive && (cellChanged || critChanged
-			|| max(0, parentStat.STRENGTH) != max(0, childStat.STRENGTH)
-			|| max(0, parentStat.MAGIC) != max(0, childStat.MAGIC)
-			|| max(0, parentStat.TOTAL_MP) != max(0, childStat.TOTAL_MP)
-			|| max(0, parentStat.TOTAL_TP) != max(0, childStat.TOTAL_TP)
-			|| parentStat.POWER != childStat.POWER))) {
-			mask |= DIFF_CONTEXT
-		}
-
-		if (aliveChanged || (oldAlive && newAlive && (cellChanged || critChanged
-			|| max(0, parentStat.WISDOM + 100) != max(0, childStat.WISDOM + 100)
-			|| max(0, parentStat.TOTAL_TP) != max(0, childStat.TOTAL_TP)
-			|| max(0, parentStat.TOTAL_MP) != max(0, childStat.TOTAL_MP)))) {
-			mask |= DIFF_HFP
-		}
-
+		// ---- Partie LOCALE (toutes les entités) ----
 		var totalLifeChanged = parentStat.TOTAL_LIFE != childStat.TOTAL_LIFE
 		if (totalLifeChanged && childStat.TLSQ_MEMO != null) childStat.TLSQ_MEMO = null
 
@@ -277,7 +253,18 @@ class StateClass {
 			|| parentStat.RELATIVE_SHIELD != childStat.RELATIVE_SHIELD
 		if (capChanged && childStat.CAP_MEMO != null) childStat.CAP_MEMO = null
 
-		if (capChanged || totalLifeChanged || cellChanged
+		// Antidote : SEUL Me peut voir son cooldown bouger en simulation — les setters
+		// n'écrivent que sur son patch local, neuf et vide à chaque nœud. Une entrée
+		// présente dans ce patch = une écriture de CE nœud ; absente = valeur héritée,
+		// donc identique au parent. Un non-Me ne paie aucune remontée de chaîne.
+		// INVARIANT : si un futur effet simulé modifie le cooldown d'une CIBLE non-Me,
+		// il devra étendre cette détection (sinon le terme de la cible resterait stale).
+		var antidoteChanged = false
+		if (isMe && (CHIP_ANTIDOTE in childStat.COOLDOWNS)) {
+			antidoteChanged = childStat.COOLDOWNS[CHIP_ANTIDOTE] != cooldownOf(parentStat, CHIP_ANTIDOTE)
+		}
+
+		if (capChanged || totalLifeChanged || cellChanged || antidoteChanged
 			|| parentStat.LIFE != childStat.LIFE
 			|| parentStat.DAMAGE_RETURN != childStat.DAMAGE_RETURN
 			|| parentStat.POISON != childStat.POISON
@@ -285,10 +272,46 @@ class StateClass {
 			|| parentStat.AFTEREFFECT != childStat.AFTEREFFECT
 			|| parentStat.AFTEREFFECT_OVER_TIME != childStat.AFTEREFFECT_OVER_TIME
 			|| parentStat.HEAL != childStat.HEAL
-			|| parentStat.HEAL_OVER_TIME != childStat.HEAL_OVER_TIME
-			|| cooldownOf(parentStat, CHIP_ANTIDOTE) != cooldownOf(childStat, CHIP_ANTIDOTE)) {
+			|| parentStat.HEAL_OVER_TIME != childStat.HEAL_OVER_TIME) {
 			mask |= DIFF_LOCAL_TERM
 		}
+
+		// Me est exclu des trois hashs (Node le saute juste après) : rien d'autre à calculer.
+		if (isMe) return mask
+
+		// ---- Contributions (non-Me seulement) ----
+		var oldAlive = parentStat.LIFE > 0
+		var newAlive = childStat.LIFE > 0
+		var aliveChanged = oldAlive != newAlive
+		var bothAlive = oldAlive && newAlive
+
+		if (aliveChanged || (bothAlive && cellChanged)) mask |= DIFF_BASE
+
+		// Formes EFFECTIVES, calculées UNE fois et partagées par les deux contributions.
+		// Court-circuit exact : les dix inputs de capability contiennent AGI, STR, MAG, WIS,
+		// TOTAL_TP et TOTAL_MP — capChanged faux => classes critiques et valeurs clampées
+		// forcément identiques, seules la cellule et POWER peuvent encore bouger.
+		var contextStatsChanged = false
+		var healStatsChanged = false
+		if (capChanged) {
+			var oldCrit = (parentStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((parentStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
+			var newCrit = (childStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((childStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
+			var critChanged = oldCrit != newCrit
+			var effectiveTotalMpChanged = max(0, parentStat.TOTAL_MP) != max(0, childStat.TOTAL_MP)
+			var effectiveTotalTpChanged = max(0, parentStat.TOTAL_TP) != max(0, childStat.TOTAL_TP)
+			contextStatsChanged = critChanged || effectiveTotalMpChanged || effectiveTotalTpChanged
+				|| max(0, parentStat.STRENGTH) != max(0, childStat.STRENGTH)
+				|| max(0, parentStat.MAGIC) != max(0, childStat.MAGIC)
+			healStatsChanged = critChanged || effectiveTotalTpChanged || effectiveTotalMpChanged
+				|| max(0, parentStat.WISDOM + 100) != max(0, childStat.WISDOM + 100)
+		}
+
+		if (aliveChanged || (bothAlive && (cellChanged || contextStatsChanged
+			|| parentStat.POWER != childStat.POWER))) {
+			mask |= DIFF_CONTEXT
+		}
+
+		if (aliveChanged || (bothAlive && (cellChanged || healStatsChanged))) mask |= DIFF_HFP
 
 		return mask
 	}

@@ -102,7 +102,7 @@ class NodeClass {
 			// Masque différentiel UNIQUE : une seule comparaison parent/clone pilote les
 			// trois patchs de hash ET le terme local, et invalide les mémos dérivés
 			// (Me compris — il est seulement exclu des trois hashs).
-			var mask = StateClass.diffMaskOf(parentStat, newStat)
+			var mask = StateClass.diffMaskOf(parentStat, newStat, tar == Me)
 			if (mask & DIFF_LOCAL_TERM) localTermDirty[tar] = true
 			if (tar == Me) continue          // Me est exclu des trois hashs
 			if (mask & DIFF_BASE) bh ^= StateClass.baseContribution(parentStat, tar) ^ StateClass.baseContribution(newStat, tar)
