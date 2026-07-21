@@ -61,9 +61,11 @@ class ScoringClass {
      * déjà 0). Un terme sauté n'est PAS écrit dans le patch : il se résout chez l'ancêtre
      * (chaîne TERMS_PARENT). Aucun clone de la map complète.
      */
-    static getStateScoreFromParent(node, ParentScore, ParentTermNode, ParentContext, ParentHfp, MySide, ParentPoisonKey) {
+    static getStateScoreFromParent(node, EffectiveState, ParentScore, ParentTermNode, ParentContext, ParentHfp, MySide, ParentPoisonKey) {
         BenchOps.Start("Scoring")
-        var State = node.END_STATS
+        // EffectiveState = le workspace ENCORE muté par l'action (le nœud, lui, ne porte que
+        // son patch : END_STATS est null tant qu'il n'est pas développé).
+        var State = EffectiveState
         var cloned = node.CLONED
         var hfpMap = node.HFP_BY_SIDE
 

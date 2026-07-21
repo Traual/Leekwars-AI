@@ -317,18 +317,46 @@ class StateClass {
 	}
 
 	/*
-	 * État de simulation : copie superficielle de la map extérieure du State (mêmes
-	 * références EntityState pour tous les non-Me), Me SEUL cloné d'office — sa cellule,
-	 * ses TP/MP, son arme, ses cooldowns et ses uses bougent à chaque action. Les cibles
-	 * réellement touchées sont clonées PARESSEUSEMENT par getConsequences (ensureCloned au
-	 * premier effet applicable) : une entité seulement traversée par la géométrie n'est
-	 * jamais clonée. clonedIds[id] = l'ANCIEN EntityState (référence read-only).
+	 * Ouvre la simulation d'une action DANS le workspace (map extérieure réutilisée par tous
+	 * les candidats d'un même parent, restaurée après chacun) : Me SEUL est cloné d'office —
+	 * sa cellule, ses TP/MP, son arme, ses cooldowns et ses uses bougent à chaque action. Les
+	 * cibles réellement touchées sont clonées PARESSEUSEMENT par getConsequences (ensureCloned
+	 * au premier effet applicable). clonedIds[id] = l'ANCIEN EntityState (référence read-only,
+	 * null pour une entité NÉE dans l'action) — il pilote la capture du patch ET la
+	 * restauration du workspace.
 	 */
-	static CloneStateAndMe(EveryStats, clonedIds) {
-		var _final = clone(EveryStats, 1)   // map extérieure copiée, EntityState partagés
-		var parentMe = EveryStats[Me]
-		_final[Me] = cloneEntityForSim(parentMe, true)
+	static beginActionOnWorkspace(Workspace, clonedIds) {
+		var parentMe = Workspace[Me]
+		Workspace[Me] = cloneEntityForSim(parentMe, true)
 		clonedIds[Me] = parentMe
+	}
+
+	/*
+	 * Remet le workspace EXACTEMENT dans l'état du parent, après simulation ET scoring d'un
+	 * candidat : chaque entité touchée retrouve sa référence d'avant l'action, chaque entité
+	 * née dans l'action disparaît. À appeler sur TOUS les chemins (candidat retenu, rejeté
+	 * sous epsilon, gagnant ou perdant du chemin ScoredCache, fallback de collision d'id) —
+	 * un seul oubli corromprait tous les candidats suivants du même parent.
+	 */
+	static restoreWorkspace(Workspace, clonedIds) {
+		for (var id: var oldStat in clonedIds) {
+			if (oldStat == null) mapRemove(Workspace, id)
+			else Workspace[id] = oldStat
+		}
+	}
+
+	/*
+	 * État complet d'un nœud, matérialisé PARESSEUSEMENT et caché : un candidat ne porte que
+	 * son patch (STATE_PATCH) et son état parent (STATE_PARENT) ; la map complète n'est
+	 * reconstruite que si le nœud est réellement développé. Les morts restent dans le State
+	 * (LIFE <= 0), un summon est une simple entrée neuve du patch, et les références
+	 * EntityState des patches sont réutilisées telles quelles (aucun reclonage).
+	 */
+	static materializeNodeState(node) {
+		if (node.END_STATS != null) return node.END_STATS
+		var _final = clone(materializeNodeState(node.STATE_PARENT), 1)
+		for (var id: var stat in node.STATE_PATCH) _final[id] = stat
+		node.END_STATS = _final
 		return _final
 	}
 

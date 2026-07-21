@@ -7,16 +7,23 @@ include("../includes.leek")
 
 class NodeClass {
 	ACTION
-	END_STATS
+	END_STATS         // CACHE PARESSEUX de l'état complet : rempli d'office sur la racine,
+	                  // null sur un candidat neuf, matérialisé (STATE_PARENT + STATE_PATCH)
+	                  // seulement si le nœud est réellement développé — StateClass.materializeNodeState
+	STATE_PARENT      // nœud portant l'état d'AVANT cette action — chaîne IMMUABLE, indépendante de
+	                  // PARENT (réassigné par le déroulé et les entrées du ScoredCache) ; null = racine
+	STATE_PATCH       // [id -> EntityState APRÈS l'action] : les seules entités que l'action a modifiées
+	                  // (les ids de CLONED), seule représentation persistante du nœud
 	PARENT            // nœud d'origine (null pour une action de base)
-	SCORE             // score absolu de END_STATS (rempli par le BFS)
-	BASE_HASH         // BaseHash de END_STATS
+	SCORE             // score absolu de l'état du nœud (rempli par le BFS)
+	BASE_HASH         // BaseHash de l'état du nœud
 	CONTEXT_BY_SIDE   // par side : hash de l'équipe adverse (clé des caches danger)
 	HFP_BY_SIDE       // par side : fingerprint des healers (clé de la heal map)
 	CLONED            // [id -> ANCIEN EntityState] : ensemble EXACT des entités possiblement mutées
 	                  // par l'action — la valeur est la référence read-only à l'état d'avant clonage
-	                  // (null pour un summon né en branche). Sert au clone-on-write, plus au choix
-	                  // des termes à recalculer (voir LOCAL_TERM_DIRTY)
+	                  // (null pour un summon né en branche). Sert au clone-on-write, à la capture du
+	                  // patch et à la restauration du workspace, puis est libéré (null) par le BFS —
+	                  // STATE_PATCH reste la seule représentation persistante
 	LOCAL_TERM_DIRTY  // [id -> true] : entités dont un input LOCAL du terme a réellement changé
 	                  // (masque diffMaskOf + checks Me BaseHash/fingerprint) — le recompute-set
 	                  // du scoring l'itère directement
@@ -24,7 +31,8 @@ class NodeClass {
 	                  // (la racine noPlay porte la map complète). Résolution via ScoringClass.termOf.
 	TERMS_PARENT      // nœud portant le snapshot de termes précédent — chaîne IMMUABLE, indépendante
 	                  // de PARENT (que le déroulé du BFS réassigne) ; null = racine des termes
-	POISON_KEY        // clé de couverture antidote de END_STATS (posée par getStateScoreFromParent, 0 sans antidote)
+	POISON_KEY        // clé de couverture antidote de l'état du nœud (posée par getStateScoreFromParent
+	                  // depuis le workspace encore muté, 0 sans antidote)
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction
@@ -35,8 +43,13 @@ class NodeClass {
 	 * Fabrique LE nœud : applique les conséquences de l'action sur un état clone-on-write,
 	 * puis patche les hashs incrémentaux (base, contextes, healers) depuis le parent.
 	 *
+	 * Le nœud rendu ne porte QUE son patch : END_STATS reste null, le workspace est rendu à
+	 * l'appelant qui doit le scorer PUIS le restaurer (StateClass.restoreWorkspace).
+	 *
 	 * @param Act Action à transformer en nœud
-	 * @param State état PARENT [id -> stats]
+	 * @param Workspace map de travail — copie superficielle du State parent, partagée par tous
+	 *        les candidats du même parent et restaurée après chacun
+	 * @param ParentState état PARENT non muté (référence de taille et test de collision d'id)
 	 * @param From cellule de lancement (Act.From)
 	 * @param MyWalkCells layers de déplacement de Me (déjà calculés par l'appelant)
 	 * @param Cost coût TP total : item + swap d'arme + jump/télépo (déjà calculé par l'appelant)
@@ -45,18 +58,20 @@ class NodeClass {
 	 * @param To cellule cible (Act.To)
 	 * @param BaseHash BaseHash de l'état parent
 	 * @param Parent nœud parent (null pour une action de base)
+	 * @param StateParent nœud portant l'état d'avant l'action (chaîne STATE_PARENT)
 	 * @param ParentContext CONTEXT_BY_SIDE du parent
 	 * @param ParentHfp HFP_BY_SIDE du parent
 	 *
-	 * @return le nouveau nœud, hashs remplis
+	 * @return le nouveau nœud, hashs et patch remplis
 	 */
-	static ActionToNodeInTree(Act, State, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, ParentContext, ParentHfp) {
+	static ActionToNodeInTree(Act, Workspace, ParentState, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, StateParent, ParentContext, ParentHfp) {
 		BenchOps.Start("Node")
 		// clonedIds = l'ensemble exact des entités effectivement mutables : Me pré-cloné ici ;
 		// cibles réellement touchées, victimes des cascades de kill et ressuscité (payload
 		// Act.RESURRECT_ID) clonés PARESSEUSEMENT (ensureCloned) dans getConsequences.
 		var clonedIds = [: ]
-		var ThisActionStats = StateClass.CloneStateAndMe(State, clonedIds)
+		StateClass.beginActionOnWorkspace(Workspace, clonedIds)
+		var ThisActionStats = Workspace
 
 		// Déplacement : retire les MP de la layer utilisée.
 		ThisActionStats[Me].CELL = From
@@ -87,7 +102,9 @@ class NodeClass {
 				StateClass.setCooldown(ThisActionStats[Me], CHIP_TELEPORTATION, ITEMINFO[CHIP_TELEPORTATION].COOLDOWN)
 			}
 		}
-		var result = new NodeClass(Act, ThisActionStats, Parent)
+		// END_STATS reste NULL : le nœud ne portera que son patch (matérialisation paresseuse).
+		var result = new NodeClass(Act, null, Parent)
+		result.STATE_PARENT = StateParent
 
 		// Patch incrémental des trois hashs : old ^ new pour chaque entité de clonedIds.
 		// Un ressuscité était mort dans le parent -> ses contributions old valent 0 (fonctions
@@ -122,16 +139,25 @@ class NodeClass {
 			}
 		}
 
-		var entityAdded = mapSize(ThisActionStats) != mapSize(State)   // seul un summon ajoute un id
+		// Taille et appartenance testées contre l'état PARENT non muté : le workspace, lui,
+		// porte déjà l'ajout éventuel.
+		var entityAdded = mapSize(ThisActionStats) != mapSize(ParentState)   // seul un summon ajoute un id
 		if (entityAdded) {
 			// Ajout du bulbe né dans la branche (id dérivé du chip, même formule que Consequences).
 			// Garde-fou : si l'id n'est pas né ici (collision id réel / virtuel), rebuild complet.
 			var newId = SUMMON_ID_BASE + BulbState.getTypeOffset(Item)
-			if (!(newId in ThisActionStats) || (newId in State)) {
+			if (!(newId in ThisActionStats) || (newId in ParentState)) {
 				debugE("[SUMMON PATCH] id " + newId + " not born in this branch (item " + Item + ") -> full rebuild fallback")
-				if (newId in ThisActionStats) {
-					clonedIds[newId] = null   // né en branche : pas d'ancien état
-					localTermDirty[newId] = true
+				// Le workspace est PARTAGÉ par tous les candidats du parent : on enregistre ici
+				// l'id RÉELLEMENT né (pas le newId supposé, qui peut être faux dans ce chemin)
+				// pour qu'il soit retiré à la restauration. Un id DÉJÀ présent dans le parent
+				// n'est jamais marqué null : le marquer supprimerait une entité légitime du
+				// workspace pour toutes les actions sœurs suivantes.
+				for (var id: var stat in ThisActionStats) {
+					if (!(id in clonedIds) && !(id in ParentState)) {
+						clonedIds[id] = null   // né en branche : pas d'ancien état
+						localTermDirty[id] = true
+					}
 				}
 				result.CLONED = clonedIds
 				result.BASE_HASH = StateClass.getBaseHash(ThisActionStats)
@@ -146,6 +172,7 @@ class NodeClass {
 					localTermDirty[Me] = true
 				}
 				result.LOCAL_TERM_DIRTY = localTermDirty
+				capturePatch(result, ThisActionStats, clonedIds)
 				BenchOps.Stop("Node")
 				return result
 			}
@@ -175,8 +202,21 @@ class NodeClass {
 		result.BASE_HASH = bh
 		result.CONTEXT_BY_SIDE = ctx
 		result.HFP_BY_SIDE = hfpMap
+		capturePatch(result, ThisActionStats, clonedIds)
 
 		BenchOps.Stop("Node")
 		return result
+	}
+
+	/*
+	 * Fige les entités modifiées par l'action : STATE_PATCH prend, pour chaque id touché, la
+	 * référence PRODUITE dans le workspace (un id né dans l'action y figure aussi — sa valeur
+	 * dans clonedIds est null, mais le workspace porte bien la nouvelle entité). Appelé sur
+	 * les DEUX sorties d'ActionToNodeInTree, avant que l'appelant ne restaure le workspace.
+	 */
+	static capturePatch(node, Workspace, clonedIds) {
+		var patch = [: ]
+		for (var id: var oldStat in clonedIds) patch[id] = Workspace[id]
+		node.STATE_PATCH = patch
 	}
 }
