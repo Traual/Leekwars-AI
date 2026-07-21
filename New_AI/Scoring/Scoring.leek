@@ -54,7 +54,7 @@ class ScoringClass {
     /*
      * Score incrémental : score(enfant) = score(parent) + Δ sur le recompute-set EXACT.
      * Recompute-set = node.LOCAL_TERM_DIRTY (le masque différentiel du Node a déjà comparé
-     * les inputs locaux de chaque entité mutée — masque de deltas + checks Me) ∪
+     * les inputs locaux de chaque clonée — diffMaskOf + checks Me BaseHash/fingerprint) ∪
      * les entités touchées par un trigger global : danger (CONTEXT_BY_SIDE), heal
      * (HFP_BY_SIDE), et pour la couverture antidote (POISON_KEY) les seuls porteurs de
      * POISON_OVER_TIME. Une morte NON clonée est skippée (ancien et nouveau terme valent
@@ -66,7 +66,7 @@ class ScoringClass {
         // EffectiveState = le workspace ENCORE muté par l'action (le nœud, lui, ne porte que
         // son patch : END_STATS est null tant qu'il n'est pas développé).
         var State = EffectiveState
-        var cloned = node.ENTITY_DELTAS
+        var cloned = node.CLONED
         var hfpMap = node.HFP_BY_SIDE
 
         // Heal map de l'enfant via le fold combiné des fingerprints (hit sauf healer modifié).

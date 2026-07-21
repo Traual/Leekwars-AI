@@ -120,7 +120,7 @@ class ImportanceClass {
     /*
      * Canal LIVE des buffs/debuffs (formule du header). Le (1 + stat/100) est LA formule du
      * moteur : un item sort sa base même à stat 0. Memoïsé sur l'objet stat (CAP_MEMO,
-     * invalidé quand un de ses inputs change — StateClass.finalizeDeltas). Me est
+     * copié au clone puis validé par champs — StateClass.diffMaskOf). Me est
      * INCLUS exprès : le delta immédiat de mes buffs n'a aucun autre
      * canal (Me est exclu du contexte danger ET de la heal map — mes sorties sont simulées,
      * pas projetées), capability(Me) est le ticket d'exploration qui garde les chaînes

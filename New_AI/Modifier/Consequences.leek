@@ -7,7 +7,7 @@ include("../includes.leek")
 
 class ConsequencesClass {
 
-	static applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, entityDeltas, PrevEffectTotal) {
+	static applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds, PrevEffectTotal) {
 		var isEffectStackable = Effect[5] & EFFECT_MODIFIER_STACKABLE
 		var baseEffectValue = Effect[1] * Multiplier
 		// STEALS (moteur vérifié, Attack.java) : chaque effet RETOURNE son total appliqué (somme sur
@@ -24,7 +24,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_ABSOLUTE_SHIELD, targetStats.ABSOLUTE_SHIELD)
 					targetStats.ABSOLUTE_SHIELD += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -34,7 +33,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_ABSOLUTE_SHIELD, targetStats.ABSOLUTE_SHIELD)
 					targetStats.ABSOLUTE_SHIELD -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 					effectTotal += calculatedValue
@@ -53,19 +51,15 @@ class ConsequencesClass {
 					// restante), comme getEntityDamageConsequences.
 					var appliedDamage = min(calculatedValue, targetStats.LIFE)
 					if (appliedDamage >= targetStats.LIFE && targetStats.LIFE > 0) {
-						getKillConsequences(targetStats, CastStats, State, entityDeltas)
+						getKillConsequences(targetStats, CastStats, State, clonedIds)
 					} else {
-						StateClass.touchField(targetStats, DELTA_LIFE, targetStats.LIFE)
 						targetStats.LIFE -= appliedDamage
 					}
-					StateClass.touchField(targetStats, DELTA_TOTAL_LIFE, targetStats.TOTAL_LIFE)
 					targetStats.TOTAL_LIFE -= appliedDamage * erosionRate
 					// Érosion immédiate -> proc nova (EffectAftereffect.java:27). Les ticks
 					// FUTURS et leurs procs restent hors modèle — chantier ticks/ledger.
 					if (targetStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(targetStats, appliedDamage * erosionRate)
-					StateClass.touchField(targetStats, DELTA_AFTEREFFECT, targetStats.AFTEREFFECT)
 					targetStats.AFTEREFFECT += calculatedValue
-					StateClass.touchField(targetStats, DELTA_AFTEREFFECT_OVER_TIME, targetStats.AFTEREFFECT_OVER_TIME)
 					targetStats.AFTEREFFECT_OVER_TIME += calculatedValue * effectDuration
 					// La ligne enregistre la valeur des ticks FUTURS : son retrait déroule
 					// AFTEREFFECT/AFTEREFFECT_OVER_TIME seulement, jamais les dégâts immédiats.
@@ -89,7 +83,6 @@ class ConsequencesClass {
 							push(newEffects, eff)
 						}
 					}
-					StateClass.touchField(targetStats, DELTA_EFFECTS, targetStats.EFFECTS)
 					targetStats.EFFECTS = newEffects
 				}
 				break
@@ -108,7 +101,6 @@ class ConsequencesClass {
 					var oldCell = targetStats.CELL
 					var newCell = CellClass.slideDestination(oldCell, To, State[Caster].CELL, EffectType == EFFECT_ATTRACT, occupied)
 					if (newCell == oldCell) continue
-					StateClass.touchField(targetStats, DELTA_CELL, targetStats.CELL)
 					targetStats.CELL = newCell
 					occupied[oldCell] = false
 					occupied[newCell] = true
@@ -125,9 +117,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_LIFE, targetStats.LIFE)
 					targetStats.LIFE += calculatedValue
-					StateClass.touchField(targetStats, DELTA_TOTAL_LIFE, targetStats.TOTAL_LIFE)
 					targetStats.TOTAL_LIFE += calculatedValue
 				}
 				break
@@ -137,7 +127,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_AGILITY, targetStats.AGILITY)
 					targetStats.AGILITY += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -148,9 +137,7 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_MP, targetStats.MP)
 					targetStats.MP += calculatedValue
-					StateClass.touchField(targetStats, DELTA_TOTAL_MP, targetStats.TOTAL_MP)
 					targetStats.TOTAL_MP += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -161,7 +148,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_RESISTANCE, targetStats.RESISTANCE)
 					targetStats.RESISTANCE += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -172,7 +158,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_STRENGTH, targetStats.STRENGTH)
 					targetStats.STRENGTH += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -183,9 +168,7 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_TP, targetStats.TP)
 					targetStats.TP += calculatedValue
-					StateClass.touchField(targetStats, DELTA_TOTAL_TP, targetStats.TOTAL_TP)
 					targetStats.TOTAL_TP += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -196,7 +179,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_WISDOM, targetStats.WISDOM)
 					targetStats.WISDOM += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -207,7 +189,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_DAMAGE_RETURN, targetStats.DAMAGE_RETURN)
 					targetStats.DAMAGE_RETURN += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -220,12 +201,9 @@ class ConsequencesClass {
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					if (effectDuration > 0) {
-						StateClass.touchField(targetStats, DELTA_HEAL, targetStats.HEAL)
 						targetStats.HEAL += calculatedValue
-						StateClass.touchField(targetStats, DELTA_HEAL_OVER_TIME, targetStats.HEAL_OVER_TIME)
 						targetStats.HEAL_OVER_TIME += calculatedValue * effectDuration
 					} else {
-						StateClass.touchField(targetStats, DELTA_LIFE, targetStats.LIFE)
 						targetStats.LIFE += min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
 					}
 					// HoT seulement (durée 0 = soin instantané, le gate du helper l'écarte).
@@ -239,9 +217,7 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_POISON, targetStats.POISON)
 					targetStats.POISON += calculatedValue
-					StateClass.touchField(targetStats, DELTA_POISON_OVER_TIME, targetStats.POISON_OVER_TIME)
 					targetStats.POISON_OVER_TIME += calculatedValue * effectDuration
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5])
 					effectTotal += calculatedValue
@@ -253,14 +229,13 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_RELATIVE_SHIELD, targetStats.RELATIVE_SHIELD)
 					targetStats.RELATIVE_SHIELD += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_DAMAGE:
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.STRENGTH) / 100) * (1 + CastStats.POWER / 100) // le moteur plancher STRENGTH à l'usage mais PAS power
-				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, entityDeltas)
+				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
 				break
 			case EFFECT_DEBUFF:
 				for (var targetId: var aoeDistance in RealTargets) getEntityDebuffConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster)
@@ -270,21 +245,19 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (targetStats.STATIC) continue
 					var oldCell = targetStats.CELL
-					StateClass.touchField(targetStats, DELTA_CELL, targetStats.CELL)
 					targetStats.CELL = From
-					StateClass.touchField(CastStats, DELTA_CELL, CastStats.CELL)
-					CastStats.CELL = To
+					State[Caster].CELL = To
 					// La CIBLE subit le déplacement (invertEntities : target.onMoved(caster)) ;
 					// le caster s'auto-ignore (onMoved : by == this -> return).
 					if (targetStats.SPECIAL_WEAPON != null) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, From)
 				}
 				break
 			case EFFECT_KILL:
-				for (var targetId: var aoeDistance in RealTargets) getKillConsequences(State[targetId], CastStats, State, entityDeltas)
+				for (var targetId: var aoeDistance in RealTargets) getKillConsequences(State[targetId], CastStats, State, clonedIds)
 				break
 			case EFFECT_LIFE_DAMAGE:
 				var casterStatMultiplier = baseEffectValue * (CastStats.LIFE / 100) * (1 + CastStats.POWER / 100)
-				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityLifeDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, entityDeltas)
+				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityLifeDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
 				break
 			case EFFECT_NOVA_DAMAGE:
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100) * (1 + CastStats.POWER / 100) // SCIENCE planchée, POWER non (EffectNovaDamage du moteur)
@@ -292,7 +265,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					var damageAmount = min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
-					StateClass.touchField(targetStats, DELTA_TOTAL_LIFE, targetStats.TOTAL_LIFE)
 					targetStats.TOTAL_LIFE -= damageAmount
 					// onNovaDamage moteur : seul test isDead, PAS d'exclusion self.
 					if (targetStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(targetStats, damageAmount)
@@ -303,18 +275,13 @@ class ConsequencesClass {
 				// PAS de ledger : comme BOOST_MAX_LIFE, addTotalLife est irréversible côté
 				// moteur (removeEffect ne le défait pas — EffectMultiplyStats.java:39).
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
-				for (var targetId: var aoeDistance in RealTargets) {
-					var targetStats = State[targetId]
-					StateClass.touchField(targetStats, DELTA_TOTAL_LIFE, targetStats.TOTAL_LIFE)
-					targetStats.TOTAL_LIFE += casterStatMultiplier * (1 - aoeDistance * 0.2)
-				}
+				for (var targetId: var aoeDistance in RealTargets) State[targetId].TOTAL_LIFE += casterStatMultiplier * (1 - aoeDistance * 0.2)
 				break
 			case EFFECT_RAW_ABSOLUTE_SHIELD:
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_ABSOLUTE_SHIELD, targetStats.ABSOLUTE_SHIELD)
 					targetStats.ABSOLUTE_SHIELD += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -324,7 +291,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_AGILITY, targetStats.AGILITY)
 					targetStats.AGILITY += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -334,7 +300,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_MAGIC, targetStats.MAGIC)
 					targetStats.MAGIC += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -344,9 +309,7 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_MP, targetStats.MP)
 					targetStats.MP += calculatedValue
-					StateClass.touchField(targetStats, DELTA_TOTAL_MP, targetStats.TOTAL_MP)
 					targetStats.TOTAL_MP += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -356,7 +319,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_POWER, targetStats.POWER)
 					targetStats.POWER += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -366,7 +328,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_RESISTANCE, targetStats.RESISTANCE)
 					targetStats.RESISTANCE += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -376,7 +337,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_SCIENCE, targetStats.SCIENCE)
 					targetStats.SCIENCE += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -386,7 +346,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_STRENGTH, targetStats.STRENGTH)
 					targetStats.STRENGTH += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -396,9 +355,7 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_TP, targetStats.TP)
 					targetStats.TP += calculatedValue
-					StateClass.touchField(targetStats, DELTA_TOTAL_TP, targetStats.TOTAL_TP)
 					targetStats.TOTAL_TP += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -408,7 +365,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_WISDOM, targetStats.WISDOM)
 					targetStats.WISDOM += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -416,7 +372,6 @@ class ConsequencesClass {
 			case EFFECT_RAW_HEAL:
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
-					StateClass.touchField(targetStats, DELTA_LIFE, targetStats.LIFE)
 					targetStats.LIFE += min(baseEffectValue * (1 - aoeDistance * 0.2), targetStats.TOTAL_LIFE - targetStats.LIFE)
 				}
 				break
@@ -425,7 +380,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_RELATIVE_SHIELD, targetStats.RELATIVE_SHIELD)
 					targetStats.RELATIVE_SHIELD += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -439,7 +393,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_AGILITY, targetStats.AGILITY)
 					targetStats.AGILITY -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -450,7 +403,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_MAGIC, targetStats.MAGIC)
 					targetStats.MAGIC -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -461,9 +413,7 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_MP, targetStats.MP)
 					targetStats.MP -= calculatedValue
-					StateClass.touchField(targetStats, DELTA_TOTAL_MP, targetStats.TOTAL_MP)
 					targetStats.TOTAL_MP -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -474,7 +424,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_STRENGTH, targetStats.STRENGTH)
 					targetStats.STRENGTH -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -485,9 +434,7 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_TP, targetStats.TP)
 					targetStats.TP -= calculatedValue
-					StateClass.touchField(targetStats, DELTA_TOTAL_TP, targetStats.TOTAL_TP)
 					targetStats.TOTAL_TP -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -498,7 +445,6 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_WISDOM, targetStats.WISDOM)
 					targetStats.WISDOM -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -510,7 +456,6 @@ class ConsequencesClass {
 				// (stats.setStat) -> remplacement + ledger comme les autres shields (les gates
 				// durée/valeur écartent seuls les variantes instantanées).
 				if (!isEffectStackable) ReplacementChangeStats(Item, Effect, CastStats)
-				StateClass.touchField(CastStats, DELTA_ABSOLUTE_SHIELD, CastStats.ABSOLUTE_SHIELD)
 				CastStats.ABSOLUTE_SHIELD += PrevEffectTotal
 				RecordCastedEffect(CastStats, EffectType, PrevEffectTotal, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				effectTotal = PrevEffectTotal
@@ -519,20 +464,17 @@ class ConsequencesClass {
 				// Moteur : le CASTER récupère le TOTAL de l'effet PRÉCÉDENT, cappé à sa vie
 				// manquante. (L'état UNHEALABLE n'est pas modélisé dans la simu.)
 				var stolen = min(PrevEffectTotal, CastStats.TOTAL_LIFE - CastStats.LIFE)
-				StateClass.touchField(CastStats, DELTA_LIFE, CastStats.LIFE)
 				CastStats.LIFE += stolen
 				effectTotal = stolen
 				break
 			case EFFECT_TELEPORT:
-				StateClass.touchField(CastStats, DELTA_CELL, CastStats.CELL)
-				CastStats.CELL = To
+				State[Caster].CELL = To
 				break
 			case EFFECT_VULNERABILITY:
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					StateClass.touchField(targetStats, DELTA_RELATIVE_SHIELD, targetStats.RELATIVE_SHIELD)
 					targetStats.RELATIVE_SHIELD -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 					effectTotal += calculatedValue
@@ -543,7 +485,7 @@ class ConsequencesClass {
 	}
 
 	/* Applique tous les effets de l'item sur l'état (From nécessaire pour les lasers). */
-	static getConsequences(State, Item, From, To, Caster, BaseHash, entityDeltas, ResurrectId) {
+	static getConsequences(State, Item, From, To, Caster, BaseHash, clonedIds, ResurrectId) {
 		BenchOps.Start("Consequences")
 		var Targets = ConsequenceTargets(Item, From, To, State, Caster, BaseHash)
 		var CastStats = State[Caster]
@@ -569,13 +511,17 @@ class ConsequencesClass {
 					var nPriorVirtuals = 0
 					for (var vid: var vstat in State) if (vid > SUMMON_ID_BASE && vstat.SUMMONER == Caster) nPriorVirtuals++
 					var EntityStats = new BulbState(Id, SUMMONER_LEVEL_TIMES, Item, To, Caster, CastStats, nPriorVirtuals)
-					// SEULE mutation de la map extérieure faite ici, et elle passe par la source
-					// unique : naissance (retrait à la restauration) ou remplacement (ancienne
-					// référence remise). Un objet complet n'a pas de journal champ par champ.
-					StateClass.replaceEntityInWorkspace(State, Id, EntityStats, entityDeltas)
+					// SEULE mutation de la map extérieure faite ici : elle s'enregistre à la
+					// SOURCE, comme ensureCloned pour une entité mutée — ancien état s'il y en
+					// avait un (collision d'id : le workspace le retrouvera à la restauration),
+					// null sinon (entité NÉE dans l'action -> retirée du workspace). Jamais
+					// d'écrasement d'une entrée déjà enregistrée : clonedIds garde l'état
+					// d'AVANT le cast entier.
+					if (!(Id in clonedIds)) clonedIds[Id] = (Id in State) ? State[Id] : null
+					State[Id] = EntityStats
 					break
 				case EFFECT_RESURRECT:
-					ResurrectionClass.Update(To, State, ResurrectId, entityDeltas)
+					ResurrectionClass.Update(To, State, ResurrectId, clonedIds)
 					break
 			}
 			var TmpTargets = RealConsequenceTargets(Targets, Effect, State, CastStats, Caster)
@@ -583,13 +529,13 @@ class ConsequencesClass {
 			if (CAST_IS_CRITICAL) Multiplier *= CRITICAL_FACTOR
 			var RealTargets = Effect[5] & EFFECT_MODIFIER_ON_CASTER ? [Caster: 0] : TmpTargets
 			// Clonage PARESSEUX : chaque cible réellement applicable est clonée au premier
-			// effet qui la touche (garde d'ensureTracked — le journal conserve l'état d'AVANT
+			// effet qui la touche (garde d'ensureCloned — clonedIds conserve l'état d'AVANT
 			// le cast entier). Les filtres ci-dessus ont lu l'état courant, identique en
 			// valeur ; la mutation d'applyEffect n'écrit que le clone rebindé.
 			for (var lazyTarget: var lazyDist in RealTargets) {
-				StateClass.ensureTracked(State, lazyTarget, entityDeltas)
+				StateClass.ensureCloned(State, lazyTarget, clonedIds)
 			}
-			prevEffectTotal = applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, entityDeltas, prevEffectTotal)
+			prevEffectTotal = applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds, prevEffectTotal)
 		}
 		BenchOps.Stop("Consequences")
 	}
@@ -621,119 +567,89 @@ class ConsequencesClass {
 			case EFFECT_ABSOLUTE_SHIELD:
 			case EFFECT_RAW_ABSOLUTE_SHIELD:
 			case EFFECT_STEAL_ABSOLUTE_SHIELD:
-				StateClass.touchField(StatsTarget, DELTA_ABSOLUTE_SHIELD, StatsTarget.ABSOLUTE_SHIELD)
 				StatsTarget.ABSOLUTE_SHIELD -= ValueOfEffect
 				break
 			case EFFECT_ABSOLUTE_VULNERABILITY:
-				StateClass.touchField(StatsTarget, DELTA_ABSOLUTE_SHIELD, StatsTarget.ABSOLUTE_SHIELD)
 				StatsTarget.ABSOLUTE_SHIELD += ValueOfEffect
 				break
 			case EFFECT_AFTEREFFECT:
-				StateClass.touchField(StatsTarget, DELTA_AFTEREFFECT, StatsTarget.AFTEREFFECT)
 				StatsTarget.AFTEREFFECT -= ValueOfEffect
-				StateClass.touchField(StatsTarget, DELTA_AFTEREFFECT_OVER_TIME, StatsTarget.AFTEREFFECT_OVER_TIME)
 				StatsTarget.AFTEREFFECT_OVER_TIME -= ValueOfEffect * DurationOfEffect
 				break
 			case EFFECT_BUFF_AGILITY:
 			case EFFECT_RAW_BUFF_AGILITY:
-				StateClass.touchField(StatsTarget, DELTA_AGILITY, StatsTarget.AGILITY)
 				StatsTarget.AGILITY -= ValueOfEffect
 				break
 			case EFFECT_BUFF_MP:
 			case EFFECT_RAW_BUFF_MP:
-				StateClass.touchField(StatsTarget, DELTA_MP, StatsTarget.MP)
 				StatsTarget.MP -= ValueOfEffect
-				StateClass.touchField(StatsTarget, DELTA_TOTAL_MP, StatsTarget.TOTAL_MP)
 				StatsTarget.TOTAL_MP -= ValueOfEffect
 				break
 			case EFFECT_BUFF_RESISTANCE:
 			case EFFECT_RAW_BUFF_RESISTANCE:
-				StateClass.touchField(StatsTarget, DELTA_RESISTANCE, StatsTarget.RESISTANCE)
 				StatsTarget.RESISTANCE -= ValueOfEffect
 				break
 			case EFFECT_BUFF_STRENGTH:
 			case EFFECT_RAW_BUFF_STRENGTH:
-				StateClass.touchField(StatsTarget, DELTA_STRENGTH, StatsTarget.STRENGTH)
 				StatsTarget.STRENGTH -= ValueOfEffect
 				break
 			case EFFECT_BUFF_TP:
 			case EFFECT_RAW_BUFF_TP:
-				StateClass.touchField(StatsTarget, DELTA_TP, StatsTarget.TP)
 				StatsTarget.TP -= ValueOfEffect
-				StateClass.touchField(StatsTarget, DELTA_TOTAL_TP, StatsTarget.TOTAL_TP)
 				StatsTarget.TOTAL_TP -= ValueOfEffect
 				break
 			case EFFECT_BUFF_WISDOM:
 			case EFFECT_RAW_BUFF_WISDOM:
-				StateClass.touchField(StatsTarget, DELTA_WISDOM, StatsTarget.WISDOM)
 				StatsTarget.WISDOM -= ValueOfEffect
 				break
 			case EFFECT_DAMAGE_RETURN:
-				StateClass.touchField(StatsTarget, DELTA_DAMAGE_RETURN, StatsTarget.DAMAGE_RETURN)
 				StatsTarget.DAMAGE_RETURN -= ValueOfEffect
 				break
 			case EFFECT_HEAL:
-				StateClass.touchField(StatsTarget, DELTA_HEAL, StatsTarget.HEAL)
 				StatsTarget.HEAL -= ValueOfEffect
-				StateClass.touchField(StatsTarget, DELTA_HEAL_OVER_TIME, StatsTarget.HEAL_OVER_TIME)
 				StatsTarget.HEAL_OVER_TIME -= ValueOfEffect * DurationOfEffect
 				break
 			case EFFECT_RAW_BUFF_MAGIC:
-				StateClass.touchField(StatsTarget, DELTA_MAGIC, StatsTarget.MAGIC)
 				StatsTarget.MAGIC -= ValueOfEffect
 				break
 			case EFFECT_POISON:
-				StateClass.touchField(StatsTarget, DELTA_POISON, StatsTarget.POISON)
 				StatsTarget.POISON -= ValueOfEffect
-				StateClass.touchField(StatsTarget, DELTA_POISON_OVER_TIME, StatsTarget.POISON_OVER_TIME)
 				StatsTarget.POISON_OVER_TIME -= ValueOfEffect * DurationOfEffect
 				break
 			case EFFECT_RAW_BUFF_SCIENCE:
-				StateClass.touchField(StatsTarget, DELTA_SCIENCE, StatsTarget.SCIENCE)
 				StatsTarget.SCIENCE -= ValueOfEffect
 				break
 			case EFFECT_RAW_BUFF_POWER:
-				StateClass.touchField(StatsTarget, DELTA_POWER, StatsTarget.POWER)
 				StatsTarget.POWER -= ValueOfEffect
 				break
 			case EFFECT_RAW_RELATIVE_SHIELD:
 			case EFFECT_RELATIVE_SHIELD:
-				StateClass.touchField(StatsTarget, DELTA_RELATIVE_SHIELD, StatsTarget.RELATIVE_SHIELD)
 				StatsTarget.RELATIVE_SHIELD -= ValueOfEffect
 				break
 			// Shackles : la stat est restaurée, symétrique de l'application. Le retrait passe
 			// TOUJOURS par ligne du ledger (Libération, Manumission, remplacement, mort du
 			// caster) — aucun compteur agrégé à maintenir.
 			case EFFECT_SHACKLE_AGILITY:
-				StateClass.touchField(StatsTarget, DELTA_AGILITY, StatsTarget.AGILITY)
 				StatsTarget.AGILITY += ValueOfEffect
 				break
 			case EFFECT_SHACKLE_MAGIC:
-				StateClass.touchField(StatsTarget, DELTA_MAGIC, StatsTarget.MAGIC)
 				StatsTarget.MAGIC += ValueOfEffect
 				break
 			case EFFECT_SHACKLE_MP:
-				StateClass.touchField(StatsTarget, DELTA_MP, StatsTarget.MP)
 				StatsTarget.MP += ValueOfEffect
-				StateClass.touchField(StatsTarget, DELTA_TOTAL_MP, StatsTarget.TOTAL_MP)
 				StatsTarget.TOTAL_MP += ValueOfEffect
 				break
 			case EFFECT_SHACKLE_STRENGTH:
-				StateClass.touchField(StatsTarget, DELTA_STRENGTH, StatsTarget.STRENGTH)
 				StatsTarget.STRENGTH += ValueOfEffect
 				break
 			case EFFECT_SHACKLE_TP:
-				StateClass.touchField(StatsTarget, DELTA_TP, StatsTarget.TP)
 				StatsTarget.TP += ValueOfEffect
-				StateClass.touchField(StatsTarget, DELTA_TOTAL_TP, StatsTarget.TOTAL_TP)
 				StatsTarget.TOTAL_TP += ValueOfEffect
 				break
 			case EFFECT_SHACKLE_WISDOM:
-				StateClass.touchField(StatsTarget, DELTA_WISDOM, StatsTarget.WISDOM)
 				StatsTarget.WISDOM += ValueOfEffect
 				break
 			case EFFECT_VULNERABILITY:
-				StateClass.touchField(StatsTarget, DELTA_RELATIVE_SHIELD, StatsTarget.RELATIVE_SHIELD)
 				StatsTarget.RELATIVE_SHIELD += ValueOfEffect
 				break
 		}
@@ -761,7 +677,6 @@ class ConsequencesClass {
 			if (eff[0] == EffectType && eff[5] == Item && eff[3] == Duration && eff[2] == CasterId) { mergeIdx = i; break }
 		}
 		if (mergeIdx == -1) {
-			StateClass.touchField(TarStats, DELTA_EFFECTS, TarStats.EFFECTS)
 			TarStats.EFFECTS = effects + [[EffectType, AppliedValue, CasterId, Duration, Critical, Item, TarStats.ID, Modifiers]]
 			return;
 		}
@@ -774,7 +689,6 @@ class ConsequencesClass {
 				push(newEffects, effects[i])
 			}
 		}
-		StateClass.touchField(TarStats, DELTA_EFFECTS, TarStats.EFFECTS)
 		TarStats.EFFECTS = newEffects
 	}
 
@@ -805,7 +719,6 @@ class ConsequencesClass {
 			}
 			push(newEffects, eff)
 		}
-		StateClass.touchField(TarStats, DELTA_EFFECTS, TarStats.EFFECTS)
 		TarStats.EFFECTS = newEffects
 	}
 
@@ -815,9 +728,9 @@ class ConsequencesClass {
 	 * lignes du caster, pas seulement la première. Tableau neuf rebindé (jamais de mutation
 	 * du partagé) -> un second appel avec le même caster est un no-op.
 	 */
-	static RemoveCastedEffects(EveryStats, Caster, entityDeltas) {
+	static RemoveCastedEffects(EveryStats, Caster, clonedIds) {
 		// Clone-on-write : un porteur d'effet peut être HORS du set pré-cloné (= partagé avec
-		// l'état parent). Collecter d'abord, puis suivre+muter — ensureTracked journalise des
+		// l'état parent). Collecter d'abord, puis cloner+muter — ensureCloned remplace des
 		// valeurs de map, ne jamais muter une map en l'itérant.
 		var touched = []
 		for (var e: var stat in EveryStats) {
@@ -829,7 +742,7 @@ class ConsequencesClass {
 			}
 		}
 		for (var e in touched) {
-			var stat = StateClass.ensureTracked(EveryStats, e, entityDeltas)
+			var stat = StateClass.ensureCloned(EveryStats, e, clonedIds)
 			var newEffects = []
 			for (var eff in stat.EFFECTS) {
 				if (eff[2] == Caster) {
@@ -838,7 +751,6 @@ class ConsequencesClass {
 					push(newEffects, eff)
 				}
 			}
-			StateClass.touchField(stat, DELTA_EFFECTS, stat.EFFECTS)
 			stat.EFFECTS = newEffects
 		}
 	}
@@ -850,20 +762,16 @@ class ConsequencesClass {
 	 * par la victime -> cascade des summons vivants (killer null : aucun bonus, aucun proc).
 	 * KillerStats == null pour une mort de cascade. Idempotente : victime déjà morte = no-op.
 	 */
-	static getKillConsequences(VictimStats, KillerStats, EveryStats, entityDeltas) {
+	static getKillConsequences(VictimStats, KillerStats, EveryStats, clonedIds) {
 		if (VictimStats.LIFE <= 0) return;
-		VictimStats = StateClass.ensureTracked(EveryStats, VictimStats.ID, entityDeltas)
-		StateClass.touchField(VictimStats, DELTA_LIFE, VictimStats.LIFE)
+		VictimStats = StateClass.ensureCloned(EveryStats, VictimStats.ID, clonedIds)
 		VictimStats.LIFE = 0
 		var Killed = VictimStats.ID
-		var killer = (KillerStats != null) ? StateClass.ensureTracked(EveryStats, KillerStats.ID, entityDeltas) : null
+		var killer = (KillerStats != null) ? StateClass.ensureCloned(EveryStats, KillerStats.ID, clonedIds) : null
 
 		// Bonus BR + coffre (State.onPlayerDie — killer non-null seulement, PAS de check
 		// vivant : un renvoyeur mort touche quand même son bonus, comme le moteur).
 		if (killer != null) {
-			// UNE barrière pour les deux sources de POWER (bonus BR et coffres) : le switch des
-			// coffres vit HORS du test de type de combat, il doit être couvert lui aussi.
-			StateClass.touchField(killer, DELTA_POWER, killer.POWER)
 			if (FIGHT_TYPE == FIGHT_TYPE_BATTLE_ROYALE) {
 				// Approx déclarée : le moteur lit le seul effet RAW_BUFF_POWER SYSTÈME de la
 				// victime (attack == null) ; notre POWER agrège aussi les buffs d'items.
@@ -886,7 +794,7 @@ class ConsequencesClass {
 			}
 			var darkRow = PASSIVE_INFO[WEAPON_DARK_KATANA][EFFECT_ALLY_KILLED_TO_AGILITY]
 			for (var e in darkIds) {
-				applyPassiveRawEffect(StateClass.ensureTracked(EveryStats, e, entityDeltas), EFFECT_RAW_BUFF_AGILITY, darkRow[1], WEAPON_DARK_KATANA, darkRow, false)
+				applyPassiveRawEffect(StateClass.ensureCloned(EveryStats, e, clonedIds), EFFECT_RAW_BUFF_AGILITY, darkRow[1], WEAPON_DARK_KATANA, darkRow, false)
 			}
 		}
 
@@ -900,13 +808,13 @@ class ConsequencesClass {
 
 		// Entity.die : retrait de tous les effets lancés par la victime, PUIS cascade — les
 		// summons VIVANTS de la victime meurent avec killer null (récursif : summons de summons).
-		RemoveCastedEffects(EveryStats, Killed, entityDeltas)
+		RemoveCastedEffects(EveryStats, Killed, clonedIds)
 		var cascadeIds = []
 		for (var e: var stat in EveryStats) {
 			if (stat.LIFE > 0 && stat.SUMMONER == Killed) push(cascadeIds, e)
 		}
 		for (var e in cascadeIds) {
-			getKillConsequences(EveryStats[e], null, EveryStats, entityDeltas)
+			getKillConsequences(EveryStats[e], null, EveryStats, clonedIds)
 		}
 	}
 
@@ -935,29 +843,20 @@ class ConsequencesClass {
 			ReplacementChangeStats(weapon, [rawType, 0, 0, duration, 0, passiveRow[5]], stats)
 		}
 		if (rawType == EFFECT_RAW_ABSOLUTE_SHIELD) {
-			StateClass.touchField(stats, DELTA_ABSOLUTE_SHIELD, stats.ABSOLUTE_SHIELD)
 			stats.ABSOLUTE_SHIELD += value
 		} else if (rawType == EFFECT_RAW_BUFF_STRENGTH) {
-			StateClass.touchField(stats, DELTA_STRENGTH, stats.STRENGTH)
 			stats.STRENGTH += value
 		} else if (rawType == EFFECT_RAW_BUFF_MAGIC) {
-			StateClass.touchField(stats, DELTA_MAGIC, stats.MAGIC)
 			stats.MAGIC += value
 		} else if (rawType == EFFECT_RAW_BUFF_AGILITY) {
-			StateClass.touchField(stats, DELTA_AGILITY, stats.AGILITY)
 			stats.AGILITY += value
 		} else if (rawType == EFFECT_RAW_BUFF_RESISTANCE) {
-			StateClass.touchField(stats, DELTA_RESISTANCE, stats.RESISTANCE)
 			stats.RESISTANCE += value
 		} else if (rawType == EFFECT_RAW_BUFF_MP) {
-			StateClass.touchField(stats, DELTA_MP, stats.MP)
 			stats.MP += value
-			StateClass.touchField(stats, DELTA_TOTAL_MP, stats.TOTAL_MP)
 			stats.TOTAL_MP += value
 		} else if (rawType == EFFECT_RAW_BUFF_TP) {
-			StateClass.touchField(stats, DELTA_TP, stats.TP)
 			stats.TP += value
-			StateClass.touchField(stats, DELTA_TOTAL_TP, stats.TOTAL_TP)
 			stats.TOTAL_TP += value
 		}
 		// passiveRow[5] = les modifiers de la ligne passive — le RAW_AGILITY du Dark Katana
@@ -1007,7 +906,6 @@ class ConsequencesClass {
 		if (CastStats.LIFE <= 0) return;
 		if (CastStats.SPECIAL_WEAPON == WEAPON_UNSTABLE_DESTROYER && CastStats.LIFE < CastStats.TOTAL_LIFE) {
 			// RAW_HEAL instantané (durée 0) : JAMAIS enregistré au ledger.
-			StateClass.touchField(CastStats, DELTA_LIFE, CastStats.LIFE)
 			CastStats.LIFE = min(CastStats.TOTAL_LIFE, CastStats.LIFE + PASSIVE_INFO[WEAPON_UNSTABLE_DESTROYER][EFFECT_CRITICAL_TO_HEAL][1])
 		}
 	}
@@ -1022,7 +920,7 @@ class ConsequencesClass {
 		}
 	}
 
-	static getEntityDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, entityDeltas) {
+	static getEntityDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, clonedIds) {
 		var BaseDamages = base * (1 - Dist * 0.2)
 		// Érosion : +10 points si le cast est critique (crit binaire à 950), le RETOUR érode
 		// au MÊME taux (celui de l'attaque, comme le moteur).
@@ -1031,12 +929,10 @@ class ConsequencesClass {
 		var TargetLife = TarStats.LIFE
 		var Damage = min(DamagesWithShield, TargetLife)
 		if (Damage >= TargetLife && TargetLife > 0) {
-			getKillConsequences(TarStats, CastStats, EveryStats, entityDeltas)
+			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
 		} else {
-			StateClass.touchField(TarStats, DELTA_LIFE, TarStats.LIFE)
 			TarStats.LIFE -= Damage
 		}
-		StateClass.touchField(TarStats, DELTA_TOTAL_LIFE, TarStats.TOTAL_LIFE)
 		TarStats.TOTAL_LIFE -= Damage * erosionRate
 		// Passifs de la cible (EffectDamage : onDirectDamage puis onNovaDamage APRÈS les
 		// dégâts, AVANT lifesteal et retour ; cible morte -> aucun proc).
@@ -1054,12 +950,10 @@ class ConsequencesClass {
 			if (Damage_Return >= lifeAfterSteal && CastStats.LIFE > 0) {
 				// Retour léthal : le caster meurt VRAIMENT (cascade de ses summons + déroulé de
 				// ses buffs), et getConsequences saute ses effets restants — comme le moteur.
-				getKillConsequences(CastStats, TarStats, EveryStats, entityDeltas)
+				getKillConsequences(CastStats, TarStats, EveryStats, clonedIds)
 			} else {
-				StateClass.touchField(CastStats, DELTA_LIFE, CastStats.LIFE)
 				CastStats.LIFE = lifeAfterSteal - Damage_Return
 			}
-			StateClass.touchField(CastStats, DELTA_TOTAL_LIFE, CastStats.TOTAL_LIFE)
 			CastStats.TOTAL_LIFE -= appliedReturn * erosionRate
 			// Érosion du retour -> proc nova du caster SURVIVANT (EffectDamage.java:75).
 			if (CastStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(CastStats, appliedReturn * erosionRate)
@@ -1095,7 +989,6 @@ class ConsequencesClass {
 			if (removedValue != 0) removeCastedEffect(eff[0], TarStats, removedValue, eff[3])
 			if (newValue > 0) push(newEffects, [eff[0], newValue, eff[2], eff[3], eff[4], eff[5], eff[6], eff[7]])
 		}
-		StateClass.touchField(TarStats, DELTA_EFFECTS, TarStats.EFFECTS)
 		TarStats.EFFECTS = newEffects
 	}
 
@@ -1117,23 +1010,20 @@ class ConsequencesClass {
 				push(newEffects, eff)
 			}
 		}
-		StateClass.touchField(TarStats, DELTA_EFFECTS, TarStats.EFFECTS)
 		TarStats.EFFECTS = newEffects
 	}
 
-	static getEntityLifeDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, entityDeltas) {
+	static getEntityLifeDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, clonedIds) {
 		var BaseDamages = base * (1 - Dist * 0.2)
 		var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
 		var InitialDamages = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
 		var TargetLife = TarStats.LIFE
 		var Damage = min(InitialDamages, TargetLife)
 		if (Damage >= TargetLife && TargetLife > 0) {
-			getKillConsequences(TarStats, CastStats, EveryStats, entityDeltas)
+			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
 		} else {
-			StateClass.touchField(TarStats, DELTA_LIFE, TarStats.LIFE)
 			TarStats.LIFE -= Damage
 		}
-		StateClass.touchField(TarStats, DELTA_TOTAL_LIFE, TarStats.TOTAL_LIFE)
 		TarStats.TOTAL_LIFE -= Damage * erosionRate
 		// Passifs de la cible (EffectLifeDamage : onDirectDamage puis onNovaDamage, comme
 		// les dégâts directs ; cible morte -> aucun proc).
@@ -1146,12 +1036,10 @@ class ConsequencesClass {
 			var appliedReturn = min(Damage_Return, CastStats.LIFE)   // plafonné à la vie restante (érosion sur l'appliqué)
 			if (Damage_Return >= CastStats.LIFE && CastStats.LIFE > 0) {
 				// Retour léthal : voir getEntityDamageConsequences.
-				getKillConsequences(CastStats, TarStats, EveryStats, entityDeltas)
+				getKillConsequences(CastStats, TarStats, EveryStats, clonedIds)
 			} else {
-				StateClass.touchField(CastStats, DELTA_LIFE, CastStats.LIFE)
 				CastStats.LIFE -= Damage_Return
 			}
-			StateClass.touchField(CastStats, DELTA_TOTAL_LIFE, CastStats.TOTAL_LIFE)
 			CastStats.TOTAL_LIFE -= appliedReturn * erosionRate
 			// PAS de proc nova ici : EffectLifeDamage.java n'appelle pas onNovaDamage sur le retour.
 		}
@@ -1240,7 +1128,8 @@ class ConsequencesClass {
 		// Crit binaire asymétrique (Constants), appliqué AVANT les shields comme le moteur :
 		// (d·1.3 − ABS) ≠ (d − ABS)·1.3.
 		var critFactor = DangerClass.critFactorOf(casterstats)
-		// Shields de la cible passés en SCALAIRES (la chaîne de vulnés ne mute jamais l'objet).
+		// Shields de la cible passés en SCALAIRES (la chaîne de vulnés de Danger ne mute jamais
+		// l'objet cible — lot #8).
 		var shieldFactor = 1 - targetRel / 100
 		// 99 = pas d'antidote dans l'inventaire (jamais de cure -> le poison compte sa durée
 		// PLEINE), distinct d'un antidote prêt (0).

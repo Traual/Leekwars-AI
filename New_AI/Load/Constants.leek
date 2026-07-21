@@ -103,71 +103,12 @@ global MIN_AGILITY_ENEMY_CRIT = 50
 global CAST_IS_CRITICAL = false
 global FIGHT_TYPE = getFightType() // sert au calcul du power dans Consequences
 
-// ============================================================================
-// Champs MUTABLES d'un EntityState, indexés de façon compacte : identifiants de 0 à 30
-// (le masque d'un delta est un bit-set 64 bits, 1 << id). Les champs IMMUABLES pendant la
-// simulation (ID, SIDE, IS_SUMMON, SUMMONER, INVENTORY, SPECIAL_WEAPON, STATIC, NAME,
-// BASE_STATS) n'en ont PAS : rien ne les écrit, rien ne les journalise.
-// Toute écriture simulée doit être précédée de StateClass.touchField(stat, DELTA_X, stat.X).
-// ============================================================================
-global DELTA_CELL = 0
-global DELTA_LIFE = 1
-global DELTA_TOTAL_LIFE = 2
-global DELTA_STRENGTH = 3
-global DELTA_WISDOM = 4
-global DELTA_AGILITY = 5
-global DELTA_RESISTANCE = 6
-global DELTA_SCIENCE = 7
-global DELTA_MAGIC = 8
-global DELTA_MP = 9
-global DELTA_TOTAL_MP = 10
-global DELTA_TP = 11
-global DELTA_TOTAL_TP = 12
-global DELTA_ABSOLUTE_SHIELD = 13
-global DELTA_RELATIVE_SHIELD = 14
-global DELTA_DAMAGE_RETURN = 15
-global DELTA_POWER = 16
-global DELTA_WEAPON = 17
-global DELTA_EFFECTS = 18
-global DELTA_POISON = 19
-global DELTA_POISON_OVER_TIME = 20
-global DELTA_AFTEREFFECT = 21
-global DELTA_AFTEREFFECT_OVER_TIME = 22
-global DELTA_HEAL = 23
-global DELTA_HEAL_OVER_TIME = 24
-global DELTA_TURN_ORDER = 25
-global DELTA_COOLDOWNS = 26
-global DELTA_USES = 27
-global DELTA_ITEM_STATE_PARENT = 28
-// Mémos dérivés : suivis UNIQUEMENT pour la restauration temporaire et l'invalidation, ils
-// ne sont pas des données sémantiques du patch persistant (recalculables sur l'enfant) et
-// n'entrent JAMAIS dans CHANGED.
-global DELTA_CAP_MEMO = 29
-global DELTA_TLSQ_MEMO = 30
-
-// Groupes d'inputs des trois contributions incrémentales. Node teste ces masques contre
-// CHANGED_MASK : si aucun input du groupe n'a réellement changé, il ne reconstruit RIEN et
-// n'appelle aucune fonction de contribution. Sinon il ne reconstruit que les anciennes
-// valeurs des champs effectivement changés (StateClass.oldValueOf) — aucune contribution
-// n'est capturée pendant la simulation.
-global DELTA_MASK_BASE = (1 << DELTA_LIFE) | (1 << DELTA_CELL)
-global DELTA_MASK_CONTEXT = (1 << DELTA_LIFE) | (1 << DELTA_CELL) | (1 << DELTA_AGILITY)
-	| (1 << DELTA_STRENGTH) | (1 << DELTA_MAGIC) | (1 << DELTA_TOTAL_MP) | (1 << DELTA_TOTAL_TP)
-	| (1 << DELTA_POWER)
-global DELTA_MASK_HFP = (1 << DELTA_LIFE) | (1 << DELTA_CELL) | (1 << DELTA_AGILITY)
-	| (1 << DELTA_WISDOM) | (1 << DELTA_TOTAL_MP) | (1 << DELTA_TOTAL_TP)
-
-// Inputs LOCAUX du terme de scoring : vie et capital,
-// cellule, retour de dégâts, six flux périodiques, et les dix inputs de capability.
-global DELTA_MASK_CAPABILITY = (1 << DELTA_STRENGTH) | (1 << DELTA_MAGIC) | (1 << DELTA_WISDOM)
-	| (1 << DELTA_SCIENCE) | (1 << DELTA_AGILITY) | (1 << DELTA_RESISTANCE)
-	| (1 << DELTA_TOTAL_TP) | (1 << DELTA_TOTAL_MP)
-	| (1 << DELTA_ABSOLUTE_SHIELD) | (1 << DELTA_RELATIVE_SHIELD)
-global DELTA_MASK_LOCAL_TERM = DELTA_MASK_CAPABILITY | (1 << DELTA_LIFE) | (1 << DELTA_TOTAL_LIFE)
-	| (1 << DELTA_CELL) | (1 << DELTA_DAMAGE_RETURN)
-	| (1 << DELTA_POISON) | (1 << DELTA_POISON_OVER_TIME)
-	| (1 << DELTA_AFTEREFFECT) | (1 << DELTA_AFTEREFFECT_OVER_TIME)
-	| (1 << DELTA_HEAL) | (1 << DELTA_HEAL_OVER_TIME)
+// Bits du masque différentiel d'une entité clonée (StateClass.diffMaskOf) : quels groupes
+// d'inputs ont RÉELLEMENT changé entre l'état parent et le clone après l'action.
+global DIFF_BASE = 1        // contribution BaseHash (vivant<->mort, cellule d'un vivant)
+global DIFF_CONTEXT = 2     // contribution contexte danger (inputs effectifs offensifs)
+global DIFF_HFP = 4         // contribution fingerprint heal (inputs effectifs de healer)
+global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
 
 // BFS :
 // Seuil de Δ sous lequel une action de base est traitée comme un no-op (skip de l'expansion
