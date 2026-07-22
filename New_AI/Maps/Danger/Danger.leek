@@ -381,37 +381,43 @@ class DangerClass {
 	 */
 	static getMapAoeForItem(ItemInfos, directMask) {
 		var _final = [: ]
+		if (directMask == 0L) return _final   // aucun centre direct : aucune expansion possible
 		var areaMax = ItemInfos.AREA_MAX
-		if (areaMax == 0) {
-			// Zone ponctuelle : décodage direct à distance 0, aucune couche construite.
-			var mask = directMask
-			while (mask != 0L) {
-				var cell = trailingZeros(mask)
-				_final[cell] = 0
-				mask = setBit(mask, cell, false)
-			}
-			return _final
+		// Couche 0 traitée DIRECTEMENT : décodage du masque direct à distance 0 — la boucle
+		// de minimisation part de seen = directMask, sans les trois opérations 0L inutiles.
+		var mask = directMask
+		while (mask != 0L) {
+			var cell = trailingZeros(mask)
+			_final[cell] = 0
+			mask = setBit(mask, cell, false)
 		}
+		if (areaMax == 0) return _final
 		var area = ItemInfos.AREA
-		var rawLayers = [directMask]
+		var rawLayers = [0L]   // slot 0 inutilisé (couche 0 déjà décodée) : indices == distances
 		for (var d = 1; d <= areaMax; d++) {
 			push(rawLayers, 0L)
 		}
-		var mask = directMask
+		mask = directMask
 		while (mask != 0L) {
 			var center = trailingZeros(mask)
 			for (var d: var m in areaMasksByCenter(area, center)) {
+				if (d == 0) continue   // le bit dist-0 du centre est déjà dans la couche 0
 				rawLayers[d] = rawLayers[d] | m
 			}
 			mask = setBit(mask, center, false)
 		}
 		// andNot via & puis ^ (pas de ~ sur un big_integer : complément à deux infini).
-		var seen = 0L
-		for (var d = 0; d <= areaMax; d++) {
+		// Couches vides court-circuitées (les formes X ont des distances absentes).
+		var seen = directMask
+		for (var d = 1; d <= areaMax; d++) {
 			var layer = rawLayers[d]
+			if (layer == 0L) continue
 			var common = layer & seen
-			layer = layer ^ common
-			seen = seen | layer
+			if (common != 0L) {
+				layer = layer ^ common
+				if (layer == 0L) continue
+			}
+			if (d < areaMax) seen = seen | layer   // la dernière couche n'a plus de lecteur
 			while (layer != 0L) {
 				var cell = trailingZeros(layer)
 				_final[cell] = d
