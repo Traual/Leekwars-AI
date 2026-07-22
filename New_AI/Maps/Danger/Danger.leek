@@ -224,7 +224,7 @@ class DangerClass {
 	static getCellDangerClassFromItem(TargetStats, Infos, BaseTp, BaseUses, ItemAoeMap, CasterStats, Item, curAbs, curRel) {
 		var ThisTp = BaseTp - Infos.COST
 		var ThisUses = clone(BaseUses)
-		var newShields = getRoughVulneConsequences(TargetStats, curAbs, curRel, Infos, critFactorOf(CasterStats), CasterStats)
+		var newShields = getRoughVulneConsequences(TargetStats, curAbs, curRel, Infos, critFactorOf(CasterStats))
 		ThisUses[Item]++
 		var DamagesWithThisItemVulne = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, ThisTp, ThisUses, newShields[0], newShields[1])
 		return new DangerClass(newShields[0], newShields[1], ThisTp, ThisUses, DamagesWithThisItemVulne)
@@ -236,7 +236,7 @@ class DangerClass {
 	 * isHitable — le caster est toujours adverse ici) ; la garde cible morte reste au call
 	 * site. Ordre des lignes et facteur critique CONSERVÉS, ABS puis REL pour le debuff.
 	 * TargetStats n'est jamais muté. Retourne [abs, rel]. */
-	static getRoughVulneConsequences(TargetStats, curAbs, curRel, Infos, CritFactor, CasterStats) {
+	static getRoughVulneConsequences(TargetStats, curAbs, curRel, Infos, CritFactor) {
 		// Cible morte : shields inchangés (l'ancien isHitable refusait tout sur un mort).
 		if (TargetStats.LIFE <= 0) return [curAbs, curRel]
 		var effs = TargetStats.IS_SUMMON ? Infos.DANGER_VULNE_EFFECTS_ENEMY_SUMMON : Infos.DANGER_VULNE_EFFECTS_ENEMY_LEEK
@@ -440,30 +440,19 @@ class DangerClass {
 		return _final
 	}
 
-	/* L'entité a-t-elle un item à compter dans la danger map ? (cooldown <= 1, effet menaçant)
+	/* L'entité a-t-elle un item à compter dans la danger map ? (cooldown <= 1, effet menaçant
+	 * — qualification IS_DANGER_ITEM précompilée dans ItemClass, six types historiques)
 	 * Parcourt INVENTORY (même ordre que l'ancienne map de cooldowns) + cooldown effectif. */
 	static HaveAnHittableItem(CasterStats, CasterID) {
 		if (CasterID in HAVE_AN_HITTABLE_ITEM_CACHE) return HAVE_AN_HITTABLE_ITEM_CACHE[CasterID]
 		for (var i in CasterStats.INVENTORY) {
 			if (StateClass.cooldownOf(CasterStats, i) > 1) continue
-			for (var eff in ITEMINFO[i].EFFECTS) {
-				if (MapHittables[eff[0]]) {
-					HAVE_AN_HITTABLE_ITEM_CACHE[CasterID] = true
-					return true
-				}
+			if (ITEMINFO[i].IS_DANGER_ITEM) {
+				HAVE_AN_HITTABLE_ITEM_CACHE[CasterID] = true
+				return true
 			}
 		}
 		HAVE_AN_HITTABLE_ITEM_CACHE[CasterID] = false
 		return false
 	}
-
-	static MapHittables = [
-		EFFECT_DAMAGE: true,
-		EFFECT_LIFE_DAMAGE: true,
-		EFFECT_POISON: true,
-		EFFECT_DEBUFF: true,
-		EFFECT_ABSOLUTE_VULNERABILITY: true,
-		EFFECT_VULNERABILITY: true
-	]
-
 }

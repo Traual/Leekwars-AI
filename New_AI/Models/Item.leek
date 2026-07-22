@@ -31,6 +31,7 @@ class ItemClass {
 	// flottants qu'un filtrage à l'usage). Danger : le caster y est TOUJOURS adverse de la
 	// cible, isHitable s'y réduit à LIFE > 0 (gardé au call site) + ENEMIES + le bit summon.
 	IS_HEAL_ITEM                       // qualification historique d'isHealItem (sans exiger ALLIES)
+	IS_DANGER_ITEM                     // qualification historique de MapHittables (6 types, AUCUN filtre de masque/profil/ON_CASTER)
 	HEAL_EFFECTS_ALLY_LEEK             // heals/vitalités non ON_CASTER, ALLIES + NON_SUMMONS
 	HEAL_EFFECTS_ALLY_SUMMON           // idem, ALLIES + SUMMONS
 	DANGER_DAMAGE_EFFECTS_ENEMY_LEEK   // DAMAGE/LIFE_DAMAGE/POISON non ON_CASTER, ENEMIES + NON_SUMMONS
@@ -61,6 +62,7 @@ class ItemClass {
 			// tableaux créés au premier ajout seulement (null = vide).
 			this.IS_VULNERABILITY = false
 			this.IS_HEAL_ITEM = false
+			this.IS_DANGER_ITEM = false
 			this.HEAL_EFFECTS_ALLY_LEEK = null
 			this.HEAL_EFFECTS_ALLY_SUMMON = null
 			this.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK = null
@@ -71,6 +73,13 @@ class ItemClass {
 				var t = eff[0]
 				var mask = eff[4]
 				var onCaster = eff[5] & EFFECT_MODIFIER_ON_CASTER
+				// Qualification "item menaçant" : table de vérité EXACTE de l'ancien
+				// MapHittables — volontairement GÉNÉRALE (aucun filtre de masque, de profil
+				// ni ON_CASTER), pour reproduire IsToCheck et HaveAnHittableItem.
+				if (t == EFFECT_DAMAGE || t == EFFECT_LIFE_DAMAGE || t == EFFECT_POISON
+					|| t == EFFECT_DEBUFF || t == EFFECT_VULNERABILITY || t == EFFECT_ABSOLUTE_VULNERABILITY) {
+					this.IS_DANGER_ITEM = true
+				}
 				if (t == EFFECT_DEBUFF || t == EFFECT_VULNERABILITY || t == EFFECT_ABSOLUTE_VULNERABILITY) {
 					this.IS_VULNERABILITY = true
 					// Vues vulné : PAS de filtre ON_CASTER (l'ancien getRoughVulneConsequences

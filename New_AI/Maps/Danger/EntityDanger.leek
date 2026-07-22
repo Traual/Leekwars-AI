@@ -58,19 +58,12 @@ class EntityDangerClass {
 		var _final = []
 		for (var i in EntityStats.INVENTORY) {
 			if (StateClass.cooldownOf(EntityStats, i) > 1) continue
-			if (IsToCheck(ITEMINFO[i])) {
+			if (ITEMINFO[i].IS_DANGER_ITEM) {
 				push(_final, i)
 			}
 		}
 		DANGER_ENTITY_INVENTORY[Hash] = _final
 		return _final
-	}
-
-	static IsToCheck(Infos) {
-		for (var eff in Infos.EFFECTS) {
-			if (DangerClass.MapHittables[eff[0]]) return true
-		}
-		return false
 	}
 
 	static SortTmp(ActualTmp) {
