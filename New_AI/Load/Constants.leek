@@ -109,6 +109,48 @@ global DIFF_BASE = 1        // contribution BaseHash (vivant<->mort, cellule d'u
 global DIFF_CONTEXT = 2     // contribution contexte danger (inputs effectifs offensifs)
 global DIFF_HFP = 4         // contribution fingerprint heal (inputs effectifs de healer)
 global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
+// ============================================================================
+// PureDelta (EntityActionPatchClass) : un bit PM_* par champ patchable. Le masque dit
+// quelles propriétés du patch sont présentes ; il ne journalise rien.
+// ============================================================================
+global PM_CELL = 1 << 0
+global PM_LIFE = 1 << 1
+global PM_TOTAL_LIFE = 1 << 2
+global PM_STRENGTH = 1 << 3
+global PM_WISDOM = 1 << 4
+global PM_AGILITY = 1 << 5
+global PM_RESISTANCE = 1 << 6
+global PM_SCIENCE = 1 << 7
+global PM_MAGIC = 1 << 8
+global PM_MP = 1 << 9
+global PM_TOTAL_MP = 1 << 10
+global PM_TP = 1 << 11
+global PM_TOTAL_TP = 1 << 12
+global PM_ABSOLUTE_SHIELD = 1 << 13
+global PM_RELATIVE_SHIELD = 1 << 14
+global PM_DAMAGE_RETURN = 1 << 15
+global PM_POWER = 1 << 16
+global PM_POISON = 1 << 17
+global PM_POISON_OVER_TIME = 1 << 18
+global PM_AFTEREFFECT = 1 << 19
+global PM_AFTEREFFECT_OVER_TIME = 1 << 20
+global PM_HEAL = 1 << 21
+global PM_HEAL_OVER_TIME = 1 << 22
+global PM_TURN_ORDER = 1 << 23
+global PM_EFFECTS = 1 << 24
+global PM_WEAPON = 1 << 25
+global PM_COOLDOWNS = 1 << 26
+global PM_USES = 1 << 27
+
+// Groupes d'inputs, ALIGNÉS EXACTEMENT sur les dépendances de diffMaskOf (lot #4) —
+// consommés par P2 (scoring delta-aware) ; posés dès P1 pour figer le contrat.
+global PM_BASE_HASH = PM_LIFE | PM_CELL
+global PM_CONTEXT = PM_LIFE | PM_CELL | PM_AGILITY | PM_STRENGTH | PM_MAGIC | PM_TOTAL_MP | PM_TOTAL_TP | PM_POWER
+global PM_HFP = PM_LIFE | PM_CELL | PM_AGILITY | PM_WISDOM | PM_TOTAL_MP | PM_TOTAL_TP
+global PM_CAPABILITY = PM_STRENGTH | PM_MAGIC | PM_WISDOM | PM_SCIENCE | PM_AGILITY | PM_RESISTANCE
+	| PM_TOTAL_TP | PM_TOTAL_MP | PM_ABSOLUTE_SHIELD | PM_RELATIVE_SHIELD
+global PM_PERIODIC = PM_POISON | PM_POISON_OVER_TIME | PM_AFTEREFFECT | PM_AFTEREFFECT_OVER_TIME | PM_HEAL | PM_HEAL_OVER_TIME
+global PM_LOCAL_TERM = PM_CAPABILITY | PM_LIFE | PM_TOTAL_LIFE | PM_CELL | PM_DAMAGE_RETURN | PM_PERIODIC
 
 // BFS :
 // Seuil de Δ sous lequel une action de base est traitée comme un no-op (skip de l'expansion

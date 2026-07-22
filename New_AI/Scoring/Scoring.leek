@@ -63,8 +63,8 @@ class ScoringClass {
      */
     static getStateScoreFromParent(node, EffectiveState, ParentScore, ParentTermNode, ParentContext, ParentHfp, MySide, ParentPoisonKey) {
         BenchOps.Start("Scoring")
-        // EffectiveState = le workspace ENCORE muté par l'action (le nœud, lui, ne porte que
-        // son patch : END_STATS est null tant qu'il n'est pas développé).
+        // EffectiveState = l'état candidat MATÉRIALISÉ (node.END_STATS à P1) — l'état complet
+        // d'APRÈS l'action, le ParentState restant immuable.
         var State = EffectiveState
         var cloned = node.CLONED
         var hfpMap = node.HFP_BY_SIDE

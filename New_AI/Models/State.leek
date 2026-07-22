@@ -128,29 +128,6 @@ class StateClass {
 		return n
 	}
 
-	/*
-	 * LE clone de simulation — source unique. Les containers sont PARTAGÉS par défaut :
-	 * personne n'écrit INVENTORY ni BASE_STATS pendant la sim ; EFFECTS est partagé
-	 * mais JAMAIS muté en place — toute modification (remplacement, mort du caster, revive)
-	 * REBINDE un tableau neuf sur le clone, le parent garde le sien. COOLDOWNS / USES (les
-	 * deux seuls containers écrits en sim, Me only) deviennent des OVERLAYS différentiels :
-	 * le clone de Me ne porte que ses écritures locales, les valeurs héritées se résolvent
-	 * en remontant ITEM_STATE_PARENT (chaîne immuable — cooldownOf/usesOf). Si un jour un
-	 * effet mute un container d'une CIBLE en place, le deep-clone se fait ICI (point
-	 * unique), jamais au site de l'effet.
-	 */
-	static cloneEntityForSim(stat, isMe) {
-		var c = clone(stat, 1)                    // scalaires copiés, containers partagés
-		if (isMe) {
-			c.ITEM_STATE_PARENT = stat
-			c.COOLDOWNS = [: ]
-			c.USES = [: ]
-		}
-		// CAP_MEMO / TLSQ_MEMO : COPIÉS par clone(stat, 1) puis VALIDÉS après l'action
-		// (diffMaskOf dans la boucle de masque du Node) — plus d'invalidation au clonage.
-		return c
-	}
-
 	// ============================================================================
 	// Inventaire différentiel — SOURCES UNIQUES de lecture/écriture de COOLDOWNS/USES.
 	// Racine (état réel, virtuel ou non-Me) : ITEM_STATE_PARENT = null, maps complètes.
@@ -317,64 +294,15 @@ class StateClass {
 	}
 
 	/*
-	 * Ouvre la simulation d'une action DANS le workspace (map extérieure réutilisée par tous
-	 * les candidats d'un même parent, restaurée après chacun) : Me SEUL est cloné d'office —
-	 * sa cellule, ses TP/MP, son arme, ses cooldowns et ses uses bougent à chaque action. Les
-	 * cibles réellement touchées sont clonées PARESSEUSEMENT par getConsequences (ensureCloned
-	 * au premier effet applicable). clonedIds[id] = l'ANCIEN EntityState (référence read-only,
-	 * null pour une entité NÉE dans l'action) — il pilote la capture du patch ET la
-	 * restauration du workspace.
-	 */
-	static beginActionOnWorkspace(Workspace, clonedIds) {
-		var parentMe = Workspace[Me]
-		Workspace[Me] = cloneEntityForSim(parentMe, true)
-		clonedIds[Me] = parentMe
-	}
-
-	/*
-	 * Remet le workspace EXACTEMENT dans l'état du parent, après simulation ET scoring d'un
-	 * candidat : chaque entité touchée retrouve sa référence d'avant l'action, chaque entité
-	 * née dans l'action disparaît. À appeler sur TOUS les chemins (candidat retenu, rejeté
-	 * sous epsilon, gagnant ou perdant du chemin ScoredCache, fallback de collision d'id) —
-	 * un seul oubli corromprait tous les candidats suivants du même parent.
-	 */
-	static restoreWorkspace(Workspace, clonedIds) {
-		for (var id: var oldStat in clonedIds) {
-			if (oldStat == null) mapRemove(Workspace, id)
-			else Workspace[id] = oldStat
-		}
-	}
-
-	/*
-	 * État complet d'un nœud, matérialisé PARESSEUSEMENT et caché : un candidat ne porte que
-	 * son patch (STATE_PATCH) et son état parent (STATE_PARENT) ; la map complète n'est
-	 * reconstruite que si le nœud est réellement développé. Les morts restent dans le State
-	 * (LIFE <= 0), un summon est une simple entrée neuve du patch, et les références
-	 * EntityState des patches sont réutilisées telles quelles (aucun reclonage).
+	 * État complet d'un nœud, matérialisé PARESSEUSEMENT et caché : un candidat porte ses
+	 * ActionPatches (STATE_PATCH) et son état parent (STATE_PARENT) ; la map complète est
+	 * reconstruite par materializeActionState si elle n'est pas déjà en cache (à P1 le
+	 * candidat garde son état matérialisé dans END_STATS dès la création).
 	 */
 	static materializeNodeState(node) {
 		if (node.END_STATS != null) return node.END_STATS
-		var _final = clone(materializeNodeState(node.STATE_PARENT), 1)
-		for (var id: var stat in node.STATE_PATCH) _final[id] = stat
-		node.END_STATS = _final
-		return _final
-	}
-
-	/*
-	 * Clone-on-write pour les effets de bord des kills (cascade de summons, retrait de buffs,
-	 * procs d'armes) : ils mutent des entités HORS du set pré-cloné, donc des objets PARTAGÉS
-	 * avec l'état parent — les muter en place corromprait toute la recherche. Clone au premier
-	 * toucher et enregistre dans clonedIds l'ANCIEN état (référence read-only) — clonedIds
-	 * reste ainsi l'ensemble EXACT des entités possiblement mutées (le patch de hashs du
-	 * nœud l'itère, le recompute-set du scoring compare contre ses valeurs).
-	 */
-	static ensureCloned(EveryStats, id, clonedIds) {
-		if (!(id in clonedIds)) {
-			var parentStat = EveryStats[id]
-			EveryStats[id] = cloneEntityForSim(parentStat, id == Me)
-			clonedIds[id] = parentStat
-		}
-		return EveryStats[id]
+		node.END_STATS = materializeActionState(materializeNodeState(node.STATE_PARENT), node.STATE_PATCH)
+		return node.END_STATS
 	}
 
 	/*
@@ -418,6 +346,97 @@ class StateClass {
 		}
 		var _final = Divide == 0 ? 0 : (Total / Divide)
 		AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE[ThisHash] = _final
+		return _final
+	}
+
+	// ============================================================================
+	// PureDelta (P1) : le ParentState est STRICTEMENT immuable. Consequences accumule des
+	// patches fonctionnels ; le CandidateState n'est matérialisé qu'une fois, pour le
+	// scoring de compatibilité (supprimé en P2).
+	// ============================================================================
+
+	/* Récupère (ou crée) le patch d'une entité pour ce candidat — UNE fois par entité. */
+	static ensureEntityPatch(ActionPatches, id) {
+		if (id in ActionPatches) return ActionPatches[id]
+		var p = new EntityActionPatchClass(id)
+		ActionPatches[id] = p
+		return p
+	}
+
+	/*
+	 * Base EFFECTIVE d'une entité pour la simulation : l'entité de remplacement si une
+	 * collision d'id l'a posée, le summon né dans l'action sinon, sinon l'EntityState
+	 * IMMUABLE du ParentState. Tous les scans de Consequences passent par cette vue.
+	 */
+	static patchedBaseOf(ParentState, ActionPatches, id) {
+		if (id in ActionPatches) {
+			var p = ActionPatches[id]
+			if (p.REPLACEMENT_ENTITY != null) return p.REPLACEMENT_ENTITY
+			if (p.NEW_ENTITY != null) return p.NEW_ENTITY
+		}
+		return ParentState[id]
+	}
+
+	/*
+	 * Matérialisation de compatibilité P1 : reconstruit l'état candidat COMPLET depuis
+	 * ParentState + ActionPatches, strictement équivalent à l'ancien résultat mutatif de
+	 * Consequences. Les entités non patchées restent PARTAGÉES ; une entité patchée est un
+	 * clone superficiel + application des deltas (ils représentent déjà le résultat final
+	 * du cast — l'ordre d'application est sans incidence) ; les overlays COOLDOWNS/USES
+	 * reproduisent le contrat du système #1 (maps ABSOLUES locales + chaîne
+	 * ITEM_STATE_PARENT). Ne modifie JAMAIS ParentState ni ses entités.
+	 */
+	static materializeActionState(ParentState, ActionPatches) {
+		var _final = clone(ParentState, 1)
+		for (var id: var p in ActionPatches) {
+			var mask = p.MASK
+			var isNew = (p.NEW_ENTITY != null)
+			var base = (p.REPLACEMENT_ENTITY != null) ? p.REPLACEMENT_ENTITY : (isNew ? p.NEW_ENTITY : ParentState[id])
+			if (mask == 0 && !isNew && p.REPLACEMENT_ENTITY == null) continue   // patch vide : l'entité reste partagée (diffMaskOf verra zéro changement)
+			var c = clone(base, 1)
+			if (mask & PM_CELL) c.CELL += p.CELL
+			if (mask & PM_LIFE) c.LIFE += p.LIFE
+			if (mask & PM_TOTAL_LIFE) c.TOTAL_LIFE += p.TOTAL_LIFE
+			if (mask & PM_STRENGTH) c.STRENGTH += p.STRENGTH
+			if (mask & PM_WISDOM) c.WISDOM += p.WISDOM
+			if (mask & PM_AGILITY) c.AGILITY += p.AGILITY
+			if (mask & PM_RESISTANCE) c.RESISTANCE += p.RESISTANCE
+			if (mask & PM_SCIENCE) c.SCIENCE += p.SCIENCE
+			if (mask & PM_MAGIC) c.MAGIC += p.MAGIC
+			if (mask & PM_MP) c.MP += p.MP
+			if (mask & PM_TOTAL_MP) c.TOTAL_MP += p.TOTAL_MP
+			if (mask & PM_TP) c.TP += p.TP
+			if (mask & PM_TOTAL_TP) c.TOTAL_TP += p.TOTAL_TP
+			if (mask & PM_ABSOLUTE_SHIELD) c.ABSOLUTE_SHIELD += p.ABSOLUTE_SHIELD
+			if (mask & PM_RELATIVE_SHIELD) c.RELATIVE_SHIELD += p.RELATIVE_SHIELD
+			if (mask & PM_DAMAGE_RETURN) c.DAMAGE_RETURN += p.DAMAGE_RETURN
+			if (mask & PM_POWER) c.POWER += p.POWER
+			if (mask & PM_POISON) c.POISON += p.POISON
+			if (mask & PM_POISON_OVER_TIME) c.POISON_OVER_TIME += p.POISON_OVER_TIME
+			if (mask & PM_AFTEREFFECT) c.AFTEREFFECT += p.AFTEREFFECT
+			if (mask & PM_AFTEREFFECT_OVER_TIME) c.AFTEREFFECT_OVER_TIME += p.AFTEREFFECT_OVER_TIME
+			if (mask & PM_HEAL) c.HEAL += p.HEAL
+			if (mask & PM_HEAL_OVER_TIME) c.HEAL_OVER_TIME += p.HEAL_OVER_TIME
+			if (mask & PM_TURN_ORDER) c.TURN_ORDER += p.TURN_ORDER
+			if (mask & PM_EFFECTS) c.EFFECTS = p.EFFECTS
+			if (mask & PM_WEAPON) c.WEAPON = p.WEAPON
+			if (mask & (PM_COOLDOWNS | PM_USES)) {
+				// Contrat #1 : le clone porte des overlays LOCAUX à valeurs ABSOLUES, la
+				// chaîne remonte à la base pour tout le reste.
+				var newCooldowns = [: ]
+				if (mask & PM_COOLDOWNS) {
+					for (var it: var d in p.COOLDOWNS) newCooldowns[it] = cooldownOf(base, it) + d
+				}
+				var newUses = [: ]
+				if (mask & PM_USES) {
+					for (var it: var d in p.USES) newUses[it] = usesOf(base, it) + d
+				}
+				c.ITEM_STATE_PARENT = base
+				c.COOLDOWNS = newCooldowns
+				c.USES = newUses
+			}
+			_final[id] = c
+		}
 		return _final
 	}
 }
