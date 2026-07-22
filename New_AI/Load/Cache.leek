@@ -87,6 +87,11 @@ global AREA_DIST_CACHE = [: ]
 // (MAP_CELL_ITEM_AOE_CACHE / HEAL_CELL_ITEM_AOE_CACHE).
 global ITEM_LAUNCH_GEOMETRY_CACHE = [: ]
 global ITEM_FULL_GEOMETRY_CACHE = [: ]
+// Masques big_integer des cellules lançables PAR ORIGINE (Bitmap #1) : bit `cell` = 1 si
+// lançable depuis l'origine avec cette signature. Clé (originCell << 25) | LAUNCH_GEOMETRY_KEY
+// (10 + 25 bits, injectif). Ne dépend QUE de la géométrie et de la LoS statique -> persistant
+// au combat, read-only (les big_integer sont des valeurs immuables : | / setBit RETOURNENT).
+global LAUNCH_MASK_BY_ORIGIN_CACHE = [: ]
 
 global DISTANCE_CACHE = [: ]
 global LOS_CACHE = [: ]
