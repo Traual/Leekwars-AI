@@ -347,14 +347,14 @@ class DangerClass {
 				itemMap = ITEM_FULL_GEOMETRY_CACHE[fullKey]
 			} else {
 				var launchKey = (movementKey << 25) | Infos.LAUNCH_GEOMETRY_KEY
-				var directCells
+				var directMask
 				if (launchKey in ITEM_LAUNCH_GEOMETRY_CACHE) {
-					directCells = ITEM_LAUNCH_GEOMETRY_CACHE[launchKey]
+					directMask = ITEM_LAUNCH_GEOMETRY_CACHE[launchKey]
 				} else {
-					directCells = getMapHittableCellsTotal(Infos, walkCellsMap)
-					ITEM_LAUNCH_GEOMETRY_CACHE[launchKey] = directCells
+					directMask = getMapHittableCellsTotal(Infos, walkCellsMap)
+					ITEM_LAUNCH_GEOMETRY_CACHE[launchKey] = directMask
 				}
-				itemMap = getMapAoeForItem(Infos, directCells)
+				itemMap = getMapAoeForItem(Infos, directMask)
 				ITEM_FULL_GEOMETRY_CACHE[fullKey] = itemMap
 			}
 			for (var Cell: var MinAoeDist in itemMap) {
@@ -370,42 +370,87 @@ class DangerClass {
 	}
 
 	/*
-	 * [cellule -> distance d'AoE minimale] pour un item : les cellules touchables en direct
-	 * (MapCellsBool, déjà calculées par l'appelant) valent 0, puis l'expansion d'AoE remplit
-	 * le reste au plus près. Ne dépend que de la map directe, d'AREA et d'AREA_MAX.
+	 * [cellule -> distance d'AoE minimale] pour un item, depuis le MASQUE des cellules
+	 * directes (Bitmap #2). Expansion par COUCHES de distance : la couche 0 est le masque
+	 * direct, chaque centre direct OR ses masques d'AoE par distance (areaMasksByCenter —
+	 * AREA_MAX majore exactement les distances de getAreaDist : table AreaMax == Manhattan
+	 * max de la forme), puis les distances MINIMALES s'obtiennent en retirant de chaque
+	 * couche les cellules déjà vues aux distances inférieures — un recouvrement entre
+	 * centres garde toujours la plus petite distance, comme l'ancien fold min. UN seul
+	 * décodage par couche finale vers la map historique.
 	 */
-	static getMapAoeForItem(ItemInfos, MapCellsBool) {
+	static getMapAoeForItem(ItemInfos, directMask) {
 		var _final = [: ]
-		for (var cell: var bool in MapCellsBool) {
-			_final[cell] = 0
+		var areaMax = ItemInfos.AREA_MAX
+		if (areaMax == 0) {
+			// Zone ponctuelle : décodage direct à distance 0, aucune couche construite.
+			var mask = directMask
+			while (mask != 0L) {
+				var cell = trailingZeros(mask)
+				_final[cell] = 0
+				mask = setBit(mask, cell, false)
+			}
+			return _final
 		}
-		if (ItemInfos.AREA_MAX > 0) {
-			var area = ItemInfos.AREA
-			for (var cell: var bool in MapCellsBool) {
-				for (var Aoe: var AoeDist in CellClass.getAreaDist(area, cell)) {
-					var ActualCellDist = _final[Aoe]
-					if (ActualCellDist == null || ActualCellDist > AoeDist) {
-						_final[Aoe] = AoeDist
-					}
-				}
+		var area = ItemInfos.AREA
+		var rawLayers = [directMask]
+		for (var d = 1; d <= areaMax; d++) {
+			push(rawLayers, 0L)
+		}
+		var mask = directMask
+		while (mask != 0L) {
+			var center = trailingZeros(mask)
+			for (var d: var m in areaMasksByCenter(area, center)) {
+				rawLayers[d] = rawLayers[d] | m
+			}
+			mask = setBit(mask, center, false)
+		}
+		// andNot via & puis ^ (pas de ~ sur un big_integer : complément à deux infini).
+		var seen = 0L
+		for (var d = 0; d <= areaMax; d++) {
+			var layer = rawLayers[d]
+			var common = layer & seen
+			layer = layer ^ common
+			seen = seen | layer
+			while (layer != 0L) {
+				var cell = trailingZeros(layer)
+				_final[cell] = d
+				layer = setBit(layer, cell, false)
 			}
 		}
 		return _final
 	}
 
 	/*
-	 * [cellule -> true] : toutes les cellules touchables en direct par l'item depuis
-	 * n'importe quelle cellule accessible du caster. Bitmap #1 : l'union se fait par OR de
-	 * masques big_integer (un masque par cellule d'origine, caché au combat), puis UN seul
-	 * décodage vers la map historique — le format consommé en aval ne change pas
-	 * (ITEM_LAUNCH_GEOMETRY_CACHE cache toujours la map décodée, ses hits ne décodent rien).
+	 * Masque big_integer des cellules touchables en direct par l'item depuis n'importe
+	 * quelle cellule accessible du caster (Bitmap #2 : plus AUCUN décodage intermédiaire —
+	 * ITEM_LAUNCH_GEOMETRY_CACHE cache le masque, seul getMapAoeForItem le consomme, et
+	 * aucun consommateur Danger/Heal ne reçoit de big_integer : le format aval reste
+	 * [cell -> minAoeDist] via ITEM_FULL_GEOMETRY_CACHE).
 	 */
 	static getMapHittableCellsTotal(ItemInfos, WalkCellsMap) {
 		var mask = 0L
 		for (var EntityCell: var mp in WalkCellsMap) {
 			mask = mask | launchMaskFromOrigin(ItemInfos, EntityCell)
 		}
-		return cellMapFromBigMask(mask)
+		return mask
+	}
+
+	/*
+	 * [distance -> masque big_integer] des cellules d'AoE d'un type de zone autour d'un
+	 * centre — construit PARESSEUSEMENT depuis CellClass.getAreaDist (SOURCE GÉOMÉTRIQUE
+	 * UNIQUE : aucune formule de cercle/carré/plus/X dupliquée), persistant au combat.
+	 * Clé (areaType << 10) | centerCell, injective (cellule < 1024).
+	 */
+	static areaMasksByCenter(areaType, centerCell) {
+		var key = (areaType << 10) | centerCell
+		if (key in AREA_MASKS_BY_CENTER_CACHE) return AREA_MASKS_BY_CENTER_CACHE[key]
+		var byDist = [: ]
+		for (var cell: var dist in CellClass.getAreaDist(areaType, centerCell)) {
+			byDist[dist] = setBit((dist in byDist) ? byDist[dist] : 0L, cell)
+		}
+		AREA_MASKS_BY_CENTER_CACHE[key] = byDist
+		return byDist
 	}
 
 	/*
@@ -425,25 +470,10 @@ class DangerClass {
 			: ActionsClass.LaunchWithoutLos[ItemInfos.LAUNCHTYPE](originCell, ItemInfos.MINRANGE, ItemInfos.MAXRANGE)
 		var mask = 0L
 		for (var cell: var _t in cells) {
-			mask = mask | (1L << cell)
+			mask = setBit(mask, cell)
 		}
 		LAUNCH_MASK_BY_ORIGIN_CACHE[key] = mask
 		return mask
-	}
-
-	/*
-	 * Décode un masque big_integer vers la map historique [cell -> true] — une passe
-	 * trailingZeros + suppression du bit faible (mask & (mask - 1L)). L'ordre produit
-	 * (cellules croissantes) n'est pas sémantique : les consommateurs font des lookups
-	 * par clé et les hashs de combos itèrent les sous-maps d'ITEMS, jamais les cellules.
-	 */
-	static cellMapFromBigMask(mask) {
-		var _final = [: ]
-		while (mask != 0L) {
-			_final[trailingZeros(mask)] = true
-			mask = mask & (mask - 1L)
-		}
-		return _final
 	}
 
 	/*
