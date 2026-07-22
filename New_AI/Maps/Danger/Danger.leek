@@ -352,6 +352,7 @@ class DangerClass {
 		for (var Item in items) {
 			var Infos = ITEMINFO[Item]
 			var fullKey = (movementKey << 30) | Infos.FULL_GEOMETRY_KEY
+			var diagFullWasHit = (fullKey in ITEM_FULL_GEOMETRY_CACHE)   // DIAGNOSTIC — À RETIRER
 			var itemMap
 			if (fullKey in ITEM_FULL_GEOMETRY_CACHE) {
 				itemMap = ITEM_FULL_GEOMETRY_CACHE[fullKey]
@@ -373,13 +374,14 @@ class DangerClass {
 			// remplacement éventuel (RETURN_LEGACY) est LOCAL — jamais écrit au cache.
 			if (getName(Me) == "PacificRose") {
 				var diagLaunchKey = (movementKey << 25) | Infos.LAUNCH_GEOMETRY_KEY
+				var diagLaunchWasHit = (diagLaunchKey in ITEM_LAUNCH_GEOMETRY_CACHE)
 				var diagMask
-				if (diagLaunchKey in ITEM_LAUNCH_GEOMETRY_CACHE) {
+				if (diagLaunchWasHit) {
 					diagMask = ITEM_LAUNCH_GEOMETRY_CACHE[diagLaunchKey]
 				} else {
 					diagMask = getMapHittableCellsTotal(Infos, walkCellsMap)   // fallback (hit FULL sans launch)
 				}
-				itemMap = diagCompareGeometry(Item, Infos, walkCellsMap, movementKey, diagLaunchKey, fullKey, diagMask, itemMap)
+				itemMap = diagCompareGeometry(Item, Infos, walkCellsMap, movementKey, diagLaunchKey, fullKey, diagMask, itemMap, diagFullWasHit, diagLaunchWasHit)
 			}
 			// ===========================================================================
 			for (var Cell: var MinAoeDist in itemMap) {
@@ -520,7 +522,64 @@ class DangerClass {
 	 * identiques -> compare l'ORDRE d'itération des cellules (une fois). Retourne la map
 	 * servie à l'appelant : la Bitmap, ou la legacy si DIAG_BITMAP_RETURN_LEGACY (isolation).
 	 */
-	static diagCompareGeometry(Item, Infos, walkCellsMap, movementKey, launchKey, fullKey, directMask, itemMap) {
+	/*
+	 * FORAGE D'ÉTAGE au premier écart DIRECT : recalcul Bitmap TOTALEMENT FRAIS, sans lire
+	 * AUCUN des trois caches (ITEM_LAUNCH/LAUNCH_MASK_BY_ORIGIN/ITEM_FULL) — mêmes
+	 * dispatchers, setBit, OR. Compte origines/maps non vides/cellules source, puis cherche
+	 * la première origine dont le masque CACHÉ (launchMaskFromOrigin) diverge du frais.
+	 * Grille : freshTotal=120 & direct=0 -> cache agrégé LAUNCH empoisonné ; freshOrigin ok
+	 * & caché vide -> LAUNCH_MASK_BY_ORIGIN empoisonné/collision ; freshOrigin vide malgré
+	 * source non vide -> conversion setBit ; freshTotal vide malgré origins non vides -> OR.
+	 */
+	static diagDirectDeepDive(Item, Infos, walkCellsMap, directMask, legacyDirect, fullWasHit, launchWasHit) {
+		var freshTotalMask = 0L
+		var nOrigins = 0
+		var nNonEmptyOrigins = 0
+		var nSourceCells = 0
+		var firstBadOrigin = -1
+		var firstBadInfo = ""
+		for (var origin: var mp in walkCellsMap) {
+			nOrigins++
+			var cells = Infos.NEEDLOS
+				? ActionsClass.LaunchWithLos[Infos.LAUNCHTYPE](origin, Infos.MINRANGE, Infos.MAXRANGE)
+				: ActionsClass.LaunchWithoutLos[Infos.LAUNCHTYPE](origin, Infos.MINRANGE, Infos.MAXRANGE)
+			var srcSize = mapSize(cells)
+			if (srcSize > 0) nNonEmptyOrigins++
+			nSourceCells += srcSize
+			var freshOriginMask = 0L
+			for (var cell: var _t in cells) {
+				freshOriginMask = setBit(freshOriginMask, cell)
+			}
+			freshTotalMask = freshTotalMask | freshOriginMask
+			if (firstBadOrigin == -1) {
+				var cached = launchMaskFromOrigin(Infos, origin)
+				if (cached != freshOriginMask) {
+					firstBadOrigin = origin
+					var diff = cached ^ freshOriginMask
+					firstBadInfo = "originKey=" + ((origin << 25) | Infos.LAUNCH_GEOMETRY_KEY)
+						+ " srcSize=" + srcSize
+						+ " freshBits=" + bitCount(freshOriginMask)
+						+ " cachedBits=" + bitCount(cached)
+						+ " firstDivergentCell=" + trailingZeros(diff)
+				}
+			}
+		}
+		debugE("[DIAG Bitmap ÉTAGE] item=" + Item
+			+ " walkOrigins=" + mapSize(walkCellsMap)
+			+ " parcourues=" + nOrigins + " nonVides=" + nNonEmptyOrigins + " cellulesSource=" + nSourceCells
+			+ " directMaskBits=" + bitCount(directMask)
+			+ " freshTotalBits=" + bitCount(freshTotalMask)
+			+ " legacySize=" + mapSize(legacyDirect)
+			+ " FULL=" + (fullWasHit ? "HIT" : "MISS")
+			+ " LAUNCH=" + (launchWasHit ? "HIT" : "MISS"))
+		if (firstBadOrigin != -1) {
+			debugE("[DIAG Bitmap ÉTAGE] première origine divergente=" + firstBadOrigin + " " + firstBadInfo)
+		} else {
+			debugE("[DIAG Bitmap ÉTAGE] aucune origine divergente : chaque masque caché == frais")
+		}
+	}
+
+	static diagCompareGeometry(Item, Infos, walkCellsMap, movementKey, launchKey, fullKey, directMask, itemMap, fullWasHit, launchWasHit) {
 		// Premier écart déjà identifié : ne plus payer les reconstructions legacy — sauf si
 		// l'isolation exige la map legacy pour l'assemblage.
 		if (DIAG_BITMAP_MISMATCH_LOGGED && !DIAG_BITMAP_RETURN_LEGACY) return itemMap
@@ -538,6 +597,7 @@ class DangerClass {
 				if (!testBit(directMask, cell)) {
 					DIAG_BITMAP_MISMATCH_LOGGED = true
 					diagLog("DIRECT", Item, movementKey, launchKey, fullKey, Infos.AREA, cell, "présent", "ABSENT", mapSize(legacyDirect), bitCount(directMask))
+					diagDirectDeepDive(Item, Infos, walkCellsMap, directMask, legacyDirect, fullWasHit, launchWasHit)
 					return DIAG_BITMAP_RETURN_LEGACY ? legacyAoe : itemMap
 				}
 			}
@@ -548,6 +608,7 @@ class DangerClass {
 					if (!(cell in legacyDirect)) {
 						DIAG_BITMAP_MISMATCH_LOGGED = true
 						diagLog("DIRECT", Item, movementKey, launchKey, fullKey, Infos.AREA, cell, "ABSENT", "présent", mapSize(legacyDirect), bitCount(directMask))
+						diagDirectDeepDive(Item, Infos, walkCellsMap, directMask, legacyDirect, fullWasHit, launchWasHit)
 						return DIAG_BITMAP_RETURN_LEGACY ? legacyAoe : itemMap
 					}
 					m = setBit(m, cell, 0)
