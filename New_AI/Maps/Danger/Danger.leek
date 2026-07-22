@@ -382,6 +382,7 @@ class DangerClass {
 	static getMapAoeForItem(ItemInfos, directMask) {
 		var _final = [: ]
 		if (directMask == 0L) return _final   // aucun centre direct : aucune expansion possible
+		BenchOps.Start("BitmapAoe")   // PROFILER TEMPORAIRE — À RETIRER (contient BitmapAreaCenter)
 		var areaMax = ItemInfos.AREA_MAX
 		// Couche 0 traitée DIRECTEMENT : décodage du masque direct à distance 0 — la boucle
 		// de minimisation part de seen = directMask, sans les trois opérations 0L inutiles.
@@ -391,7 +392,10 @@ class DangerClass {
 			_final[cell] = 0
 			mask = setBit(mask, cell, 0)
 		}
-		if (areaMax == 0) return _final
+		if (areaMax == 0) {
+			BenchOps.Stop("BitmapAoe")   // PROFILER TEMPORAIRE — À RETIRER (revert)
+			return _final
+		}
 		var area = ItemInfos.AREA
 		var rawLayers = [0L]   // slot 0 inutilisé (couche 0 déjà décodée) : indices == distances
 		for (var d = 1; d <= areaMax; d++) {
@@ -427,6 +431,7 @@ class DangerClass {
 				layer = setBit(layer, cell, 0)
 			}
 		}
+		BenchOps.Stop("BitmapAoe")   // PROFILER TEMPORAIRE — À RETIRER (revert)
 		return _final
 	}
 
@@ -443,10 +448,12 @@ class DangerClass {
 		// opérateur binaire | & ^ choisit alors la variante 64 bits et TRONQUE tous les bits
 		// de cellules > 63. Chaque opération binaire sur un masque DOIT commencer par un
 		// opérande explicitement big_integer : (0L | x) force la surcharge BigInteger.
+		BenchOps.Start("BitmapLaunchUnion")   // PROFILER TEMPORAIRE — À RETIRER (contient BitmapOrigin)
 		var mask = 0L
 		for (var EntityCell: var mp in WalkCellsMap) {
 			mask = (0L | mask) | launchMaskFromOrigin(ItemInfos, EntityCell)
 		}
+		BenchOps.Stop("BitmapLaunchUnion")    // PROFILER TEMPORAIRE — À RETIRER (revert)
 		return mask
 	}
 
@@ -459,10 +466,12 @@ class DangerClass {
 	static areaMasksByCenter(areaType, centerCell) {
 		var key = (areaType << 10) | centerCell
 		if (key in AREA_MASKS_BY_CENTER_CACHE) return AREA_MASKS_BY_CENTER_CACHE[key]
+		BenchOps.Start("BitmapAreaCenter")   // PROFILER TEMPORAIRE — À RETIRER (revert)
 		var byDist = [: ]
 		for (var cell: var dist in CellClass.getAreaDist(areaType, centerCell)) {
 			byDist[dist] = setBit((dist in byDist) ? byDist[dist] : 0L, cell)
 		}
+		BenchOps.Stop("BitmapAreaCenter")    // PROFILER TEMPORAIRE — À RETIRER (revert)
 		AREA_MASKS_BY_CENTER_CACHE[key] = byDist
 		return byDist
 	}
@@ -479,6 +488,7 @@ class DangerClass {
 	static launchMaskFromOrigin(ItemInfos, originCell) {
 		var key = (originCell << 25) | ItemInfos.LAUNCH_GEOMETRY_KEY
 		if (key in LAUNCH_MASK_BY_ORIGIN_CACHE) return LAUNCH_MASK_BY_ORIGIN_CACHE[key]
+		BenchOps.Start("BitmapOrigin")   // PROFILER TEMPORAIRE — À RETIRER (revert)
 		var cells = ItemInfos.NEEDLOS
 			? ActionsClass.LaunchWithLos[ItemInfos.LAUNCHTYPE](originCell, ItemInfos.MINRANGE, ItemInfos.MAXRANGE)
 			: ActionsClass.LaunchWithoutLos[ItemInfos.LAUNCHTYPE](originCell, ItemInfos.MINRANGE, ItemInfos.MAXRANGE)
@@ -486,6 +496,7 @@ class DangerClass {
 		for (var cell: var _t in cells) {
 			mask = setBit(mask, cell)
 		}
+		BenchOps.Stop("BitmapOrigin")    // PROFILER TEMPORAIRE — À RETIRER (revert)
 		LAUNCH_MASK_BY_ORIGIN_CACHE[key] = mask
 		return mask
 	}
