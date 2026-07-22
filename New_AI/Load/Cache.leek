@@ -80,24 +80,13 @@ global AREA_DIST_CACHE = [: ]
 // dépendent QUE de la map de déplacement statique sans entités (movementKey =
 // (coucheJump << 20) | (cellule << 10) | max(0, MP) — 21 bits, sans ID/camp/cooldowns/stats),
 // de la signature de lancement et de la zone. Read-only, jamais vidées au tour :
-//  - ITEM_LAUNCH_GEOMETRY_CACHE [(movementKey << 25) | LAUNCH_GEOMETRY_KEY -> MASQUE
-//    big_integer des cellules directement lançables (Bitmap #2 : seul getMapAoeForItem le
-//    consomme, jamais décodé ailleurs)] ;
+//  - ITEM_LAUNCH_GEOMETRY_CACHE [(movementKey << 25) | LAUNCH_GEOMETRY_KEY -> cellules
+//    directement lançables] ;
 //  - ITEM_FULL_GEOMETRY_CACHE [(movementKey << 30) | FULL_GEOMETRY_KEY -> [cell -> minAoeDist]].
 // L'ASSEMBLAGE par caster (liste d'items cooldown-filtrée) reste, lui, un cache de tour
 // (MAP_CELL_ITEM_AOE_CACHE / HEAL_CELL_ITEM_AOE_CACHE).
 global ITEM_LAUNCH_GEOMETRY_CACHE = [: ]
 global ITEM_FULL_GEOMETRY_CACHE = [: ]
-// Masques big_integer des cellules lançables PAR ORIGINE (Bitmap #1) : bit `cell` = 1 si
-// lançable depuis l'origine avec cette signature. Clé (originCell << 25) | LAUNCH_GEOMETRY_KEY
-// (10 + 25 bits, injectif). Ne dépend QUE de la géométrie et de la LoS statique -> persistant
-// au combat, read-only (les big_integer sont des valeurs immuables : | / setBit RETOURNENT).
-global LAUNCH_MASK_BY_ORIGIN_CACHE = [: ]
-// Masques d'AoE par centre (Bitmap #2) : [(areaType << 10) | centerCell ->
-// [distance -> masque big_integer des cellules à cette distance]]. Construit paresseusement
-// depuis CellClass.getAreaDist (source géométrique unique) — persistant, read-only.
-// AREA_DIST_CACHE reste en place pour les autres consommateurs (AoeDistItem...).
-global AREA_MASKS_BY_CENTER_CACHE = [: ]
 
 global DISTANCE_CACHE = [: ]
 global LOS_CACHE = [: ]

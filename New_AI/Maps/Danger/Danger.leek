@@ -347,14 +347,14 @@ class DangerClass {
 				itemMap = ITEM_FULL_GEOMETRY_CACHE[fullKey]
 			} else {
 				var launchKey = (movementKey << 25) | Infos.LAUNCH_GEOMETRY_KEY
-				var directMask
+				var directCells
 				if (launchKey in ITEM_LAUNCH_GEOMETRY_CACHE) {
-					directMask = ITEM_LAUNCH_GEOMETRY_CACHE[launchKey]
+					directCells = ITEM_LAUNCH_GEOMETRY_CACHE[launchKey]
 				} else {
-					directMask = getMapHittableCellsTotal(Infos, walkCellsMap)
-					ITEM_LAUNCH_GEOMETRY_CACHE[launchKey] = directMask
+					directCells = getMapHittableCellsTotal(Infos, walkCellsMap)
+					ITEM_LAUNCH_GEOMETRY_CACHE[launchKey] = directCells
 				}
-				itemMap = getMapAoeForItem(Infos, directMask)
+				itemMap = getMapAoeForItem(Infos, directCells)
 				ITEM_FULL_GEOMETRY_CACHE[fullKey] = itemMap
 			}
 			for (var Cell: var MinAoeDist in itemMap) {
@@ -370,135 +370,49 @@ class DangerClass {
 	}
 
 	/*
-	 * [cellule -> distance d'AoE minimale] pour un item, depuis le MASQUE des cellules
-	 * directes (Bitmap #2). Expansion par COUCHES de distance : la couche 0 est le masque
-	 * direct, chaque centre direct OR ses masques d'AoE par distance (areaMasksByCenter —
-	 * AREA_MAX majore exactement les distances de getAreaDist : table AreaMax == Manhattan
-	 * max de la forme), puis les distances MINIMALES s'obtiennent en retirant de chaque
-	 * couche les cellules déjà vues aux distances inférieures — un recouvrement entre
-	 * centres garde toujours la plus petite distance, comme l'ancien fold min. UN seul
-	 * décodage par couche finale vers la map historique.
+	 * [cellule -> distance d'AoE minimale] pour un item : les cellules touchables en direct
+	 * (MapCellsBool, déjà calculées par l'appelant) valent 0, puis l'expansion d'AoE remplit
+	 * le reste au plus près. Ne dépend que de la map directe, d'AREA et d'AREA_MAX.
 	 */
-	static getMapAoeForItem(ItemInfos, directMask) {
+	static getMapAoeForItem(ItemInfos, MapCellsBool) {
 		var _final = [: ]
-		if (directMask == 0L) return _final   // aucun centre direct : aucune expansion possible
-		BenchOps.Start("BitmapAoe")   // PROFILER TEMPORAIRE — À RETIRER (contient BitmapAreaCenter)
-		var areaMax = ItemInfos.AREA_MAX
-		// Couche 0 traitée DIRECTEMENT : décodage du masque direct à distance 0 — la boucle
-		// de minimisation part de seen = directMask, sans les trois opérations 0L inutiles.
-		var mask = directMask
-		while (mask != 0L) {
-			var cell = trailingZeros(mask)
+		for (var cell: var bool in MapCellsBool) {
 			_final[cell] = 0
-			mask = setBit(mask, cell, 0)
 		}
-		if (areaMax == 0) {
-			BenchOps.Stop("BitmapAoe")   // PROFILER TEMPORAIRE — À RETIRER (revert)
-			return _final
-		}
-		var area = ItemInfos.AREA
-		var rawLayers = [0L]   // slot 0 inutilisé (couche 0 déjà décodée) : indices == distances
-		for (var d = 1; d <= areaMax; d++) {
-			push(rawLayers, 0L)
-		}
-		mask = directMask
-		while (mask != 0L) {
-			var center = trailingZeros(mask)
-			for (var d: var m in areaMasksByCenter(area, center)) {
-				if (d == 0) continue   // le bit dist-0 du centre est déjà dans la couche 0
-				// (0L |) : coercition big_integer obligatoire (voir getMapHittableCellsTotal).
-				rawLayers[d] = (0L | rawLayers[d]) | m
-			}
-			mask = setBit(mask, center, 0)
-		}
-		// andNot via & puis ^ (pas de ~ sur un big_integer : complément à deux infini).
-		// Couches vides court-circuitées (les formes X ont des distances absentes).
-		// (0L |) : coercition big_integer obligatoire sur CHAQUE opération binaire de masque
-		// (voir getMapHittableCellsTotal).
-		var seen = directMask
-		for (var d = 1; d <= areaMax; d++) {
-			var layer = rawLayers[d]
-			if (layer == 0L) continue
-			var common = (0L | layer) & seen
-			if (common != 0L) {
-				layer = (0L | layer) ^ common
-				if (layer == 0L) continue
-			}
-			if (d < areaMax) seen = (0L | seen) | layer   // la dernière couche n'a plus de lecteur
-			while (layer != 0L) {
-				var cell = trailingZeros(layer)
-				_final[cell] = d
-				layer = setBit(layer, cell, 0)
+		if (ItemInfos.AREA_MAX > 0) {
+			var area = ItemInfos.AREA
+			for (var cell: var bool in MapCellsBool) {
+				for (var Aoe: var AoeDist in CellClass.getAreaDist(area, cell)) {
+					var ActualCellDist = _final[Aoe]
+					if (ActualCellDist == null || ActualCellDist > AoeDist) {
+						_final[Aoe] = AoeDist
+					}
+				}
 			}
 		}
-		BenchOps.Stop("BitmapAoe")   // PROFILER TEMPORAIRE — À RETIRER (revert)
 		return _final
 	}
 
 	/*
-	 * Masque big_integer des cellules touchables en direct par l'item depuis n'importe
-	 * quelle cellule accessible du caster (Bitmap #2 : plus AUCUN décodage intermédiaire —
-	 * ITEM_LAUNCH_GEOMETRY_CACHE cache le masque, seul getMapAoeForItem le consomme, et
-	 * aucun consommateur Danger/Heal ne reçoit de big_integer : le format aval reste
-	 * [cell -> minAoeDist] via ITEM_FULL_GEOMETRY_CACHE).
+	 * [cellule -> true] : toutes les cellules touchables en direct par l'item depuis
+	 * n'importe quelle cellule accessible du caster.
 	 */
 	static getMapHittableCellsTotal(ItemInfos, WalkCellsMap) {
-		// PIÈGE DE TYPAGE (vérifié dans l'analyseur live) : une valeur big_integer récupérée
-		// d'un cache ou retournée par setBit peut être typée STATIQUEMENT integer — un
-		// opérateur binaire | & ^ choisit alors la variante 64 bits et TRONQUE tous les bits
-		// de cellules > 63. Chaque opération binaire sur un masque DOIT commencer par un
-		// opérande explicitement big_integer : (0L | x) force la surcharge BigInteger.
-		BenchOps.Start("BitmapLaunchUnion")   // PROFILER TEMPORAIRE — À RETIRER (contient BitmapOrigin)
-		var mask = 0L
-		for (var EntityCell: var mp in WalkCellsMap) {
-			mask = (0L | mask) | launchMaskFromOrigin(ItemInfos, EntityCell)
+		var _final = [: ]
+		var LaunchType = ItemInfos.LAUNCHTYPE
+		var MinRange = ItemInfos.MINRANGE
+		var MaxRange = ItemInfos.MAXRANGE
+		if (ItemInfos.NEEDLOS) {
+			for (var EntityCell: var mp in WalkCellsMap) {
+				_final += ActionsClass.LaunchWithLos[LaunchType](EntityCell, MinRange, MaxRange)
+			}
+		} else {
+			for (var EntityCell: var mp in WalkCellsMap) {
+				_final += ActionsClass.LaunchWithoutLos[LaunchType](EntityCell, MinRange, MaxRange)
+			}
 		}
-		BenchOps.Stop("BitmapLaunchUnion")    // PROFILER TEMPORAIRE — À RETIRER (revert)
-		return mask
-	}
 
-	/*
-	 * [distance -> masque big_integer] des cellules d'AoE d'un type de zone autour d'un
-	 * centre — construit PARESSEUSEMENT depuis CellClass.getAreaDist (SOURCE GÉOMÉTRIQUE
-	 * UNIQUE : aucune formule de cercle/carré/plus/X dupliquée), persistant au combat.
-	 * Clé (areaType << 10) | centerCell, injective (cellule < 1024).
-	 */
-	static areaMasksByCenter(areaType, centerCell) {
-		var key = (areaType << 10) | centerCell
-		if (key in AREA_MASKS_BY_CENTER_CACHE) return AREA_MASKS_BY_CENTER_CACHE[key]
-		BenchOps.Start("BitmapAreaCenter")   // PROFILER TEMPORAIRE — À RETIRER (revert)
-		var byDist = [: ]
-		for (var cell: var dist in CellClass.getAreaDist(areaType, centerCell)) {
-			byDist[dist] = setBit((dist in byDist) ? byDist[dist] : 0L, cell)
-		}
-		BenchOps.Stop("BitmapAreaCenter")    // PROFILER TEMPORAIRE — À RETIRER (revert)
-		AREA_MASKS_BY_CENTER_CACHE[key] = byDist
-		return byDist
-	}
-
-	/*
-	 * Masque big_integer des cellules lançables depuis originCell avec la signature de
-	 * lancement de l'item (bit `cell` = 1). SOURCE GÉOMÉTRIQUE UNIQUE : la map vient des
-	 * dispatchers LaunchWithLos/LaunchWithoutLos existants — aucune formule de portée ni
-	 * de LoS dupliquée, seule la SORTIE est convertie en masque (une fois par origine,
-	 * persistant au combat). Suffixe L OBLIGATOIRE : `1 << cell` resterait un entier 64
-	 * bits (shift mod 64, faux silencieux au-delà de la cellule 63) — `1L << cell` est
-	 * bien un big_integer.
-	 */
-	static launchMaskFromOrigin(ItemInfos, originCell) {
-		var key = (originCell << 25) | ItemInfos.LAUNCH_GEOMETRY_KEY
-		if (key in LAUNCH_MASK_BY_ORIGIN_CACHE) return LAUNCH_MASK_BY_ORIGIN_CACHE[key]
-		BenchOps.Start("BitmapOrigin")   // PROFILER TEMPORAIRE — À RETIRER (revert)
-		var cells = ItemInfos.NEEDLOS
-			? ActionsClass.LaunchWithLos[ItemInfos.LAUNCHTYPE](originCell, ItemInfos.MINRANGE, ItemInfos.MAXRANGE)
-			: ActionsClass.LaunchWithoutLos[ItemInfos.LAUNCHTYPE](originCell, ItemInfos.MINRANGE, ItemInfos.MAXRANGE)
-		var mask = 0L
-		for (var cell: var _t in cells) {
-			mask = setBit(mask, cell)
-		}
-		BenchOps.Stop("BitmapOrigin")    // PROFILER TEMPORAIRE — À RETIRER (revert)
-		LAUNCH_MASK_BY_ORIGIN_CACHE[key] = mask
-		return mask
+		return _final
 	}
 
 	/*
