@@ -8,17 +8,20 @@ include("../../includes.leek")
 class DangerClass {
 	// La chaîne de vulnés ne fait bouger que les DEUX shields (scalaires) — plus aucun
 	// snapshot d'EntityState transporté. LIFE/SIDE/IS_SUMMON/Antidote restent lus sur la
-	// cible originale, jamais mutée.
+	// cible originale, jamais mutée. Les uses : la RACINE est toujours zéro pour un caster
+	// non-Me (danger = son prochain tour, EntityState les initialise à 0) — seuls les items
+	// consommés par la chaîne de vulnés vivent dans un OVERLAY SPARSE (EndPlayedUses,
+	// null = aucun, read-only après construction).
 	EndAbsoluteShield
 	EndRelativeShield
 	EndTp
-	EndUses
+	EndPlayedUses
 	EndValueDamage
-	constructor(TmpAbs, TmpRel, TmpTp, TmpUses, TmpValueDamage) {
+	constructor(TmpAbs, TmpRel, TmpTp, TmpPlayedUses, TmpValueDamage) {
 		this.EndAbsoluteShield = TmpAbs
 		this.EndRelativeShield = TmpRel
 		this.EndTp = TmpTp
-		this.EndUses = TmpUses
+		this.EndPlayedUses = TmpPlayedUses
 		this.EndValueDamage = TmpValueDamage
 	}
 
@@ -141,16 +144,20 @@ class DangerClass {
 		// TOTAL_TP : le danger représente le potentiel max du prochain tour, pas les TP
 		// restants de ce tour — stable d'un step de BFS à l'autre.
 		var BaseTp = CasterStats.TOTAL_TP
-		var BaseUses = StateClass.rootUsesMap(CasterStats)   // caster jamais Me -> map complète
-		var _final = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses, curAbs, curRel)
-		var ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses, curAbs, curRel)
+		// Uses : racine TOUJOURS zéro (caster jamais Me, EntityState initialise à 0 et le
+		// danger est son prochain tour) — playedUses est l'overlay SPARSE des seuls items
+		// déjà consommés par la chaîne, null tant qu'aucun ne l'est (aucune allocation sur
+		// le chemin sans vulné).
+		var playedUses = null
+		var _final = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, BaseTp, playedUses, curAbs, curRel)
+		var ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, playedUses, curAbs, curRel)
 		while ((ComboWithVulne instanceof DangerClass) && (ComboWithVulne.EndValueDamage > _final)) {
 			_final = ComboWithVulne.EndValueDamage
 			curAbs = ComboWithVulne.EndAbsoluteShield
 			curRel = ComboWithVulne.EndRelativeShield
-			BaseUses = ComboWithVulne.EndUses
+			playedUses = ComboWithVulne.EndPlayedUses
 			BaseTp = ComboWithVulne.EndTp
-			ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses, curAbs, curRel)
+			ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, playedUses, curAbs, curRel)
 		}
 		// Entrée en SCALAIRES : le cache ne retient plus aucune référence vers une entité,
 		// donc plus rien à figer par un clone (sans vulné jouée, on stocke les shields
@@ -170,16 +177,19 @@ class DangerClass {
 	}
 
 	/*
-	 * Meilleur item de vulné jouable en premier : renvoie le DangerClass (état/TP/uses/dégâts
-	 * après vulné + combo) du plus rentable, ou null si aucun.
+	 * Meilleur item de vulné jouable en premier : renvoie le DangerClass (shields/TP/uses
+	 * joués/dégâts après vulné + combo) du plus rentable, ou null si aucun.
+	 * playedUses : overlay sparse (null = rien de consommé) — lecture inline, le chemin
+	 * courant ne paie qu'un test null.
 	 */
-	static getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, BaseUses, curAbs, curRel) {
+	static getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, playedUses, curAbs, curRel) {
 		var MaxDamages = 0
 		var _final
 		for (var item: var aoe in ItemAoeMap) {
 			var Infos = ITEMINFO[item]
-			if (BaseUses[item] < Infos.MAX_USES && BaseTp >= Infos.COST && Infos.IS_VULNERABILITY) {
-				var CDangerClass = getCellDangerClassFromItem(TargetStats, Infos, BaseTp, BaseUses, ItemAoeMap, CasterStats, item, curAbs, curRel)
+			var used = playedUses == null ? 0 : ((item in playedUses) ? playedUses[item] : 0)
+			if (used < Infos.MAX_USES && BaseTp >= Infos.COST && Infos.IS_VULNERABILITY) {
+				var CDangerClass = getCellDangerClassFromItem(TargetStats, Infos, BaseTp, playedUses, ItemAoeMap, CasterStats, item, curAbs, curRel)
 				var Damages = CDangerClass.EndValueDamage
 				if (MaxDamages < Damages) {
 					MaxDamages = Damages
@@ -225,16 +235,18 @@ class DangerClass {
 		return hash_value
 	}
 
-	/* Deux shields finaux / TP / uses / dégâts après avoir joué cet item de vulné puis le
-	 * meilleur combo derrière. Le clone de BaseUses reste (comptabilité d'uses de la vulné),
-	 * mais la cible n'est plus jamais clonée : ses deux shields sont des scalaires. */
-	static getCellDangerClassFromItem(TargetStats, Infos, BaseTp, BaseUses, ItemAoeMap, CasterStats, Item, curAbs, curRel) {
+	/* Deux shields finaux / TP / uses joués / dégâts après avoir joué cet item de vulné puis
+	 * le meilleur combo derrière. Le clone ne porte que l'overlay SPARSE des vulnés déjà
+	 * jouées (jamais tout l'inventaire) ; la cible n'est jamais clonée (shields scalaires).
+	 * L'écriture est EXPLICITE (previousUses + 1) — jamais de ++ sur une entrée absente. */
+	static getCellDangerClassFromItem(TargetStats, Infos, BaseTp, playedUses, ItemAoeMap, CasterStats, Item, curAbs, curRel) {
 		var ThisTp = BaseTp - Infos.COST
-		var ThisUses = clone(BaseUses)
+		var thisPlayedUses = playedUses == null ? [: ] : clone(playedUses)
 		var newShields = getRoughVulneConsequences(TargetStats, curAbs, curRel, Infos, critFactorOf(CasterStats))
-		ThisUses[Item]++
-		var DamagesWithThisItemVulne = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, ThisTp, ThisUses, newShields[0], newShields[1])
-		return new DangerClass(newShields[0], newShields[1], ThisTp, ThisUses, DamagesWithThisItemVulne)
+		var previousUses = playedUses == null ? 0 : ((Item in playedUses) ? playedUses[Item] : 0)
+		thisPlayedUses[Item] = previousUses + 1
+		var DamagesWithThisItemVulne = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, ThisTp, thisPlayedUses, newShields[0], newShields[1])
+		return new DangerClass(newShields[0], newShields[1], ThisTp, thisPlayedUses, DamagesWithThisItemVulne)
 	}
 
 	/* Applique les effets de vulné/debuff d'un item aux DEUX shields (scalaires abs/rel) —
@@ -267,15 +279,16 @@ class DangerClass {
 
 	/*
 	 * Combo glouton sans vulné : empile les items par dégâts (liste triée d'EntityDanger)
-	 * dans le budget TP + MAX_USES. BaseUses est READ-ONLY (jamais muté ni cloné) : une
-	 * seule entrée (item, aoe) de la liste peut matcher ItemAoeMap[item] par item — un
-	 * scalaire local de uses par entrée suffit.
+	 * dans le budget TP + MAX_USES. playedUses est l'overlay SPARSE read-only (null = rien
+	 * de consommé — racine toujours zéro pour un non-Me) : une seule entrée (item, aoe) de
+	 * la liste peut matcher ItemAoeMap[item] par item — un scalaire local de uses par
+	 * entrée suffit.
 	 *
 	 * @return dégâts totaux du combo
 	 */
-	static getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, CasterTP, BaseUses, curAbs, curRel) {
+	static getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, CasterTP, playedUses, curAbs, curRel) {
 		var EntityDangerArray = EntityDangerClass.get(CasterStats, TargetStats, curAbs, curRel)
-		var ComboHash = getGreedyComboHash(ItemAoeMap, EntityDangerArray, CasterTP)
+		var ComboHash = getGreedyComboHash(ItemAoeMap, EntityDangerArray, CasterTP, playedUses)
 		if (ComboHash in COMBO_DAMAGE_CACHE) return COMBO_DAMAGE_CACHE[ComboHash]
 		var _final = 0
 		for (var EntityDanger in EntityDangerArray) {
@@ -283,7 +296,7 @@ class DangerClass {
 			if (ItemAoeMap[ItemEntityDanger] == EntityDanger.Aoe) {
 				var CostEntityDanger = EntityDanger.Cost
 				var MaxUsesOfItem = ITEMINFO[ItemEntityDanger].MAX_USES
-				var itemUses = BaseUses[ItemEntityDanger]
+				var itemUses = playedUses == null ? 0 : ((ItemEntityDanger in playedUses) ? playedUses[ItemEntityDanger] : 0)
 				while (CasterTP >= CostEntityDanger && itemUses < MaxUsesOfItem) {
 					_final += EntityDanger.Damages
 					CasterTP -= CostEntityDanger
@@ -295,8 +308,12 @@ class DangerClass {
 		return _final
 	}
 
-	/* Hash du combo glouton : chaque (item utilisable, ses dégâts) + le TP du caster. */
-	static getGreedyComboHash(ItemAoeMap, EntityDangerArray, CasterTP) {
+	/* Hash du combo glouton : chaque (item utilisable, ses dégâts) + le TP du caster.
+	 * Les uses déjà consommés par la chaîne (item MIXTE vulné + dégâts) changent le résultat
+	 * du glouton -> fold SUPPLÉMENTAIRE salé (bit 60, (item, uses)) UNIQUEMENT pour une
+	 * entrée retenue à uses non nuls — le cas courant (0) garde l'ancienne clé EXACTE, et
+	 * les uses d'un item hors cellule / hors EntityDangerArray ne fragmentent jamais. */
+	static getGreedyComboHash(ItemAoeMap, EntityDangerArray, CasterTP, playedUses) {
 		var hash_value = (OFFSET_BASIS ^ CasterTP)
 
 		for (var EntityDanger in EntityDangerArray) {
@@ -305,6 +322,10 @@ class DangerClass {
 
 				var combined = (ItemEntityDanger << 30) | EntityDanger.Damages
 				hash_value = addValueToBinHash(hash_value, combined)
+				// Entrées de l'overlay toujours >= 1 par construction (previousUses + 1).
+				if (playedUses != null && (ItemEntityDanger in playedUses)) {
+					hash_value = addValueToBinHash(hash_value, (1 << 60) | (ItemEntityDanger << 12) | playedUses[ItemEntityDanger])
+				}
 
 			}
 		}

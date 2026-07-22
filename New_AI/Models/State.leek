@@ -198,16 +198,6 @@ class StateClass {
 	}
 
 	/*
-	 * Map USES COMPLÈTE d'une entité SANS patch : l'inventaire d'un non-Me n'est jamais
-	 * écrit en sim (ITEM_STATE_PARENT reste null), la map du champ est la map moteur.
-	 * Réservé aux machineries qui threadent la map entière (combos Danger : clone local
-	 * ThisUses/EndUses).
-	 */
-	static rootUsesMap(stat) {
-		return stat.USES
-	}
-
-	/*
 	 * Masque différentiel d'une entité clonée, APRÈS l'action — SOURCE UNIQUE de la
 	 * comparaison parent/clone (absorbe l'ancien validateDerivedMemos : les mémos dérivés
 	 * sont invalidés ICI, sur les mêmes champs, jamais comparés deux fois).
