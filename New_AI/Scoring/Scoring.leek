@@ -67,7 +67,6 @@ class ScoringClass {
         // candidat) — aucun état complet n'est construit ; l'état matérialisé n'existe que
         // sur les miss froids (StateClass.materializeNodeState, partagé via END_STATS).
         var patches = node.STATE_PATCH
-        var cloned = node.CLONED
         var hfpMap = node.HFP_BY_SIDE
 
         // Heal map de l'enfant via le fold combiné des fingerprints (hit sauf healer modifié).
@@ -119,7 +118,7 @@ class ScoringClass {
                 var life = (p != null) ? p.effLIFE(b) : stat0.LIFE
                 // Morte non patchée : ancien et nouveau terme valent déjà 0, rien à recalculer
                 // (une morte PATCHÉE passe par LOCAL_TERM_DIRTY — kill de cette action).
-                if (life <= 0 && !(e in cloned)) continue
+                if (life <= 0 && p == null) continue
                 var globalDirty = (dangerChanged != null && b.SIDE in dangerChanged)
                     || (healChanged != null && b.SIDE in healChanged)
                     || (coefChanged && ((p != null) ? p.effPOISON_OVER_TIME(b) : stat0.POISON_OVER_TIME) > 0)
@@ -177,10 +176,15 @@ class ScoringClass {
                 var resistance = p.effRESISTANCE(base)
                 var totalTp = p.effTOTAL_TP(base)
                 var totalMp = p.effTOTAL_MP(base)
+                // Capability : aucun des dix inputs patché -> le mémo de la base (celui du
+                // parent, mêmes inputs) est réutilisé ou rempli ; sinon recalcul effectif.
+                var cap = ((p.MASK & PM_CAPABILITY) == 0)
+                    ? ImportanceClass.capability(base)
+                    : ImportanceClass.capabilityFrom(e, strength, magic, wisdom, science, agility, resistance,
+                        totalMp, totalTp, p.effABSOLUTE_SHIELD(base), p.effRELATIVE_SHIELD(base), base)
                 newTerm = sign * (ImportanceClass.getFrom(e, strength, magic, wisdom, science, agility, resistance, totalTp, totalMp)
                         * survivalValueForPatched(e, base, p, life, net, node)
-                    + ImportanceClass.capabilityFrom(e, strength, magic, wisdom, science, agility, resistance,
-                        totalMp, totalTp, p.effABSOLUTE_SHIELD(base), p.effRELATIVE_SHIELD(base), base)
+                    + cap
                     + drDeterrenceForNode(side, life, p.effDAMAGE_RETURN(base), net, node))
             }
         }

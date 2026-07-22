@@ -21,11 +21,6 @@ class NodeClass {
 	BASE_HASH         // BaseHash de l'état du nœud
 	CONTEXT_BY_SIDE   // par side : hash de l'équipe adverse (clé des caches danger)
 	HFP_BY_SIDE       // par side : fingerprint des healers (clé de la heal map)
-	CLONED            // [id -> ANCIEN EntityState] : vue de COMPATIBILITÉ dérivée des clés
-	                  // d'ActionPatches — la valeur est la référence read-only du ParentState
-	                  // (null pour un summon né en branche). Pilote la boucle de patch des
-	                  // hashs et le recompute-set du scoring, puis est libérée (null) par le
-	                  // BFS — STATE_PATCH reste la seule représentation persistante
 	LOCAL_TERM_DIRTY  // [id -> true] : entités dont un input LOCAL du terme a réellement changé
 	                  // (comparaison de VALEURS parent/effectif + checks Me BaseHash/fingerprint)
 	                  // — le recompute-set du scoring l'itère directement
@@ -106,11 +101,6 @@ class NodeClass {
 		// froidement au premier miss de cache ou au développement du nœud gagnant).
 		var result = new NodeClass(Act, null, Parent)
 		result.STATE_PARENT = StateParent
-		// clonedIds de COMPATIBILITÉ (références parent, aucune construction) : ancien
-		// EntityState du parent, null pour un summon né dans l'action — pilote le test
-		// « morte non patchée » du scoring ; une collision d'id garde l'ANCIEN occupant.
-		var clonedIds = [: ]
-		for (var pid: var pp in ActionPatches) clonedIds[pid] = (pp.NEW_ENTITY != null) ? null : ParentStateMap[pid]
 
 		// Patch incrémental des trois hashs et du dirty-set, DIRECTEMENT depuis ParentState +
 		// ActionPatches — règles EXACTES de diffMaskOf : old = l'EntityState parent (objet),
@@ -249,7 +239,6 @@ class NodeClass {
 			}
 		}
 
-		result.CLONED = clonedIds
 		result.LOCAL_TERM_DIRTY = localTermDirty
 		result.BASE_HASH = bh
 		result.CONTEXT_BY_SIDE = ctx
