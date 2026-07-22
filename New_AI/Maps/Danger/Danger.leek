@@ -389,7 +389,7 @@ class DangerClass {
 		while (mask != 0L) {
 			var cell = trailingZeros(mask)
 			_final[cell] = 0
-			mask = setBit(mask, cell, false)
+			mask = setBit(mask, cell, 0)
 		}
 		if (areaMax == 0) return _final
 		var area = ItemInfos.AREA
@@ -404,7 +404,7 @@ class DangerClass {
 				if (d == 0) continue   // le bit dist-0 du centre est déjà dans la couche 0
 				rawLayers[d] = rawLayers[d] | m
 			}
-			mask = setBit(mask, center, false)
+			mask = setBit(mask, center, 0)
 		}
 		// andNot via & puis ^ (pas de ~ sur un big_integer : complément à deux infini).
 		// Couches vides court-circuitées (les formes X ont des distances absentes).
@@ -421,7 +421,7 @@ class DangerClass {
 			while (layer != 0L) {
 				var cell = trailingZeros(layer)
 				_final[cell] = d
-				layer = setBit(layer, cell, false)
+				layer = setBit(layer, cell, 0)
 			}
 		}
 		return _final
