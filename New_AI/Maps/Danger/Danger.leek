@@ -349,15 +349,26 @@ class DangerClass {
 	 */
 	static buildMapCellItemAoe(items, walkCellsMap, movementKey) {
 		var _final = [: ]
+		var diagPacific = getName(Me) == "PacificRose"   // DIAGNOSTIC — À RETIRER (une fois par build)
 		for (var Item in items) {
 			var Infos = ITEMINFO[Item]
 			var fullKey = (movementKey << 30) | Infos.FULL_GEOMETRY_KEY
-			var diagFullWasHit = (fullKey in ITEM_FULL_GEOMETRY_CACHE)   // DIAGNOSTIC — À RETIRER
+			// launchKey hoisté en tête d'itération (remis dans la branche miss au retrait du
+			// diagnostic) : le diag doit lire les états des DEUX caches AVANT toute
+			// lecture/construction/écriture de cette géométrie.
+			var launchKey = (movementKey << 25) | Infos.LAUNCH_GEOMETRY_KEY
+			// ============ DIAGNOSTIC TEMPORAIRE Bitmap — À RETIRER (revert) ============
+			var diagFullWasHit = false
+			var diagLaunchWasHit = false
+			if (diagPacific) {
+				diagFullWasHit = (fullKey in ITEM_FULL_GEOMETRY_CACHE)
+				diagLaunchWasHit = (launchKey in ITEM_LAUNCH_GEOMETRY_CACHE)
+			}
+			// ===========================================================================
 			var itemMap
 			if (fullKey in ITEM_FULL_GEOMETRY_CACHE) {
 				itemMap = ITEM_FULL_GEOMETRY_CACHE[fullKey]
 			} else {
-				var launchKey = (movementKey << 25) | Infos.LAUNCH_GEOMETRY_KEY
 				var directMask
 				if (launchKey in ITEM_LAUNCH_GEOMETRY_CACHE) {
 					directMask = ITEM_LAUNCH_GEOMETRY_CACHE[launchKey]
@@ -371,17 +382,16 @@ class DangerClass {
 			// ============ DIAGNOSTIC TEMPORAIRE Bitmap — À RETIRER (revert) ============
 			// APRÈS la résolution hit/miss : chaque géométrie CONSOMMÉE par PacificRose est
 			// comparée, y compris une FULL préchauffée (par un bulbe/un tour antérieur). Le
-			// remplacement éventuel (RETURN_LEGACY) est LOCAL — jamais écrit au cache.
-			if (getName(Me) == "PacificRose") {
-				var diagLaunchKey = (movementKey << 25) | Infos.LAUNCH_GEOMETRY_KEY
-				var diagLaunchWasHit = (diagLaunchKey in ITEM_LAUNCH_GEOMETRY_CACHE)
+			// remplacement éventuel (RETURN_LEGACY) est LOCAL — jamais écrit au cache. Les
+			// booléens HIT/MISS viennent des captures d'AVANT résolution.
+			if (diagPacific) {
 				var diagMask
-				if (diagLaunchWasHit) {
-					diagMask = ITEM_LAUNCH_GEOMETRY_CACHE[diagLaunchKey]
+				if (launchKey in ITEM_LAUNCH_GEOMETRY_CACHE) {
+					diagMask = ITEM_LAUNCH_GEOMETRY_CACHE[launchKey]
 				} else {
 					diagMask = getMapHittableCellsTotal(Infos, walkCellsMap)   // fallback (hit FULL sans launch)
 				}
-				itemMap = diagCompareGeometry(Item, Infos, walkCellsMap, movementKey, diagLaunchKey, fullKey, diagMask, itemMap, diagFullWasHit, diagLaunchWasHit)
+				itemMap = diagCompareGeometry(Item, Infos, walkCellsMap, movementKey, launchKey, fullKey, diagMask, itemMap, diagFullWasHit, diagLaunchWasHit)
 			}
 			// ===========================================================================
 			for (var Cell: var MinAoeDist in itemMap) {
