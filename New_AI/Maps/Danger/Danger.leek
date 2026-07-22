@@ -231,16 +231,20 @@ class DangerClass {
 	}
 
 	/* Applique les effets de vulné/debuff d'un item aux DEUX shields (scalaires abs/rel) —
-	 * plus aucun clone d'EntityState. Ordre des effets de l'item, facteur critique et
-	 * isHitable par effet CONSERVÉS. TargetStats sert uniquement à isHitable (LIFE/SIDE/
-	 * IS_SUMMON) et n'est jamais muté. Retourne [abs, rel]. */
+	 * plus aucun clone d'EntityState. Targetabilité précompilée (vues
+	 * DANGER_VULNE_EFFECTS_ENEMY_* d'ItemClass : ENEMIES + type, exactement l'ancien
+	 * isHitable — le caster est toujours adverse ici) ; la garde cible morte reste au call
+	 * site. Ordre des lignes et facteur critique CONSERVÉS, ABS puis REL pour le debuff.
+	 * TargetStats n'est jamais muté. Retourne [abs, rel]. */
 	static getRoughVulneConsequences(TargetStats, curAbs, curRel, Infos, CritFactor, CasterStats) {
+		// Cible morte : shields inchangés (l'ancien isHitable refusait tout sur un mort).
+		if (TargetStats.LIFE <= 0) return [curAbs, curRel]
+		var effs = TargetStats.IS_SUMMON ? Infos.DANGER_VULNE_EFFECTS_ENEMY_SUMMON : Infos.DANGER_VULNE_EFFECTS_ENEMY_LEEK
+		if (effs == null) return [curAbs, curRel]
 		var abs = curAbs
 		var rel = curRel
-		for (var eff in Infos.EFFECTS) {
+		for (var eff in effs) {
 			var EffType = eff[0]
-			if (EffType != EFFECT_DEBUFF && EffType != EFFECT_VULNERABILITY && EffType != EFFECT_ABSOLUTE_VULNERABILITY) continue
-			if (!ConsequencesClass.isHitable(eff, TargetStats, CasterStats, false)) continue
 			if (EffType == EFFECT_DEBUFF) {
 				var keep = max(0, 1 - (eff[1] * CritFactor / 100))   // clampé : un débuff crité peut dépasser 100%
 				abs *= keep   // ABS puis REL, même ordre qu'avant

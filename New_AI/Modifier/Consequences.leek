@@ -1116,11 +1116,16 @@ class ConsequencesClass {
 	}
 
 	/* Dégâts estimés d'UN item du caster sur la cible à une distance d'AoE (pour la danger
-	 * map). Targetabilité PAR EFFET, comme le moteur (Attack.java:219-235 filtre chaque
-	 * effet par ses masques) — l'autorité du premier effet était fragile pour un item aux
-	 * masques hétérogènes. Coût limité aux constructions froides de DANGER_ENTITY_CACHE. */
+	 * map). Targetabilité PAR EFFET précompilée (vues DANGER_DAMAGE_EFFECTS_ENEMY_* dans
+	 * ItemClass — le caster est toujours adverse de la cible dans cette machinerie, les
+	 * masques ENEMIES + type y sont déjà filtrés, ON_CASTER exclu) ; il reste la garde
+	 * cible morte, portée avant par isHitable. Coût limité aux constructions froides de
+	 * DANGER_ENTITY_CACHE. */
 	static getItemDanger(item, casterstats, targetstats, Distance, Multiplier, targetAbs, targetRel) {
+		if (targetstats.LIFE <= 0) return 0
 		var Info = ITEMINFO[item]
+		var effs = targetstats.IS_SUMMON ? Info.DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON : Info.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK
+		if (effs == null) return 0
 		var _final = 0
 		var distFactor = 1 - (Distance * 0.2)
 		var powerFactor = 1 + casterstats.POWER / 100
@@ -1135,9 +1140,7 @@ class ConsequencesClass {
 		// PLEINE), distinct d'un antidote prêt (0).
 		var effAntidoteCd = StateClass.cooldownOf(targetstats, CHIP_ANTIDOTE)
 		var antidoteCd = (effAntidoteCd == null) ? 99 : effAntidoteCd
-		for (var eff in Info.EFFECTS) {
-			if (eff[5] & EFFECT_MODIFIER_ON_CASTER) continue
-			if (!isHitable(eff, targetstats, casterstats, false)) continue
+		for (var eff in effs) {
 			switch (eff[0]) {
 				case EFFECT_DAMAGE:
 					_final += (eff[2] * distFactor * Multiplier * powerFactor * strengthFactor * critFactor * shieldFactor - targetAbs)

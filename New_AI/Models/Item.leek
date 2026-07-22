@@ -26,6 +26,17 @@ class ItemClass {
 	IS_VULNERABILITY
 	LAUNCH_GEOMETRY_KEY
 	FULL_GEOMETRY_KEY
+	// Vues d'effets PRÉCOMPILÉES (immuables, paresseuses : null = aucune ligne) — les LIGNES
+	// originales dans leur ordre d'EFFECTS, jamais sommées (mêmes additions et arrondis
+	// flottants qu'un filtrage à l'usage). Danger : le caster y est TOUJOURS adverse de la
+	// cible, isHitable s'y réduit à LIFE > 0 (gardé au call site) + ENEMIES + le bit summon.
+	IS_HEAL_ITEM                       // qualification historique d'isHealItem (sans exiger ALLIES)
+	HEAL_EFFECTS_ALLY_LEEK             // heals/vitalités non ON_CASTER, ALLIES + NON_SUMMONS
+	HEAL_EFFECTS_ALLY_SUMMON           // idem, ALLIES + SUMMONS
+	DANGER_DAMAGE_EFFECTS_ENEMY_LEEK   // DAMAGE/LIFE_DAMAGE/POISON non ON_CASTER, ENEMIES + NON_SUMMONS
+	DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON // idem, ENEMIES + SUMMONS
+	DANGER_VULNE_EFFECTS_ENEMY_LEEK    // DEBUFF/VULNE/ABS_VULNE, ENEMIES + NON_SUMMONS (pas de filtre ON_CASTER : réplique getRoughVulneConsequences)
+	DANGER_VULNE_EFFECTS_ENEMY_SUMMON  // idem, ENEMIES + SUMMONS
 	//SHOULD_CASTER_GET_HIT
 	constructor(id) {
 		if (isChip(id) || isWeapon(id)) {
@@ -45,13 +56,61 @@ class ItemClass {
 			this.AREA_MAX = AreaMax(id, this.AREA)
 			this.IS_WEAPON = isWeapon(id)
 			this.STACKABLE = this.EFFECTS[0][5] & EFFECT_MODIFIER_STACKABLE   // flag du premier effet
-			// L'item pose-t-il une vulné/debuff ? (candidat à jouer AVANT les items de dégâts
-			// dans les combos Danger) — classifié UNE fois ici, lu par getFirstComboVulneFrom.
+			// PARCOURS UNIQUE d'EFFECTS : classification vulné (inchangée) + construction des
+			// vues précompilées Heal/Danger — lignes ORIGINALES, ordre d'EFFECTS conservé,
+			// tableaux créés au premier ajout seulement (null = vide).
 			this.IS_VULNERABILITY = false
+			this.IS_HEAL_ITEM = false
+			this.HEAL_EFFECTS_ALLY_LEEK = null
+			this.HEAL_EFFECTS_ALLY_SUMMON = null
+			this.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK = null
+			this.DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON = null
+			this.DANGER_VULNE_EFFECTS_ENEMY_LEEK = null
+			this.DANGER_VULNE_EFFECTS_ENEMY_SUMMON = null
 			for (var eff in this.EFFECTS) {
-				if (eff[0] == EFFECT_DEBUFF || eff[0] == EFFECT_VULNERABILITY || eff[0] == EFFECT_ABSOLUTE_VULNERABILITY) {
+				var t = eff[0]
+				var mask = eff[4]
+				var onCaster = eff[5] & EFFECT_MODIFIER_ON_CASTER
+				if (t == EFFECT_DEBUFF || t == EFFECT_VULNERABILITY || t == EFFECT_ABSOLUTE_VULNERABILITY) {
 					this.IS_VULNERABILITY = true
-					break
+					// Vues vulné : PAS de filtre ON_CASTER (l'ancien getRoughVulneConsequences
+					// ne passait que par isHitable — masques de cible seuls).
+					if (mask & EFFECT_TARGET_ENEMIES) {
+						if (mask & EFFECT_TARGET_NON_SUMMONS) {
+							if (this.DANGER_VULNE_EFFECTS_ENEMY_LEEK == null) this.DANGER_VULNE_EFFECTS_ENEMY_LEEK = []
+							push(this.DANGER_VULNE_EFFECTS_ENEMY_LEEK, eff)
+						}
+						if (mask & EFFECT_TARGET_SUMMONS) {
+							if (this.DANGER_VULNE_EFFECTS_ENEMY_SUMMON == null) this.DANGER_VULNE_EFFECTS_ENEMY_SUMMON = []
+							push(this.DANGER_VULNE_EFFECTS_ENEMY_SUMMON, eff)
+						}
+					}
+				}
+				// Vues dégâts : mêmes exclusions que l'ancien getItemDanger (ON_CASTER exclu).
+				if (!onCaster && (t == EFFECT_DAMAGE || t == EFFECT_LIFE_DAMAGE || t == EFFECT_POISON) && (mask & EFFECT_TARGET_ENEMIES)) {
+					if (mask & EFFECT_TARGET_NON_SUMMONS) {
+						if (this.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK == null) this.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK = []
+						push(this.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK, eff)
+					}
+					if (mask & EFFECT_TARGET_SUMMONS) {
+						if (this.DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON == null) this.DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON = []
+						push(this.DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON, eff)
+					}
+				}
+				// Heal : qualification HISTORIQUE (sans exiger ALLIES — ne change pas la
+				// qualification d'un healer) + vues par profil (ALLIES + type requis).
+				if (!onCaster && ((t == EFFECT_HEAL && eff[3] == 0) || t == EFFECT_BOOST_MAX_LIFE)) {
+					this.IS_HEAL_ITEM = true
+					if (mask & EFFECT_TARGET_ALLIES) {
+						if (mask & EFFECT_TARGET_NON_SUMMONS) {
+							if (this.HEAL_EFFECTS_ALLY_LEEK == null) this.HEAL_EFFECTS_ALLY_LEEK = []
+							push(this.HEAL_EFFECTS_ALLY_LEEK, eff)
+						}
+						if (mask & EFFECT_TARGET_SUMMONS) {
+							if (this.HEAL_EFFECTS_ALLY_SUMMON == null) this.HEAL_EFFECTS_ALLY_SUMMON = []
+							push(this.HEAL_EFFECTS_ALLY_SUMMON, eff)
+						}
+					}
 				}
 			}
 			// Signatures immuables de géométrie (mutualisation des builds Danger/Heal) : même
