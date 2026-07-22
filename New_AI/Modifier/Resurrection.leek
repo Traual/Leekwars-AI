@@ -14,55 +14,51 @@ class ResurrectionClass {
 		this.SCORE = score
 	}
 
-	static Update(To, ParentState, ActionPatches, Resurrect_ID) {
+	static Update(To, State, Resurrect_ID, clonedIds) {
 		if (Resurrect_ID == null) return;
-		// PureDelta : le cadavre du ParentState reste INTACT — le passage mort -> vivant est
-		// porté par le patch du candidat (chaque champ : delta = valeur ressuscitée − valeur
-		// effective courante).
-		var patch = StateClass.ensureEntityPatch(ActionPatches, Resurrect_ID)
-		var base = StateClass.patchedBaseOf(ParentState, ActionPatches, Resurrect_ID)
+		// Clone-on-write du SEUL candidat (plus aucun préclonage des morts alliés) : il entre
+		// dans clonedIds, le patch incrémental BaseHash/context/HFP voit son passage
+		// mort -> vivant, et le State parent garde son cadavre intact.
+		var revived = StateClass.ensureCloned(State, Resurrect_ID, clonedIds)
 
 		// Le moteur ressuscite PROPRE : die() retire tous les effets SUR le mort (stats de
-		// base, zéro shield/poison/DR). EFFECTS : rebindé VIDE via le patch — plus d'effets
-		// fantômes pour un ReplacementChangeStats ultérieur.
-		patch.setEFFECTS([])
-		patch.addPOISON(-patch.effPOISON(base))
-		patch.addPOISON_OVER_TIME(-patch.effPOISON_OVER_TIME(base))
-		patch.addAFTEREFFECT(-patch.effAFTEREFFECT(base))
-		patch.addAFTEREFFECT_OVER_TIME(-patch.effAFTEREFFECT_OVER_TIME(base))
-		patch.addHEAL(-patch.effHEAL(base))
-		patch.addHEAL_OVER_TIME(-patch.effHEAL_OVER_TIME(base))
-		patch.addABSOLUTE_SHIELD(-patch.effABSOLUTE_SHIELD(base))
-		patch.addRELATIVE_SHIELD(-patch.effRELATIVE_SHIELD(base))
-		patch.addDAMAGE_RETURN(-patch.effDAMAGE_RETURN(base))
-		patch.addPOWER(-patch.effPOWER(base))
-		var bases = base.BASE_STATS   // map IMMUABLE, partagée avec les états parents
-		patch.addSTRENGTH(bases[STAT_STRENGTH] - patch.effSTRENGTH(base))
-		patch.addWISDOM(bases[STAT_WISDOM] - patch.effWISDOM(base))
-		patch.addAGILITY(bases[STAT_AGILITY] - patch.effAGILITY(base))
-		patch.addMAGIC(bases[STAT_MAGIC] - patch.effMAGIC(base))
-		patch.addRESISTANCE(bases[STAT_RESISTANCE] - patch.effRESISTANCE(base))
-		patch.addSCIENCE(bases[STAT_SCIENCE] - patch.effSCIENCE(base))
-		patch.addTOTAL_MP(bases[STAT_MP] - patch.effTOTAL_MP(base))
-		patch.addMP(bases[STAT_MP] - patch.effMP(base))
-		patch.addTOTAL_TP(bases[STAT_TP] - patch.effTOTAL_TP(base))
-		patch.addTP(bases[STAT_TP] - patch.effTP(base))
+		// base, zéro shield/poison/DR). Reset par champs — BASE_STATS EST la base vraie.
+		// EFFECTS : REBINDÉ sur un tableau neuf (pas muté — le container est partagé avec les
+		// états parents, mais le revived est un clone frais : l'assignation ne touche que lui).
+		// Plus d'effets fantômes pour un ReplacementChangeStats ultérieur.
+		revived.EFFECTS = []
+		revived.POISON = 0
+		revived.POISON_OVER_TIME = 0
+		revived.AFTEREFFECT = 0
+		revived.AFTEREFFECT_OVER_TIME = 0
+		revived.HEAL = 0
+		revived.HEAL_OVER_TIME = 0
+		revived.ABSOLUTE_SHIELD = 0
+		revived.RELATIVE_SHIELD = 0
+		revived.DAMAGE_RETURN = 0
+		revived.POWER = 0
+		var bases = revived.BASE_STATS   // map IMMUABLE, partagée avec les états parents
+		revived.STRENGTH   = bases[STAT_STRENGTH]
+		revived.WISDOM     = bases[STAT_WISDOM]
+		revived.AGILITY    = bases[STAT_AGILITY]
+		revived.MAGIC      = bases[STAT_MAGIC]
+		revived.RESISTANCE = bases[STAT_RESISTANCE]
+		revived.SCIENCE    = bases[STAT_SCIENCE]
+		revived.TOTAL_MP = bases[STAT_MP]
+		revived.MP       = bases[STAT_MP]
+		revived.TOTAL_TP = bases[STAT_TP]
+		revived.TP       = bases[STAT_TP]
 
-		// Vie ressuscitée engine-exacte : source unique reviveTotalLifeFrom/reviveLife (l'ordre
-		// des arrondis du moteur y est répliqué), partagée avec getResurrectionScore. L'AGI de
-		// Me est lue en EFFECTIF (même cast).
-		var mePatch = (Me in ActionPatches) ? ActionPatches[Me] : null
-		var meBase = StateClass.patchedBaseOf(ParentState, ActionPatches, Me)
-		var meAgility = (mePatch != null) ? mePatch.effAGILITY(meBase) : meBase.AGILITY
-		var curTotalLife = patch.effTOTAL_LIFE(base)
-		var newTotalLife = reviveTotalLifeFrom(curTotalLife, meAgility)
-		patch.addTOTAL_LIFE(newTotalLife - curTotalLife)
-		patch.addLIFE(reviveLife(newTotalLife) - patch.effLIFE(base))
-		patch.addCELL(To - patch.effCELL(base))
+		// Vie ressuscitée engine-exacte : source unique reviveTotalLife/reviveLife (l'ordre
+		// des arrondis du moteur y est répliqué), partagée avec getResurrectionScore.
+		var newTotalLife = reviveTotalLife(revived.TOTAL_LIFE, State)
+		revived.TOTAL_LIFE = newTotalLife
+		revived.LIFE = reviveLife(newTotalLife)
+		revived.CELL = To
 
 		// Ordre de tour fidèle au moteur : le ressuscité est réinséré juste AVANT la prochaine
 		// entité VIVANTE qui le suit dans l'ordre initial (les morts de branche comptent — on lit
-		// la vue EFFECTIVE), sinon ajouté en FIN (cas des summons et des slots inconnus).
+		// le State courant), sinon ajouté en FIN (cas des summons et des slots inconnus).
 		// -0.25 (pas -0.5) pour ne jamais tie un bulbe virtuel (invocateur + 0.5) et rester du
 		// bon côté : un bulbe inséré à indexOf(owner)+1 agit AVANT un ressuscité placé à
 		// indexOf(follower). Cohérence de cache : ENTITY_SORTED_BY_TURN_ORDER_CACHE est clé par
@@ -72,31 +68,18 @@ class ResurrectionClass {
 		var followerInit = null
 		var followerOrder = null
 		var maxOrder = 0
-		for (var o: var ostat0 in ParentState) {
-			if (o == Resurrect_ID) continue
-			var op = (o in ActionPatches) ? ActionPatches[o] : null
-			var ob = StateClass.patchedBaseOf(ParentState, ActionPatches, o)
-			var olife = (op != null) ? op.effLIFE(ob) : ob.LIFE
-			if (olife <= 0) continue
-			var oorder = (op != null) ? op.effTURN_ORDER(ob) : ob.TURN_ORDER
-			if (oorder > maxOrder) maxOrder = oorder
+		for (var o: var ostat in State) {
+			if (ostat.LIFE <= 0 || o == Resurrect_ID) continue
+			if (ostat.TURN_ORDER > maxOrder) maxOrder = ostat.TURN_ORDER
 			if (myInit != null && (o in INITIAL_TURN_ORDER)) {
 				var oInit = INITIAL_TURN_ORDER[o]
 				if (oInit > myInit && (followerInit == null || oInit < followerInit)) {
 					followerInit = oInit
-					followerOrder = oorder
+					followerOrder = ostat.TURN_ORDER
 				}
 			}
 		}
-		// Summons nés dans l'action : jamais dans INITIAL_TURN_ORDER (ids virtuels), mais
-		// leur ordre compte pour le maxOrder du fallback.
-		for (var pid: var pp in ActionPatches) {
-			if (pp.NEW_ENTITY == null || pid == Resurrect_ID) continue
-			if (pp.effLIFE(pp.NEW_ENTITY) <= 0) continue
-			var oorder = pp.effTURN_ORDER(pp.NEW_ENTITY)
-			if (oorder > maxOrder) maxOrder = oorder
-		}
-		patch.addTURN_ORDER(((followerOrder != null) ? followerOrder - 0.25 : maxOrder + 1) - patch.effTURN_ORDER(base))
+		revived.TURN_ORDER = (followerOrder != null) ? followerOrder - 0.25 : maxOrder + 1
 	}
 
 	/*
@@ -107,12 +90,7 @@ class ResurrectionClass {
 	 * (le classement) passent tous deux ici — jamais de formule flottante parallèle.
 	 */
 	static reviveTotalLife(oldTotalLife, State) {
-		return reviveTotalLifeFrom(oldTotalLife, State[Me].AGILITY)
-	}
-
-	/* Source unique paramétrée : la sim PureDelta y passe l'AGI EFFECTIVE de Me. */
-	static reviveTotalLifeFrom(oldTotalLife, meAgility) {
-		var critFactor = (meAgility >= MIN_AGILITY_TO_FULLY_CRIT) ? CRITICAL_FACTOR : 1
+		var critFactor = (State[Me].AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? CRITICAL_FACTOR : 1
 		return max(10, round(oldTotalLife * 0.5 * critFactor))
 	}
 

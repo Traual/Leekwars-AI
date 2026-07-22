@@ -7,7 +7,7 @@ include("../includes.leek")
 
 class ConsequencesClass {
 
-	static applyEffect(EffectType, ParentState, ActionPatches, From, To, Effect, Caster, Multiplier, Item, RealTargets, casterBase, casterPatch, PrevEffectTotal) {
+	static applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds, PrevEffectTotal) {
 		var isEffectStackable = Effect[5] & EFFECT_MODIFIER_STACKABLE
 		var baseEffectValue = Effect[1] * Multiplier
 		// STEALS (moteur vérifié, Attack.java) : chaque effet RETOURNE son total appliqué (somme sur
@@ -16,483 +16,437 @@ class ConsequencesClass {
 		// steal_life]...). Seuls les cas à valeur naturelle alimentent le total (dégâts, vulnés,
 		// poison, nova, aftereffect) ; les autres laissent 0 — à étendre si un item associe un jour
 		// un steal à autre chose.
-		// PureDelta : chaque cible se lit base + patch (base résolue par patchedBaseOf — un
-		// summon né ou remplacé dans CE cast est vu), et chaque transition est un DELTA.
 		var effectTotal = 0
 		switch (EffectType) {
 			case EFFECT_ABSOLUTE_SHIELD:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effRESISTANCE(casterBase)) / 100)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.RESISTANCE) / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addABSOLUTE_SHIELD(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.ABSOLUTE_SHIELD += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_ABSOLUTE_VULNERABILITY:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					patch.addABSOLUTE_SHIELD(-calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.ABSOLUTE_SHIELD -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 					effectTotal += calculatedValue
 				}
 				break
 			case EFFECT_AFTEREFFECT:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effSCIENCE(casterBase)) / 100)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
 				var effectDuration = Effect[3]
 				var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					// Léthal : même cascade que les dégâts — vie effective à 0 + déroulé des buffs du
-					// mort + procs on-kill. Érosion sur les dégâts réellement encaissés (cap à la vie
-					// restante EFFECTIVE), comme getEntityDamageConsequences.
-					var curLife = patch.effLIFE(base)
-					var appliedDamage = min(calculatedValue, curLife)
-					if (appliedDamage >= curLife && curLife > 0) {
-						getKillConsequences(ParentState, ActionPatches, targetId, Caster)
+					// Léthal : même cascade que les dégâts — LIFE=0 + déroulé des buffs du mort +
+					// procs on-kill. Érosion sur les dégâts réellement encaissés (cap à la vie
+					// restante), comme getEntityDamageConsequences.
+					var appliedDamage = min(calculatedValue, targetStats.LIFE)
+					if (appliedDamage >= targetStats.LIFE && targetStats.LIFE > 0) {
+						getKillConsequences(targetStats, CastStats, State, clonedIds)
 					} else {
-						patch.addLIFE(-appliedDamage)
+						targetStats.LIFE -= appliedDamage
 					}
-					patch.addTOTAL_LIFE(-appliedDamage * erosionRate)
+					targetStats.TOTAL_LIFE -= appliedDamage * erosionRate
 					// Érosion immédiate -> proc nova (EffectAftereffect.java:27). Les ticks
 					// FUTURS et leurs procs restent hors modèle — chantier ticks/ledger.
-					if (base.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(base, patch, appliedDamage * erosionRate)
-					patch.addAFTEREFFECT(calculatedValue)
-					patch.addAFTEREFFECT_OVER_TIME(calculatedValue * effectDuration)
+					if (targetStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(targetStats, appliedDamage * erosionRate)
+					targetStats.AFTEREFFECT += calculatedValue
+					targetStats.AFTEREFFECT_OVER_TIME += calculatedValue * effectDuration
 					// La ligne enregistre la valeur des ticks FUTURS : son retrait déroule
 					// AFTEREFFECT/AFTEREFFECT_OVER_TIME seulement, jamais les dégâts immédiats.
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5])
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5])
 					effectTotal += appliedDamage
 				}
 				break
 			case EFFECT_ANTIDOTE:
 				// Entity.clearPoisons : retire UNIQUEMENT les lignes EffectPoison — les flux
-				// AFTEREFFECT* et HEAL* restent intacts. Déroulé PAR LIGNE via removeCastedEffect
-				// (source unique : POISON/POISON_OVER_TIME redescendent exactement), puis ledger
-				// purgé — plus de second déroulé à la mort du caster ni au remplacement.
+				// AFTEREFFECT* et HEAL* restent intacts. Déroulé PAR LIGNE via
+				// removeCastedEffect (source unique : POISON/POISON_OVER_TIME redescendent
+				// exactement), puis ledger purgé — plus de second déroulé à la mort du caster
+				// ni au remplacement.
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
+					var targetStats = State[targetId]
 					var newEffects = []
-					for (var eff in patch.effEFFECTS(base)) {
+					for (var eff in targetStats.EFFECTS) {
 						if (eff[0] == EFFECT_POISON) {
-							removeCastedEffect(EFFECT_POISON, patch, eff[1], eff[3])
+							removeCastedEffect(EFFECT_POISON, targetStats, eff[1], eff[3])
 						} else {
 							push(newEffects, eff)
 						}
 					}
-					patch.setEFFECTS(newEffects)
+					targetStats.EFFECTS = newEffects
 				}
 				break
 			case EFFECT_ATTRACT:
 			case EFFECT_PUSH:
 				// Géométrie moteur (Attack.java:186-198 + Map.getPush/AttractLastAvailableCell) :
 				// l'entité GLISSE vers la cellule VISÉE To, jamais au-delà, stoppée par la
-				// première case indisponible — la VALEUR de l'effet n'intervient pas. Cellules et
-				// vies lues en EFFECTIF (un effet précédent du cast a pu déplacer ou tuer).
+				// première case indisponible — la VALEUR de l'effet n'intervient pas. To reste
+				// la cellule de CAST (Play.useItem la reçoit telle quelle), seule la destination
+				// SIMULÉE change. STATIC gate en tête comme State.slideEntity.
 				var occupied = [: ]
-				for (var oid: var ostat in ParentState) {
-					var op = (oid in ActionPatches) ? ActionPatches[oid] : null
-					var ob = StateClass.patchedBaseOf(ParentState, ActionPatches, oid)
-					var olife = (op != null) ? op.effLIFE(ob) : ob.LIFE
-					if (olife > 0) occupied[(op != null) ? op.effCELL(ob) : ob.CELL] = true
-				}
-				for (var pid: var pp in ActionPatches) {
-					if (pp.NEW_ENTITY != null && pp.effLIFE(pp.NEW_ENTITY) > 0) occupied[pp.effCELL(pp.NEW_ENTITY)] = true
-				}
-				var casterCell = casterPatch.effCELL(casterBase)
+				for (var oid: var ostat in State) if (ostat.LIFE > 0) occupied[ostat.CELL] = true
 				for (var targetId: var aoeDistance in RealTargets) {
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (base.STATIC) continue
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var oldCell = patch.effCELL(base)
-					var newCell = CellClass.slideDestination(oldCell, To, casterCell, EffectType == EFFECT_ATTRACT, occupied)
+					var targetStats = State[targetId]
+					if (targetStats.STATIC) continue
+					var oldCell = targetStats.CELL
+					var newCell = CellClass.slideDestination(oldCell, To, State[Caster].CELL, EffectType == EFFECT_ATTRACT, occupied)
 					if (newCell == oldCell) continue
-					patch.addCELL(newCell - oldCell)
+					targetStats.CELL = newCell
 					occupied[oldCell] = false
 					occupied[newCell] = true
 					// Déplacement subi RÉEL (State.slideEntity -> onMoved seulement si la
 					// cellule change) : Explorer proc exactement une fois, sur la vraie arrivée.
-					if (base.SPECIAL_WEAPON != null) applyOnMovedPassive(base, patch, targetId, Caster, oldCell, newCell)
+					if (targetStats.SPECIAL_WEAPON != null) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, newCell)
 				}
 				break
 			case EFFECT_BOOST_MAX_LIFE:
 				// PAS de ledger : removeEffect ne défait JAMAIS addTotalLife
 				// (EffectMultiplyStats.java:39) — le gain de vie max est irréversible côté
 				// moteur, l'enregistrer promettrait un déroulé qui n'existe pas.
-				var casterStatMultiplier = baseEffectValue * max(0, 1 + casterPatch.effWISDOM(casterBase) / 100)   // le moteur floor le RÉSULTAT (EffectHeal/Vitality) : WIS -50 soigne 50%, <= -100 soigne 0
+				var casterStatMultiplier = baseEffectValue * max(0, 1 + CastStats.WISDOM / 100)   // le moteur floor le RÉSULTAT (EffectHeal/Vitality) : WIS -50 soigne 50%, <= -100 soigne 0
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
+					var targetStats = State[targetId]
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addLIFE(calculatedValue)
-					patch.addTOTAL_LIFE(calculatedValue)
+					targetStats.LIFE += calculatedValue
+					targetStats.TOTAL_LIFE += calculatedValue
 				}
 				break
 			case EFFECT_BUFF_AGILITY:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effSCIENCE(casterBase)) / 100)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addAGILITY(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.AGILITY += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_MP:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effSCIENCE(casterBase)) / 100)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addMP(calculatedValue)
-					patch.addTOTAL_MP(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.MP += calculatedValue
+					targetStats.TOTAL_MP += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_RESISTANCE:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effSCIENCE(casterBase)) / 100)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addRESISTANCE(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.RESISTANCE += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_STRENGTH:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effSCIENCE(casterBase)) / 100)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addSTRENGTH(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.STRENGTH += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_TP:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effSCIENCE(casterBase)) / 100)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addTP(calculatedValue)
-					patch.addTOTAL_TP(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.TP += calculatedValue
+					targetStats.TOTAL_TP += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_WISDOM:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effSCIENCE(casterBase)) / 100)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addWISDOM(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.WISDOM += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_DAMAGE_RETURN:
-				var casterStatMultiplier = baseEffectValue * max(0, 1 + casterPatch.effAGILITY(casterBase) / 100)   // EffectDamageReturn : appliqué seulement si positif -> AGI -50 = 50%, <= -100 = 0
+				var casterStatMultiplier = baseEffectValue * max(0, 1 + CastStats.AGILITY / 100)   // EffectDamageReturn : appliqué seulement si positif -> AGI -50 = 50%, <= -100 = 0
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addDAMAGE_RETURN(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.DAMAGE_RETURN += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_HEAL:
-				var casterStatMultiplier = baseEffectValue * max(0, 1 + casterPatch.effWISDOM(casterBase) / 100)   // le moteur floor le RÉSULTAT (EffectHeal/Vitality) : WIS -50 soigne 50%, <= -100 soigne 0
+				var casterStatMultiplier = baseEffectValue * max(0, 1 + CastStats.WISDOM / 100)   // le moteur floor le RÉSULTAT (EffectHeal/Vitality) : WIS -50 soigne 50%, <= -100 soigne 0
 				var effectDuration = Effect[3]
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
 					if (effectDuration > 0) {
-						patch.addHEAL(calculatedValue)
-						patch.addHEAL_OVER_TIME(calculatedValue * effectDuration)
+						targetStats.HEAL += calculatedValue
+						targetStats.HEAL_OVER_TIME += calculatedValue * effectDuration
 					} else {
-						// Soin cappé : SEUL le gain réellement appliqué entre au patch.
-						patch.addLIFE(min(calculatedValue, patch.effTOTAL_LIFE(base) - patch.effLIFE(base)))
+						targetStats.LIFE += min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
 					}
 					// HoT seulement (durée 0 = soin instantané, le gate du helper l'écarte).
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5])
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_POISON:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effMAGIC(casterBase)) / 100) * (1 + casterPatch.effPOWER(casterBase) / 100) // MAGIC planchée à l'usage, POWER non (EffectPoison du moteur)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) * (1 + CastStats.POWER / 100) // MAGIC planchée à l'usage, POWER non (EffectPoison du moteur)
 				var effectDuration = Effect[3]
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addPOISON(calculatedValue)
-					patch.addPOISON_OVER_TIME(calculatedValue * effectDuration)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.POISON += calculatedValue
+					targetStats.POISON_OVER_TIME += calculatedValue * effectDuration
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5])
 					effectTotal += calculatedValue
 				}
 				break
 			case EFFECT_RELATIVE_SHIELD:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effRESISTANCE(casterBase)) / 100)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.RESISTANCE) / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addRELATIVE_SHIELD(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.RELATIVE_SHIELD += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_DAMAGE:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effSTRENGTH(casterBase)) / 100) * (1 + casterPatch.effPOWER(casterBase) / 100) // le moteur plancher STRENGTH à l'usage mais PAS power
-				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityDamageConsequences(aoeDistance, casterStatMultiplier, Effect, ParentState, ActionPatches, targetId, Caster, targetId == Caster)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.STRENGTH) / 100) * (1 + CastStats.POWER / 100) // le moteur plancher STRENGTH à l'usage mais PAS power
+				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
 				break
 			case EFFECT_DEBUFF:
-				for (var targetId: var aoeDistance in RealTargets) getEntityDebuffConsequences(aoeDistance, Multiplier, Effect, ParentState, ActionPatches, targetId)
+				for (var targetId: var aoeDistance in RealTargets) getEntityDebuffConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster)
 				break
 			case EFFECT_INVERT:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (base.STATIC) continue
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var oldCell = patch.effCELL(base)
-					patch.addCELL(From - oldCell)
-					casterPatch.addCELL(To - casterPatch.effCELL(casterBase))
+					var targetStats = State[targetId]
+					if (targetStats.STATIC) continue
+					var oldCell = targetStats.CELL
+					targetStats.CELL = From
+					State[Caster].CELL = To
 					// La CIBLE subit le déplacement (invertEntities : target.onMoved(caster)) ;
 					// le caster s'auto-ignore (onMoved : by == this -> return).
-					if (base.SPECIAL_WEAPON != null) applyOnMovedPassive(base, patch, targetId, Caster, oldCell, From)
+					if (targetStats.SPECIAL_WEAPON != null) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, From)
 				}
 				break
 			case EFFECT_KILL:
-				for (var targetId: var aoeDistance in RealTargets) getKillConsequences(ParentState, ActionPatches, targetId, Caster)
+				for (var targetId: var aoeDistance in RealTargets) getKillConsequences(State[targetId], CastStats, State, clonedIds)
 				break
 			case EFFECT_LIFE_DAMAGE:
-				var casterStatMultiplier = baseEffectValue * (casterPatch.effLIFE(casterBase) / 100) * (1 + casterPatch.effPOWER(casterBase) / 100)
-				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityLifeDamageConsequences(aoeDistance, casterStatMultiplier, Effect, ParentState, ActionPatches, targetId, Caster, targetId == Caster)
+				var casterStatMultiplier = baseEffectValue * (CastStats.LIFE / 100) * (1 + CastStats.POWER / 100)
+				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityLifeDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
 				break
 			case EFFECT_NOVA_DAMAGE:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effSCIENCE(casterBase)) / 100) * (1 + casterPatch.effPOWER(casterBase) / 100) // SCIENCE planchée, POWER non (EffectNovaDamage du moteur)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100) * (1 + CastStats.POWER / 100) // SCIENCE planchée, POWER non (EffectNovaDamage du moteur)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
+					var targetStats = State[targetId]
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					var damageAmount = min(calculatedValue, patch.effTOTAL_LIFE(base) - patch.effLIFE(base))
-					patch.addTOTAL_LIFE(-damageAmount)
+					var damageAmount = min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
+					targetStats.TOTAL_LIFE -= damageAmount
 					// onNovaDamage moteur : seul test isDead, PAS d'exclusion self.
-					if (base.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(base, patch, damageAmount)
+					if (targetStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(targetStats, damageAmount)
 					effectTotal += damageAmount
 				}
 				break
 			case EFFECT_NOVA_VITALITY:
 				// PAS de ledger : comme BOOST_MAX_LIFE, addTotalLife est irréversible côté
 				// moteur (removeEffect ne le défait pas — EffectMultiplyStats.java:39).
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effSCIENCE(casterBase)) / 100)
-				for (var targetId: var aoeDistance in RealTargets) StateClass.ensureEntityPatch(ActionPatches, targetId).addTOTAL_LIFE(casterStatMultiplier * (1 - aoeDistance * 0.2))
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
+				for (var targetId: var aoeDistance in RealTargets) State[targetId].TOTAL_LIFE += casterStatMultiplier * (1 - aoeDistance * 0.2)
 				break
 			case EFFECT_RAW_ABSOLUTE_SHIELD:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					patch.addABSOLUTE_SHIELD(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.ABSOLUTE_SHIELD += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_AGILITY:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					patch.addAGILITY(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.AGILITY += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_MAGIC:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					patch.addMAGIC(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.MAGIC += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_MP:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					patch.addMP(calculatedValue)
-					patch.addTOTAL_MP(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.MP += calculatedValue
+					targetStats.TOTAL_MP += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_POWER:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					patch.addPOWER(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.POWER += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_RESISTANCE:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					patch.addRESISTANCE(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.RESISTANCE += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_SCIENCE:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					patch.addSCIENCE(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.SCIENCE += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_STRENGTH:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					patch.addSTRENGTH(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.STRENGTH += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_TP:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					patch.addTP(calculatedValue)
-					patch.addTOTAL_TP(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.TP += calculatedValue
+					targetStats.TOTAL_TP += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_BUFF_WISDOM:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					patch.addWISDOM(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.WISDOM += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_RAW_HEAL:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					patch.addLIFE(min(baseEffectValue * (1 - aoeDistance * 0.2), patch.effTOTAL_LIFE(base) - patch.effLIFE(base)))
+					var targetStats = State[targetId]
+					targetStats.LIFE += min(baseEffectValue * (1 - aoeDistance * 0.2), targetStats.TOTAL_LIFE - targetStats.LIFE)
 				}
 				break
 			case EFFECT_RAW_RELATIVE_SHIELD:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					patch.addRELATIVE_SHIELD(calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.RELATIVE_SHIELD += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_REMOVE_SHACKLES:
-				for (var targetId: var aoeDistance in RealTargets) getEntityRemoveShacklesConsequences(ParentState, ActionPatches, targetId)
+				for (var targetId: var aoeDistance in RealTargets) getEntityRemoveShacklesConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster)
 				break
 			case EFFECT_SHACKLE_AGILITY:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effMAGIC(casterBase)) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addAGILITY(-calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.AGILITY -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_SHACKLE_MAGIC:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effMAGIC(casterBase)) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addMAGIC(-calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.MAGIC -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_SHACKLE_MP:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effMAGIC(casterBase)) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addMP(-calculatedValue)
-					patch.addTOTAL_MP(-calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.MP -= calculatedValue
+					targetStats.TOTAL_MP -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_SHACKLE_STRENGTH:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effMAGIC(casterBase)) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addSTRENGTH(-calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.STRENGTH -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_SHACKLE_TP:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effMAGIC(casterBase)) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addTP(-calculatedValue)
-					patch.addTOTAL_TP(-calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.TP -= calculatedValue
+					targetStats.TOTAL_TP -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_SHACKLE_WISDOM:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, casterPatch.effMAGIC(casterBase)) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
-					patch.addWISDOM(-calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.WISDOM -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_STEAL_ABSOLUTE_SHIELD:
@@ -501,29 +455,28 @@ class ConsequencesClass {
 				// typiquement une vulné absolue). EffectStealAbsoluteShield vérifié : buff NORMAL
 				// (stats.setStat) -> remplacement + ledger comme les autres shields (les gates
 				// durée/valeur écartent seuls les variantes instantanées).
-				if (!isEffectStackable) ReplacementChangeStats(Item, Effect, casterBase, casterPatch)
-				casterPatch.addABSOLUTE_SHIELD(PrevEffectTotal)
-				RecordCastedEffect(casterBase, casterPatch, EffectType, PrevEffectTotal, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				if (!isEffectStackable) ReplacementChangeStats(Item, Effect, CastStats)
+				CastStats.ABSOLUTE_SHIELD += PrevEffectTotal
+				RecordCastedEffect(CastStats, EffectType, PrevEffectTotal, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				effectTotal = PrevEffectTotal
 				break
 			case EFFECT_STEAL_LIFE:
 				// Moteur : le CASTER récupère le TOTAL de l'effet PRÉCÉDENT, cappé à sa vie
-				// manquante EFFECTIVE. (L'état UNHEALABLE n'est pas modélisé dans la simu.)
-				var stolen = min(PrevEffectTotal, casterPatch.effTOTAL_LIFE(casterBase) - casterPatch.effLIFE(casterBase))
-				casterPatch.addLIFE(stolen)
+				// manquante. (L'état UNHEALABLE n'est pas modélisé dans la simu.)
+				var stolen = min(PrevEffectTotal, CastStats.TOTAL_LIFE - CastStats.LIFE)
+				CastStats.LIFE += stolen
 				effectTotal = stolen
 				break
 			case EFFECT_TELEPORT:
-				casterPatch.addCELL(To - casterPatch.effCELL(casterBase))
+				State[Caster].CELL = To
 				break
 			case EFFECT_VULNERABILITY:
 				for (var targetId: var aoeDistance in RealTargets) {
-					var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-					var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, base, patch)
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
-					patch.addRELATIVE_SHIELD(-calculatedValue)
-					RecordCastedEffect(base, patch, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					targetStats.RELATIVE_SHIELD -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 					effectTotal += calculatedValue
 				}
 				break
@@ -531,29 +484,21 @@ class ConsequencesClass {
 		return effectTotal
 	}
 
-	/*
-	 * PureDelta : applique tous les effets de l'item en accumulant des PATCHES FONCTIONNELS.
-	 * ParentState est STRICTEMENT immuable ; ActionPatches[id] porte les deltas de chaque
-	 * entité modifiée (base = ParentState[id], valeur effective = base + patch). From/To pour
-	 * les lasers ; Me est déjà positionné sur From par le patch produit dans Node.
-	 */
-	static getConsequences(ParentState, ActionPatches, Item, From, To, Caster, BaseHash, ResurrectId) {
+	/* Applique tous les effets de l'item sur l'état (From nécessaire pour les lasers). */
+	static getConsequences(State, Item, From, To, Caster, BaseHash, clonedIds, ResurrectId) {
 		BenchOps.Start("Consequences")
-		// ConsequenceTargets lit les cellules/vies du DÉBUT du cast (rien n'a encore bougé) :
-		// Me depuis From (param), les non-Me depuis ParentState -> lecture directe immuable.
-		var Targets = ConsequenceTargets(Item, From, To, ParentState, Caster, BaseHash)
-		var casterBase = ParentState[Caster]
-		var casterPatch = StateClass.ensureEntityPatch(ActionPatches, Caster)
+		var Targets = ConsequenceTargets(Item, From, To, State, Caster, BaseHash)
+		var CastStats = State[Caster]
 		var prevEffectTotal = 0   // STEALS : total appliqué de l'effet précédent de CE cast (contrat Attack.java)
 		// Crit du CAST : roll unique AVANT les effets (Attack.applyOnCell) — un self-buff d'AGI
 		// en cours de cast ne change pas le verdict des effets suivants. Lu aussi par les
 		// fonctions de dégâts pour l'érosion.
-		CAST_IS_CRITICAL = casterPatch.effAGILITY(casterBase) >= MIN_AGILITY_TO_FULLY_CRIT
+		CAST_IS_CRITICAL = CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT
 		// Unstable Destroyer : UN soin par cast critique, AVANT le premier effet (State.java
 		// appelle onCritical avant applyOnCell — armes, puces, summon, resurrect).
-		if (CAST_IS_CRITICAL && casterBase.SPECIAL_WEAPON != null) applyOnCriticalPassive(casterBase, casterPatch)
+		if (CAST_IS_CRITICAL && CastStats.SPECIAL_WEAPON != null) applyOnCriticalPassive(CastStats)
 		for (var Effect in ITEMINFO[Item].EFFECTS) {
-			if (casterPatch.effLIFE(casterBase) <= 0) break   // caster mort en route (retour léthal) : le moteur saute les effets restants
+			if (CastStats.LIFE <= 0) break   // caster mort en route (retour léthal) : le moteur saute les effets restants
 			var EffectType = Effect[0]
 			switch (EffectType) {
 				case EFFECT_SUMMON:
@@ -562,48 +507,47 @@ class ConsequencesClass {
 					var Id = SUMMON_ID_BASE + BulbState.getTypeOffset(Item)
 					// Engine-exact tie-break (Order.addSummon inserts at indexOf(owner)+1): the MOST
 					// RECENT summon plays FIRST among the owner's summons. Count this branch's earlier
-					// virtual bulbs of this summoner (dead included: deterministic offsets). Vue :
-					// ParentState + summons déjà nés dans ActionPatches (NEW_ENTITY).
+					// virtual bulbs of this summoner (dead included: deterministic offsets).
 					var nPriorVirtuals = 0
-					for (var vid: var vstat in ParentState) if (vid > SUMMON_ID_BASE && vstat.SUMMONER == Caster) nPriorVirtuals++
-					for (var pid: var pp in ActionPatches) if (pid > SUMMON_ID_BASE && pp.NEW_ENTITY != null && pp.NEW_ENTITY.SUMMONER == Caster) nPriorVirtuals++
-					var EntityStats = new BulbState(Id, SUMMONER_LEVEL_TIMES, Item, To, Caster, casterBase, nPriorVirtuals)
-					// ParentState JAMAIS muté : l'entité neuve vit dans son patch (NEW_ENTITY), ou
-					// remplace un occupant (REPLACEMENT_ENTITY) sans toucher le parent.
-					var sp = StateClass.ensureEntityPatch(ActionPatches, Id)
-					if (Id in ParentState) sp.REPLACEMENT_ENTITY = EntityStats
-					else sp.NEW_ENTITY = EntityStats
+					for (var vid: var vstat in State) if (vid > SUMMON_ID_BASE && vstat.SUMMONER == Caster) nPriorVirtuals++
+					var EntityStats = new BulbState(Id, SUMMONER_LEVEL_TIMES, Item, To, Caster, CastStats, nPriorVirtuals)
+					// SEULE mutation de la map extérieure faite ici : elle s'enregistre à la
+					// SOURCE, comme ensureCloned pour une entité mutée — ancien état s'il y en
+					// avait un (collision d'id : le workspace le retrouvera à la restauration),
+					// null sinon (entité NÉE dans l'action -> retirée du workspace). Jamais
+					// d'écrasement d'une entrée déjà enregistrée : clonedIds garde l'état
+					// d'AVANT le cast entier.
+					if (!(Id in clonedIds)) clonedIds[Id] = (Id in State) ? State[Id] : null
+					State[Id] = EntityStats
 					break
 				case EFFECT_RESURRECT:
-					ResurrectionClass.Update(To, ParentState, ActionPatches, ResurrectId)
+					ResurrectionClass.Update(To, State, ResurrectId, clonedIds)
 					break
 			}
-			var TmpTargets = RealConsequenceTargets(Targets, Effect, ParentState, ActionPatches, casterBase, Caster)
+			var TmpTargets = RealConsequenceTargets(Targets, Effect, State, CastStats, Caster)
 			var Multiplier = (Effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) ? mapSize(TmpTargets) : 1 //Saving Multiplier
 			if (CAST_IS_CRITICAL) Multiplier *= CRITICAL_FACTOR
 			var RealTargets = Effect[5] & EFFECT_MODIFIER_ON_CASTER ? [Caster: 0] : TmpTargets
-			prevEffectTotal = applyEffect(EffectType, ParentState, ActionPatches, From, To, Effect, Caster, Multiplier, Item, RealTargets, casterBase, casterPatch, prevEffectTotal)
+			// Clonage PARESSEUX : chaque cible réellement applicable est clonée au premier
+			// effet qui la touche (garde d'ensureCloned — clonedIds conserve l'état d'AVANT
+			// le cast entier). Les filtres ci-dessus ont lu l'état courant, identique en
+			// valeur ; la mutation d'applyEffect n'écrit que le clone rebindé.
+			for (var lazyTarget: var lazyDist in RealTargets) {
+				StateClass.ensureCloned(State, lazyTarget, clonedIds)
+			}
+			prevEffectTotal = applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds, prevEffectTotal)
 		}
 		BenchOps.Stop("Consequences")
 	}
 
-	/*
-	 * Targetabilité d'un effet — source UNIQUE isHitableFrom (life/side/summon en paramètres) :
-	 * le chemin simulation l'appelle avec la vie EFFECTIVE (base + patch), Danger continue de
-	 * l'appeler via isHitable sur de vrais EntityState matérialisés.
-	 */
 	static isHitable(Effect, TarStats, CastStats, TarIsCaster) {
-		return isHitableFrom(Effect, TarStats.LIFE, TarStats.SIDE, TarStats.IS_SUMMON, CastStats.SIDE, TarIsCaster)
-	}
-
-	static isHitableFrom(Effect, tarLife, tarSide, tarIsSummon, casterSide, TarIsCaster) {
-		if (tarLife <= 0) return false
+		if (TarStats.LIFE <= 0) return false
 		var effMask = Effect[4]
 
 		if (TarIsCaster && !(effMask & EFFECT_TARGET_CASTER)) return false
 
 		// 0: Enemy Leek, 1: Enemy Summon, 2: Ally Leek, 3: Ally Summon
-		var targetType = (casterSide == tarSide ? 2 : 0) | (tarIsSummon ? 1 : 0)
+		var targetType = (CastStats.SIDE == TarStats.SIDE ? 2 : 0) | (TarStats.IS_SUMMON ? 1 : 0)
 
 		switch (targetType) {
 			case 0:
@@ -618,96 +562,95 @@ class ConsequencesClass {
 		return false
 	}
 
-	/* Annule les agrégats d'une ligne du ledger — PureDelta : de purs deltas sur le patch. */
-	static removeCastedEffect(EffectType, patch, ValueOfEffect, DurationOfEffect) {
+	static removeCastedEffect(EffectType, StatsTarget, ValueOfEffect, DurationOfEffect) {
 		switch (EffectType) {
 			case EFFECT_ABSOLUTE_SHIELD:
 			case EFFECT_RAW_ABSOLUTE_SHIELD:
 			case EFFECT_STEAL_ABSOLUTE_SHIELD:
-				patch.addABSOLUTE_SHIELD(-ValueOfEffect)
+				StatsTarget.ABSOLUTE_SHIELD -= ValueOfEffect
 				break
 			case EFFECT_ABSOLUTE_VULNERABILITY:
-				patch.addABSOLUTE_SHIELD(ValueOfEffect)
+				StatsTarget.ABSOLUTE_SHIELD += ValueOfEffect
 				break
 			case EFFECT_AFTEREFFECT:
-				patch.addAFTEREFFECT(-ValueOfEffect)
-				patch.addAFTEREFFECT_OVER_TIME(-ValueOfEffect * DurationOfEffect)
+				StatsTarget.AFTEREFFECT -= ValueOfEffect
+				StatsTarget.AFTEREFFECT_OVER_TIME -= ValueOfEffect * DurationOfEffect
 				break
 			case EFFECT_BUFF_AGILITY:
 			case EFFECT_RAW_BUFF_AGILITY:
-				patch.addAGILITY(-ValueOfEffect)
+				StatsTarget.AGILITY -= ValueOfEffect
 				break
 			case EFFECT_BUFF_MP:
 			case EFFECT_RAW_BUFF_MP:
-				patch.addMP(-ValueOfEffect)
-				patch.addTOTAL_MP(-ValueOfEffect)
+				StatsTarget.MP -= ValueOfEffect
+				StatsTarget.TOTAL_MP -= ValueOfEffect
 				break
 			case EFFECT_BUFF_RESISTANCE:
 			case EFFECT_RAW_BUFF_RESISTANCE:
-				patch.addRESISTANCE(-ValueOfEffect)
+				StatsTarget.RESISTANCE -= ValueOfEffect
 				break
 			case EFFECT_BUFF_STRENGTH:
 			case EFFECT_RAW_BUFF_STRENGTH:
-				patch.addSTRENGTH(-ValueOfEffect)
+				StatsTarget.STRENGTH -= ValueOfEffect
 				break
 			case EFFECT_BUFF_TP:
 			case EFFECT_RAW_BUFF_TP:
-				patch.addTP(-ValueOfEffect)
-				patch.addTOTAL_TP(-ValueOfEffect)
+				StatsTarget.TP -= ValueOfEffect
+				StatsTarget.TOTAL_TP -= ValueOfEffect
 				break
 			case EFFECT_BUFF_WISDOM:
 			case EFFECT_RAW_BUFF_WISDOM:
-				patch.addWISDOM(-ValueOfEffect)
+				StatsTarget.WISDOM -= ValueOfEffect
 				break
 			case EFFECT_DAMAGE_RETURN:
-				patch.addDAMAGE_RETURN(-ValueOfEffect)
+				StatsTarget.DAMAGE_RETURN -= ValueOfEffect
 				break
 			case EFFECT_HEAL:
-				patch.addHEAL(-ValueOfEffect)
-				patch.addHEAL_OVER_TIME(-ValueOfEffect * DurationOfEffect)
+				StatsTarget.HEAL -= ValueOfEffect
+				StatsTarget.HEAL_OVER_TIME -= ValueOfEffect * DurationOfEffect
 				break
 			case EFFECT_RAW_BUFF_MAGIC:
-				patch.addMAGIC(-ValueOfEffect)
+				StatsTarget.MAGIC -= ValueOfEffect
 				break
 			case EFFECT_POISON:
-				patch.addPOISON(-ValueOfEffect)
-				patch.addPOISON_OVER_TIME(-ValueOfEffect * DurationOfEffect)
+				StatsTarget.POISON -= ValueOfEffect
+				StatsTarget.POISON_OVER_TIME -= ValueOfEffect * DurationOfEffect
 				break
 			case EFFECT_RAW_BUFF_SCIENCE:
-				patch.addSCIENCE(-ValueOfEffect)
+				StatsTarget.SCIENCE -= ValueOfEffect
 				break
 			case EFFECT_RAW_BUFF_POWER:
-				patch.addPOWER(-ValueOfEffect)
+				StatsTarget.POWER -= ValueOfEffect
 				break
 			case EFFECT_RAW_RELATIVE_SHIELD:
 			case EFFECT_RELATIVE_SHIELD:
-				patch.addRELATIVE_SHIELD(-ValueOfEffect)
+				StatsTarget.RELATIVE_SHIELD -= ValueOfEffect
 				break
 			// Shackles : la stat est restaurée, symétrique de l'application. Le retrait passe
 			// TOUJOURS par ligne du ledger (Libération, Manumission, remplacement, mort du
 			// caster) — aucun compteur agrégé à maintenir.
 			case EFFECT_SHACKLE_AGILITY:
-				patch.addAGILITY(ValueOfEffect)
+				StatsTarget.AGILITY += ValueOfEffect
 				break
 			case EFFECT_SHACKLE_MAGIC:
-				patch.addMAGIC(ValueOfEffect)
+				StatsTarget.MAGIC += ValueOfEffect
 				break
 			case EFFECT_SHACKLE_MP:
-				patch.addMP(ValueOfEffect)
-				patch.addTOTAL_MP(ValueOfEffect)
+				StatsTarget.MP += ValueOfEffect
+				StatsTarget.TOTAL_MP += ValueOfEffect
 				break
 			case EFFECT_SHACKLE_STRENGTH:
-				patch.addSTRENGTH(ValueOfEffect)
+				StatsTarget.STRENGTH += ValueOfEffect
 				break
 			case EFFECT_SHACKLE_TP:
-				patch.addTP(ValueOfEffect)
-				patch.addTOTAL_TP(ValueOfEffect)
+				StatsTarget.TP += ValueOfEffect
+				StatsTarget.TOTAL_TP += ValueOfEffect
 				break
 			case EFFECT_SHACKLE_WISDOM:
-				patch.addWISDOM(ValueOfEffect)
+				StatsTarget.WISDOM += ValueOfEffect
 				break
 			case EFFECT_VULNERABILITY:
-				patch.addRELATIVE_SHIELD(ValueOfEffect)
+				StatsTarget.RELATIVE_SHIELD += ValueOfEffect
 				break
 		}
 	}
@@ -721,21 +664,20 @@ class ConsequencesClass {
 	 * moteur (EntityAI.getEffectArray, même format que getEffects) :
 	 * [type, value, caster, turns, critical, item, target, modifiers] — les modifiers
 	 * portent notamment MODIFIER_IRREDUCTIBLE, que Libération respecte ligne à ligne.
-	 * PureDelta : le ledger effectif se lit patch.effEFFECTS(base) et chaque version
-	 * modifiée est un tableau NEUF rebindé par setEFFECTS — jamais de mutation en place.
+	 * Tableau et lignes JAMAIS mutés en place (partagés avec les parents).
 	 * NB : la clé de fusion (type+item+durée+caster) n'est PAS celle du remplacement
 	 * non-stackable (type+item), déjà passé AVANT l'application (ReplacementChangeStats).
 	 */
-	static RecordCastedEffect(base, patch, EffectType, AppliedValue, CasterId, Duration, Critical, Item, Modifiers) {
+	static RecordCastedEffect(TarStats, EffectType, AppliedValue, CasterId, Duration, Critical, Item, Modifiers) {
 		if (Duration == 0 || AppliedValue <= 0) return;
-		var effects = patch.effEFFECTS(base)
+		var effects = TarStats.EFFECTS
 		var mergeIdx = -1
 		for (var i = 0; i < count(effects); i++) {
 			var eff = effects[i]
 			if (eff[0] == EffectType && eff[5] == Item && eff[3] == Duration && eff[2] == CasterId) { mergeIdx = i; break }
 		}
 		if (mergeIdx == -1) {
-			patch.setEFFECTS(effects + [[EffectType, AppliedValue, CasterId, Duration, Critical, Item, base.ID, Modifiers]])
+			TarStats.EFFECTS = effects + [[EffectType, AppliedValue, CasterId, Duration, Critical, Item, TarStats.ID, Modifiers]]
 			return;
 		}
 		var newEffects = []
@@ -747,7 +689,7 @@ class ConsequencesClass {
 				push(newEffects, effects[i])
 			}
 		}
-		patch.setEFFECTS(newEffects)
+		TarStats.EFFECTS = newEffects
 	}
 
 	/*
@@ -758,71 +700,58 @@ class ConsequencesClass {
 	 * rebindé — jamais de mutation du tableau partagé avec les états parents. La ligne
 	 * disparue ne sera pas re-déroulée à la mort de son ancien caster.
 	 */
-	static ReplacementChangeStats(Item, Effect, base, patch) {
+	static ReplacementChangeStats(Item, Effect, TarStats) {
 		if (Effect[5] & EFFECT_MODIFIER_STACKABLE) return;
 		if (Effect[3] == 0) return;
 		// Pré-scan : pas de match -> aucune allocation (chemin ultra-majoritaire).
-		var effects = patch.effEFFECTS(base)
 		var found = false
-		for (var eff in effects) {
+		for (var eff in TarStats.EFFECTS) {
 			if (eff[0] == Effect[0] && eff[5] == Item) { found = true; break }
 		}
 		if (!found) return;
 		var newEffects = []
 		var removed = false
-		for (var eff in effects) {
+		for (var eff in TarStats.EFFECTS) {
 			if (!removed && eff[0] == Effect[0] && eff[5] == Item) {
-				removeCastedEffect(eff[0], patch, eff[1], eff[3])
+				removeCastedEffect(eff[0], TarStats, eff[1], eff[3])
 				removed = true
 				continue   // la ligne remplacée ne passe pas dans le nouveau tableau
 			}
 			push(newEffects, eff)
 		}
-		patch.setEFFECTS(newEffects)
+		TarStats.EFFECTS = newEffects
 	}
 
 	/*
 	 * Déroule tous les effets castés par une entité (à sa mort) ET retire leurs lignes du
 	 * ledger des cibles (Entity.die : removeLaunchedEffect + removeEffect) — TOUTES les
-	 * lignes du caster, pas seulement la première. Vue PureDelta : ParentState (avec
-	 * remplacements) + summons nés dans l'action. Chaque porteur reçoit un ledger NEUF.
+	 * lignes du caster, pas seulement la première. Tableau neuf rebindé (jamais de mutation
+	 * du partagé) -> un second appel avec le même caster est un no-op.
 	 */
-	static RemoveCastedEffects(ParentState, ActionPatches, Caster) {
-		// Collecter d'abord (jamais créer de patch en itérant ActionPatches).
+	static RemoveCastedEffects(EveryStats, Caster, clonedIds) {
+		// Clone-on-write : un porteur d'effet peut être HORS du set pré-cloné (= partagé avec
+		// l'état parent). Collecter d'abord, puis cloner+muter — ensureCloned remplace des
+		// valeurs de map, ne jamais muter une map en l'itérant.
 		var touched = []
-		for (var e: var stat0 in ParentState) {
-			var p = (e in ActionPatches) ? ActionPatches[e] : null
-			var b = StateClass.patchedBaseOf(ParentState, ActionPatches, e)
-			var effs = (p != null) ? p.effEFFECTS(b) : b.EFFECTS
-			for (var eff in effs) {
+		for (var e: var stat in EveryStats) {
+			for (var eff in stat.EFFECTS) {
 				if (eff[2] == Caster) {
 					push(touched, e)
 					break
 				}
 			}
 		}
-		for (var pid: var pp in ActionPatches) {
-			if (pp.NEW_ENTITY != null) {
-				for (var eff in pp.effEFFECTS(pp.NEW_ENTITY)) {
-					if (eff[2] == Caster) {
-						push(touched, pid)
-						break
-					}
-				}
-			}
-		}
 		for (var e in touched) {
-			var patch = StateClass.ensureEntityPatch(ActionPatches, e)
-			var b = StateClass.patchedBaseOf(ParentState, ActionPatches, e)
+			var stat = StateClass.ensureCloned(EveryStats, e, clonedIds)
 			var newEffects = []
-			for (var eff in patch.effEFFECTS(b)) {
+			for (var eff in stat.EFFECTS) {
 				if (eff[2] == Caster) {
-					removeCastedEffect(eff[0], patch, eff[1], eff[3])
+					removeCastedEffect(eff[0], stat, eff[1], eff[3])
 				} else {
 					push(newEffects, eff)
 				}
 			}
-			patch.setEFFECTS(newEffects)
+			stat.EFFECTS = newEffects
 		}
 	}
 
@@ -831,152 +760,128 @@ class ConsequencesClass {
 	 * bonus BR du killer -> bonus coffre -> Dark Katana (alliés VIVANTS de la victime, victime
 	 * non-summon) -> Enhanced Lightninger (le killer SEUL, vivant) -> retrait des effets lancés
 	 * par la victime -> cascade des summons vivants (killer null : aucun bonus, aucun proc).
-	 * KillerId == null pour une mort de cascade. Idempotente : victime déjà morte = no-op.
-	 * PureDelta : la mort est le delta -vieEffective ; toutes les lectures sont effectives.
+	 * KillerStats == null pour une mort de cascade. Idempotente : victime déjà morte = no-op.
 	 */
-	static getKillConsequences(ParentState, ActionPatches, VictimId, KillerId) {
-		var vPatch = StateClass.ensureEntityPatch(ActionPatches, VictimId)
-		var vBase = StateClass.patchedBaseOf(ParentState, ActionPatches, VictimId)
-		var curLife = vPatch.effLIFE(vBase)
-		if (curLife <= 0) return;
-		// Mort EXACTE : en arithmétique exacte, le delta cumulé après un kill vaut
-		// précisément -base.LIFE — on l'écrit tel quel plutôt que d'accumuler -effLIFE,
-		// car fl(base + (-base)) == 0 quel que soit l'historique flottant du cast, là où
-		// l'accumulation pouvait laisser un résidu d'un ulp (cadavre « vivant » pour les
-		// gates LIFE > 0, les cascades et le bit vivant des hashs).
-		vPatch.LIFE = -vBase.LIFE
-		vPatch.MASK |= PM_LIFE
-		var kPatch = null
-		var kBase = null
-		if (KillerId != null) {
-			kPatch = StateClass.ensureEntityPatch(ActionPatches, KillerId)
-			kBase = StateClass.patchedBaseOf(ParentState, ActionPatches, KillerId)
-		}
+	static getKillConsequences(VictimStats, KillerStats, EveryStats, clonedIds) {
+		if (VictimStats.LIFE <= 0) return;
+		VictimStats = StateClass.ensureCloned(EveryStats, VictimStats.ID, clonedIds)
+		VictimStats.LIFE = 0
+		var Killed = VictimStats.ID
+		var killer = (KillerStats != null) ? StateClass.ensureCloned(EveryStats, KillerStats.ID, clonedIds) : null
 
 		// Bonus BR + coffre (State.onPlayerDie — killer non-null seulement, PAS de check
 		// vivant : un renvoyeur mort touche quand même son bonus, comme le moteur).
-		if (kPatch != null) {
+		if (killer != null) {
 			if (FIGHT_TYPE == FIGHT_TYPE_BATTLE_ROYALE) {
 				// Approx déclarée : le moteur lit le seul effet RAW_BUFF_POWER SYSTÈME de la
 				// victime (attack == null) ; notre POWER agrège aussi les buffs d'items.
-				kPatch.addPOWER((vBase.IS_SUMMON ? 2 : 10) + floor(vPatch.effPOWER(vBase) / 2))
+				killer.POWER += (VictimStats.IS_SUMMON ? 2 : 10) + floor(VictimStats.POWER / 2)
 			}
-			switch (vBase.NAME) {
-				case "wooden_chest": kPatch.addPOWER(10); break
-				case "iron_chest": kPatch.addPOWER(50); break
-				case "diamond_chest": kPatch.addPOWER(100); break
+			switch (VictimStats.NAME) {
+				case "wooden_chest": killer.POWER += 10; break
+				case "iron_chest": killer.POWER += 50; break
+				case "diamond_chest": killer.POWER += 100; break
 			}
 		}
 
 		// Dark Katana : la mort d'un NON-summon buffe l'AGILITY des alliés VIVANTS porteurs de
 		// la victime (Entity.onAllyKilled : jamais elle-même, jamais l'autre camp, morts
-		// exclus). La victime est déjà à vie effective 0 -> exclue par le filtre vivant.
-		// (Un summon neuf ne porte jamais d'arme spéciale : la vue ParentState suffit.)
-		if (!vBase.IS_SUMMON) {
+		// exclus). Collecter les ids PUIS cloner+muter (pas de mutation pendant le parcours).
+		if (!VictimStats.IS_SUMMON) {
 			var darkIds = []
-			for (var e: var stat0 in ParentState) {
-				if (e == VictimId) continue
-				var p = (e in ActionPatches) ? ActionPatches[e] : null
-				var b = StateClass.patchedBaseOf(ParentState, ActionPatches, e)
-				var life = (p != null) ? p.effLIFE(b) : b.LIFE
-				if (life > 0 && b.SIDE == vBase.SIDE && b.SPECIAL_WEAPON == WEAPON_DARK_KATANA) push(darkIds, e)
+			for (var e: var stat in EveryStats) {
+				if (e != Killed && stat.LIFE > 0 && stat.SIDE == VictimStats.SIDE && stat.SPECIAL_WEAPON == WEAPON_DARK_KATANA) push(darkIds, e)
 			}
 			var darkRow = PASSIVE_INFO[WEAPON_DARK_KATANA][EFFECT_ALLY_KILLED_TO_AGILITY]
 			for (var e in darkIds) {
-				applyPassiveRawEffect(StateClass.patchedBaseOf(ParentState, ActionPatches, e), StateClass.ensureEntityPatch(ActionPatches, e), EFFECT_RAW_BUFF_AGILITY, darkRow[1], WEAPON_DARK_KATANA, darkRow, false)
+				applyPassiveRawEffect(StateClass.ensureCloned(EveryStats, e, clonedIds), EFFECT_RAW_BUFF_AGILITY, darkRow[1], WEAPON_DARK_KATANA, darkRow, false)
 			}
 		}
 
 		// Enhanced Lightninger : le KILLER SEUL, s'il est VIVANT et porteur (Entity.onKill :
 		// isDead() return). Les autres porteurs ne gagnent rien.
-		if (kPatch != null && kPatch.effLIFE(kBase) > 0 && kBase.SPECIAL_WEAPON == WEAPON_ENHANCED_LIGHTNINGER) {
+		if (killer != null && killer.LIFE > 0 && killer.SPECIAL_WEAPON == WEAPON_ENHANCED_LIGHTNINGER) {
 			var killRow = PASSIVE_INFO[WEAPON_ENHANCED_LIGHTNINGER][EFFECT_KILL_TO_TP]
 			// forceStackable : Entity.activateOnKillPassiveEffect crée le RAW TP stackable EN DUR.
-			applyPassiveRawEffect(kBase, kPatch, EFFECT_RAW_BUFF_TP, killRow[1], WEAPON_ENHANCED_LIGHTNINGER, killRow, true)
+			applyPassiveRawEffect(killer, EFFECT_RAW_BUFF_TP, killRow[1], WEAPON_ENHANCED_LIGHTNINGER, killRow, true)
 		}
 
 		// Entity.die : retrait de tous les effets lancés par la victime, PUIS cascade — les
 		// summons VIVANTS de la victime meurent avec killer null (récursif : summons de summons).
-		RemoveCastedEffects(ParentState, ActionPatches, VictimId)
+		RemoveCastedEffects(EveryStats, Killed, clonedIds)
 		var cascadeIds = []
-		for (var e: var stat0 in ParentState) {
-			var p = (e in ActionPatches) ? ActionPatches[e] : null
-			var b = StateClass.patchedBaseOf(ParentState, ActionPatches, e)
-			var life = (p != null) ? p.effLIFE(b) : b.LIFE
-			if (life > 0 && b.SUMMONER == VictimId) push(cascadeIds, e)
-		}
-		for (var pid: var pp in ActionPatches) {
-			if (pp.NEW_ENTITY != null && pp.effLIFE(pp.NEW_ENTITY) > 0 && pp.NEW_ENTITY.SUMMONER == VictimId) push(cascadeIds, pid)
+		for (var e: var stat in EveryStats) {
+			if (stat.LIFE > 0 && stat.SUMMONER == Killed) push(cascadeIds, e)
 		}
 		for (var e in cascadeIds) {
-			getKillConsequences(ParentState, ActionPatches, e, null)
+			getKillConsequences(EveryStats[e], null, EveryStats, clonedIds)
 		}
 	}
 
 	/*
 	 * Passifs d'armes événementiels — calqués sur Entity.java (onDirectDamage, onNovaDamage,
-	 * onCritical, onMoved) : porteur VIVANT seulement (vie EFFECTIVE), valeurs lues dans
-	 * PASSIVE_INFO. Les call sites gatent sur SPECIAL_WEAPON != null pour ne payer l'appel
-	 * que chez les porteurs. Hors modèle (documenté) : les procs des ticks FUTURS de poison
-	 * (Illicit Grenade Launcher : POISON_TO_SCIENCE au tick) et d'aftereffect.
+	 * onCritical, onMoved) : porteur VIVANT seulement, valeurs lues dans PASSIVE_INFO.
+	 * Les call sites gatent sur SPECIAL_WEAPON != null pour ne payer l'appel que chez les
+	 * porteurs. Hors modèle (documenté) : les procs des ticks FUTURS de poison (Illicit
+	 * Grenade Launcher : POISON_TO_SCIENCE au tick) et d'aftereffect — chantier ticks/ledger.
 	 */
 
 	/*
 	 * Proc PERSISTANT d'une arme passive : le porteur se lance à LUI-MÊME un effet RAW
 	 * (activateOn*PassiveEffect -> createEffect(..., this, this, weapon.attack) avec
-	 * critical = false). Applique le RAW aux deltas ET l'enregistre au ledger — type RAW
+	 * critical = false). Applique le RAW aux agrégats ET l'enregistre au ledger — type RAW
 	 * réel (jamais le type événementiel), caster = porteur, item = l'arme, durée = la ligne
 	 * passive. Le flag stackable vient des modifiers de la ligne (le moteur le lit là, SAUF
 	 * Entity.activateOnKillPassiveEffect qui force TRUE en dur, d'où forceStackable) : non-stackable
 	 * -> remplacement moteur sur (type RAW, arme) AVANT application, via une ligne
 	 * synthétique au layout attendu par ReplacementChangeStats.
 	 */
-	static applyPassiveRawEffect(base, patch, rawType, value, weapon, passiveRow, forceStackable) {
+	static applyPassiveRawEffect(stats, rawType, value, weapon, passiveRow, forceStackable) {
 		if (value <= 0) return;
 		var duration = passiveRow[3]
 		if (!forceStackable && !(passiveRow[5] & EFFECT_MODIFIER_STACKABLE)) {
-			ReplacementChangeStats(weapon, [rawType, 0, 0, duration, 0, passiveRow[5]], base, patch)
+			ReplacementChangeStats(weapon, [rawType, 0, 0, duration, 0, passiveRow[5]], stats)
 		}
 		if (rawType == EFFECT_RAW_ABSOLUTE_SHIELD) {
-			patch.addABSOLUTE_SHIELD(value)
+			stats.ABSOLUTE_SHIELD += value
 		} else if (rawType == EFFECT_RAW_BUFF_STRENGTH) {
-			patch.addSTRENGTH(value)
+			stats.STRENGTH += value
 		} else if (rawType == EFFECT_RAW_BUFF_MAGIC) {
-			patch.addMAGIC(value)
+			stats.MAGIC += value
 		} else if (rawType == EFFECT_RAW_BUFF_AGILITY) {
-			patch.addAGILITY(value)
+			stats.AGILITY += value
 		} else if (rawType == EFFECT_RAW_BUFF_RESISTANCE) {
-			patch.addRESISTANCE(value)
+			stats.RESISTANCE += value
 		} else if (rawType == EFFECT_RAW_BUFF_MP) {
-			patch.addMP(value)
-			patch.addTOTAL_MP(value)
+			stats.MP += value
+			stats.TOTAL_MP += value
 		} else if (rawType == EFFECT_RAW_BUFF_TP) {
-			patch.addTP(value)
-			patch.addTOTAL_TP(value)
+			stats.TP += value
+			stats.TOTAL_TP += value
 		}
 		// passiveRow[5] = les modifiers de la ligne passive — le RAW_AGILITY du Dark Katana
 		// garde ainsi son bit IRREDUCTIBLE (modifiers 17), que Libération respecte.
-		RecordCastedEffect(base, patch, rawType, value, base.ID, duration, false, weapon, passiveRow[5])
+		RecordCastedEffect(stats, rawType, value, stats.ID, duration, false, weapon, passiveRow[5])
 	}
 
 	/* Dégâts DIRECTS encaissés (EFFECT_DAMAGE + EFFECT_LIFE_DAMAGE, après dégâts+érosion,
 	 * avant lifesteal/retour) : Revoked M-Laser -> STRENGTH, Mysterious Electrisor -> shield,
 	 * Bazooka au plutonium -> RESISTANCE. */
-	static applyOnDirectDamagePassive(base, patch, appliedDamage) {
-		if (patch.effLIFE(base) <= 0 || appliedDamage <= 0) return;
+	static applyOnDirectDamagePassive(stats, appliedDamage) {
+		if (stats.LIFE <= 0 || appliedDamage <= 0) return;
 		// Double arrondi moteur : onDirectDamage reçoit un ENTIER, puis l'effet RAW_* arrondit
 		// le proc — round((value1+jet·value2)·aoe·crit), jet=0/aoe=1/crit=false pour un passif.
 		// 12 dégâts × 4% -> 0 (pas 0.48). Le State garde sa convention flottante par ailleurs.
 		var dmg = round(appliedDamage)
-		if (base.SPECIAL_WEAPON == WEAPON_REVOKED_M_LASER) {
+		if (stats.SPECIAL_WEAPON == WEAPON_REVOKED_M_LASER) {
 			var row = PASSIVE_INFO[WEAPON_REVOKED_M_LASER][EFFECT_DAMAGE_TO_STRENGTH]
-			applyPassiveRawEffect(base, patch, EFFECT_RAW_BUFF_STRENGTH, round(dmg * row[1] / 100), WEAPON_REVOKED_M_LASER, row, false)
-		} else if (base.SPECIAL_WEAPON == WEAPON_MYSTERIOUS_ELECTRISOR) {
+			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_STRENGTH, round(dmg * row[1] / 100), WEAPON_REVOKED_M_LASER, row, false)
+		} else if (stats.SPECIAL_WEAPON == WEAPON_MYSTERIOUS_ELECTRISOR) {
 			var row = PASSIVE_INFO[WEAPON_MYSTERIOUS_ELECTRISOR][EFFECT_DAMAGE_TO_ABSOLUTE_SHIELD]
-			applyPassiveRawEffect(base, patch, EFFECT_RAW_ABSOLUTE_SHIELD, round(dmg * row[1] / 100), WEAPON_MYSTERIOUS_ELECTRISOR, row, false)
-		} else if (base.SPECIAL_WEAPON == WEAPON_PLUTONIUM_BAZOOKA) {
+			applyPassiveRawEffect(stats, EFFECT_RAW_ABSOLUTE_SHIELD, round(dmg * row[1] / 100), WEAPON_MYSTERIOUS_ELECTRISOR, row, false)
+		} else if (stats.SPECIAL_WEAPON == WEAPON_PLUTONIUM_BAZOOKA) {
 			var row = PASSIVE_INFO[WEAPON_PLUTONIUM_BAZOOKA][EFFECT_DAMAGE_TO_RESISTANCE]
-			applyPassiveRawEffect(base, patch, EFFECT_RAW_BUFF_RESISTANCE, round(dmg * row[1] / 100), WEAPON_PLUTONIUM_BAZOOKA, row, false)
+			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_RESISTANCE, round(dmg * row[1] / 100), WEAPON_PLUTONIUM_BAZOOKA, row, false)
 		}
 	}
 
@@ -984,12 +889,12 @@ class ConsequencesClass {
 	 * du retour de EffectDamage, de l'aftereffect immédiat, nova pur SANS exclusion self —
 	 * le moteur ne teste que isDead. PAS le retour de EffectLifeDamage : le Java n'y appelle
 	 * pas onNovaDamage). */
-	static applyOnNovaDamagePassive(base, patch, appliedErosion) {
-		if (patch.effLIFE(base) <= 0 || appliedErosion <= 0) return;
-		if (base.SPECIAL_WEAPON == WEAPON_UNBRIDLED_GAZOR) {
+	static applyOnNovaDamagePassive(stats, appliedErosion) {
+		if (stats.LIFE <= 0 || appliedErosion <= 0) return;
+		if (stats.SPECIAL_WEAPON == WEAPON_UNBRIDLED_GAZOR) {
 			// Même double arrondi que applyOnDirectDamagePassive : érosion 3 -> 1 magie, 2 -> 0.
 			var row = PASSIVE_INFO[WEAPON_UNBRIDLED_GAZOR][EFFECT_NOVA_DAMAGE_TO_MAGIC]
-			applyPassiveRawEffect(base, patch, EFFECT_RAW_BUFF_MAGIC, round(round(appliedErosion) * row[1] / 100), WEAPON_UNBRIDLED_GAZOR, row, false)
+			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_MAGIC, round(round(appliedErosion) * row[1] / 100), WEAPON_UNBRIDLED_GAZOR, row, false)
 		}
 	}
 
@@ -997,159 +902,145 @@ class ConsequencesClass {
 	 * avant applyOnCell, pour armes, puces, summon ET resurrect) : Unstable Destroyer se
 	 * soigne de value1 (jet = 0, convention sim), cappé à la vie manquante. Le crit
 	 * DÉCLENCHE le passif, il ne le multiplie pas (pas de CRITICAL_FACTOR). */
-	static applyOnCriticalPassive(base, patch) {
-		var curLife = patch.effLIFE(base)
-		if (curLife <= 0) return;
-		if (base.SPECIAL_WEAPON == WEAPON_UNSTABLE_DESTROYER) {
-			var curTotal = patch.effTOTAL_LIFE(base)
-			if (curLife < curTotal) {
-				// RAW_HEAL instantané (durée 0) : JAMAIS enregistré au ledger.
-				// Delta = désiré − courant (min(total, vie + soin) − vie).
-				patch.addLIFE(min(curTotal, curLife + PASSIVE_INFO[WEAPON_UNSTABLE_DESTROYER][EFFECT_CRITICAL_TO_HEAL][1]) - curLife)
-			}
+	static applyOnCriticalPassive(CastStats) {
+		if (CastStats.LIFE <= 0) return;
+		if (CastStats.SPECIAL_WEAPON == WEAPON_UNSTABLE_DESTROYER && CastStats.LIFE < CastStats.TOTAL_LIFE) {
+			// RAW_HEAL instantané (durée 0) : JAMAIS enregistré au ledger.
+			CastStats.LIFE = min(CastStats.TOTAL_LIFE, CastStats.LIFE + PASSIVE_INFO[WEAPON_UNSTABLE_DESTROYER][EFFECT_CRITICAL_TO_HEAL][1])
 		}
 	}
 
 	/* Déplacement SUBI (push, attract, cible d'un invert — Entity.onMoved ignore les
 	 * automouvements, donc jamais le caster de l'invert) : Explorer Rifle -> MP + TOTAL_MP. */
-	static applyOnMovedPassive(base, patch, movedId, moverId, oldCell, newCell) {
-		if (patch.effLIFE(base) <= 0 || movedId == moverId || oldCell == newCell) return;
-		if (base.SPECIAL_WEAPON == WEAPON_EXPLORER_RIFLE) {
+	static applyOnMovedPassive(stats, movedId, moverId, oldCell, newCell) {
+		if (stats.LIFE <= 0 || movedId == moverId || oldCell == newCell) return;
+		if (stats.SPECIAL_WEAPON == WEAPON_EXPLORER_RIFLE) {
 			var row = PASSIVE_INFO[WEAPON_EXPLORER_RIFLE][EFFECT_MOVED_TO_MP]
-			applyPassiveRawEffect(base, patch, EFFECT_RAW_BUFF_MP, row[1], WEAPON_EXPLORER_RIFLE, row, false)
+			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_MP, row[1], WEAPON_EXPLORER_RIFLE, row, false)
 		}
 	}
 
-	static getEntityDamageConsequences(Dist, base_, Effect, ParentState, ActionPatches, targetId, casterId, TarIsCaster) {
-		var tPatch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-		var tBase = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-		var cPatch = StateClass.ensureEntityPatch(ActionPatches, casterId)
-		var cBase = StateClass.patchedBaseOf(ParentState, ActionPatches, casterId)
-		var BaseDamages = base_ * (1 - Dist * 0.2)
+	static getEntityDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, clonedIds) {
+		var BaseDamages = base * (1 - Dist * 0.2)
 		// Érosion : +10 points si le cast est critique (crit binaire à 950), le RETOUR érode
 		// au MÊME taux (celui de l'attaque, comme le moteur).
 		var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
-		var DamagesWithShield = max(0, BaseDamages * (1 - tPatch.effRELATIVE_SHIELD(tBase) / 100) - tPatch.effABSOLUTE_SHIELD(tBase))
-		var TargetLife = tPatch.effLIFE(tBase)
+		var DamagesWithShield = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
+		var TargetLife = TarStats.LIFE
 		var Damage = min(DamagesWithShield, TargetLife)
 		if (Damage >= TargetLife && TargetLife > 0) {
-			getKillConsequences(ParentState, ActionPatches, targetId, casterId)
+			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
 		} else {
-			tPatch.addLIFE(-Damage)
+			TarStats.LIFE -= Damage
 		}
-		tPatch.addTOTAL_LIFE(-Damage * erosionRate)
+		TarStats.TOTAL_LIFE -= Damage * erosionRate
 		// Passifs de la cible (EffectDamage : onDirectDamage puis onNovaDamage APRÈS les
 		// dégâts, AVANT lifesteal et retour ; cible morte -> aucun proc).
-		if (tBase.SPECIAL_WEAPON != null) {
-			applyOnDirectDamagePassive(tBase, tPatch, Damage)
-			applyOnNovaDamagePassive(tBase, tPatch, Damage * erosionRate)
+		if (TarStats.SPECIAL_WEAPON != null) {
+			applyOnDirectDamagePassive(TarStats, Damage)
+			applyOnNovaDamagePassive(TarStats, Damage * erosionRate)
 		}
 		if (!TarIsCaster) {
-			var Damage_Return = BaseDamages * (tPatch.effDAMAGE_RETURN(tBase) / 100)
+			var Damage_Return = BaseDamages * (TarStats.DAMAGE_RETURN / 100)
 			// Ordre moteur (EffectDamage) : dégâts -> LIFESTEAL crédité au caster -> PUIS retour,
 			// plafonné à la vie restante POST-lifesteal — un gros lifesteal peut donc sauver d'un
 			// retour léthal. L'érosion suit le retour APPLIQUÉ, pas le brut.
-			var casterLife = cPatch.effLIFE(cBase)
-			var lifeAfterSteal = casterLife + min(Damage * (max(0, cPatch.effWISDOM(cBase)) / 1000), cPatch.effTOTAL_LIFE(cBase) - casterLife) // WIS clampée : le moteur gate lifeSteal > 0, une sagesse shacklée négative ne DRAINE pas
+			var lifeAfterSteal = CastStats.LIFE + min(Damage * (max(0, CastStats.WISDOM) / 1000), CastStats.TOTAL_LIFE - CastStats.LIFE) // WIS clampée : le moteur gate lifeSteal > 0, une sagesse shacklée négative ne DRAINE pas
 			var appliedReturn = min(Damage_Return, lifeAfterSteal)
-			if (Damage_Return >= lifeAfterSteal && casterLife > 0) {
+			if (Damage_Return >= lifeAfterSteal && CastStats.LIFE > 0) {
 				// Retour léthal : le caster meurt VRAIMENT (cascade de ses summons + déroulé de
-				// ses buffs, depuis sa vie effective PRÉ-steal, comme le moteur), et
-				// getConsequences saute ses effets restants.
-				getKillConsequences(ParentState, ActionPatches, casterId, targetId)
+				// ses buffs), et getConsequences saute ses effets restants — comme le moteur.
+				getKillConsequences(CastStats, TarStats, EveryStats, clonedIds)
 			} else {
-				cPatch.addLIFE(lifeAfterSteal - Damage_Return - casterLife)   // delta = désiré − courant
+				CastStats.LIFE = lifeAfterSteal - Damage_Return
 			}
-			cPatch.addTOTAL_LIFE(-appliedReturn * erosionRate)
+			CastStats.TOTAL_LIFE -= appliedReturn * erosionRate
 			// Érosion du retour -> proc nova du caster SURVIVANT (EffectDamage.java:75).
-			if (cBase.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(cBase, cPatch, appliedReturn * erosionRate)
+			if (CastStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(CastStats, appliedReturn * erosionRate)
 		}
 		return Damage   // STEALS : les dégâts réellement infligés alimentent PrevEffectTotal
 	}
 
-	static getEntityDebuffConsequences(Dist, Multiplier, Effect, ParentState, ActionPatches, targetId) {
-		var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-		var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
+	static getEntityDebuffConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
 		// EffectDebuff.apply : la puissance est un ENTIER positif — value = (int)((v1+jet·v2)
 		// ·aoe·crit·targetCount) — avant reduceEffects. DebuffPower = fraction CONSERVÉE,
 		// clampée à 0 (un débuff >= 100% efface tout le réductible).
 		var removal = floor(Effect[1] * Multiplier * (1 - Dist * 0.2))
 		var DebuffPower = max(0, 1 - removal / 100)
-		// Passe UNIQUE sur le ledger EFFECTIF, fidèle à Entity.reduceEffects:800-816 : une
-		// ligne MODIFIER_IRREDUCTIBLE (eff[7]) est intégralement conservée — ligne ET deltas.
-		// Sinon : newValue = round(eff[1]·p) (l'arrondi d'Effect.reduce), la part retirée est
-		// déroulée par removeCastedEffect — l'UNIQUE mécanisme de réduction des agrégats —
-		// et une ligne tombée à 0 DISPARAÎT (plus de second déroulé à la mort de son caster).
-		// Les bonus BR simulés non enregistrés restent intacts : irréductibles par nature.
+		// Passe UNIQUE sur le ledger, fidèle à Entity.reduceEffects:800-816 : une ligne
+		// MODIFIER_IRREDUCTIBLE (eff[7]) est intégralement conservée — ligne ET agrégats
+		// (le POWER système de BR, le multiplicateur colossus, le RAW_AGILITY du Dark Katana
+		// survivent par leur MODIFIER, plus par une exception de type). Sinon : newValue =
+		// round(eff[1]·p) (l'arrondi d'Effect.reduce), la part retirée est déroulée par
+		// removeCastedEffect — l'UNIQUE mécanisme de réduction des agrégats (buffs,
+		// shackles + compteurs, shields, vulnés, DR, six flux périodiques) — et une ligne
+		// tombée à 0 DISPARAÎT (reduceEffects la retire des deux côtés : plus de second
+		// déroulé à la mort de son caster). Les bonus BR simulés non enregistrés restent
+		// intacts : irréductibles par nature. Lignes et tableau NEUFS — jamais de mutation
+		// des containers du parent.
 		var newEffects = []
-		for (var eff in patch.effEFFECTS(base)) {
+		for (var eff in TarStats.EFFECTS) {
 			if (eff[7] & EFFECT_MODIFIER_IRREDUCTIBLE) {
 				push(newEffects, eff)
 				continue
 			}
 			var newValue = round(eff[1] * DebuffPower)
 			var removedValue = eff[1] - newValue
-			if (removedValue != 0) removeCastedEffect(eff[0], patch, removedValue, eff[3])
+			if (removedValue != 0) removeCastedEffect(eff[0], TarStats, removedValue, eff[3])
 			if (newValue > 0) push(newEffects, [eff[0], newValue, eff[2], eff[3], eff[4], eff[5], eff[6], eff[7]])
 		}
-		patch.setEFFECTS(newEffects)
+		TarStats.EFFECTS = newEffects
 	}
 
 	/*
 	 * Manumission/Rémission — Entity.removeShackles : retire TOUTES les lignes des six
-	 * familles de shackles. Déroulé PAR LIGNE via removeCastedEffect (delta restauré), puis
+	 * familles de shackles. Déroulé PAR LIGNE via removeCastedEffect (stat restaurée), puis
 	 * ledger purgé : la mort ultérieure du casteur des shackles ne restaure plus une seconde
-	 * fois.
+	 * fois. L'ancienne restauration globale par compteurs a été REMPLACÉE par ce déroulé
+	 * (sinon double restauration) — d'où l'absence de tout compteur agrégé de shackles.
 	 */
-	static getEntityRemoveShacklesConsequences(ParentState, ActionPatches, targetId) {
-		var patch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-		var base = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
+	static getEntityRemoveShacklesConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
 		var newEffects = []
-		for (var eff in patch.effEFFECTS(base)) {
+		for (var eff in TarStats.EFFECTS) {
 			var t = eff[0]
 			if (t == EFFECT_SHACKLE_AGILITY || t == EFFECT_SHACKLE_MAGIC || t == EFFECT_SHACKLE_MP
 				|| t == EFFECT_SHACKLE_STRENGTH || t == EFFECT_SHACKLE_TP || t == EFFECT_SHACKLE_WISDOM) {
-				removeCastedEffect(t, patch, eff[1], eff[3])
+				removeCastedEffect(t, TarStats, eff[1], eff[3])
 			} else {
 				push(newEffects, eff)
 			}
 		}
-		patch.setEFFECTS(newEffects)
+		TarStats.EFFECTS = newEffects
 	}
 
-	static getEntityLifeDamageConsequences(Dist, base_, Effect, ParentState, ActionPatches, targetId, casterId, TarIsCaster) {
-		var tPatch = StateClass.ensureEntityPatch(ActionPatches, targetId)
-		var tBase = StateClass.patchedBaseOf(ParentState, ActionPatches, targetId)
-		var cPatch = StateClass.ensureEntityPatch(ActionPatches, casterId)
-		var cBase = StateClass.patchedBaseOf(ParentState, ActionPatches, casterId)
-		var BaseDamages = base_ * (1 - Dist * 0.2)
+	static getEntityLifeDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, clonedIds) {
+		var BaseDamages = base * (1 - Dist * 0.2)
 		var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
-		var InitialDamages = max(0, BaseDamages * (1 - tPatch.effRELATIVE_SHIELD(tBase) / 100) - tPatch.effABSOLUTE_SHIELD(tBase))
-		var TargetLife = tPatch.effLIFE(tBase)
+		var InitialDamages = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
+		var TargetLife = TarStats.LIFE
 		var Damage = min(InitialDamages, TargetLife)
 		if (Damage >= TargetLife && TargetLife > 0) {
-			getKillConsequences(ParentState, ActionPatches, targetId, casterId)
+			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
 		} else {
-			tPatch.addLIFE(-Damage)
+			TarStats.LIFE -= Damage
 		}
-		tPatch.addTOTAL_LIFE(-Damage * erosionRate)
+		TarStats.TOTAL_LIFE -= Damage * erosionRate
 		// Passifs de la cible (EffectLifeDamage : onDirectDamage puis onNovaDamage, comme
 		// les dégâts directs ; cible morte -> aucun proc).
-		if (tBase.SPECIAL_WEAPON != null) {
-			applyOnDirectDamagePassive(tBase, tPatch, Damage)
-			applyOnNovaDamagePassive(tBase, tPatch, Damage * erosionRate)
+		if (TarStats.SPECIAL_WEAPON != null) {
+			applyOnDirectDamagePassive(TarStats, Damage)
+			applyOnNovaDamagePassive(TarStats, Damage * erosionRate)
 		}
 		if (!TarIsCaster) {
-			var Damage_Return = BaseDamages * (tPatch.effDAMAGE_RETURN(tBase) / 100)
-			var casterLife = cPatch.effLIFE(cBase)
-			var appliedReturn = min(Damage_Return, casterLife)   // plafonné à la vie restante (érosion sur l'appliqué)
-			if (Damage_Return >= casterLife && casterLife > 0) {
+			var Damage_Return = BaseDamages * (TarStats.DAMAGE_RETURN / 100)
+			var appliedReturn = min(Damage_Return, CastStats.LIFE)   // plafonné à la vie restante (érosion sur l'appliqué)
+			if (Damage_Return >= CastStats.LIFE && CastStats.LIFE > 0) {
 				// Retour léthal : voir getEntityDamageConsequences.
-				getKillConsequences(ParentState, ActionPatches, casterId, targetId)
+				getKillConsequences(CastStats, TarStats, EveryStats, clonedIds)
 			} else {
-				cPatch.addLIFE(-Damage_Return)
+				CastStats.LIFE -= Damage_Return
 			}
-			cPatch.addTOTAL_LIFE(-appliedReturn * erosionRate)
+			CastStats.TOTAL_LIFE -= appliedReturn * erosionRate
 			// PAS de proc nova ici : EffectLifeDamage.java n'appelle pas onNovaDamage sur le retour.
 		}
 		return Damage   // STEALS : les dégâts réellement infligés alimentent PrevEffectTotal
@@ -1217,16 +1108,10 @@ class ConsequencesClass {
 		return addValueToBinHash(OFFSET_BASIS ^ BaseHash, (Me << 40) | (Item << 30) | (From << 15) | To)
 	}
 
-	static RealConsequenceTargets(AllTargets, Effect, ParentState, ActionPatches, casterBase, Caster) {
+	static RealConsequenceTargets(AllTargets, Effect, State, CastStats, Caster) {
 		var _final = [: ]
-		for (var tar: var dist in AllTargets) {
-			// Vie/side/summon EFFECTIFS : une cible tuée (ou remplacée) par un effet
-			// précédent du même cast n'est plus targetable — comme le moteur.
-			var p = (tar in ActionPatches) ? ActionPatches[tar] : null
-			var b = StateClass.patchedBaseOf(ParentState, ActionPatches, tar)
-			var life = (p != null) ? p.effLIFE(b) : b.LIFE
-			if (isHitableFrom(Effect, life, b.SIDE, b.IS_SUMMON, casterBase.SIDE, tar == Caster)) _final[tar] = dist
-		}
+		for (var tar: var dist in AllTargets)
+			if (isHitable(Effect, State[tar], CastStats, tar == Caster)) _final[tar] = dist
 		return _final
 	}
 

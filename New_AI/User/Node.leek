@@ -7,30 +7,32 @@ include("../includes.leek")
 
 class NodeClass {
 	ACTION
-	END_STATS         // CACHE FROID de l'état complet : rempli d'office sur la racine, null sur
-	                  // un candidat (P2 : plus aucune matérialisation sur le chemin chaud) —
-	                  // materializeNodeState le reconstruit UNE fois (STATE_PARENT + STATE_PATCH)
-	                  // au premier miss de cache ou au développement du nœud gagnant
+	END_STATS         // CACHE PARESSEUX de l'état complet : rempli d'office sur la racine,
+	                  // null sur un candidat neuf, matérialisé (STATE_PARENT + STATE_PATCH)
+	                  // seulement si le nœud est réellement développé — StateClass.materializeNodeState
 	STATE_PARENT      // nœud portant l'état d'AVANT cette action — chaîne IMMUABLE, indépendante de
 	                  // PARENT (réassigné par le déroulé et les entrées du ScoredCache) ; null = racine
-	STATE_PATCH       // [id -> EntityActionPatchClass] : les patches FONCTIONNELS de l'action
-	                  // (PureDelta), seule représentation persistante du nœud —
-	                  // materializeActionState les rejoue sur l'état parent
+	STATE_PATCH       // [id -> EntityState APRÈS l'action] : les seules entités que l'action a modifiées
+	                  // (les ids de CLONED), seule représentation persistante du nœud
 	PARENT            // nœud d'origine (null pour une action de base)
 	SCORE             // score absolu de l'état du nœud (rempli par le BFS)
 	BASE_HASH         // BaseHash de l'état du nœud
 	CONTEXT_BY_SIDE   // par side : hash de l'équipe adverse (clé des caches danger)
 	HFP_BY_SIDE       // par side : fingerprint des healers (clé de la heal map)
+	CLONED            // [id -> ANCIEN EntityState] : ensemble EXACT des entités possiblement mutées
+	                  // par l'action — la valeur est la référence read-only à l'état d'avant clonage
+	                  // (null pour un summon né en branche). Sert au clone-on-write, à la capture du
+	                  // patch et à la restauration du workspace, puis est libéré (null) par le BFS —
+	                  // STATE_PATCH reste la seule représentation persistante
 	LOCAL_TERM_DIRTY  // [id -> true] : entités dont un input LOCAL du terme a réellement changé
-	                  // (comparaison de VALEURS parent/effectif + checks Me BaseHash/fingerprint)
-	                  // — le recompute-set du scoring l'itère directement
+	                  // (masque diffMaskOf + checks Me BaseHash/fingerprint) — le recompute-set
+	                  // du scoring l'itère directement
 	TERMS             // [id -> terme signé] : PATCH local — les seuls termes recalculés par CE nœud
 	                  // (la racine noPlay porte la map complète). Résolution via ScoringClass.termOf.
 	TERMS_PARENT      // nœud portant le snapshot de termes précédent — chaîne IMMUABLE, indépendante
 	                  // de PARENT (que le déroulé du BFS réassigne) ; null = racine des termes
 	POISON_KEY        // clé de couverture antidote de l'état du nœud (posée par getStateScoreFromParent
-	                  // via poisonKeyOfPatch — ParentState + ActionPatches, sans matérialisation ;
-	                  // 0 sans antidote)
+	                  // depuis le workspace encore muté, 0 sans antidote)
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction
@@ -38,14 +40,15 @@ class NodeClass {
 	}
 
 	/*
-	 * Fabrique LE nœud (PureDelta) : produit le patch de Me, applique les conséquences de
-	 * l'action en PATCHES FONCTIONNELS sur le ParentState immuable, matérialise UNE fois
-	 * l'état candidat, puis patche les hashs incrémentaux depuis le parent.
+	 * Fabrique LE nœud : applique les conséquences de l'action sur un état clone-on-write,
+	 * puis patche les hashs incrémentaux (base, contextes, healers) depuis le parent.
 	 *
-	 * Aucune restauration : deux candidats frères partent du même ParentState immuable.
+	 * Le nœud rendu ne porte QUE son patch : END_STATS reste null, le workspace est rendu à
+	 * l'appelant qui doit le scorer PUIS le restaurer (StateClass.restoreWorkspace).
 	 *
 	 * @param Act Action à transformer en nœud
-	 * @param ParentStateMap [id -> EntityState] IMMUABLE de l'état parent — jamais écrit
+	 * @param Workspace map de travail — copie superficielle du State parent, partagée par tous
+	 *        les candidats du même parent et restaurée après chacun
 	 * @param From cellule de lancement (Act.From)
 	 * @param MyWalkCells layers de déplacement de Me (déjà calculés par l'appelant)
 	 * @param Cost coût TP total : item + swap d'arme + jump/télépo (déjà calculé par l'appelant)
@@ -60,163 +63,91 @@ class NodeClass {
 	 *
 	 * @return le nouveau nœud, hashs et patch remplis
 	 */
-	static ActionToNodeInTree(Act, ParentStateMap, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, StateParent, ParentContext, ParentHfp) {
+	static ActionToNodeInTree(Act, Workspace, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, StateParent, ParentContext, ParentHfp) {
 		BenchOps.Start("Node")
-		// PureDelta : le ParentState est STRICTEMENT immuable. Node produit d'abord le patch
-		// de Me (cellule, MP de la couche, TP, arme) pour que Consequences le voie à From
-		// avec ses ressources effectives, puis Consequences accumule les patches des cibles.
-		var ActionPatches = [: ]
-		var meBase = ParentStateMap[Me]
-		var mePatch = StateClass.ensureEntityPatch(ActionPatches, Me)
-		mePatch.addCELL(From - meBase.CELL)
+		// clonedIds = l'ensemble exact des entités effectivement mutables : Me pré-cloné ici ;
+		// cibles réellement touchées, victimes des cascades de kill et ressuscité (payload
+		// Act.RESURRECT_ID) clonés PARESSEUSEMENT (ensureCloned) dans getConsequences.
+		var clonedIds = [: ]
+		StateClass.beginActionOnWorkspace(Workspace, clonedIds)
+		var ThisActionStats = Workspace
+
+		// Déplacement : retire les MP de la layer utilisée.
+		ThisActionStats[Me].CELL = From
 		if (From in MyWalkCells.WALK) {
-			mePatch.addMP(-MyWalkCells.WALK[From])
+			ThisActionStats[Me].MP -= MyWalkCells.WALK[From]
 		} else if (From in MyWalkCells.JUMP) {
-			mePatch.addMP(-MyWalkCells.JUMP[From])
+			ThisActionStats[Me].MP -= MyWalkCells.JUMP[From]
 		} else if (From in MyWalkCells.TELEPORTATION) {
-			mePatch.addMP(-MyWalkCells.TELEPORTATION[From])
+			ThisActionStats[Me].MP -= MyWalkCells.TELEPORTATION[From]
 		} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
-			mePatch.addMP(-MyWalkCells.TELEPORTATION_AND_JUMP[From])
+			ThisActionStats[Me].MP -= MyWalkCells.TELEPORTATION_AND_JUMP[From]
 		}
-		mePatch.addTP(-Cost)
-		if (Info.IS_WEAPON) mePatch.setWEAPON(Item)
-		ConsequencesClass.getConsequences(ParentStateMap, ActionPatches, Item, From, To, Me, BaseHash, Act.RESURRECT_ID)
-		// Inventaire en DELTAS : cooldown fixé = nouveau − effectif (l'effectif du parent se
-		// résout par la chaîne #1), uses = +1. La matérialisation reconstruira l'overlay.
-		mePatch.addCooldownDelta(Item, Info.COOLDOWN - StateClass.cooldownOf(meBase, Item))
-		mePatch.addUsesDelta(Item, 1)
+		ThisActionStats[Me].TP -= Cost
+		if (Info.IS_WEAPON) ThisActionStats[Me].WEAPON = Item
+		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash, clonedIds, Act.RESURRECT_ID)
+		// Écritures d'inventaire via les setters différentiels : elles ne touchent que le
+		// patch local du clone de Me, jamais un ancêtre.
+		StateClass.setCooldown(ThisActionStats[Me], Item, Info.COOLDOWN)
+		StateClass.incrementUses(ThisActionStats[Me], Item)
 		// Cooldowns des items de déplacement si la cellule d'arrivée vient d'une layer jump/télépo.
 		if (!(From in MyWalkCells.WALK)) {
 			if (From in MyWalkCells.JUMP) {
-				mePatch.addCooldownDelta(CHIP_JUMP, ITEMINFO[CHIP_JUMP].COOLDOWN - StateClass.cooldownOf(meBase, CHIP_JUMP))
+				StateClass.setCooldown(ThisActionStats[Me], CHIP_JUMP, ITEMINFO[CHIP_JUMP].COOLDOWN)
 			} else if (From in MyWalkCells.TELEPORTATION) {
-				mePatch.addCooldownDelta(CHIP_TELEPORTATION, ITEMINFO[CHIP_TELEPORTATION].COOLDOWN - StateClass.cooldownOf(meBase, CHIP_TELEPORTATION))
+				StateClass.setCooldown(ThisActionStats[Me], CHIP_TELEPORTATION, ITEMINFO[CHIP_TELEPORTATION].COOLDOWN)
 			} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
-				mePatch.addCooldownDelta(CHIP_JUMP, ITEMINFO[CHIP_JUMP].COOLDOWN - StateClass.cooldownOf(meBase, CHIP_JUMP))
-				mePatch.addCooldownDelta(CHIP_TELEPORTATION, ITEMINFO[CHIP_TELEPORTATION].COOLDOWN - StateClass.cooldownOf(meBase, CHIP_TELEPORTATION))
+				StateClass.setCooldown(ThisActionStats[Me], CHIP_JUMP, ITEMINFO[CHIP_JUMP].COOLDOWN)
+				StateClass.setCooldown(ThisActionStats[Me], CHIP_TELEPORTATION, ITEMINFO[CHIP_TELEPORTATION].COOLDOWN)
 			}
 		}
-		// P2 : AUCUNE matérialisation dans le chemin ordinaire — END_STATS reste null (le
-		// nœud ne porte que STATE_PARENT + ActionPatches ; materializeNodeState reconstruit
-		// froidement au premier miss de cache ou au développement du nœud gagnant).
+		// END_STATS reste NULL : le nœud ne portera que son patch (matérialisation paresseuse).
 		var result = new NodeClass(Act, null, Parent)
 		result.STATE_PARENT = StateParent
 
-		// Patch incrémental des trois hashs et du dirty-set, DIRECTEMENT depuis ParentState +
-		// ActionPatches — règles EXACTES de diffMaskOf : old = l'EntityState parent (objet),
-		// new = les valeurs EFFECTIVES base + patch (primitives *From, aucun objet enfant).
+		// Patch incrémental des trois hashs, piloté par le SEUL clonedIds : old ^ new pour une
+		// entité préexistante, ajout pur pour une entité née dans l'action (valeur null). Un
+		// ressuscité était mort dans le parent -> ses contributions old valent 0 (LIFE-gated).
 		var bh = BaseHash
 		var ctx = clone(ParentContext, 1)    // copie : le contexte du parent n'est jamais muté
 		var ctxSides = mapKeys(ctx)
 		var hfpMap = clone(ParentHfp, 1)
 		var localTermDirty = [: ]
-		for (var tar: var p in ActionPatches) {
+		for (var tar: var parentStat in clonedIds) {
+			var newStat = ThisActionStats[tar]
 			// Entité NÉE dans l'action (summon) : aucune contribution ancienne à retirer, on
-			// AJOUTE ses contributions EFFECTIVES (deltas post-naissance inclus).
-			if (p.NEW_ENTITY != null) {
-				var nb = p.NEW_ENTITY
+			// AJOUTE simplement les siennes. clonedIds est enregistré à la source par
+			// Consequences, donc Node n'a plus à deviner la nature de l'action.
+			if (parentStat == null) {
 				localTermDirty[tar] = true
-				var nLife = p.effLIFE(nb)
-				var nCell = p.effCELL(nb)
-				bh ^= StateClass.baseContributionFrom(tar, nLife, nCell)
-				var addCtx = DeltaClass.contextContributionFrom(tar, nLife, nCell, p.effAGILITY(nb), p.effSTRENGTH(nb), p.effMAGIC(nb), p.effTOTAL_MP(nb), p.effTOTAL_TP(nb), p.effPOWER(nb))
+				if (tar == Me) continue      // impossible en pratique : Me préexiste toujours
+				bh ^= StateClass.baseContribution(newStat, tar)
+				var addCtx = DeltaClass.contextContribution(newStat, tar)
 				if (addCtx != 0) {
-					for (var s in ctxSides) if (s != nb.SIDE) ctx[s] ^= addCtx
+					for (var s in ctxSides) if (s != newStat.SIDE) ctx[s] ^= addCtx
 				}
-				var addHfp = (nLife > 0 && HealClass.hasHealItem(nb))
-					? HealClass.healerContributionFrom(tar, nCell, p.effAGILITY(nb), p.effWISDOM(nb), p.effTOTAL_TP(nb), p.effTOTAL_MP(nb)) : 0
-				if (addHfp != 0) hfpMap[nb.SIDE] = ((nb.SIDE in hfpMap) ? hfpMap[nb.SIDE] : 0) ^ addHfp
+				var addHfp = HealClass.healerContributionOf(newStat, tar)
+				if (addHfp != 0) hfpMap[newStat.SIDE] = ((newStat.SIDE in hfpMap) ? hfpMap[newStat.SIDE] : 0) ^ addHfp
 				continue
 			}
-			var parentStat = ParentStateMap[tar]
-			var mask = p.MASK
-			var full = (p.REPLACEMENT_ENTITY != null)   // collision d'id : TOUT peut différer
-			var baseN = full ? p.REPLACEMENT_ENTITY : parentStat
-
-			// ---- Partie LOCALE (règles diffMaskOf) : un champ sans bit (hors remplacement)
-			// ne peut pas différer, et un delta NUL ne salit pas (comparaison de VALEURS,
-			// jamais de bits seuls — mêmes recompute-sets que P1).
-			var cellChanged = (full || (mask & PM_CELL)) && parentStat.CELL != p.effCELL(baseN)
-			var totalLifeChanged = (full || (mask & PM_TOTAL_LIFE)) && parentStat.TOTAL_LIFE != p.effTOTAL_LIFE(baseN)
-			var capChanged = (full || (mask & PM_CAPABILITY)) && (
-				parentStat.STRENGTH != p.effSTRENGTH(baseN)
-				|| parentStat.MAGIC != p.effMAGIC(baseN)
-				|| parentStat.WISDOM != p.effWISDOM(baseN)
-				|| parentStat.SCIENCE != p.effSCIENCE(baseN)
-				|| parentStat.AGILITY != p.effAGILITY(baseN)
-				|| parentStat.RESISTANCE != p.effRESISTANCE(baseN)
-				|| parentStat.TOTAL_TP != p.effTOTAL_TP(baseN)
-				|| parentStat.TOTAL_MP != p.effTOTAL_MP(baseN)
-				|| parentStat.ABSOLUTE_SHIELD != p.effABSOLUTE_SHIELD(baseN)
-				|| parentStat.RELATIVE_SHIELD != p.effRELATIVE_SHIELD(baseN))
-			// Antidote : SEUL Me voit son cooldown bouger en simulation — un delta non nul
-			// dans son patch <=> un cooldown effectif différent du parent.
-			var antidoteChanged = false
-			if (tar == Me && (mask & PM_COOLDOWNS) && (CHIP_ANTIDOTE in p.COOLDOWNS)) {
-				antidoteChanged = p.COOLDOWNS[CHIP_ANTIDOTE] != 0
-			}
-			if (capChanged || totalLifeChanged || cellChanged || antidoteChanged
-				|| ((full || (mask & PM_LIFE)) && parentStat.LIFE != p.effLIFE(baseN))
-				|| ((full || (mask & PM_DAMAGE_RETURN)) && parentStat.DAMAGE_RETURN != p.effDAMAGE_RETURN(baseN))
-				|| ((full || (mask & PM_POISON)) && parentStat.POISON != p.effPOISON(baseN))
-				|| ((full || (mask & PM_POISON_OVER_TIME)) && parentStat.POISON_OVER_TIME != p.effPOISON_OVER_TIME(baseN))
-				|| ((full || (mask & PM_AFTEREFFECT)) && parentStat.AFTEREFFECT != p.effAFTEREFFECT(baseN))
-				|| ((full || (mask & PM_AFTEREFFECT_OVER_TIME)) && parentStat.AFTEREFFECT_OVER_TIME != p.effAFTEREFFECT_OVER_TIME(baseN))
-				|| ((full || (mask & PM_HEAL)) && parentStat.HEAL != p.effHEAL(baseN))
-				|| ((full || (mask & PM_HEAL_OVER_TIME)) && parentStat.HEAL_OVER_TIME != p.effHEAL_OVER_TIME(baseN))) {
-				localTermDirty[tar] = true
-			}
+			// Masque différentiel UNIQUE : une seule comparaison parent/clone pilote les
+			// trois patchs de hash ET le terme local, et invalide les mémos dérivés
+			// (Me compris — il est seulement exclu des trois hashs).
+			var mask = StateClass.diffMaskOf(parentStat, newStat, tar == Me)
+			if (mask & DIFF_LOCAL_TERM) localTermDirty[tar] = true
 			if (tar == Me) continue          // Me est exclu des trois hashs
-
-			// ---- Contributions (règles diffMaskOf, non-Me) ----
-			var newLife = p.effLIFE(baseN)
-			var oldAlive = parentStat.LIFE > 0
-			var newAlive = newLife > 0
-			var aliveChanged = oldAlive != newAlive
-			var bothAlive = oldAlive && newAlive
-
-			if (aliveChanged || (bothAlive && cellChanged)) {
-				bh ^= StateClass.baseContribution(parentStat, tar) ^ StateClass.baseContributionFrom(tar, newLife, p.effCELL(baseN))
-			}
-
-			// Formes EFFECTIVES, court-circuit exact de diffMaskOf : capChanged faux =>
-			// classes critiques et clamps forcément identiques, seuls cellule et POWER
-			// peuvent encore bouger.
-			var contextStatsChanged = false
-			var healStatsChanged = false
-			if (capChanged) {
-				var newAgi = p.effAGILITY(baseN)
-				var oldCrit = (parentStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((parentStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-				var newCrit = (newAgi >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((newAgi >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-				var critChanged = oldCrit != newCrit
-				var effectiveTotalMpChanged = max(0, parentStat.TOTAL_MP) != max(0, p.effTOTAL_MP(baseN))
-				var effectiveTotalTpChanged = max(0, parentStat.TOTAL_TP) != max(0, p.effTOTAL_TP(baseN))
-				contextStatsChanged = critChanged || effectiveTotalMpChanged || effectiveTotalTpChanged
-					|| max(0, parentStat.STRENGTH) != max(0, p.effSTRENGTH(baseN))
-					|| max(0, parentStat.MAGIC) != max(0, p.effMAGIC(baseN))
-				healStatsChanged = critChanged || effectiveTotalTpChanged || effectiveTotalMpChanged
-					|| max(0, parentStat.WISDOM + 100) != max(0, p.effWISDOM(baseN) + 100)
-			}
-
-			if (aliveChanged || (bothAlive && (cellChanged || contextStatsChanged
-				|| ((full || (mask & PM_POWER)) && parentStat.POWER != p.effPOWER(baseN))))) {
-				var deltaCtx = DeltaClass.contextContribution(parentStat, tar)
-					^ DeltaClass.contextContributionFrom(tar, newLife, p.effCELL(baseN), p.effAGILITY(baseN), p.effSTRENGTH(baseN), p.effMAGIC(baseN), p.effTOTAL_MP(baseN), p.effTOTAL_TP(baseN), p.effPOWER(baseN))
+			if (mask & DIFF_BASE) bh ^= StateClass.baseContribution(parentStat, tar) ^ StateClass.baseContribution(newStat, tar)
+			if (mask & DIFF_CONTEXT) {
+				var deltaCtx = DeltaClass.contextContribution(parentStat, tar) ^ DeltaClass.contextContribution(newStat, tar)
 				if (deltaCtx != 0) {
-					var side = baseN.SIDE
+					var side = newStat.SIDE
 					for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx   // contextes des sides ADVERSES
 				}
 			}
-
-			if (aliveChanged || (bothAlive && (cellChanged || healStatsChanged))) {
-				var oldHfp = HealClass.healerContributionOf(parentStat, tar)
-				// La qualification de healer est immuable (liste d'items par id) : elle se
-				// lit sur la base effective et vaut pour les deux côtés.
-				var newHfp = (newAlive && HealClass.hasHealItem(baseN))
-					? HealClass.healerContributionFrom(tar, p.effCELL(baseN), p.effAGILITY(baseN), p.effWISDOM(baseN), p.effTOTAL_TP(baseN), p.effTOTAL_MP(baseN)) : 0
-				var deltaHfp = oldHfp ^ newHfp
+			if (mask & DIFF_HFP) {
+				var deltaHfp = HealClass.healerContributionOf(parentStat, tar) ^ HealClass.healerContributionOf(newStat, tar)
 				if (deltaHfp != 0) {             // fingerprint du side de l'entité elle-même
-					var hfpSide = baseN.SIDE
+					var hfpSide = newStat.SIDE
 					hfpMap[hfpSide] = ((hfpSide in hfpMap) ? hfpMap[hfpSide] : 0) ^ deltaHfp
 				}
 			}
@@ -224,30 +155,33 @@ class NodeClass {
 
 		// Me : exclu des trois hashs, mais son terme dépend du domaine de fuite — BaseHash
 		// FINAL différent -> dirty ; sinon UNE comparaison des fingerprints WalkCells
-		// old (objet parent) / new (valeurs effectives — une dépense de TP sans franchir
-		// de seuil de mobilité ne salit rien).
-		if (!(Me in localTermDirty) && bh != BaseHash) {
+		// old/new (une dépense de TP sans franchir de seuil de mobilité ne salit rien).
+		if (!(Me in localTermDirty)
+			&& (bh != BaseHash
+				|| WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(clonedIds[Me]) != WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(ThisActionStats[Me]))) {
 			localTermDirty[Me] = true
-		} else if (!(Me in localTermDirty)) {
-			var jcd = StateClass.cooldownOf(meBase, CHIP_JUMP)
-			if ((mePatch.MASK & PM_COOLDOWNS) && (CHIP_JUMP in mePatch.COOLDOWNS)) jcd += mePatch.COOLDOWNS[CHIP_JUMP]
-			var tcd = StateClass.cooldownOf(meBase, CHIP_TELEPORTATION)
-			if ((mePatch.MASK & PM_COOLDOWNS) && (CHIP_TELEPORTATION in mePatch.COOLDOWNS)) tcd += mePatch.COOLDOWNS[CHIP_TELEPORTATION]
-			if (WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(meBase)
-				!= WalkCellsClass.WalkFingerprintFrom(Me, mePatch.effCELL(meBase), mePatch.effMP(meBase), mePatch.effTP(meBase), jcd, tcd)) {
-				localTermDirty[Me] = true
-			}
 		}
 
+		result.CLONED = clonedIds
 		result.LOCAL_TERM_DIRTY = localTermDirty
 		result.BASE_HASH = bh
 		result.CONTEXT_BY_SIDE = ctx
 		result.HFP_BY_SIDE = hfpMap
-		// Représentation PERSISTANTE du nœud : ses ActionPatches (materializeNodeState
-		// sait reconstruire l'état complet depuis STATE_PARENT + ce patch).
-		result.STATE_PATCH = ActionPatches
+		capturePatch(result, ThisActionStats, clonedIds)
 
 		BenchOps.Stop("Node")
 		return result
+	}
+
+	/*
+	 * Fige les entités modifiées par l'action : STATE_PATCH prend, pour chaque id touché, la
+	 * référence PRODUITE dans le workspace (un id né dans l'action y figure aussi — sa valeur
+	 * dans clonedIds est null, mais le workspace porte bien la nouvelle entité). Appelé sur
+	 * les DEUX sorties d'ActionToNodeInTree, avant que l'appelant ne restaure le workspace.
+	 */
+	static capturePatch(node, Workspace, clonedIds) {
+		var patch = [: ]
+		for (var id: var oldStat in clonedIds) patch[id] = Workspace[id]
+		node.STATE_PATCH = patch
 	}
 }

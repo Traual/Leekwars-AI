@@ -190,14 +190,11 @@ class WalkCellsClass {
 
 	/* Fingerprint (cellule, mp, capacités jump/télépo) d'une entité — SANS BaseHash. */
 	static HashWalkCellsWithItemsWithoutBaseHash(entity_state) {
-		return WalkFingerprintFrom(entity_state.ID, entity_state.CELL, entity_state.MP, entity_state.TP,
-			StateClass.cooldownOf(entity_state, CHIP_JUMP), StateClass.cooldownOf(entity_state, CHIP_TELEPORTATION))
-	}
-
-	/* Même fingerprint à partir des VALEURS — permet de le calculer depuis ParentState +
-	 * ActionPatches sans EntityState enfant. SOURCE UNIQUE du packing. */
-	static WalkFingerprintFrom(Entity, Cell, Mp, Tp, JumpCooldown, TeleportationCooldown) {
+		var Entity = entity_state.ID
+		var Tp = entity_state.TP
+		var JumpCooldown = StateClass.cooldownOf(entity_state, CHIP_JUMP)
 		var JumpCost = ITEMINFO[CHIP_JUMP].COST
+		var TeleportationCooldown = StateClass.cooldownOf(entity_state, CHIP_TELEPORTATION)
 		var TeleportationCost = ITEMINFO[CHIP_TELEPORTATION].COST
 		var CanJump = (JumpCooldown == 0 || Entity != Me && JumpCooldown <= 1) && Tp >= JumpCost
 		var CanTeleport = (TeleportationCooldown == 0 || Entity != Me && TeleportationCooldown <= 1) && Tp >= TeleportationCost
@@ -206,7 +203,7 @@ class WalkCellsClass {
 		// fuite servait un min sur des cellules inaccessibles.
 		var CanBoth = CanJump && CanTeleport && Tp >= JumpCost + TeleportationCost
 		var BaseValue = (CanJump ? 1 : 0) | (CanTeleport ? 2 : 0) | (CanBoth ? 4 : 0)
-		return addValueToBinHash((OFFSET_BASIS ^ BaseValue), (Cell << 32) | Mp)
+		return addValueToBinHash((OFFSET_BASIS ^ BaseValue), (entity_state.CELL << 32) | entity_state.MP)
 	}
 
 	// ============================================================================

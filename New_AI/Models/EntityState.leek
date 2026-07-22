@@ -19,10 +19,10 @@ class EntityStateClass extends EntityClass {
 	// patches locaux (résolution par StateClass.cooldownOf/usesOf, chaîne immuable).
 	ITEM_STATE_PARENT
 	EFFECTS
-	// Memos de champs dérivés (scoring), calculés paresseusement. COPIÉS à la matérialisation
-	// (clone superficiel) puis INVALIDÉS là si leurs inputs sont patchés
-	// (StateClass.materializeActionState). Écrire un memo sur un objet PARTAGÉ est sain :
-	// partage => stats identiques => même valeur.
+	// Memos de champs dérivés (scoring), calculés paresseusement. COPIÉS au clone puis
+	// VALIDÉS après l'action (StateClass.diffMaskOf, appelé par Node sur chaque
+	// cloné) : un clone dont les inputs n'ont pas bougé garde ses mémos. Écrire un memo sur
+	// un objet PARTAGÉ est sain : partage => stats identiques => même valeur.
 	CAP_MEMO    // ImportanceClass.capability(stat)
 	TLSQ_MEMO   // W_TOTAL_LIFE * sqrt(max(0, TOTAL_LIFE)) (terme hors cache de survivalValue)
 	// Six flux périodiques SÉPARÉS et POSITIFS (jamais de "poison négatif") :
