@@ -1115,44 +1115,4 @@ class ConsequencesClass {
 		return _final
 	}
 
-	/* Dégâts estimés d'UN item du caster sur la cible à une distance d'AoE (pour la danger
-	 * map). Targetabilité PAR EFFET précompilée (vues DANGER_DAMAGE_EFFECTS_ENEMY_* dans
-	 * ItemClass — le caster est toujours adverse de la cible dans cette machinerie, les
-	 * masques ENEMIES + type y sont déjà filtrés, ON_CASTER exclu) ; il reste la garde
-	 * cible morte, portée avant par isHitable. Coût limité aux constructions froides de
-	 * DANGER_ENTITY_CACHE. */
-	static getItemDanger(item, casterstats, targetstats, Distance, Multiplier, targetAbs, targetRel) {
-		if (targetstats.LIFE <= 0) return 0
-		var Info = ITEMINFO[item]
-		var effs = targetstats.IS_SUMMON ? Info.DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON : Info.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK
-		if (effs == null) return 0
-		var _final = 0
-		var distFactor = 1 - (Distance * 0.2)
-		var powerFactor = 1 + casterstats.POWER / 100
-		var strengthFactor = 1 + max(0, casterstats.STRENGTH) / 100 // plancher à l'usage, comme le moteur
-		// Crit binaire asymétrique (Constants), appliqué AVANT les shields comme le moteur :
-		// (d·1.3 − ABS) ≠ (d − ABS)·1.3.
-		var critFactor = DangerClass.critFactorOf(casterstats)
-		// Shields de la cible passés en SCALAIRES (la chaîne de vulnés de Danger ne mute jamais
-		// l'objet cible — lot #8).
-		var shieldFactor = 1 - targetRel / 100
-		// 99 = pas d'antidote dans l'inventaire (jamais de cure -> le poison compte sa durée
-		// PLEINE), distinct d'un antidote prêt (0).
-		var effAntidoteCd = StateClass.cooldownOf(targetstats, CHIP_ANTIDOTE)
-		var antidoteCd = (effAntidoteCd == null) ? 99 : effAntidoteCd
-		for (var eff in effs) {
-			switch (eff[0]) {
-				case EFFECT_DAMAGE:
-					_final += (eff[2] * distFactor * Multiplier * powerFactor * strengthFactor * critFactor * shieldFactor - targetAbs)
-					break
-				case EFFECT_LIFE_DAMAGE:
-					_final += (eff[2] * powerFactor * (casterstats.LIFE / 100) * critFactor * shieldFactor - targetAbs)
-					break
-				case EFFECT_POISON:
-					_final += eff[2] * powerFactor * distFactor * (1 + max(0, casterstats.MAGIC) / 100) * critFactor * min(eff[3], antidoteCd + 1)
-					break
-			}
-		}
-		return _final
-	}
 }
