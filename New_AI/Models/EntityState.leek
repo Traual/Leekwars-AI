@@ -18,6 +18,11 @@ class EntityStateClass extends EntityClass {
 	// sur un clone simulé de Me, pointe l'état précédent et les maps ne portent que les
 	// patches locaux (résolution par StateClass.cooldownOf/usesOf, chaîne immuable).
 	ITEM_STATE_PARENT
+	// L'entité porte-t-elle un item LIFE_DAMAGE disponible pour le danger (cooldown <= 1,
+	// même critère que getItemsList) ? Sa LIFE est alors un input NUMÉRIQUE des clés de
+	// danger (contextContribution/MapHash/getStatsHashForDangerOneCaster). IMMUABLE pendant
+	// un replan — voyage dans les clones via clone(stat, 1).
+	DANGER_DEPENDS_ON_LIFE
 	EFFECTS
 	// Memos de champs dérivés (scoring), calculés paresseusement. COPIÉS au clone puis
 	// VALIDÉS après l'action (StateClass.diffMaskOf, appelé par Node sur chaque
@@ -60,12 +65,17 @@ class EntityStateClass extends EntityClass {
 		this.ITEM_STATE_PARENT = null   // état réel = racine : maps complètes
 		this.COOLDOWNS = [: ]
 		this.USES = [: ]
+		this.DANGER_DEPENDS_ON_LIFE = false
 		for (var i in this.INVENTORY) {
-			this.COOLDOWNS[i] = ItemClass.Cooldown(i, id)
+			var cd = ItemClass.Cooldown(i, id)
+			this.COOLDOWNS[i] = cd
 			// getItemUses est un builtin ENTITÉ COURANTE (1 arg) : l'appeler pour un autre id
 			// stockerait MES compteurs chez tout le monde. Le moteur clear les uses au endTurn
 			// de chaque entité -> pendant mon tour, les autres sont toujours à 0.
 			this.USES[i] = id == Me ? getItemUses(i) : 0
+			// Item LIFE_DAMAGE disponible pour le danger futur (cooldown <= 1, critère de
+			// getItemsList) : la LIFE de cette entité devient un input des clés de danger.
+			if (cd <= 1 && ITEMINFO[i].DANGER_DEPENDS_ON_CASTER_LIFE) this.DANGER_DEPENDS_ON_LIFE = true
 		}
 		this.EFFECTS = getEffects(id)
 		// Flux périodiques remplis en UNE passe, dans le déroulé d'effets plus bas.

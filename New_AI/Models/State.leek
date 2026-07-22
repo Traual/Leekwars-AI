@@ -236,6 +236,7 @@ class StateClass {
 		if (parentStat == null) return DIFF_BASE | DIFF_CONTEXT | DIFF_HFP | DIFF_LOCAL_TERM
 		var mask = 0
 		var cellChanged = parentStat.CELL != childStat.CELL
+		var lifeChanged = parentStat.LIFE != childStat.LIFE
 
 		// ---- Partie LOCALE (toutes les entités) ----
 		var totalLifeChanged = parentStat.TOTAL_LIFE != childStat.TOTAL_LIFE
@@ -265,7 +266,7 @@ class StateClass {
 		}
 
 		if (capChanged || totalLifeChanged || cellChanged || antidoteChanged
-			|| parentStat.LIFE != childStat.LIFE
+			|| lifeChanged
 			|| parentStat.DAMAGE_RETURN != childStat.DAMAGE_RETURN
 			|| parentStat.POISON != childStat.POISON
 			|| parentStat.POISON_OVER_TIME != childStat.POISON_OVER_TIME
@@ -307,7 +308,12 @@ class StateClass {
 		}
 
 		if (aliveChanged || (bothAlive && (cellChanged || contextStatsChanged
-			|| parentStat.POWER != childStat.POWER))) {
+			|| parentStat.POWER != childStat.POWER
+			// LIFE d'un porteur de LIFE_DAMAGE : input NUMÉRIQUE de sa contribution au
+			// contexte danger — une variation de LIFE d'un caster SANS LIFE_DAMAGE ne
+			// salit toujours pas le contexte (la transition vivant/mort reste couverte
+			// par aliveChanged).
+			|| (childStat.DANGER_DEPENDS_ON_LIFE && lifeChanged)))) {
 			mask |= DIFF_CONTEXT
 		}
 

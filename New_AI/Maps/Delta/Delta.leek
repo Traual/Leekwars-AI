@@ -232,6 +232,10 @@ class DeltaClass {
         // composante d'AGILITÉ que le danger consomme (les seuils de crit binaires). Sans
         // elle, un buff/shackle d'AGI traversant un seuil en branche servirait du danger stale.
         var critClass = (stat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((stat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-        return mix64(mix64((id << 10) | stat.CELL) ^ ((critClass << 60) | (max(0, stat.STRENGTH) << 48) | (max(0, stat.MAGIC) << 36) | (max(0, stat.TOTAL_MP) << 24) | (max(0, stat.TOTAL_TP) << 12) | stat.POWER))
+        var c = mix64(mix64((id << 10) | stat.CELL) ^ ((critClass << 60) | (max(0, stat.STRENGTH) << 48) | (max(0, stat.MAGIC) << 36) | (max(0, stat.TOTAL_MP) << 24) | (max(0, stat.TOTAL_TP) << 12) | stat.POWER))
+        // LIFE du caster : input NUMÉRIQUE des dégâts LIFE_DAMAGE (facteur LIFE/100) —
+        // foldée UNIQUEMENT pour les porteurs qualifiés (classification immuable), les
+        // autres gardent leur clé EXACTE (aucune fragmentation).
+        return stat.DANGER_DEPENDS_ON_LIFE ? addValueToBinHash(c, stat.LIFE) : c
     }
 }

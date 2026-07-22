@@ -116,7 +116,9 @@ class EntityDangerClass {
 	 * Clé du couple (caster, cible) : id + stats offensives du caster (TOTAL_TP = potentiel
 	 * max du prochain tour, stats clampées à 0) + shields/antidote de la cible (masqués à
 	 * leur slot : une vulné est un shield négatif ; antidote 99 = pas de chip, distinct
-	 * de prêt).
+	 * de prêt). La LIFE du caster n'est PAS qu'une garde vivant/mort : pour un porteur de
+	 * LIFE_DAMAGE elle est un input NUMÉRIQUE (facteur LIFE/100) — foldée conditionnellement
+	 * (DANGER_DEPENDS_ON_LIFE), les autres casters gardent leur clé exacte.
 	 */
 	static MapHash(EntityStats, MyStats, curAbs, curRel) {
 		var hash_value = (OFFSET_BASIS ^ EntityStats.ID)
@@ -134,6 +136,10 @@ class EntityDangerClass {
 		var critBit = (DangerClass.critFactorOf(EntityStats) > 1) ? 1 : 0
 		var combinedEnemy = (critBit << 62) | (max(0, EntityStats.TOTAL_TP) << 45) | (max(0, EntityStats.STRENGTH) << 30) | (max(0, EntityStats.MAGIC) << 15) | EntityStats.POWER
 		hash_value = addValueToBinHash(hash_value, combinedEnemy)
+
+		// LIFE du caster : input NUMÉRIQUE du LIFE_DAMAGE — foldée UNIQUEMENT pour les
+		// porteurs qualifiés, les autres gardent leur clé EXACTE.
+		if (EntityStats.DANGER_DEPENDS_ON_LIFE) hash_value = addValueToBinHash(hash_value, EntityStats.LIFE)
 
 		return hash_value
 	}
