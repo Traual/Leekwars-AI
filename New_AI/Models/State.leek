@@ -98,7 +98,13 @@ class StateClass {
 	 * l'entité 0 sur la cellule 0 contribuerait 0 = la sentinelle "morte".
 	 */
 	static baseContribution(stat, id) {
-		return stat.LIFE > 0 ? mix64(((id + 1) << 32) | stat.CELL) : 0
+		return baseContributionFrom(id, stat.LIFE, stat.CELL)
+	}
+
+	/* Même contribution à partir des VALEURS — permet de patcher les hashs depuis
+	 * ParentState + ActionPatches sans EntityState enfant. SOURCE UNIQUE du packing. */
+	static baseContributionFrom(id, life, cell) {
+		return life > 0 ? mix64(((id + 1) << 32) | cell) : 0
 	}
 
 	/* [cellule -> true] des vivants hors Me (obstacles dynamiques). */
@@ -184,120 +190,12 @@ class StateClass {
 		return stat.USES
 	}
 
-	/*
-	 * Masque différentiel d'une entité clonée, APRÈS l'action — SOURCE UNIQUE de la
-	 * comparaison parent/clone (absorbe l'ancien validateDerivedMemos : les mémos dérivés
-	 * sont invalidés ICI, sur les mêmes champs, jamais comparés deux fois).
-	 *   DIFF_BASE       : la contribution BaseHash peut réellement changer — vivant<->mort,
-	 *                     ou deux vivants et cellule différente (deux morts : jamais).
-	 *   DIFF_CONTEXT    : un input EFFECTIF de contextContribution a changé — vivant/mort,
-	 *                     cellule, classe critique (deux seuils d'AGI), STR/MAG/MP/TP
-	 *                     clampés à 0, POWER. LIFE restant vivante, AGI sans franchir de
-	 *                     seuil ou STR négative des deux côtés : inchangé.
-	 *   DIFF_HFP        : un input EFFECTIF de healerContribution a changé — vivant/mort,
-	 *                     cellule, max(0, WIS+100), TP/MP totaux, classe critique (la
-	 *                     qualification de healer est immuable pour le replan).
-	 *   DIFF_LOCAL_TERM : un input LOCAL du terme de scoring a bougé — LIFE, TOTAL_LIFE
-	 *                     (plafond de soin Delta), CELL, DAMAGE_RETURN, six flux
-	 *                     périodiques, cooldown effectif d'Antidote, et tout input de
-	 *                     capability (même effet que l'ancienne invalidation de CAP_MEMO).
-	 * Mémos : TLSQ_MEMO <- TOTAL_LIFE seule ; CAP_MEMO <- les dix inputs de capability
-	 * (STR/MAG/WIS/SCI/AGI/RES/TOTAL_TP/TOTAL_MP/ABS/REL). Un mémo déjà null reste null.
-	 * isMe : Me est cloné à CHAQUE nœud mais exclu des trois hashs (Node le saute juste
-	 * après) -> la fonction rend son masque dès la partie locale, sans jamais calculer
-	 * BASE/CONTEXT/HFP ni leurs formes effectives. Ses checks supplémentaires (BaseHash
-	 * parent/enfant, fingerprint WalkCells) vivent dans Node, après le hash final.
-	 * parentStat null (summon né en branche) -> tout dirty, mémos laissés tels quels.
-	 */
-	static diffMaskOf(parentStat, childStat, isMe) {
-		if (parentStat == null) return DIFF_BASE | DIFF_CONTEXT | DIFF_HFP | DIFF_LOCAL_TERM
-		var mask = 0
-		var cellChanged = parentStat.CELL != childStat.CELL
-
-		// ---- Partie LOCALE (toutes les entités) ----
-		var totalLifeChanged = parentStat.TOTAL_LIFE != childStat.TOTAL_LIFE
-		if (totalLifeChanged && childStat.TLSQ_MEMO != null) childStat.TLSQ_MEMO = null
-
-		var capChanged = parentStat.STRENGTH != childStat.STRENGTH
-			|| parentStat.MAGIC != childStat.MAGIC
-			|| parentStat.WISDOM != childStat.WISDOM
-			|| parentStat.SCIENCE != childStat.SCIENCE
-			|| parentStat.AGILITY != childStat.AGILITY
-			|| parentStat.RESISTANCE != childStat.RESISTANCE
-			|| parentStat.TOTAL_TP != childStat.TOTAL_TP
-			|| parentStat.TOTAL_MP != childStat.TOTAL_MP
-			|| parentStat.ABSOLUTE_SHIELD != childStat.ABSOLUTE_SHIELD
-			|| parentStat.RELATIVE_SHIELD != childStat.RELATIVE_SHIELD
-		if (capChanged && childStat.CAP_MEMO != null) childStat.CAP_MEMO = null
-
-		// Antidote : SEUL Me peut voir son cooldown bouger en simulation — les setters
-		// n'écrivent que sur son patch local, neuf et vide à chaque nœud. Une entrée
-		// présente dans ce patch = une écriture de CE nœud ; absente = valeur héritée,
-		// donc identique au parent. Un non-Me ne paie aucune remontée de chaîne.
-		// INVARIANT : si un futur effet simulé modifie le cooldown d'une CIBLE non-Me,
-		// il devra étendre cette détection (sinon le terme de la cible resterait stale).
-		var antidoteChanged = false
-		if (isMe && (CHIP_ANTIDOTE in childStat.COOLDOWNS)) {
-			antidoteChanged = childStat.COOLDOWNS[CHIP_ANTIDOTE] != cooldownOf(parentStat, CHIP_ANTIDOTE)
-		}
-
-		if (capChanged || totalLifeChanged || cellChanged || antidoteChanged
-			|| parentStat.LIFE != childStat.LIFE
-			|| parentStat.DAMAGE_RETURN != childStat.DAMAGE_RETURN
-			|| parentStat.POISON != childStat.POISON
-			|| parentStat.POISON_OVER_TIME != childStat.POISON_OVER_TIME
-			|| parentStat.AFTEREFFECT != childStat.AFTEREFFECT
-			|| parentStat.AFTEREFFECT_OVER_TIME != childStat.AFTEREFFECT_OVER_TIME
-			|| parentStat.HEAL != childStat.HEAL
-			|| parentStat.HEAL_OVER_TIME != childStat.HEAL_OVER_TIME) {
-			mask |= DIFF_LOCAL_TERM
-		}
-
-		// Me est exclu des trois hashs (Node le saute juste après) : rien d'autre à calculer.
-		if (isMe) return mask
-
-		// ---- Contributions (non-Me seulement) ----
-		var oldAlive = parentStat.LIFE > 0
-		var newAlive = childStat.LIFE > 0
-		var aliveChanged = oldAlive != newAlive
-		var bothAlive = oldAlive && newAlive
-
-		if (aliveChanged || (bothAlive && cellChanged)) mask |= DIFF_BASE
-
-		// Formes EFFECTIVES, calculées UNE fois et partagées par les deux contributions.
-		// Court-circuit exact : les dix inputs de capability contiennent AGI, STR, MAG, WIS,
-		// TOTAL_TP et TOTAL_MP — capChanged faux => classes critiques et valeurs clampées
-		// forcément identiques, seules la cellule et POWER peuvent encore bouger.
-		var contextStatsChanged = false
-		var healStatsChanged = false
-		if (capChanged) {
-			var oldCrit = (parentStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((parentStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-			var newCrit = (childStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((childStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-			var critChanged = oldCrit != newCrit
-			var effectiveTotalMpChanged = max(0, parentStat.TOTAL_MP) != max(0, childStat.TOTAL_MP)
-			var effectiveTotalTpChanged = max(0, parentStat.TOTAL_TP) != max(0, childStat.TOTAL_TP)
-			contextStatsChanged = critChanged || effectiveTotalMpChanged || effectiveTotalTpChanged
-				|| max(0, parentStat.STRENGTH) != max(0, childStat.STRENGTH)
-				|| max(0, parentStat.MAGIC) != max(0, childStat.MAGIC)
-			healStatsChanged = critChanged || effectiveTotalTpChanged || effectiveTotalMpChanged
-				|| max(0, parentStat.WISDOM + 100) != max(0, childStat.WISDOM + 100)
-		}
-
-		if (aliveChanged || (bothAlive && (cellChanged || contextStatsChanged
-			|| parentStat.POWER != childStat.POWER))) {
-			mask |= DIFF_CONTEXT
-		}
-
-		if (aliveChanged || (bothAlive && (cellChanged || healStatsChanged))) mask |= DIFF_HFP
-
-		return mask
-	}
 
 	/*
-	 * État complet d'un nœud, matérialisé PARESSEUSEMENT et caché : un candidat porte ses
-	 * ActionPatches (STATE_PATCH) et son état parent (STATE_PARENT) ; la map complète est
-	 * reconstruite par materializeActionState si elle n'est pas déjà en cache (à P1 le
-	 * candidat garde son état matérialisé dans END_STATS dès la création).
+	 * État complet d'un nœud, matérialisé FROIDEMENT et caché (source unique) : un candidat
+	 * ne porte que ses ActionPatches (STATE_PATCH) et son état parent (STATE_PARENT) ; la map
+	 * complète n'est reconstruite qu'au premier miss de cache qui l'exige vraiment ou au
+	 * développement du nœud gagnant — puis partagée via END_STATS (jamais deux fois).
 	 */
 	static materializeNodeState(node) {
 		if (node.END_STATS != null) return node.END_STATS
@@ -392,7 +290,7 @@ class StateClass {
 			var mask = p.MASK
 			var isNew = (p.NEW_ENTITY != null)
 			var base = (p.REPLACEMENT_ENTITY != null) ? p.REPLACEMENT_ENTITY : (isNew ? p.NEW_ENTITY : ParentState[id])
-			if (mask == 0 && !isNew && p.REPLACEMENT_ENTITY == null) continue   // patch vide : l'entité reste partagée (diffMaskOf verra zéro changement)
+			if (mask == 0 && !isNew && p.REPLACEMENT_ENTITY == null) continue   // patch vide : l'entité reste partagée (zéro changement de valeur)
 			var c = clone(base, 1)
 			if (mask & PM_CELL) c.CELL += p.CELL
 			if (mask & PM_LIFE) c.LIFE += p.LIFE
@@ -420,6 +318,11 @@ class StateClass {
 			if (mask & PM_TURN_ORDER) c.TURN_ORDER += p.TURN_ORDER
 			if (mask & PM_EFFECTS) c.EFFECTS = p.EFFECTS
 			if (mask & PM_WEAPON) c.WEAPON = p.WEAPON
+			// Mémos dérivés : copiés par clone(base, 1), ils ne restent valides que si leurs
+			// inputs n'ont pas été patchés — la matérialisation est LE point d'invalidation
+			// (le chemin chaud ne construit jamais d'objet enfant).
+			if ((mask & PM_TOTAL_LIFE) && c.TLSQ_MEMO != null) c.TLSQ_MEMO = null
+			if ((mask & PM_CAPABILITY) && c.CAP_MEMO != null) c.CAP_MEMO = null
 			if (mask & (PM_COOLDOWNS | PM_USES)) {
 				// Contrat #1 : le clone porte des overlays LOCAUX à valeurs ABSOLUES, la
 				// chaîne remonte à la base pour tout le reste.

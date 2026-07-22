@@ -103,12 +103,6 @@ global MIN_AGILITY_ENEMY_CRIT = 50
 global CAST_IS_CRITICAL = false
 global FIGHT_TYPE = getFightType() // sert au calcul du power dans Consequences
 
-// Bits du masque différentiel d'une entité clonée (StateClass.diffMaskOf) : quels groupes
-// d'inputs ont RÉELLEMENT changé entre l'état parent et le clone après l'action.
-global DIFF_BASE = 1        // contribution BaseHash (vivant<->mort, cellule d'un vivant)
-global DIFF_CONTEXT = 2     // contribution contexte danger (inputs effectifs offensifs)
-global DIFF_HFP = 4         // contribution fingerprint heal (inputs effectifs de healer)
-global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
 // ============================================================================
 // PureDelta (EntityActionPatchClass) : un bit PM_* par champ patchable. Le masque dit
 // quelles propriétés du patch sont présentes ; il ne journalise rien.
@@ -142,8 +136,10 @@ global PM_WEAPON = 1 << 25
 global PM_COOLDOWNS = 1 << 26
 global PM_USES = 1 << 27
 
-// Groupes d'inputs, ALIGNÉS EXACTEMENT sur les dépendances de diffMaskOf (lot #4) —
-// consommés par P2 (scoring delta-aware) ; posés dès P1 pour figer le contrat.
+// Groupes d'inputs des contributions et du terme local. ACTIFS : PM_CAPABILITY (boucle de
+// patch de Node + invalidation de CAP_MEMO à la matérialisation) et PM_PERIODIC/
+// PM_LOCAL_TERM (composition). PM_BASE_HASH/PM_CONTEXT/PM_HFP sont DOCUMENTAIRES : la
+// boucle de Node teste ces inputs par VALEUR effective, champ par champ.
 global PM_BASE_HASH = PM_LIFE | PM_CELL
 global PM_CONTEXT = PM_LIFE | PM_CELL | PM_AGILITY | PM_STRENGTH | PM_MAGIC | PM_TOTAL_MP | PM_TOTAL_TP | PM_POWER
 global PM_HFP = PM_LIFE | PM_CELL | PM_AGILITY | PM_WISDOM | PM_TOTAL_MP | PM_TOTAL_TP

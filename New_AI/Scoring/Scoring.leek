@@ -53,26 +53,27 @@ class ScoringClass {
 
     /*
      * Score incrémental : score(enfant) = score(parent) + Δ sur le recompute-set EXACT.
-     * Recompute-set = node.LOCAL_TERM_DIRTY (le masque différentiel du Node a déjà comparé
-     * les inputs locaux de chaque clonée — diffMaskOf + checks Me BaseHash/fingerprint) ∪
+     * Recompute-set = node.LOCAL_TERM_DIRTY (la boucle de patch du Node a déjà comparé les
+     * inputs locaux de chaque patchée — valeurs parent/effectif + checks Me) ∪
      * les entités touchées par un trigger global : danger (CONTEXT_BY_SIDE), heal
      * (HFP_BY_SIDE), et pour la couverture antidote (POISON_KEY) les seuls porteurs de
      * POISON_OVER_TIME. Une morte NON clonée est skippée (ancien et nouveau terme valent
      * déjà 0). Un terme sauté n'est PAS écrit dans le patch : il se résout chez l'ancêtre
      * (chaîne TERMS_PARENT). Aucun clone de la map complète.
      */
-    static getStateScoreFromParent(node, EffectiveState, ParentScore, ParentTermNode, ParentContext, ParentHfp, MySide, ParentPoisonKey) {
+    static getStateScoreFromParent(node, ParentState, ParentScore, ParentTermNode, ParentContext, ParentHfp, MySide, ParentPoisonKey) {
         BenchOps.Start("Scoring")
-        // EffectiveState = l'état candidat MATÉRIALISÉ (node.END_STATS à P1) — l'état complet
-        // d'APRÈS l'action, le ParentState restant immuable.
-        var State = EffectiveState
+        // P2 : le chemin CHAUD lit ParentState + node.STATE_PATCH (les ActionPatches du
+        // candidat) — aucun état complet n'est construit ; l'état matérialisé n'existe que
+        // sur les miss froids (StateClass.materializeNodeState, partagé via END_STATS).
+        var patches = node.STATE_PATCH
         var cloned = node.CLONED
         var hfpMap = node.HFP_BY_SIDE
 
         // Heal map de l'enfant via le fold combiné des fingerprints (hit sauf healer modifié).
         var combinedHfp = 0
         for (var s: var h in hfpMap) combinedHfp ^= h
-        var healMap = HealClass.getHealMapByFp(State, combinedHfp)
+        var healMap = HealClass.getHealMapByFpForNode(node, combinedHfp)
 
         // Sides dont les inputs danger ont changé.
         var dangerChanged = null
@@ -91,13 +92,13 @@ class ScoringClass {
                 healChanged[s] = true
             }
         }
-        // Couverture antidote : POISON_KEY (poisonKeyOf — BaseHash, porteurs, ancre, Me
-        // vivant) comparée à celle du parent. Déclenche exactement sur les vrais événements
-        // (kill, summon, résu, push, cd/MP d'un porteur, mort de Me), jamais sur mes moves ni
-        // mes casts ordinaires. Le coef antidote ne module que le VRAI poison restant
-        // (POISON_OVER_TIME, survivalValue) — AFTEREFFECT et HEAL_OVER_TIME ne le lisent
-        // pas : seuls les porteurs de POT > 0 sont relus quand la clé bouge.
-        node.POISON_KEY = poisonKeyOf(State, node.BASE_HASH)
+        // Couverture antidote : POISON_KEY (poisonKeyOfPatch — BaseHash, porteurs effectifs,
+        // ancre, Me vivant effectif) comparée à celle du parent. Déclenche exactement sur les
+        // vrais événements (kill, summon, résu, push, cd/MP d'un porteur, mort de Me), jamais
+        // sur mes moves ni mes casts ordinaires. Le coef antidote ne module que le VRAI poison
+        // restant (POISON_OVER_TIME, survival) — seuls les porteurs de POT > 0 sont relus
+        // quand la clé bouge.
+        node.POISON_KEY = poisonKeyOfPatch(ParentState, patches, node.BASE_HASH, node)
         var coefChanged = node.POISON_KEY != ParentPoisonKey
 
         var delta = 0
@@ -107,20 +108,32 @@ class ScoringClass {
         if (dangerChanged == null && healChanged == null && !coefChanged) {
             // Cas courant : le masque du Node a déjà déterminé les termes locaux sales.
             for (var e: var _d in node.LOCAL_TERM_DIRTY) {
-                delta += termDelta(e, State, node, termsPatch, ParentTermNode, healMap, MySide)
+                delta += termDelta(e, ParentState, node, termsPatch, ParentTermNode, healMap, MySide)
             }
         } else {
-            for (var e: var stat in State) {
-                // Morte non clonée : ancien et nouveau terme valent déjà 0, rien à recalculer
-                // (une morte CLONÉE passe par LOCAL_TERM_DIRTY — kill de cette action).
-                if (stat.LIFE <= 0 && !(e in cloned)) continue
-                // Triggers globaux d'abord ; sinon, seuls les termes locaux déjà jugés sales
-                // par le masque du Node sont recalculés.
-                var globalDirty = (dangerChanged != null && stat.SIDE in dangerChanged)
-                    || (healChanged != null && stat.SIDE in healChanged)
-                    || (coefChanged && stat.POISON_OVER_TIME > 0)
+            // Boucle globale : les entités du ParentState (vie/side/POT EFFECTIFS), puis les
+            // summons nés dans l'action (NEW_ENTITY, absents du parent par définition).
+            for (var e: var stat0 in ParentState) {
+                var p = (e in patches) ? patches[e] : null
+                var b = (p != null && p.REPLACEMENT_ENTITY != null) ? p.REPLACEMENT_ENTITY : stat0
+                var life = (p != null) ? p.effLIFE(b) : stat0.LIFE
+                // Morte non patchée : ancien et nouveau terme valent déjà 0, rien à recalculer
+                // (une morte PATCHÉE passe par LOCAL_TERM_DIRTY — kill de cette action).
+                if (life <= 0 && !(e in cloned)) continue
+                var globalDirty = (dangerChanged != null && b.SIDE in dangerChanged)
+                    || (healChanged != null && b.SIDE in healChanged)
+                    || (coefChanged && ((p != null) ? p.effPOISON_OVER_TIME(b) : stat0.POISON_OVER_TIME) > 0)
                 if (!globalDirty && !(e in node.LOCAL_TERM_DIRTY)) continue
-                delta += termDelta(e, State, node, termsPatch, ParentTermNode, healMap, MySide)
+                delta += termDelta(e, ParentState, node, termsPatch, ParentTermNode, healMap, MySide)
+            }
+            for (var pid: var pp in patches) {
+                if (pp.NEW_ENTITY == null) continue
+                var nb = pp.NEW_ENTITY
+                var globalDirty = (dangerChanged != null && nb.SIDE in dangerChanged)
+                    || (healChanged != null && nb.SIDE in healChanged)
+                    || (coefChanged && pp.effPOISON_OVER_TIME(nb) > 0)
+                if (!globalDirty && !(pid in node.LOCAL_TERM_DIRTY)) continue
+                delta += termDelta(pid, ParentState, node, termsPatch, ParentTermNode, healMap, MySide)
             }
         }
         node.TERMS = termsPatch
@@ -132,14 +145,44 @@ class ScoringClass {
     }
 
     /* newTerm(e) − oldTerm(e) ; l'ancien terme est résolu dans la chaîne de snapshots
-     * (termOf), le nouveau n'est écrit QUE dans le patch local du nœud. */
-    static termDelta(e, State, node, termsPatch, ParentTermNode, healMap, MySide) {
-        var stat = State[e]
+     * (termOf), le nouveau n'est écrit QUE dans le patch local du nœud. P2 : une entité
+     * NON patchée passe par le chemin OBJET (son EntityState parent), une patchée par les
+     * valeurs effectives base + patch — aucun EntityState enfant n'est construit. */
+    static termDelta(e, ParentState, node, termsPatch, ParentTermNode, healMap, MySide) {
+        var patches = node.STATE_PATCH
+        var p = (e in patches) ? patches[e] : null
         var newTerm = 0
-        if (stat.LIFE > 0) {
-            var sign = (stat.SIDE == MySide) ? 1 : -1
-            var net = DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)
-            newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, net, State, node.POISON_KEY) + ImportanceClass.capability(stat) + drDeterrence(stat, net, State))
+        if (p == null) {
+            var stat = ParentState[e]
+            if (stat.LIFE > 0) {
+                var sign = (stat.SIDE == MySide) ? 1 : -1
+                var net = DeltaClass.netOfForNode(e, stat, node, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)
+                newTerm = sign * (ImportanceClass.get(stat) * survivalValueForNode(stat, net, node)
+                    + ImportanceClass.capability(stat)
+                    + drDeterrenceForNode(stat.SIDE, stat.LIFE, stat.DAMAGE_RETURN, net, node))
+            }
+        } else {
+            var base = (p.REPLACEMENT_ENTITY != null) ? p.REPLACEMENT_ENTITY : ((p.NEW_ENTITY != null) ? p.NEW_ENTITY : ParentState[e])
+            var life = p.effLIFE(base)
+            if (life > 0) {
+                var side = base.SIDE
+                var sign = (side == MySide) ? 1 : -1
+                var net = DeltaClass.netOfForPatched(e, node, base, p, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)
+                // Effectifs lus UNE fois, partagés par importance/capability/deterrence.
+                var strength = p.effSTRENGTH(base)
+                var magic = p.effMAGIC(base)
+                var wisdom = p.effWISDOM(base)
+                var science = p.effSCIENCE(base)
+                var agility = p.effAGILITY(base)
+                var resistance = p.effRESISTANCE(base)
+                var totalTp = p.effTOTAL_TP(base)
+                var totalMp = p.effTOTAL_MP(base)
+                newTerm = sign * (ImportanceClass.getFrom(e, strength, magic, wisdom, science, agility, resistance, totalTp, totalMp)
+                        * survivalValueForPatched(e, base, p, life, net, node)
+                    + ImportanceClass.capabilityFrom(e, strength, magic, wisdom, science, agility, resistance,
+                        totalMp, totalTp, p.effABSOLUTE_SHIELD(base), p.effRELATIVE_SHIELD(base), base)
+                    + drDeterrenceForNode(side, life, p.effDAMAGE_RETURN(base), net, node))
+            }
         }
         var oldTerm = termOf(ParentTermNode, e)
         termsPatch[e] = newTerm
@@ -184,15 +227,57 @@ class ScoringClass {
         if (effectivePoisonRemaining > 0) effectivePoisonRemaining = poisonCoefOf(stat, State, PoisonKey) * effectivePoisonRemaining
         var netTick = stat.POISON + stat.AFTEREFFECT - stat.HEAL
         var harmfulRemaining = max(0, effectivePoisonRemaining + stat.AFTEREFFECT_OVER_TIME - stat.HEAL_OVER_TIME)
-        var key = (stat.LIFE << 48) | ((netTick & 0x3FFF) << 34) | ((harmfulRemaining & 0x1FFFF) << 17) | (danger & 0x1FFFF)
-        if (key in SURVIVAL_CACHE) return SURVIVAL_CACHE[key] + tlTerm
+        return survivalCached(stat.LIFE, netTick, harmfulRemaining, danger) + tlTerm
+    }
+
+    /* Variante nœud (P2) d'une entité NON patchée : mêmes inputs objet, mais le coef poison
+     * passe par poisonCoefForNode (miss -> matérialisation froide unique). */
+    static survivalValueForNode(stat, danger, node) {
+        var tlTerm = stat.TLSQ_MEMO
+        if (tlTerm == null) {
+            tlTerm = W_TOTAL_LIFE * sqrt(max(0, stat.TOTAL_LIFE))
+            stat.TLSQ_MEMO = tlTerm
+        }
+        var effectivePoisonRemaining = stat.POISON_OVER_TIME
+        if (effectivePoisonRemaining > 0) effectivePoisonRemaining = poisonCoefForNode(stat.ID, node.POISON_KEY, node) * effectivePoisonRemaining
+        var netTick = stat.POISON + stat.AFTEREFFECT - stat.HEAL
+        var harmfulRemaining = max(0, effectivePoisonRemaining + stat.AFTEREFFECT_OVER_TIME - stat.HEAL_OVER_TIME)
+        return survivalCached(stat.LIFE, netTick, harmfulRemaining, danger) + tlTerm
+    }
+
+    /* Variante nœud (P2) d'une entité PATCHÉE : inputs EFFECTIFS (base + patch), aucun
+     * EntityState enfant. TLSQ : si TOTAL_LIFE n'est pas patchée, le mémo réutilisé/posé sur
+     * la base est celui DU PARENT (mêmes inputs) ; patchée -> calcul sans mémo. */
+    static survivalValueForPatched(e, base, p, life, danger, node) {
+        var tlTerm
+        if (p.MASK & PM_TOTAL_LIFE) {
+            tlTerm = W_TOTAL_LIFE * sqrt(max(0, p.effTOTAL_LIFE(base)))
+        } else {
+            tlTerm = base.TLSQ_MEMO
+            if (tlTerm == null) {
+                tlTerm = W_TOTAL_LIFE * sqrt(max(0, base.TOTAL_LIFE))
+                base.TLSQ_MEMO = tlTerm
+            }
+        }
+        var effectivePoisonRemaining = p.effPOISON_OVER_TIME(base)
+        if (effectivePoisonRemaining > 0) effectivePoisonRemaining = poisonCoefForNode(e, node.POISON_KEY, node) * effectivePoisonRemaining
+        var netTick = p.effPOISON(base) + p.effAFTEREFFECT(base) - p.effHEAL(base)
+        var harmfulRemaining = max(0, effectivePoisonRemaining + p.effAFTEREFFECT_OVER_TIME(base) - p.effHEAL_OVER_TIME(base))
+        return survivalCached(life, netTick, harmfulRemaining, danger) + tlTerm
+    }
+
+    /* Corps caché de la valeur de survie — SOURCE UNIQUE de la clé et des deux canaux
+     * (les trois entrées ci-dessus y délèguent, le tlTerm vit chez elles). */
+    static survivalCached(life, netTick, harmfulRemaining, danger) {
+        var key = (life << 48) | ((netTick & 0x3FFF) << 34) | ((harmfulRemaining & 0x1FFFF) << 17) | (danger & 0x1FFFF)
+        if (key in SURVIVAL_CACHE) return SURVIVAL_CACHE[key]
 
         // Canal STOCK : la vie brute après le tick périodique NET du prochain tour (poison +
         // aftereffect − heal over time : un HoT rehausse le stock). AUCUNE projection ici —
         // le danger et la traînée périodique vivent exclusivement dans le canal TTK
         // (chaque input a UN canal, pas de double compte). sqrt concave : un HP vaut plus
         // près de la mort -> finir les blessés.
-        var afterPeriodic = max(0, stat.LIFE - COEF_PERIODIC_TICK * netTick)
+        var afterPeriodic = max(0, life - COEF_PERIODIC_TICK * netTick)
         var value = BASE_ALIVE + W_LIFE * sqrt(afterPeriodic)
 
         // Canal HORIZON (TTK) en forme DIRECTE : g = horizonLife / (horizonLife + TTK_HALF ·
@@ -227,7 +312,7 @@ class ScoringClass {
         if (horizonLife > 0) value += W_TTK * horizonLife / (horizonLife + TTK_HALF * pressure)
 
         SURVIVAL_CACHE[key] = value
-        return value + tlTerm
+        return value
     }
 
     /*
@@ -244,6 +329,14 @@ class ScoringClass {
         if (stat.DAMAGE_RETURN <= 0) return 0
         if (DR_PHYSRATIO_BY_SIDE == null) buildDrPhysRatios(State)
         return DR_RETURN_EXPECT * DR_PHYSRATIO_BY_SIDE[stat.SIDE] * min(net, stat.LIFE) * (stat.DAMAGE_RETURN / 100)
+    }
+
+    /* Variante nœud (P2) : valeurs effectives en scalaires ; les ratios figés du tour ne se
+     * construisent (froidement) qu'au premier porteur évalué — matérialisation unique. */
+    static drDeterrenceForNode(side, life, damageReturn, net, node) {
+        if (damageReturn <= 0) return 0
+        if (DR_PHYSRATIO_BY_SIDE == null) buildDrPhysRatios(StateClass.materializeNodeState(node))
+        return DR_RETURN_EXPECT * DR_PHYSRATIO_BY_SIDE[side] * min(net, life) * (damageReturn / 100)
     }
 
     /*
@@ -311,6 +404,32 @@ class ScoringClass {
         return key
     }
 
+    /* Variante nœud (P2) : la MÊME clé, bit-identique, construite depuis ParentState +
+     * ActionPatches (vie de Me, puis vie/TOTAL_MP/cooldown Antidote EFFECTIFS de chaque
+     * porteur — le += de cooldown n'arrive que si l'entrée existe, donc chip possédée).
+     * L'init lazy d'ANY_ANTIDOTE matérialise froidement (au plus une fois par tour). */
+    static poisonKeyOfPatch(ParentState, ActionPatches, BaseHash, node) {
+        if (ANY_ANTIDOTE == null) anyAntidote(StateClass.materializeNodeState(node))
+        if (!ANY_ANTIDOTE) return 0
+        var key = BaseHash ^ MY_REPLAN_CELL_HASH
+        var mp_ = (Me in ActionPatches) ? ActionPatches[Me] : null
+        var mBase = StateClass.patchedBaseOf(ParentState, ActionPatches, Me)
+        var meLife = (mp_ != null) ? mp_.effLIFE(mBase) : mBase.LIFE
+        if (meLife <= 0) key ^= POISON_ME_DEAD_SALT
+        for (var e in ANTIDOTE_CARRIER_IDS) {
+            var cp = (e in ActionPatches) ? ActionPatches[e] : null
+            var cb = StateClass.patchedBaseOf(ParentState, ActionPatches, e)
+            var cLife = (cp != null) ? cp.effLIFE(cb) : cb.LIFE
+            if (cLife > 0) {
+                var cTotalMp = (cp != null) ? cp.effTOTAL_MP(cb) : cb.TOTAL_MP
+                var cCd = StateClass.cooldownOf(cb, CHIP_ANTIDOTE)
+                if (cp != null && (cp.MASK & PM_COOLDOWNS) && (CHIP_ANTIDOTE in cp.COOLDOWNS)) cCd += cp.COOLDOWNS[CHIP_ANTIDOTE]
+                key ^= mix64((e << 20) | (max(0, cTotalMp) << 10) | min(1023, cCd))
+            }
+        }
+        return key
+    }
+
     /*
      * Coefficient poison d'une entité ∈ ]0,1] : la part du poison posé sur elle qui va
      * vraiment COLLER, vu la couverture antidote autour d'elle. PoisonKey vient de
@@ -321,6 +440,16 @@ class ScoringClass {
         if (!(PoisonKey in POISON_COEF_CACHE)) POISON_COEF_CACHE[PoisonKey] = buildPoisonCoefs(State)
         var coefs = POISON_COEF_CACHE[PoisonKey]
         return (stat.ID in coefs) ? coefs[stat.ID] : 1
+    }
+
+    /* Variante nœud (P2) : hit de POISON_COEF_CACHE par PoisonKey sans AUCUN état ; le miss
+     * (et l'init lazy d'ANY_ANTIDOTE, au plus une fois par tour) matérialise froidement. */
+    static poisonCoefForNode(id, PoisonKey, node) {
+        if (ANY_ANTIDOTE == null) anyAntidote(StateClass.materializeNodeState(node))
+        if (!ANY_ANTIDOTE) return 1
+        if (!(PoisonKey in POISON_COEF_CACHE)) POISON_COEF_CACHE[PoisonKey] = buildPoisonCoefs(StateClass.materializeNodeState(node))
+        var coefs = POISON_COEF_CACHE[PoisonKey]
+        return (id in coefs) ? coefs[id] : 1
     }
 
     /*

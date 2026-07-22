@@ -61,8 +61,14 @@ class DeltaClass {
      */
     static statsHashFor(stat, contextBySide) {
         var effAntidoteCd = StateClass.cooldownOf(stat, CHIP_ANTIDOTE)
-        var antidoteCd = (effAntidoteCd == null) ? 99 : effAntidoteCd
-        return addValueToBinHash(contextBySide[stat.SIDE], ((stat.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((stat.RELATIVE_SHIELD & 0x7FFF) << 15) | antidoteCd)
+        return statsHashFrom(stat.SIDE, stat.ABSOLUTE_SHIELD, stat.RELATIVE_SHIELD, effAntidoteCd, contextBySide)
+    }
+
+    /* Même graine à partir des VALEURS (antidoteCd tel que rendu par cooldownOf, null admis) —
+     * SOURCE UNIQUE du packing, statsHashFor délègue ici. */
+    static statsHashFrom(side, absShield, relShield, antidoteCdRaw, contextBySide) {
+        var antidoteCd = (antidoteCdRaw == null) ? 99 : antidoteCdRaw
+        return addValueToBinHash(contextBySide[side], ((absShield & 0xFFFFF) << 30) | ((relShield & 0x7FFF) << 15) | antidoteCd)
     }
 
     /*
@@ -155,6 +161,62 @@ class DeltaClass {
     }
 
     /*
+     * Variante nœud (P2) d'une entité NON patchée : mêmes clés que netOf/minDeltaForMe,
+     * construites depuis l'objet parent — hit sans AUCUN état complet ; le miss matérialise
+     * froidement l'état du nœud (une fois, END_STATS partagé) et délègue à netOf, qui
+     * recalcule les mêmes clés et remplit les mêmes caches.
+     */
+    static netOfForNode(e, stat, node, BaseHash, contextBySide, hfpBySide, healMap) {
+        var statsHash = statsHashFor(stat, contextBySide)
+        var hfp = (stat.SIDE in hfpBySide) ? hfpBySide[stat.SIDE] : 0
+        if (e == Me) {
+            var seed = addValueToBinHash(addValueToBinHash(statsHash ^ hfp, (stat.LIFE << 16) | stat.TOTAL_LIFE), (Me << 1) | (stat.IS_SUMMON ? 1 : 0))
+            var rotSeed = (seed << SHIFT) | ((seed >> HIGH_SHIFT) & MASK_HIGH)
+            var outerKey = rotSeed ^ addValueToBinHash(BaseHash, WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(stat))
+            if (outerKey in ENTITY_DELTA_CACHE_FOR_ME) return ENTITY_DELTA_CACHE_FOR_ME[outerKey]
+            return netOf(Me, stat, StateClass.materializeNodeState(node), BaseHash, contextBySide, hfpBySide, healMap)
+        }
+        var ndKey = addValueToBinHash(addValueToBinHash(statsHash ^ hfp, (stat.CELL << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE), (e << 1) | (stat.IS_SUMMON ? 1 : 0))
+        if (ndKey in NETDAMAGE_CACHE) return NETDAMAGE_CACHE[ndKey]
+        return netOf(e, stat, StateClass.materializeNodeState(node), BaseHash, contextBySide, hfpBySide, healMap)
+    }
+
+    /*
+     * Variante nœud (P2) d'une entité PATCHÉE : clés construites depuis les SCALAIRES
+     * effectifs (base + patch), aucun EntityState enfant — hit direct ; miss -> l'état
+     * matérialisé froid fournit l'objet enfant à netOf (mêmes clés recalculées).
+     * base = patchedBaseOf (remplacement > summon né > parent).
+     */
+    static netOfForPatched(e, node, base, p, BaseHash, contextBySide, hfpBySide, healMap) {
+        var side = base.SIDE
+        // Cooldown d'Antidote effectif : racine + delta éventuel du patch (le += n'arrive que
+        // si l'entrée existe, donc chip possédée -> jamais null + delta).
+        var antidoteCd = StateClass.cooldownOf(base, CHIP_ANTIDOTE)
+        if ((p.MASK & PM_COOLDOWNS) && (CHIP_ANTIDOTE in p.COOLDOWNS)) antidoteCd += p.COOLDOWNS[CHIP_ANTIDOTE]
+        var statsHash = statsHashFrom(side, p.effABSOLUTE_SHIELD(base), p.effRELATIVE_SHIELD(base), antidoteCd, contextBySide)
+        var hfp = (side in hfpBySide) ? hfpBySide[side] : 0
+        var life = p.effLIFE(base)
+        var totalLife = p.effTOTAL_LIFE(base)
+        if (e == Me) {
+            var seed = addValueToBinHash(addValueToBinHash(statsHash ^ hfp, (life << 16) | totalLife), (Me << 1) | (base.IS_SUMMON ? 1 : 0))
+            var rotSeed = (seed << SHIFT) | ((seed >> HIGH_SHIFT) & MASK_HIGH)
+            var jcd = StateClass.cooldownOf(base, CHIP_JUMP)
+            if ((p.MASK & PM_COOLDOWNS) && (CHIP_JUMP in p.COOLDOWNS)) jcd += p.COOLDOWNS[CHIP_JUMP]
+            var tcd = StateClass.cooldownOf(base, CHIP_TELEPORTATION)
+            if ((p.MASK & PM_COOLDOWNS) && (CHIP_TELEPORTATION in p.COOLDOWNS)) tcd += p.COOLDOWNS[CHIP_TELEPORTATION]
+            var walkFp = WalkCellsClass.WalkFingerprintFrom(Me, p.effCELL(base), p.effMP(base), p.effTP(base), jcd, tcd)
+            var outerKey = rotSeed ^ addValueToBinHash(BaseHash, walkFp)
+            if (outerKey in ENTITY_DELTA_CACHE_FOR_ME) return ENTITY_DELTA_CACHE_FOR_ME[outerKey]
+            var StMe = StateClass.materializeNodeState(node)
+            return netOf(Me, StMe[Me], StMe, BaseHash, contextBySide, hfpBySide, healMap)
+        }
+        var ndKey = addValueToBinHash(addValueToBinHash(statsHash ^ hfp, (p.effCELL(base) << 32) | (life << 16) | totalLife), (e << 1) | (base.IS_SUMMON ? 1 : 0))
+        if (ndKey in NETDAMAGE_CACHE) return NETDAMAGE_CACHE[ndKey]
+        var St = StateClass.materializeNodeState(node)
+        return netOf(e, St[e], St, BaseHash, contextBySide, hfpBySide, healMap)
+    }
+
+    /*
      * Net d'une entité sur 1 round À `cell` : le danger continue de rouler (l'overkill
      * compte), le heal ne s'applique que vivante. Vitalité AVANT heal : le cap local monte
      * d'abord (et la vie avec), puis le heal ordinaire est plafonné au NOUVEAU total —
@@ -227,11 +289,17 @@ class DeltaClass {
      * id/cellule) pour que deux entités aux mêmes stats ne s'annulent jamais.
      */
     static contextContribution(stat, id) {
-        if (stat.LIFE <= 0) return 0
+        return contextContributionFrom(id, stat.LIFE, stat.CELL, stat.AGILITY, stat.STRENGTH, stat.MAGIC, stat.TOTAL_MP, stat.TOTAL_TP, stat.POWER)
+    }
+
+    /* Même contribution à partir des VALEURS — permet de patcher les hashs depuis
+     * ParentState + ActionPatches sans EntityState enfant. SOURCE UNIQUE du packing. */
+    static contextContributionFrom(id, life, cell, agility, strength, magic, totalMp, totalTp, power) {
+        if (life <= 0) return 0
         // critClass (2 bits, cases 60-61 — libres tant que STRENGTH < 4096) : la seule
         // composante d'AGILITÉ que le danger consomme (les seuils de crit binaires). Sans
         // elle, un buff/shackle d'AGI traversant un seuil en branche servirait du danger stale.
-        var critClass = (stat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((stat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-        return mix64(mix64((id << 10) | stat.CELL) ^ ((critClass << 60) | (max(0, stat.STRENGTH) << 48) | (max(0, stat.MAGIC) << 36) | (max(0, stat.TOTAL_MP) << 24) | (max(0, stat.TOTAL_TP) << 12) | stat.POWER))
+        var critClass = (agility >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((agility >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
+        return mix64(mix64((id << 10) | cell) ^ ((critClass << 60) | (max(0, strength) << 48) | (max(0, magic) << 36) | (max(0, totalMp) << 24) | (max(0, totalTp) << 12) | power))
     }
 }
