@@ -5,16 +5,6 @@
 
 include("../../includes.leek")
 
-// ==================== DIAGNOSTIC TEMPORAIRE Bitmap — À RETIRER (revert) ====================
-// Chasse la divergence de première décision de PacificRose (elevation -> fortress) : compare
-// la géométrie Bitmap à la géométrie LEGACY (code exact de 6264491) sur chaque miss du cache
-// FULL, pour PacificRose seulement. Un seul rejeu du même seed suffit.
-global DIAG_BITMAP_MISMATCH_LOGGED = false   // premier écart de CONTENU seulement
-global DIAG_BITMAP_ORDER_LOGGED = false      // posé SEULEMENT quand un ordre différent est trouvé
-global DIAG_BITMAP_STARTED = false           // log unique de démarrage (ne désactive rien)
-global DIAG_BITMAP_RETURN_LEGACY = false     // test d'isolation : servir la legacy (Bitmap construite quand même)
-// ===========================================================================================
-
 class DangerClass {
 	// La chaîne de vulnés ne fait bouger que les DEUX shields (scalaires) — plus aucun
 	// snapshot d'EntityState transporté. LIFE/SIDE/IS_SUMMON/Antidote restent lus sur la
@@ -349,26 +339,14 @@ class DangerClass {
 	 */
 	static buildMapCellItemAoe(items, walkCellsMap, movementKey) {
 		var _final = [: ]
-		var diagPacific = getName(Me) == "PacificRose"   // DIAGNOSTIC — À RETIRER (une fois par build)
 		for (var Item in items) {
 			var Infos = ITEMINFO[Item]
 			var fullKey = (movementKey << 30) | Infos.FULL_GEOMETRY_KEY
-			// launchKey hoisté en tête d'itération (remis dans la branche miss au retrait du
-			// diagnostic) : le diag doit lire les états des DEUX caches AVANT toute
-			// lecture/construction/écriture de cette géométrie.
-			var launchKey = (movementKey << 25) | Infos.LAUNCH_GEOMETRY_KEY
-			// ============ DIAGNOSTIC TEMPORAIRE Bitmap — À RETIRER (revert) ============
-			var diagFullWasHit = false
-			var diagLaunchWasHit = false
-			if (diagPacific) {
-				diagFullWasHit = (fullKey in ITEM_FULL_GEOMETRY_CACHE)
-				diagLaunchWasHit = (launchKey in ITEM_LAUNCH_GEOMETRY_CACHE)
-			}
-			// ===========================================================================
 			var itemMap
 			if (fullKey in ITEM_FULL_GEOMETRY_CACHE) {
 				itemMap = ITEM_FULL_GEOMETRY_CACHE[fullKey]
 			} else {
+				var launchKey = (movementKey << 25) | Infos.LAUNCH_GEOMETRY_KEY
 				var directMask
 				if (launchKey in ITEM_LAUNCH_GEOMETRY_CACHE) {
 					directMask = ITEM_LAUNCH_GEOMETRY_CACHE[launchKey]
@@ -377,23 +355,8 @@ class DangerClass {
 					ITEM_LAUNCH_GEOMETRY_CACHE[launchKey] = directMask
 				}
 				itemMap = getMapAoeForItem(Infos, directMask)
-				ITEM_FULL_GEOMETRY_CACHE[fullKey] = itemMap   // le cache de production reste TOUJOURS Bitmap
+				ITEM_FULL_GEOMETRY_CACHE[fullKey] = itemMap
 			}
-			// ============ DIAGNOSTIC TEMPORAIRE Bitmap — À RETIRER (revert) ============
-			// APRÈS la résolution hit/miss : chaque géométrie CONSOMMÉE par PacificRose est
-			// comparée, y compris une FULL préchauffée (par un bulbe/un tour antérieur). Le
-			// remplacement éventuel (RETURN_LEGACY) est LOCAL — jamais écrit au cache. Les
-			// booléens HIT/MISS viennent des captures d'AVANT résolution.
-			if (diagPacific) {
-				var diagMask
-				if (launchKey in ITEM_LAUNCH_GEOMETRY_CACHE) {
-					diagMask = ITEM_LAUNCH_GEOMETRY_CACHE[launchKey]
-				} else {
-					diagMask = getMapHittableCellsTotal(Infos, walkCellsMap)   // fallback (hit FULL sans launch)
-				}
-				itemMap = diagCompareGeometry(Item, Infos, walkCellsMap, movementKey, launchKey, fullKey, diagMask, itemMap, diagFullWasHit, diagLaunchWasHit)
-			}
-			// ===========================================================================
 			for (var Cell: var MinAoeDist in itemMap) {
 				if (Cell in _final) {
 					_final[Cell][Item] = MinAoeDist
@@ -439,22 +402,25 @@ class DangerClass {
 			var center = trailingZeros(mask)
 			for (var d: var m in areaMasksByCenter(area, center)) {
 				if (d == 0) continue   // le bit dist-0 du centre est déjà dans la couche 0
-				rawLayers[d] = rawLayers[d] | m
+				// (0L |) : coercition big_integer obligatoire (voir getMapHittableCellsTotal).
+				rawLayers[d] = (0L | rawLayers[d]) | m
 			}
 			mask = setBit(mask, center, 0)
 		}
 		// andNot via & puis ^ (pas de ~ sur un big_integer : complément à deux infini).
 		// Couches vides court-circuitées (les formes X ont des distances absentes).
+		// (0L |) : coercition big_integer obligatoire sur CHAQUE opération binaire de masque
+		// (voir getMapHittableCellsTotal).
 		var seen = directMask
 		for (var d = 1; d <= areaMax; d++) {
 			var layer = rawLayers[d]
 			if (layer == 0L) continue
-			var common = layer & seen
+			var common = (0L | layer) & seen
 			if (common != 0L) {
-				layer = layer ^ common
+				layer = (0L | layer) ^ common
 				if (layer == 0L) continue
 			}
-			if (d < areaMax) seen = seen | layer   // la dernière couche n'a plus de lecteur
+			if (d < areaMax) seen = (0L | seen) | layer   // la dernière couche n'a plus de lecteur
 			while (layer != 0L) {
 				var cell = trailingZeros(layer)
 				_final[cell] = d
@@ -472,219 +438,17 @@ class DangerClass {
 	 * [cell -> minAoeDist] via ITEM_FULL_GEOMETRY_CACHE).
 	 */
 	static getMapHittableCellsTotal(ItemInfos, WalkCellsMap) {
+		// PIÈGE DE TYPAGE (vérifié dans l'analyseur live) : une valeur big_integer récupérée
+		// d'un cache ou retournée par setBit peut être typée STATIQUEMENT integer — un
+		// opérateur binaire | & ^ choisit alors la variante 64 bits et TRONQUE tous les bits
+		// de cellules > 63. Chaque opération binaire sur un masque DOIT commencer par un
+		// opérande explicitement big_integer : (0L | x) force la surcharge BigInteger.
 		var mask = 0L
 		for (var EntityCell: var mp in WalkCellsMap) {
-			mask = mask | launchMaskFromOrigin(ItemInfos, EntityCell)
+			mask = (0L | mask) | launchMaskFromOrigin(ItemInfos, EntityCell)
 		}
 		return mask
 	}
-
-	// ==================== DIAGNOSTIC TEMPORAIRE Bitmap — À RETIRER (revert) ====================
-
-	/* Builders de RÉFÉRENCE : reproduction EXACTE du code de 6264491 (union de maps +
-	 * fold min), jamais appelés hors diagnostic. */
-	static legacyMapHittableCellsTotal(ItemInfos, WalkCellsMap) {
-		var _final = [: ]
-		var LaunchType = ItemInfos.LAUNCHTYPE
-		var MinRange = ItemInfos.MINRANGE
-		var MaxRange = ItemInfos.MAXRANGE
-		if (ItemInfos.NEEDLOS) {
-			for (var EntityCell: var mp in WalkCellsMap) {
-				_final += ActionsClass.LaunchWithLos[LaunchType](EntityCell, MinRange, MaxRange)
-			}
-		} else {
-			for (var EntityCell: var mp in WalkCellsMap) {
-				_final += ActionsClass.LaunchWithoutLos[LaunchType](EntityCell, MinRange, MaxRange)
-			}
-		}
-		return _final
-	}
-
-	static legacyMapAoeForItem(ItemInfos, MapCellsBool) {
-		var _final = [: ]
-		for (var cell: var bool in MapCellsBool) {
-			_final[cell] = 0
-		}
-		if (ItemInfos.AREA_MAX > 0) {
-			var area = ItemInfos.AREA
-			for (var cell: var bool in MapCellsBool) {
-				for (var Aoe: var AoeDist in CellClass.getAreaDist(area, cell)) {
-					var ActualCellDist = _final[Aoe]
-					if (ActualCellDist == null || ActualCellDist > AoeDist) {
-						_final[Aoe] = AoeDist
-					}
-				}
-			}
-		}
-		return _final
-	}
-
-	static diagLog(step, Item, movementKey, launchKey, fullKey, area, cell, legacyVal, bitmapVal, legacySize, bitmapSize) {
-		debugE("[DIAG Bitmap] ÉCART " + step + " item=" + Item + " movementKey=" + movementKey
-			+ " launchKey=" + launchKey + " fullKey=" + fullKey + " area=" + area
-			+ " cell=" + cell + " legacy=" + legacyVal + " bitmap=" + bitmapVal
-			+ " tailles legacy=" + legacySize + " bitmap=" + bitmapSize)
-	}
-
-	/*
-	 * Compare la géométrie Bitmap (directMask + itemMap) à la legacy 6264491, dans les DEUX
-	 * sens, valeurs comprises, sans hash. Log au PREMIER écart global uniquement. Contenus
-	 * identiques -> compare l'ORDRE d'itération des cellules (une fois). Retourne la map
-	 * servie à l'appelant : la Bitmap, ou la legacy si DIAG_BITMAP_RETURN_LEGACY (isolation).
-	 */
-	/*
-	 * FORAGE D'ÉTAGE au premier écart DIRECT : recalcul Bitmap TOTALEMENT FRAIS, sans lire
-	 * AUCUN des trois caches (ITEM_LAUNCH/LAUNCH_MASK_BY_ORIGIN/ITEM_FULL) — mêmes
-	 * dispatchers, setBit, OR. Compte origines/maps non vides/cellules source, puis cherche
-	 * la première origine dont le masque CACHÉ (launchMaskFromOrigin) diverge du frais.
-	 * Grille : freshTotal=120 & direct=0 -> cache agrégé LAUNCH empoisonné ; freshOrigin ok
-	 * & caché vide -> LAUNCH_MASK_BY_ORIGIN empoisonné/collision ; freshOrigin vide malgré
-	 * source non vide -> conversion setBit ; freshTotal vide malgré origins non vides -> OR.
-	 */
-	static diagDirectDeepDive(Item, Infos, walkCellsMap, directMask, legacyDirect, fullWasHit, launchWasHit) {
-		var freshTotalMask = 0L
-		// Agrégat INDÉPENDANT : setBit direct sur chaque cellule source, sans masque par
-		// origine ni OR — discrimine conversion-par-origine vs agrégation.
-		var freshTotalByDirectSetBit = 0L
-		var nOrigins = 0
-		var nNonEmptyOrigins = 0
-		var nSourceCells = 0
-		var nonZeroOriginMasks = 0
-		var sumOriginBits = 0
-		var firstOriginLogged = false
-		var firstBadOrigin = -1
-		var firstBadInfo = ""
-		for (var origin: var mp in walkCellsMap) {
-			nOrigins++
-			var cells = Infos.NEEDLOS
-				? ActionsClass.LaunchWithLos[Infos.LAUNCHTYPE](origin, Infos.MINRANGE, Infos.MAXRANGE)
-				: ActionsClass.LaunchWithoutLos[Infos.LAUNCHTYPE](origin, Infos.MINRANGE, Infos.MAXRANGE)
-			var srcSize = mapSize(cells)
-			if (srcSize > 0) nNonEmptyOrigins++
-			nSourceCells += srcSize
-			var freshOriginMask = 0L
-			var firstSrcCell = -1
-			for (var cell: var _t in cells) {
-				if (firstSrcCell == -1) firstSrcCell = cell
-				freshOriginMask = setBit(freshOriginMask, cell)
-				freshTotalByDirectSetBit = setBit(freshTotalByDirectSetBit, cell)
-			}
-			if (freshOriginMask != 0L) nonZeroOriginMasks++
-			sumOriginBits += bitCount(freshOriginMask)
-			freshTotalMask = freshTotalMask | freshOriginMask
-			if (!firstOriginLogged) {
-				firstOriginLogged = true
-				debugE("[DIAG Bitmap ÉTAGE] première origine=" + origin
-					+ " premièreCelluleSource=" + firstSrcCell
-					+ " srcSize=" + srcSize
-					+ " originMaskBits=" + bitCount(freshOriginMask)
-					+ " testBit(première)=" + (firstSrcCell == -1 ? "n/a" : testBit(freshOriginMask, firstSrcCell)))
-			}
-			if (firstBadOrigin == -1) {
-				var cached = launchMaskFromOrigin(Infos, origin)
-				if (cached != freshOriginMask) {
-					firstBadOrigin = origin
-					var diff = cached ^ freshOriginMask
-					firstBadInfo = "originKey=" + ((origin << 25) | Infos.LAUNCH_GEOMETRY_KEY)
-						+ " srcSize=" + srcSize
-						+ " freshBits=" + bitCount(freshOriginMask)
-						+ " cachedBits=" + bitCount(cached)
-						+ " firstDivergentCell=" + trailingZeros(diff)
-				}
-			}
-		}
-		debugE("[DIAG Bitmap ÉTAGE] item=" + Item
-			+ " walkOrigins=" + mapSize(walkCellsMap)
-			+ " parcourues=" + nOrigins + " nonVides=" + nNonEmptyOrigins + " cellulesSource=" + nSourceCells
-			+ " nonZeroOriginMasks=" + nonZeroOriginMasks
-			+ " sumOriginBits=" + sumOriginBits
-			+ " directMaskBits=" + bitCount(directMask)
-			+ " freshTotalBits(OR)=" + bitCount(freshTotalMask)
-			+ " freshTotalBits(directSetBit)=" + bitCount(freshTotalByDirectSetBit)
-			+ " legacySize=" + mapSize(legacyDirect)
-			+ " FULL=" + (fullWasHit ? "HIT" : "MISS")
-			+ " LAUNCH=" + (launchWasHit ? "HIT" : "MISS"))
-		if (firstBadOrigin != -1) {
-			debugE("[DIAG Bitmap ÉTAGE] première origine divergente=" + firstBadOrigin + " " + firstBadInfo)
-		} else {
-			debugE("[DIAG Bitmap ÉTAGE] aucune origine divergente : chaque masque caché == frais")
-		}
-	}
-
-	static diagCompareGeometry(Item, Infos, walkCellsMap, movementKey, launchKey, fullKey, directMask, itemMap, fullWasHit, launchWasHit) {
-		// Premier écart déjà identifié : ne plus payer les reconstructions legacy — sauf si
-		// l'isolation exige la map legacy pour l'assemblage.
-		if (DIAG_BITMAP_MISMATCH_LOGGED && !DIAG_BITMAP_RETURN_LEGACY) return itemMap
-		var legacyDirect = legacyMapHittableCellsTotal(Infos, walkCellsMap)
-		var legacyAoe = legacyMapAoeForItem(Infos, legacyDirect)
-		if (!DIAG_BITMAP_MISMATCH_LOGGED) {
-			if (!DIAG_BITMAP_STARTED) {
-				DIAG_BITMAP_STARTED = true
-				debug("[DIAG Bitmap] comparaisons actives (PacificRose)")
-			}
-			// --- DIRECT : legacy -> bitmap puis bitmap -> legacy ---
-			var directCount = 0
-			for (var cell: var b in legacyDirect) {
-				directCount++
-				if (!testBit(directMask, cell)) {
-					DIAG_BITMAP_MISMATCH_LOGGED = true
-					diagLog("DIRECT", Item, movementKey, launchKey, fullKey, Infos.AREA, cell, "présent", "ABSENT", mapSize(legacyDirect), bitCount(directMask))
-					diagDirectDeepDive(Item, Infos, walkCellsMap, directMask, legacyDirect, fullWasHit, launchWasHit)
-					return DIAG_BITMAP_RETURN_LEGACY ? legacyAoe : itemMap
-				}
-			}
-			if (bitCount(directMask) != directCount) {
-				var m = directMask
-				while (m != 0L) {
-					var cell = trailingZeros(m)
-					if (!(cell in legacyDirect)) {
-						DIAG_BITMAP_MISMATCH_LOGGED = true
-						diagLog("DIRECT", Item, movementKey, launchKey, fullKey, Infos.AREA, cell, "ABSENT", "présent", mapSize(legacyDirect), bitCount(directMask))
-						diagDirectDeepDive(Item, Infos, walkCellsMap, directMask, legacyDirect, fullWasHit, launchWasHit)
-						return DIAG_BITMAP_RETURN_LEGACY ? legacyAoe : itemMap
-					}
-					m = setBit(m, cell, 0)
-				}
-			}
-			// --- AOE : valeurs des deux côtés ---
-			for (var cell: var dist in legacyAoe) {
-				var bmDist = (cell in itemMap) ? itemMap[cell] : null
-				if (bmDist != dist) {
-					DIAG_BITMAP_MISMATCH_LOGGED = true
-					diagLog("AOE", Item, movementKey, launchKey, fullKey, Infos.AREA, cell, dist, (bmDist == null ? "ABSENT" : bmDist), mapSize(legacyAoe), mapSize(itemMap))
-					return DIAG_BITMAP_RETURN_LEGACY ? legacyAoe : itemMap
-				}
-			}
-			if (mapSize(itemMap) != mapSize(legacyAoe)) {
-				for (var cell: var dist in itemMap) {
-					if (!(cell in legacyAoe)) {
-						DIAG_BITMAP_MISMATCH_LOGGED = true
-						diagLog("AOE", Item, movementKey, launchKey, fullKey, Infos.AREA, cell, "ABSENT", dist, mapSize(legacyAoe), mapSize(itemMap))
-						return DIAG_BITMAP_RETURN_LEGACY ? legacyAoe : itemMap
-					}
-				}
-			}
-			// --- Contenus identiques : verdict d'ORDRE — le flag n'est posé QUE sur un ordre
-			// différent (un premier item à ordre identique n'empêche pas de contrôler les
-			// items suivants).
-			if (!DIAG_BITMAP_ORDER_LOGGED) {
-				var keysL = mapKeys(legacyAoe)
-				var keysB = mapKeys(itemMap)
-				var firstDiff = -1
-				for (var i = 0; i < count(keysL); i++) {
-					if (keysL[i] != keysB[i]) { firstDiff = i; break }
-				}
-				if (firstDiff != -1) {
-					DIAG_BITMAP_ORDER_LOGGED = true
-					debug("[DIAG Bitmap] contenus identiques, ORDRE DIFFÉRENT dès l'index " + firstDiff
-						+ " (item " + Item + ") : legacy=" + keysL[firstDiff] + " bitmap=" + keysB[firstDiff])
-				}
-			}
-		}
-		return DIAG_BITMAP_RETURN_LEGACY ? legacyAoe : itemMap
-	}
-
-	// ================== FIN DIAGNOSTIC TEMPORAIRE Bitmap — À RETIRER (revert) ==================
 
 	/*
 	 * [distance -> masque big_integer] des cellules d'AoE d'un type de zone autour d'un
