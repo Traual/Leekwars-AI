@@ -543,9 +543,15 @@ class DangerClass {
 	 */
 	static diagDirectDeepDive(Item, Infos, walkCellsMap, directMask, legacyDirect, fullWasHit, launchWasHit) {
 		var freshTotalMask = 0L
+		// Agrégat INDÉPENDANT : setBit direct sur chaque cellule source, sans masque par
+		// origine ni OR — discrimine conversion-par-origine vs agrégation.
+		var freshTotalByDirectSetBit = 0L
 		var nOrigins = 0
 		var nNonEmptyOrigins = 0
 		var nSourceCells = 0
+		var nonZeroOriginMasks = 0
+		var sumOriginBits = 0
+		var firstOriginLogged = false
 		var firstBadOrigin = -1
 		var firstBadInfo = ""
 		for (var origin: var mp in walkCellsMap) {
@@ -557,10 +563,23 @@ class DangerClass {
 			if (srcSize > 0) nNonEmptyOrigins++
 			nSourceCells += srcSize
 			var freshOriginMask = 0L
+			var firstSrcCell = -1
 			for (var cell: var _t in cells) {
+				if (firstSrcCell == -1) firstSrcCell = cell
 				freshOriginMask = setBit(freshOriginMask, cell)
+				freshTotalByDirectSetBit = setBit(freshTotalByDirectSetBit, cell)
 			}
+			if (freshOriginMask != 0L) nonZeroOriginMasks++
+			sumOriginBits += bitCount(freshOriginMask)
 			freshTotalMask = freshTotalMask | freshOriginMask
+			if (!firstOriginLogged) {
+				firstOriginLogged = true
+				debugE("[DIAG Bitmap ÉTAGE] première origine=" + origin
+					+ " premièreCelluleSource=" + firstSrcCell
+					+ " srcSize=" + srcSize
+					+ " originMaskBits=" + bitCount(freshOriginMask)
+					+ " testBit(première)=" + (firstSrcCell == -1 ? "n/a" : testBit(freshOriginMask, firstSrcCell)))
+			}
 			if (firstBadOrigin == -1) {
 				var cached = launchMaskFromOrigin(Infos, origin)
 				if (cached != freshOriginMask) {
@@ -577,8 +596,11 @@ class DangerClass {
 		debugE("[DIAG Bitmap ÉTAGE] item=" + Item
 			+ " walkOrigins=" + mapSize(walkCellsMap)
 			+ " parcourues=" + nOrigins + " nonVides=" + nNonEmptyOrigins + " cellulesSource=" + nSourceCells
+			+ " nonZeroOriginMasks=" + nonZeroOriginMasks
+			+ " sumOriginBits=" + sumOriginBits
 			+ " directMaskBits=" + bitCount(directMask)
-			+ " freshTotalBits=" + bitCount(freshTotalMask)
+			+ " freshTotalBits(OR)=" + bitCount(freshTotalMask)
+			+ " freshTotalBits(directSetBit)=" + bitCount(freshTotalByDirectSetBit)
 			+ " legacySize=" + mapSize(legacyDirect)
 			+ " FULL=" + (fullWasHit ? "HIT" : "MISS")
 			+ " LAUNCH=" + (launchWasHit ? "HIT" : "MISS"))
