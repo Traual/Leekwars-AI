@@ -121,9 +121,6 @@ Documentés comme des choix, pas des bugs à corriger immédiatement :
 - Mobilité future de Danger ignorant les entités (portées de déplacement sans obstacles
   vivants).
 - Bonus des passives BR simulé par l'approximation `POWER / 2`.
-- Le danger `EFFECT_LIFE_DAMAGE` ne dépend pas de la LIFE courante du caster : blesser un
-  porteur ne réduit pas sa menace perçue dans le tour (folder la vie du caster dans les clés
-  coûterait trop de hits de cache).
 - FinalCell strictement orientée sécurité lorsqu'aucune cellule n'a un net nul.
 - Transpositions (élagage de nœuds déjà vus) **abandonnées après mesure** : trop peu de
   nœuds pour être rentable.
