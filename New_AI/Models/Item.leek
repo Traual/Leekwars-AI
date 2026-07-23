@@ -32,7 +32,6 @@ class ItemClass {
 	// cible, isHitable s'y réduit à LIFE > 0 (gardé au call site) + ENEMIES + le bit summon.
 	IS_HEAL_ITEM                       // qualification historique d'isHealItem (sans exiger ALLIES)
 	IS_DANGER_ITEM                     // qualification historique de MapHittables (6 types, AUCUN filtre de masque/profil/ON_CASTER)
-	DANGER_DEPENDS_ON_CASTER_LIFE      // une ligne LIFE_DAMAGE entre RÉELLEMENT dans une vue de dégâts (la LIFE du caster est alors un input NUMÉRIQUE du danger)
 	HEAL_EFFECTS_ALLY_LEEK             // heals/vitalités non ON_CASTER, ALLIES + NON_SUMMONS
 	HEAL_EFFECTS_ALLY_SUMMON           // idem, ALLIES + SUMMONS
 	DANGER_DAMAGE_EFFECTS_ENEMY_LEEK   // DAMAGE/LIFE_DAMAGE/POISON non ON_CASTER, ENEMIES + NON_SUMMONS
@@ -64,7 +63,6 @@ class ItemClass {
 			this.IS_VULNERABILITY = false
 			this.IS_HEAL_ITEM = false
 			this.IS_DANGER_ITEM = false
-			this.DANGER_DEPENDS_ON_CASTER_LIFE = false
 			this.HEAL_EFFECTS_ALLY_LEEK = null
 			this.HEAL_EFFECTS_ALLY_SUMMON = null
 			this.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK = null
@@ -99,12 +97,6 @@ class ItemClass {
 				}
 				// Vues dégâts : mêmes exclusions que l'ancien getItemDanger (ON_CASTER exclu).
 				if (!onCaster && (t == EFFECT_DAMAGE || t == EFFECT_LIFE_DAMAGE || t == EFFECT_POISON) && (mask & EFFECT_TARGET_ENEMIES)) {
-					// LIFE_DAMAGE entrant réellement dans AU MOINS une vue : la LIFE du
-					// caster devient un input numérique du danger (facteur LIFE/100) —
-					// classification lue par EntityState/BulbState pour les clés de cache.
-					if (t == EFFECT_LIFE_DAMAGE && (mask & (EFFECT_TARGET_NON_SUMMONS | EFFECT_TARGET_SUMMONS))) {
-						this.DANGER_DEPENDS_ON_CASTER_LIFE = true
-					}
 					if (mask & EFFECT_TARGET_NON_SUMMONS) {
 						if (this.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK == null) this.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK = []
 						push(this.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK, eff)

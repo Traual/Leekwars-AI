@@ -19,7 +19,6 @@ class BulbState {
 	COOLDOWNS
 	USES
 	ITEM_STATE_PARENT   // null = racine (même contrat qu'EntityState) — un bulbe n'est jamais patché
-	DANGER_DEPENDS_ON_LIFE   // même contrat qu'EntityState (cooldowns initiaux 0 : tout item LIFE_DAMAGE du chipset qualifie)
 	SIDE
 	EVERYONE
 	IS_ALLY
@@ -73,12 +72,9 @@ class BulbState {
 		this.ITEM_STATE_PARENT = null   // racine : maps complètes
 		this.COOLDOWNS = [: ]
 		this.USES = [: ]
-		this.DANGER_DEPENDS_ON_LIFE = false
 		for (var i in this.INVENTORY) {
 			this.COOLDOWNS[i] = 0
 			this.USES[i] = 0
-			// Cooldowns initiaux à 0 (<= 1) : tout item LIFE_DAMAGE du chipset qualifie.
-			if (ITEMINFO[i].DANGER_DEPENDS_ON_CASTER_LIFE) this.DANGER_DEPENDS_ON_LIFE = true
 		}
 		this.SIDE = SummonerStats.SIDE
 		this.EFFECTS = []

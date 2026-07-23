@@ -205,9 +205,9 @@ class DangerClass {
 	 * cible + stats offensives du caster. Shields masqués à leur slot (une vulné est un shield
 	 * négatif : non masqué, le signe absorberait les champs hauts) ; antidote 99 = pas de chip,
 	 * distinct de prêt (0) ; stats du caster clampées à 0 (le moteur plancher à l'usage).
-	 * La LIFE de la CIBLE reste une simple garde vivant/mort (hors clé) ; celle du CASTER est
-	 * un input NUMÉRIQUE pour un porteur de LIFE_DAMAGE — foldée conditionnellement
-	 * (DANGER_DEPENDS_ON_LIFE), les autres casters gardent leur clé exacte.
+	 * COMPROMIS ASSUMÉ (README) : la LIFE courante du caster n'entre pas dans la clé — la
+	 * projection d'un LIFE_DAMAGE peut rester celle cachée avant des dégâts non létaux ce
+	 * tour (une mort reste visible via vivant/mort) ; l'exactitude coûtait +6,31 %.
 	 */
 	static getStatsHashForDangerOneCaster(TargetStats, CasterStats, TmpHash, curAbs, curRel) {
 		var hash_value = (OFFSET_BASIS ^ TmpHash)
@@ -227,10 +227,6 @@ class DangerClass {
 		var critBit = (critFactorOf(CasterStats) > 1) ? 1 : 0
 		var Hiscombined = (critBit << 62) | (max(0, CasterStats.STRENGTH) << 45) | (max(0, CasterStats.MAGIC) << 30) | (max(0, CasterStats.TOTAL_TP) << 15) | CasterStats.POWER
 		hash_value = addValueToBinHash(hash_value, Hiscombined)
-
-		// LIFE du caster : input NUMÉRIQUE du LIFE_DAMAGE — foldée UNIQUEMENT pour les
-		// porteurs qualifiés, les autres gardent leur clé EXACTE.
-		if (CasterStats.DANGER_DEPENDS_ON_LIFE) hash_value = addValueToBinHash(hash_value, CasterStats.LIFE)
 
 		return hash_value
 	}

@@ -108,6 +108,12 @@ Documentés comme des choix, pas des bugs à corriger immédiatement :
 - Multiplicateur Plasma (`EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS`) fixé à 1 dans EntityDanger —
   le vrai facteur dépend de la cellule visée et du nombre d'entités dans l'AoE.
 - Futurs ticks de poison sans érosion critique ni futurs procs.
+- La LIFE courante d'un caster n'entre pas dans les clés de Danger. Après des dégâts non
+  létaux, la projection d'un `EFFECT_LIFE_DAMAGE` peut donc conserver la valeur précédemment
+  cachée pendant le tour. Une mort reste immédiatement visible via les contributions
+  vivant/mort. Ce compromis évite une invalidation globale de tous les termes adverses à
+  chaque branche offensive (l'exactitude a été mesurée à +6,31 % d'opérations, misses
+  Danger ×4).
 - Collision théorique de certaines clés de cache au-delà de 4096 de force.
 - Cellule de Me **gelée** pendant un BFS pour la couverture Antidote.
 - LoS ignorée pour la couverture Antidote.
