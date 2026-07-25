@@ -10,3 +10,6 @@ Preload.InitStateClass()
 BenchOps.Reset()
 new Play()
 BenchOps.Dump()
+// ====== MESURE TEMPORAIRE de la priorité des cellules — À RETIRER après la mesure ======
+debugW("EscapePriority windows=" + EPRIO_WINDOWS + " coldProbed=" + EPRIO_COLD_PROBED + " coldEvaluated=" + EPRIO_COLD_EVALUATED + " zeroNoCaster=" + EPRIO_ZERO_NO_CASTER)
+// =======================================================================================

@@ -144,23 +144,49 @@ class DeltaClass {
             ENTITY_DELTA_CACHE_FOR_ME[outerKey] = minDelta
             return minDelta
         }
-        // Passe 2 : cellule par cellule dans l'ordre historique de myWalkCells. TOUT le setup
-        // est paresseux — l'ordre de tour n'est construit que si un danger non vide doit être
-        // séquencé, les maps par caster qu'au premier vrai miss de CELL_DANGER_GET_CACHE. Le
-        // danger est partagé entre couvertures identiques, mais le net et le heal restent PAR
-        // CELLULE : même minimum, mêmes additions dans netDamage.
+        // Passe 2, par FENÊTRES de PRIORITY_WINDOW cellules. La fenêtre ne borne que le travail
+        // de présélection : aucune cellule n'est retirée, toutes finissent évaluées si aucune
+        // ne vaut zéro. TOUT le setup reste paresseux — l'ordre de tour n'est construit que si
+        // un danger non vide doit être séquencé, les maps par caster qu'au premier vrai miss de
+        // CELL_DANGER_GET_CACHE. Le résultat reste exact : minDeltaForMe ne rend que la VALEUR
+        // minimale, l'ordre ne change aucune formule par cellule, et seul zéro — borne
+        // minimale exacte — autorise une sortie anticipée.
         var meId = MeStats.ID
         var castersInOrder = null
         var casterMaps = null
         var buckets = null
-        for (var i = 0; i < nMiss; i++) {
-            var cell = missCells[i]
-            var dangerKey = DangerClass.cellCacheKey(statsHash, meId, cell)
-            var dangerAtCell
-            if (dangerKey in CELL_DANGER_GET_CACHE) {
-                // Hit : ni couverture, ni hash de contenu, ni maps de casters.
-                dangerAtCell = CELL_DANGER_GET_CACHE[dangerKey]
-            } else {
+        var w = 0
+        while (w < nMiss) {
+            var wEnd = min(nMiss, w + PRIORITY_WINDOW)
+            EPRIO_WINDOWS++   // MESURE TEMPORAIRE
+            // A. Les cellules dont le danger est DÉJÀ caché passent d'abord : un zéro y sort
+            // sans qu'aucune map de caster n'ait été construite.
+            var coldCells = []
+            var coldKeys = []
+            var coldIdx = []
+            for (var i = w; i < wEnd; i++) {
+                var cell = missCells[i]
+                var dangerKey = DangerClass.cellCacheKey(statsHash, meId, cell)
+                if (!(dangerKey in CELL_DANGER_GET_CACHE)) {
+                    push(coldCells, cell)
+                    push(coldKeys, dangerKey)
+                    push(coldIdx, i)
+                    continue
+                }
+                var dangerAtCell = CELL_DANGER_GET_CACHE[dangerKey]
+                var delta = 0
+                if (!mapIsEmpty(dangerAtCell)) {
+                    if (castersInOrder == null) castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
+                    delta = netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
+                }
+                CELL_NETDAMAGE_FOR_ME_CACHE[rotSeed ^ cell] = delta
+                if (delta < minDelta) {
+                    if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // imbattable
+                    minDelta = delta
+                }
+            }
+            var nCold = count(coldCells)
+            if (nCold > 0) {
                 if (casterMaps == null) {
                     var toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
                     var enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash, statsHash)
@@ -168,23 +194,81 @@ class DeltaClass {
                     casterMaps = DangerClass.buildCasterMaps(State, enemyWalkCells, toSkipMap, castersInOrder)
                     buckets = [: ]   // couvertures rencontrées, locales à cette recherche de fuite
                 }
-                dangerAtCell = DangerClass.dangerOfCellCold(cell, dangerKey, State, MeStats, casterMaps, buckets)
+                // B. Sondage TRÈS bon marché des cellules froides : uniquement l'appartenance
+                // aux maps par caster (layout plat de buildCasterMaps, pas de 3). Aucune
+                // couverture, aucun hash de contenu, aucune comparaison, aucun combo.
+                var nCasterMaps = count(casterMaps)
+                var descs = []
+                for (var c = 0; c < nCold; c++) {
+                    var cell = coldCells[c]
+                    EPRIO_COLD_PROBED++   // MESURE TEMPORAIRE
+                    var casterCount = 0
+                    var itemCount = 0
+                    for (var k = 0; k < nCasterMaps; k += 3) {
+                        var mci = casterMaps[k + 1]
+                        if (!(cell in mci)) continue
+                        casterCount++
+                        itemCount += mapSize(mci[cell])
+                    }
+                    if (casterCount == 0) {
+                        // Aucun caster n'atteint la cellule : le danger est MATHÉMATIQUEMENT
+                        // vide, donc le net aussi — zéro exact sans dérouler la moindre chaîne.
+                        EPRIO_ZERO_NO_CASTER++   // MESURE TEMPORAIRE
+                        CELL_DANGER_GET_CACHE[coldKeys[c]] = [: ]
+                        CELL_NETDAMAGE_FOR_ME_CACHE[rotSeed ^ cell] = 0
+                        ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0
+                        return 0
+                    }
+                    push(descs, [cell, coldKeys[c], casterCount, itemCount, coldIdx[c]])
+                }
+                // C. Les moins couvertes d'abord : ce sont les candidates les plus probables à
+                // un net nul. Tri STABLE -> à rang égal, l'ordre historique est conservé.
+                sortColdDescs(descs)
+                // D. Évaluation EXACTE par le chemin historique, inchangé.
+                for (var d in descs) {
+                    EPRIO_COLD_EVALUATED++   // MESURE TEMPORAIRE
+                    var cell = d[0]
+                    var dangerAtCell = DangerClass.dangerOfCellCold(cell, d[1], State, MeStats, casterMaps, buckets)
+                    var delta = 0
+                    if (!mapIsEmpty(dangerAtCell)) {
+                        if (castersInOrder == null) castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
+                        delta = netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
+                    }
+                    CELL_NETDAMAGE_FOR_ME_CACHE[rotSeed ^ cell] = delta
+                    if (delta < minDelta) {
+                        if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // imbattable
+                        minDelta = delta
+                    }
+                }
             }
-            // Danger vide -> delta 0 direct, sans même l'ordre de tour (déclenche l'early exit
-            // "imbattable" dessous).
-            var delta = 0
-            if (!mapIsEmpty(dangerAtCell)) {
-                if (castersInOrder == null) castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
-                delta = netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
-            }
-            CELL_NETDAMAGE_FOR_ME_CACHE[rotSeed ^ cell] = delta
-            if (delta < minDelta) {
-                if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // imbattable
-                minDelta = delta
-            }
+            w = wEnd
         }
         ENTITY_DELTA_CACHE_FOR_ME[outerKey] = minDelta
         return minDelta
+    }
+
+    /* Tri par insertion STABLE des descripteurs [cellule, cléDanger, casterCount, itemCount,
+     * indexOrigine] d'une fenêtre (au plus PRIORITY_WINDOW entrées) : casterCount croissant,
+     * puis itemCount, puis position d'origine dans missCells. Muté en place. */
+    static sortColdDescs(descs) {
+        var n = count(descs)
+        for (var i = 1; i < n; i++) {
+            var d = descs[i]
+            var j = i - 1
+            while (j >= 0 && coldDescAfter(descs[j], d)) {
+                descs[j + 1] = descs[j]
+                j--
+            }
+            descs[j + 1] = d
+        }
+    }
+
+    /* a doit-il passer APRÈS b ? Comparaison stricte à chaque niveau : sur égalité complète de
+     * rang, l'ordre d'insertion (donc historique) est conservé. */
+    static coldDescAfter(a, b) {
+        if (a[2] != b[2]) return a[2] > b[2]
+        if (a[3] != b[3]) return a[3] > b[3]
+        return a[4] > b[4]
     }
 
     /*
