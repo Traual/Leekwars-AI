@@ -115,3 +115,10 @@ global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
 // gloutonne + early-exit des chaînes). Attrape les résidus float des chips type Antidote /
 // Libération / Rémission quand aucun effet pertinent ne s'applique.
 global BFS_DELTA_EPSILON = 0.01
+
+// ====== MESURE TEMPORAIRE du cache par couverture — À RETIRER après la mesure ======
+// Compteurs de tour, remis à zéro par ReloadCacheNewTurn (la VM est PERSISTANTE).
+global DCOV_HITS = 0
+global DCOV_MISSES = 0
+global DCOV_CANDIDATE_CHECKS = 0
+// ==================================================================================

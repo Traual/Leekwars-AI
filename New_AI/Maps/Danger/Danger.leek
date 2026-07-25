@@ -107,9 +107,55 @@ class DangerClass {
 			// Hash de contenu calculé UNE fois et transporté jusqu'au combo.
 			push(Coverage, itemAoeHashOf(mapKey, Cell, itemMap))
 		}
-		var _final = evalChainFromCoverage(Coverage, State, TargetStats)
+		var _final = dangerFromCoverage(coverageHashOf(Coverage), Coverage, State, TargetStats, StatsHashForDanger)
 		CELL_DANGER_GET_CACHE[ThisHash] = _final
 		return _final
+	}
+
+	/* Fold ORDONNÉ (casterId, hash de contenu) d'une couverture — SOURCE UNIQUE des deux
+	 * chemins. Présélection de bucket uniquement : jamais une preuve d'égalité, la
+	 * comparaison structurelle reste obligatoire derrière. */
+	static coverageHashOf(Coverage) {
+		var hash = 0
+		var n = count(Coverage)
+		for (var i = 0; i < n; i += 3) {
+			hash = addValueToBinHash(addValueToBinHash(hash, Coverage[i]), Coverage[i + 2])
+		}
+		return hash
+	}
+
+	/*
+	 * Danger d'une couverture ordonnée, partagé par TOUT le tour : deux cellules, deux appels
+	 * de minDeltaForMe ou les deux chemins (fuite de Me et get historique) qui produisent la
+	 * même couverture contre la même cible dans le même contexte ne déroulent la chaîne
+	 * qu'une fois. Exact au sens du contrat de CELL_DANGER_GET_CACHE : la clé n'est qu'un
+	 * hash, donc chaque entrée du bucket REVÉRIFIE contexte, identité de cible et couverture
+	 * structurelle avant d'être réutilisée — une collision ne peut jamais rendre un hit faux.
+	 *
+	 * @return [casterId -> dégâts], read-only comme toute map de danger
+	 */
+	static dangerFromCoverage(CoverageHash, Coverage, State, TargetStats, StatsHashForDanger) {
+		var TargetId = TargetStats.ID
+		var key = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ StatsHashForDanger, TargetId), CoverageHash)
+		var bucket
+		if (key in DANGER_BY_COVERAGE_CACHE) {
+			bucket = DANGER_BY_COVERAGE_CACHE[key]
+			for (var candidate in bucket) {
+				DCOV_CANDIDATE_CHECKS++   // MESURE TEMPORAIRE
+				if (candidate.StatsHash == StatsHashForDanger && candidate.TargetId == TargetId
+					&& sameCoverage(candidate.Coverage, Coverage)) {
+					DCOV_HITS++   // MESURE TEMPORAIRE
+					return candidate.Danger
+				}
+			}
+		} else {
+			bucket = []
+			DANGER_BY_COVERAGE_CACHE[key] = bucket
+		}
+		DCOV_MISSES++   // MESURE TEMPORAIRE
+		var entry = new DangerGroupClass(StatsHashForDanger, TargetId, Coverage, evalChainFromCoverage(Coverage, State, TargetStats))
+		push(bucket, entry)
+		return entry.Danger
 	}
 
 	/* Clé de CELL_DANGER_GET_CACHE — SOURCE UNIQUE (get et le chemin groupé la partagent).
@@ -175,52 +221,24 @@ class DangerClass {
 	 * uniquement : l'appelant a déjà testé le cache et passe la clé qu'il a calculée.
 	 *
 	 * @param CasterMaps liste plate de buildCasterMaps
-	 * @param Buckets [hash de couverture -> groupes], local à la recherche de fuite en cours
 	 * @return [casterId -> dégâts], partagée en LECTURE SEULE par les cellules du groupe
 	 */
-	static dangerOfCellCold(Cell, key, State, TargetStats, CasterMaps, Buckets) {
+	static dangerOfCellCold(Cell, key, State, TargetStats, StatsHashForDanger, CasterMaps) {
 		var Coverage = []
-		var hash = 0
 		var n = count(CasterMaps)
 		for (var i = 0; i < n; i += 3) {
 			var MapCellItemAoe = CasterMaps[i + 1]
 			// Caster incapable d'atteindre cette cellule : aucun triplet, aucun combo.
 			if (!(Cell in MapCellItemAoe)) continue
 			var itemMap = MapCellItemAoe[Cell]
-			var Caster = CasterMaps[i]
 			// Contenu itéré une seule fois par (map, cellule) de tout le tour.
-			var contentHash = itemAoeHashOf(CasterMaps[i + 2], Cell, itemMap)
-			push(Coverage, Caster)
+			push(Coverage, CasterMaps[i])
 			push(Coverage, itemMap)
-			push(Coverage, contentHash)
-			// Fold ORDONNÉ (casterId, contenu de la map) : présélection de bucket uniquement,
-			// jamais un critère de fusion.
-			hash = addValueToBinHash(addValueToBinHash(hash, Caster), contentHash)
+			push(Coverage, itemAoeHashOf(CasterMaps[i + 2], Cell, itemMap))
 		}
-		var bucket
-		if (hash in Buckets) {
-			bucket = Buckets[hash]
-		} else {
-			bucket = []
-			Buckets[hash] = bucket
-		}
-		var group = null
-		for (var candidate in bucket) {
-			// Une collision de hash n'ajoute qu'une comparaison : deux couvertures différentes
-			// ne fusionnent jamais.
-			if (sameCoverage(candidate.Coverage, Coverage)) {
-				group = candidate
-				break
-			}
-		}
-		if (group == null) {
-			// Couverture inédite : chaîne déroulée immédiatement, une seule fois pour toutes
-			// les cellules qui la partageront ensuite.
-			group = new DangerGroupClass(Coverage, evalChainFromCoverage(Coverage, State, TargetStats))
-			push(bucket, group)
-		}
-		CELL_DANGER_GET_CACHE[key] = group.Danger
-		return group.Danger
+		var _final = dangerFromCoverage(coverageHashOf(Coverage), Coverage, State, TargetStats, StatsHashForDanger)
+		CELL_DANGER_GET_CACHE[key] = _final
+		return _final
 	}
 
 	/* Deux couvertures identiques : mêmes casters, dans le MÊME ordre, avec des maps d'items
@@ -641,13 +659,19 @@ class DangerClass {
 }
 
 /*
- * Cellules à couverture offensive EXACTEMENT identique : une seule chaîne de vulnés déroulée
- * pour tout le groupe, une map de danger partagée en lecture seule.
+ * Entrée de DANGER_BY_COVERAGE_CACHE : une chaîne de vulnés déroulée, partagée par toutes les
+ * cellules du tour qui produisent cette couverture contre cette cible dans ce contexte. Ne
+ * porte QUE des scalaires et des maps de caches de tour — jamais un State, un EntityState,
+ * une cellule ni une structure temporaire.
  */
 class DangerGroupClass {
-	Coverage   // [casterId, itemMap, hashDuContenu, ...] ordonné (ordre de tour des casters)
-	Danger     // [casterId -> dégâts], déroulée dès la création du groupe
-	constructor(ThisCoverage, ThisDanger) {
+	StatsHash    // contexte adverse + shields/antidote de la cible, revérifié avant réutilisation
+	TargetId     // identité de la cible, revérifiée avant réutilisation
+	Coverage     // [casterId, itemMap, hashDuContenu, ...] ordonné (ordre de tour des casters)
+	Danger       // [casterId -> dégâts], déroulée à la création de l'entrée
+	constructor(ThisStatsHash, ThisTargetId, ThisCoverage, ThisDanger) {
+		this.StatsHash = ThisStatsHash
+		this.TargetId = ThisTargetId
 		this.Coverage = ThisCoverage
 		this.Danger = ThisDanger
 	}

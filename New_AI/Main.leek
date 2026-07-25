@@ -10,3 +10,6 @@ Preload.InitStateClass()
 BenchOps.Reset()
 new Play()
 BenchOps.Dump()
+// ====== MESURE TEMPORAIRE du cache par couverture — À RETIRER après la mesure ======
+debugW("DangerCoverage hits=" + DCOV_HITS + " misses=" + DCOV_MISSES + " candidateChecks=" + DCOV_CANDIDATE_CHECKS)
+// ==================================================================================
