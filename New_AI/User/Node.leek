@@ -28,7 +28,8 @@ class NodeClass {
 	                  // (masque diffMaskOf + checks Me BaseHash/fingerprint) — le recompute-set
 	                  // du scoring l'itère directement
 	DANGER_DIRTY_CASTERS // [id -> true] : les non-Me dont la contribution au contexte danger a
-	                  // RÉELLEMENT changé dans cette action. Le scoring en déduit, par
+	                  // RÉELLEMENT changé dans cette action, NULL quand il n'y en a aucun (cas
+	                  // courant — aucune map vide n'est allouée). Le scoring en déduit, par
 	                  // intersection de couverture, les seules cibles à recalculer — au lieu de
 	                  // relire tout un side. Me n'y figure jamais : il est exclu du contexte.
 	TERMS             // [id -> terme signé] : PATCH local — les seuls termes recalculés par CE nœud
@@ -117,7 +118,9 @@ class NodeClass {
 		var ctxSides = mapKeys(ctx)
 		var hfpMap = clone(ParentHfp, 1)
 		var localTermDirty = [: ]
-		var dangerDirtyCasters = [: ]
+		// Allouée seulement si un contexte offensif bouge vraiment : une attaque ordinaire non
+		// létale clone des entités sans rien changer à leur menace, et ne doit rien payer.
+		var dangerDirtyCasters = null
 		for (var tar: var parentStat in clonedIds) {
 			var newStat = ThisActionStats[tar]
 			// Entité NÉE dans l'action (summon) : aucune contribution ancienne à retirer, on
@@ -129,6 +132,7 @@ class NodeClass {
 				bh ^= StateClass.baseContribution(newStat, tar)
 				var addCtx = DeltaClass.contextContribution(newStat, tar)
 				if (addCtx != 0) {
+					if (dangerDirtyCasters == null) dangerDirtyCasters = [: ]
 					dangerDirtyCasters[tar] = true
 					for (var s in ctxSides) if (s != newStat.SIDE) ctx[s] ^= addCtx
 				}
@@ -146,6 +150,7 @@ class NodeClass {
 			if (mask & DIFF_CONTEXT) {
 				var deltaCtx = DeltaClass.contextContribution(parentStat, tar) ^ DeltaClass.contextContribution(newStat, tar)
 				if (deltaCtx != 0) {
+					if (dangerDirtyCasters == null) dangerDirtyCasters = [: ]
 					dangerDirtyCasters[tar] = true
 					var side = newStat.SIDE
 					for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx   // contextes des sides ADVERSES

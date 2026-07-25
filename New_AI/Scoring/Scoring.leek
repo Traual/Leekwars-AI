@@ -77,8 +77,8 @@ class ScoringClass {
         // Casters offensifs réellement modifiés par l'action (posés par le Node depuis les
         // SEULS blocs où la contribution au contexte a bougé). Remplacent le déclencheur
         // « tout le side » : une cible n'est relue que si l'un d'eux la COUVRE réellement.
-        var dangerDirty = node.DANGER_DIRTY_CASTERS
-        var hasDirtyCasters = !mapIsEmpty(dangerDirty)
+        // null = aucun caster sale (cas courant, aucune map allouée par le Node).
+        var hasDirtyCasters = node.DANGER_DIRTY_CASTERS != null
         var casterDeps = null   // descripteurs construits paresseusement, une fois par nœud
 
         // ====== MESURE TEMPORAIRE — ancien déclencheur par side, pour comparaison ======
@@ -177,8 +177,20 @@ class ScoringClass {
         for (var caster: var _d in node.DANGER_DIRTY_CASTERS) {
             var oldStat = cloned[caster]       // null = caster NÉ dans l'action
             var newStat = State[caster]
-            var oldMap = DangerClass.offensiveCoverageOf(oldStat, caster)
-            var newMap = DangerClass.offensiveCoverageOf(newStat, caster)
+            var oldMap
+            var newMap
+            // Géométrie inchangée (même id, cellule, MP totale et couche Jump) et caster vivant
+            // des deux côtés : la couverture est LA MÊME map. STR/MAG/POWER/AGI et shields ne
+            // déplacent personne, et l'inventaire d'un non-Me est figé pour le tour, déjà caché
+            // par id. Une naissance, une mort ou une clé différente gardent les deux appels.
+            if (oldStat != null && oldStat.LIFE > 0 && newStat.LIFE > 0
+                && DangerClass.mapCellItemAoeKeyOf(oldStat) == DangerClass.mapCellItemAoeKeyOf(newStat)) {
+                oldMap = DangerClass.offensiveCoverageOf(oldStat, caster)
+                newMap = oldMap
+            } else {
+                oldMap = DangerClass.offensiveCoverageOf(oldStat, caster)
+                newMap = DangerClass.offensiveCoverageOf(newStat, caster)
+            }
             push(deps, (oldMap == null) ? -1 : oldStat.SIDE)
             push(deps, oldMap)
             push(deps, (newMap == null) ? -1 : newStat.SIDE)
