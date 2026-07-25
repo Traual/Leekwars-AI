@@ -129,3 +129,10 @@ global DIAG_LIB_ARMED = true    // désarmé APRÈS le match exact seulement
 global DIAG_LIB_ACTIVE = false  // vrai pendant la simulation + le scoring de CE cast
 global DIAG_LIB_BEFORE = null   // snapshot des scalaires de Me avant les conséquences
 global DIAG_LIB_PATH = ""       // provenance : racine (enumerateAndSort) ou chemin réutilisé (findBestNextNode)
+
+// DIAGNOSTIC #2 — canal survival/net de Me (la trace #1 a innocenté Consequences, le
+// ledger, TERMS_PARENT et drDeterrence). Vise les deux états d'ArkansasBlack au tour 6 :
+// REL 82 / RES 536 (avant Libération) puis REL 50 / RES 462 (après).
+global DIAG2_ON = false      // posé une fois par tour dans Play (tour 6 + ArkansasBlack)
+global DIAG2_TRACES = 0      // borne le volume de log
+global DIAG2_MAX = 8

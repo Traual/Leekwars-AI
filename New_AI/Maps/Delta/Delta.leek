@@ -118,8 +118,27 @@ class DeltaClass {
         // Externe : même état de Me sur le même TERRAIN -> recherche entière sautée. BaseHash
         // dans la clé : le DOMAINE du min est mes cellules accessibles, qui dépendent des
         // obstacles (un allié qui apparaît ou bouge le réduit sans toucher seed ni walkHash).
-        var outerKey = rotSeed ^ addValueToBinHash(BaseHash, WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MeStats))
-        if (outerKey in ENTITY_DELTA_CACHE_FOR_ME) return ENTITY_DELTA_CACHE_FOR_ME[outerKey]
+        var walkFp = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MeStats)
+        var outerKey = rotSeed ^ addValueToBinHash(BaseHash, walkFp)
+        // ====== DIAGNOSTIC TEMPORAIRE #2 (canal survival/net) — À RETIRER (revert) ======
+        var diag2 = DIAG2_ON && MeStats.RELATIVE_SHIELD >= 45 && DIAG2_TRACES < DIAG2_MAX
+        if (diag2) {
+            DIAG2_TRACES++
+            debugW("[DIAG2] ***** minDeltaForMe — état REL " + MeStats.RELATIVE_SHIELD + " / ABS " + MeStats.ABSOLUTE_SHIELD + " / RES " + MeStats.RESISTANCE + " *****")
+            debugW("[DIAG2]   statsHash=" + statsHash + " | hfp=" + hfp + " | LIFE=" + MeStats.LIFE + " TOTAL_LIFE=" + MeStats.TOTAL_LIFE)
+            debugW("[DIAG2]   seed=" + seed + " | rotSeed=" + rotSeed)
+            debugW("[DIAG2]   fingerprint WalkCells=" + walkFp + " | BaseHash=" + BaseHash + " | outerKey=" + outerKey)
+            debugW("[DIAG2]   ENTITY_DELTA_CACHE_FOR_ME : " + ((outerKey in ENTITY_DELTA_CACHE_FOR_ME) ? ("HIT -> " + ENTITY_DELTA_CACHE_FOR_ME[outerKey]) : "MISS"))
+        }
+        if (outerKey in ENTITY_DELTA_CACHE_FOR_ME) {
+            var cachedMin = ENTITY_DELTA_CACHE_FOR_ME[outerKey]
+            // HIT externe : on recalcule le min SANS lire ni écrire les deux caches de Me
+            // (les caches Danger/Heal restent utilisés), uniquement pour comparer. La valeur
+            // retournée reste celle du cache : aucune décision n'est modifiée.
+            if (diag2) diagFreshMinCompare(MeStats, State, BaseHash, statsHash, hfp, healMap, rotSeed, cachedMin)
+            return cachedMin
+        }
+        // ==============================================================================
 
         var myWalkCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
         // Setup danger construit PARESSEUSEMENT au premier miss interne : sur un nœud
@@ -129,9 +148,11 @@ class DeltaClass {
         var castersInOrder = null
 
         var minDelta = MAX_VALUE
+        var diagMinCell = -1   // DIAGNOSTIC #2 — À RETIRER
         for (var cell: var mp in myWalkCells) {
             var innerKey = rotSeed ^ cell
             var delta = 0
+            var wasInnerHit = (innerKey in CELL_NETDAMAGE_FOR_ME_CACHE)   // DIAGNOSTIC #2 — À RETIRER
             if (innerKey in CELL_NETDAMAGE_FOR_ME_CACHE) {
                 delta = CELL_NETDAMAGE_FOR_ME_CACHE[innerKey]
             } else {
@@ -145,14 +166,64 @@ class DeltaClass {
                 delta = mapIsEmpty(dangerAtCell) ? 0 : netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
                 CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
             }
+            // ====== DIAGNOSTIC TEMPORAIRE #2 — À RETIRER (revert) ======
+            if (diag2) debugW("[DIAG2]   cellule " + cell + " | innerKey=" + (rotSeed ^ cell)
+                + " | CELL_NETDAMAGE_FOR_ME_CACHE " + (wasInnerHit ? "HIT" : "MISS") + " | net=" + delta)
+            // ===========================================================
             if (delta < minDelta) {
-                if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // imbattable
+                if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0
+                    if (diag2) debugW("[DIAG2]   MIN = 0 (imbattable) à la cellule " + cell + " -> MISS externe résolu, rien à comparer")
+                    return 0 }   // imbattable
                 minDelta = delta
+                if (diag2) diagMinCell = cell
             }
         }
         ENTITY_DELTA_CACHE_FOR_ME[outerKey] = minDelta
+        if (diag2) debugW("[DIAG2]   (MISS externe) MIN calculé = " + minDelta + " à la cellule " + diagMinCell + " -> valeur FRAÎCHE, rien à comparer")
         return minDelta
     }
+
+    // ====== DIAGNOSTIC TEMPORAIRE #2 (canal survival/net) — À RETIRER (revert) ======
+    /*
+     * Recalcule le minimum SANS lire ni écrire ENTITY_DELTA_CACHE_FOR_ME ni
+     * CELL_NETDAMAGE_FOR_ME_CACHE (les caches Danger/Heal restent utilisés, comme autorisé),
+     * puis compare au minimum servi par le cache externe et désigne le niveau fautif :
+     *   - outer stale : le min externe diffère alors que les nets frais par cellule sont bons ;
+     *   - inner stale : une même cellule rend une valeur différente du cache interne ;
+     *   - Danger stale : le recalcul frais reproduit lui aussi la mauvaise valeur.
+     * N'écrit RIEN et ne change AUCUNE décision.
+     */
+    static diagFreshMinCompare(MeStats, State, BaseHash, statsHash, hfp, healMap, rotSeed, cachedMin) {
+        var myWalkCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
+        var toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
+        var enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash, statsHash)
+        var castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
+        var freshMin = MAX_VALUE
+        var freshCell = -1
+        var innerMismatch = 0
+        var nCells = 0
+        for (var cell: var mp in myWalkCells) {
+            nCells++
+            var dangerAtCell = DangerClass.get(cell, State, MeStats, enemyWalkCells, toSkipMap, statsHash, castersInOrder)
+            var fresh = mapIsEmpty(dangerAtCell) ? 0 : netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
+            var innerKey = rotSeed ^ cell
+            if (innerKey in CELL_NETDAMAGE_FOR_ME_CACHE) {
+                var cachedCell = CELL_NETDAMAGE_FOR_ME_CACHE[innerKey]
+                if (cachedCell != fresh) {
+                    innerMismatch++
+                    if (innerMismatch <= 4) debugW("[DIAG2]   INNER STALE cellule " + cell + " : cache=" + cachedCell + " vs frais=" + fresh)
+                }
+            }
+            if (fresh < freshMin) { freshMin = fresh ; freshCell = cell }
+        }
+        debugW("[DIAG2]   >>> COMPARAISON : cachedMin=" + cachedMin + " | freshMin=" + freshMin + " (cellule " + freshCell + ", " + nCells + " cellules)")
+        if (cachedMin == freshMin) {
+            debugW("[DIAG2]   >>> VERDICT : les deux minima COÏNCIDENT" + (innerMismatch > 0 ? (" MAIS " + innerMismatch + " cellule(s) INNER STALE") : " — caches de Me cohérents ; si le net reste faux, la source est en amont (Danger/Heal)"))
+        } else {
+            debugW("[DIAG2]   >>> VERDICT : DIVERGENCE — " + (innerMismatch > 0 ? ("INNER STALE (" + innerMismatch + " cellules) : CELL_NETDAMAGE_FOR_ME_CACHE sert des nets périmés") : "OUTER STALE : ENTITY_DELTA_CACHE_FOR_ME sert un minimum périmé alors que les nets par cellule sont bons"))
+        }
+    }
+    // ==============================================================================
 
     /*
      * Net d'une entité sur 1 round À `cell` : le danger continue de rouler (l'overkill

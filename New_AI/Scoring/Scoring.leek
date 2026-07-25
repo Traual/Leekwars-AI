@@ -34,12 +34,29 @@ class ScoringClass {
      */
     static buildTermsMap(State, MySide, BaseHash, contextBySide, hfpBySide, poisonKey) {
         BenchOps.Start("Scoring")
+        // ====== DIAGNOSTIC TEMPORAIRE #2 — À RETIRER (revert) ======
+        // Armé une fois par construction de racine : tour 6 d'ArkansasBlack uniquement.
+        DIAG2_ON = (getTurn() == 6 && getName(Me) == "ArkansasBlack")
+        // ===========================================================
         var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash, contextBySide, hfpBySide)
         var terms = [: ]
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
             terms[e] = sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e], State, poisonKey) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
+            // ====== DIAGNOSTIC TEMPORAIRE #2 — À RETIRER (revert) ======
+            // Terme de Me à la RACINE (état AVANT Libération) : c'est la borne de référence.
+            if (DIAG2_ON && e == Me) {
+                var dnet = netDamageMap[e]
+                debugW("[DIAG2] ===== RACINE (état AVANT Libération) — terme de Me =====")
+                debugW("[DIAG2]   REL=" + stat.RELATIVE_SHIELD + " ABS=" + stat.ABSOLUTE_SHIELD + " RES=" + stat.RESISTANCE + " LIFE=" + stat.LIFE + " TOTAL_LIFE=" + stat.TOTAL_LIFE)
+                debugW("[DIAG2]   net=" + dnet)
+                debugW("[DIAG2]   survival=" + survivalValue(stat, dnet, State, poisonKey))
+                debugW("[DIAG2]   capability=" + ImportanceClass.capability(stat) + "   (borne attendue >= 79.4976)")
+                debugW("[DIAG2]   importance=" + ImportanceClass.get(stat) + " | drDeterrence=" + drDeterrence(stat, dnet, State))
+                debugW("[DIAG2]   TERME FINAL=" + terms[e])
+            }
+            // ===========================================================
         }
         BenchOps.Stop("Scoring")
         return terms
