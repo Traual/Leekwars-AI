@@ -86,7 +86,9 @@ class NodeClass {
 		ThisActionStats[Me].TP -= Cost
 		if (Info.IS_WEAPON) ThisActionStats[Me].WEAPON = Item
 		// ============ DIAGNOSTIC TEMPORAIRE Libération — À RETIRER (revert) ============
-		// Arme la trace au PREMIER cast simulé de Libération visant ma propre cellule.
+		// Arme la trace sur un cast simulé de Libération visant ma propre cellule. Le
+		// désarmement n'a lieu QUE si le ledger était non vide (cas reproductible :
+		// ArkansasBlack après Forteresse/Solidification/Mur) — sinon on continue de chercher.
 		if (DIAG_LIB_ARMED && Item == CHIP_LIBERATION && To == From) {
 			DIAG_LIB_ACTIVE = true
 			DIAG_LIB_BEFORE = diagSnapshotOfMe(ThisActionStats[Me])
@@ -95,7 +97,14 @@ class NodeClass {
 		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash, clonedIds, Act.RESURRECT_ID)
 		// ============ DIAGNOSTIC TEMPORAIRE Libération — À RETIRER (revert) ============
 		if (DIAG_LIB_ACTIVE && DIAG_LIB_BEFORE != null) {
-			diagDumpDebuff(DIAG_LIB_BEFORE, diagSnapshotOfMe(ThisActionStats[Me]), ThisActionStats[Me])
+			var diagLedgerCount = count(DIAG_LIB_BEFORE[16])
+			if (diagLedgerCount == 0) {
+				// Rien à réduire : cas sans intérêt, on ne trace pas et on reste armé.
+				DIAG_LIB_ACTIVE = false
+			} else {
+				debugW("[DIAG-LIB] (lignes de ledger avant le débuff : " + diagLedgerCount + ")")
+				diagDumpDebuff(DIAG_LIB_BEFORE, diagSnapshotOfMe(ThisActionStats[Me]), ThisActionStats[Me])
+			}
 			DIAG_LIB_BEFORE = null
 		}
 		// ==============================================================================
