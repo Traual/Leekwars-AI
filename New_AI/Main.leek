@@ -10,3 +10,6 @@ Preload.InitStateClass()
 BenchOps.Reset()
 new Play()
 BenchOps.Dump()
+// ====== MESURE TEMPORAIRE du groupement Danger — À RETIRER après la mesure ======
+debugW("DangerGroups missingCells=" + DGRP_MISSING + " cachedDanger=" + DGRP_CACHED + " groups=" + DGRP_GROUPS + " largestGroup=" + DGRP_LARGEST)
+// ================================================================================

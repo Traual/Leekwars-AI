@@ -122,29 +122,46 @@ class DeltaClass {
         if (outerKey in ENTITY_DELTA_CACHE_FOR_ME) return ENTITY_DELTA_CACHE_FOR_ME[outerKey]
 
         var myWalkCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
-        // Setup danger construit PARESSEUSEMENT au premier miss interne : sur un nœud
-        // entièrement chaud, tout le setup est sauté.
-        var toSkipMap = null
-        var enemyWalkCells = null
-        var castersInOrder = null
 
+        // Passe 1 : consommer les cellules déjà nettes dans l'ordre historique. Sur un nœud
+        // entièrement chaud, aucun setup danger et aucun groupement ne sont construits.
         var minDelta = MAX_VALUE
+        var missCells = []
         for (var cell: var mp in myWalkCells) {
             var innerKey = rotSeed ^ cell
-            var delta = 0
             if (innerKey in CELL_NETDAMAGE_FOR_ME_CACHE) {
-                delta = CELL_NETDAMAGE_FOR_ME_CACHE[innerKey]
-            } else {
-                if (toSkipMap == null) {
-                    toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
-                    enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash, statsHash)
-                    castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
+                var delta = CELL_NETDAMAGE_FOR_ME_CACHE[innerKey]
+                if (delta < minDelta) {
+                    if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // imbattable
+                    minDelta = delta
                 }
-                var dangerAtCell = DangerClass.get(cell, State, MeStats, enemyWalkCells, toSkipMap, statsHash, castersInOrder)
-                // Danger vide -> delta 0 direct (déclenche l'early exit "imbattable" dessous).
-                delta = mapIsEmpty(dangerAtCell) ? 0 : netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
-                CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
+            } else {
+                push(missCells, cell)
             }
+        }
+        var nMiss = count(missCells)
+        if (nMiss == 0) {
+            ENTITY_DELTA_CACHE_FOR_ME[outerKey] = minDelta
+            return minDelta
+        }
+
+        // Passe 2 : setup + groupement des seules cellules en miss. Les cellules à couverture
+        // offensive identique partageront une unique chaîne de vulnés.
+        var toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
+        var enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash, statsHash)
+        var castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
+        var groupByCell = DangerClass.getForCells(missCells, State, MeStats, enemyWalkCells, toSkipMap, statsHash, castersInOrder)[0]
+
+        // Passe 3 : le net et le heal restent PAR CELLULE (seul le danger est partagé), dans
+        // l'ordre historique de myWalkCells — même minimum, mêmes additions dans netDamage.
+        for (var i = 0; i < nMiss; i++) {
+            var cell = missCells[i]
+            // Chaîne déroulée au premier accès au groupe : l'early exit ci-dessous ne paie
+            // jamais les groupes qu'il n'atteint pas.
+            var dangerAtCell = DangerClass.dangerOfGroup(groupByCell[cell], State, MeStats)
+            // Danger vide -> delta 0 direct (déclenche l'early exit "imbattable" dessous).
+            var delta = mapIsEmpty(dangerAtCell) ? 0 : netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
+            CELL_NETDAMAGE_FOR_ME_CACHE[rotSeed ^ cell] = delta
             if (delta < minDelta) {
                 if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // imbattable
                 minDelta = delta

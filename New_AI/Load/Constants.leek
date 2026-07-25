@@ -115,3 +115,12 @@ global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
 // gloutonne + early-exit des chaînes). Attrape les résidus float des chips type Antidote /
 // Libération / Rémission quand aucun effet pertinent ne s'applique.
 global BFS_DELTA_EPSILON = 0.01
+
+// ====== MESURE TEMPORAIRE du groupement Danger — À RETIRER après la mesure ======
+// Compteurs de tour (les globals repartent à zéro à chaque exécution de l'IA), résumés en
+// UNE ligne par tour dans Main.leek.
+global DGRP_MISSING = 0
+global DGRP_CACHED = 0
+global DGRP_GROUPS = 0
+global DGRP_LARGEST = 0
+// ================================================================================

@@ -82,28 +82,55 @@ class DangerClass {
 	 * Danger par caster sur UNE cellule : pour chaque caster adverse (en ordre de tour), son
 	 * meilleur combo contre la cible telle que les casters PRÉCÉDENTS l'ont laissée — les
 	 * vulnés d'un caster amplifient les suivants (chaîne cross-casters).
-	 * chainTarget n'est JAMAIS muté en place (la machinerie de combo clone avant d'écrire) ;
-	 * les endStates viennent du cache de combo — READ-ONLY par contrat.
+	 * Assemble la couverture de la cellule puis délègue le déroulé à evalChainFromCoverage,
+	 * source unique partagée avec le chemin groupé.
 	 *
 	 * @return [casterId -> dégâts]
 	 */
 	static get(Cell, State, TargetStats, EnemyWalkCells, ToSkipMap, StatsHashForDanger, CastersInOrder) {
-		// (id << 10 | cellule) : même raison que getEntityDanger — l'ordre des casters (donc
-		// la chaîne de vulnés) dépend de l'IDENTITÉ de la cible, pas que de ses stats.
-		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), (TargetStats.ID << 10) | Cell)
+		var ThisHash = cellCacheKey(StatsHashForDanger, TargetStats.ID, Cell)
 		if (ThisHash in CELL_DANGER_GET_CACHE) return CELL_DANGER_GET_CACHE[ThisHash]
-		var _final = [: ]   // par caster, pas sommé : le net séquence par ordre de tour
-		// La cible n'est jamais mutée : seuls ses deux shields COURANTS évoluent le long de la
-		// chaîne, en scalaires. TargetStats reste lu en métadonnées (LIFE/SIDE/type/Antidote).
-		var chainAbs = TargetStats.ABSOLUTE_SHIELD
-		var chainRel = TargetStats.RELATIVE_SHIELD
+		// Couverture ordonnée de la cellule : la cellule ne sert QU'À sélectionner les maps
+		// d'items, elle n'est plus lue ensuite (vérifié sur toute la chaîne : combo, hash de
+		// combo, glouton, EntityDanger et vulnés ne prennent que des items/stats/shields).
+		var Coverage = []
 		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
-			var CasterStats = State[Caster]
-			var MapCellItemAoe = getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster])
-			// Caster incapable d'atteindre cette cellule : aucun combo ni map vide alloués.
+			var MapCellItemAoe = getMapCellItemAoe(State[Caster], EnemyWalkCells[Caster])
+			// Caster incapable d'atteindre cette cellule : aucune paire, aucun combo.
 			if (!(Cell in MapCellItemAoe)) continue
-			var combo = getComboFromItemAoe(MapCellItemAoe[Cell], CasterStats, TargetStats, chainAbs, chainRel)
+			push(Coverage, Caster)
+			push(Coverage, MapCellItemAoe[Cell])
+		}
+		var _final = evalChainFromCoverage(Coverage, State, TargetStats)
+		CELL_DANGER_GET_CACHE[ThisHash] = _final
+		return _final
+	}
+
+	/* Clé de CELL_DANGER_GET_CACHE — SOURCE UNIQUE (get et le chemin groupé la partagent).
+	 * (id << 10 | cellule) : même raison que getEntityDanger — l'ordre des casters (donc la
+	 * chaîne de vulnés) dépend de l'IDENTITÉ de la cible, pas que de ses stats. */
+	static cellCacheKey(StatsHashForDanger, TargetId, Cell) {
+		return addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), (TargetId << 10) | Cell)
+	}
+
+	/*
+	 * Déroulé de la chaîne de vulnés pour une couverture ordonnée [casterId, itemMap, ...] :
+	 * SOURCE UNIQUE, appelée aussi bien par get (couverture d'une cellule) que par le chemin
+	 * groupé (couverture partagée par plusieurs cellules). La cible n'est jamais mutée : seuls
+	 * ses deux shields COURANTS évoluent le long de la chaîne, en scalaires. TargetStats reste
+	 * lu en métadonnées (LIFE/SIDE/type/Antidote).
+	 *
+	 * @return [casterId -> dégâts], pas sommé : le net séquence par ordre de tour
+	 */
+	static evalChainFromCoverage(Coverage, State, TargetStats) {
+		var _final = [: ]
+		var chainAbs = TargetStats.ABSOLUTE_SHIELD
+		var chainRel = TargetStats.RELATIVE_SHIELD
+		var n = count(Coverage)
+		for (var i = 0; i < n; i += 2) {
+			var Caster = Coverage[i]
+			var combo = getComboFromItemAoe(Coverage[i + 1], State[Caster], TargetStats, chainAbs, chainRel)
 			if (combo[0] > 0) {
 				// Le crit est appliqué EN PROFONDEUR (formules d'EntityDanger avant les shields + vulnés
 				// de chaîne critées), pas ici : (d − ABS)·1.3 ≠ d·1.3 − ABS.
@@ -112,8 +139,153 @@ class DangerClass {
 				chainRel = combo[2]
 			}
 		}
-		CELL_DANGER_GET_CACHE[ThisHash] = _final
 		return _final
+	}
+
+	/*
+	 * Danger de PLUSIEURS cellules d'un coup (recherche de fuite de Me) : les cellules dont la
+	 * couverture offensive est EXACTEMENT identique ne déroulent qu'une seule chaîne.
+	 * Construction caster-first : une seule sélection de map d'AoE par caster pour toutes les
+	 * cellules, au lieu d'une par couple (caster, cellule).
+	 *
+	 * @param MissCells cellules à évaluer, dans l'ordre de l'appelant
+	 * @return [ [cellule -> groupe], groupes ] — le groupe porte ses compteurs (cellules,
+	 *         casters, entrées item de la représentante) pour le futur lot de priorité.
+	 */
+	static getForCells(MissCells, State, TargetStats, EnemyWalkCells, ToSkipMap, StatsHashForDanger, CastersInOrder) {
+		var TargetId = TargetStats.ID
+		var groupByCell = [: ]
+		var groups = []
+		var pending = []
+		var pendingKeys = []
+		var cachedCount = 0
+		for (var cell in MissCells) {
+			var key = cellCacheKey(StatsHashForDanger, TargetId, cell)
+			if (key in CELL_DANGER_GET_CACHE) {
+				// Hit existant : traité en singleton déjà évalué, jamais regroupé (on ne perd
+				// pas un hit pour tenter une fusion).
+				var hitGroup = new DangerGroupClass([], 0, 0)
+				hitGroup.Danger = CELL_DANGER_GET_CACHE[key]
+				push(hitGroup.Cells, cell)
+				groupByCell[cell] = hitGroup
+				cachedCount++
+			} else {
+				push(pending, cell)
+				push(pendingKeys, key)
+			}
+		}
+		var nP = count(pending)
+		if (nP > 0) {
+			var coverages = []
+			var hashes = []
+			var itemCounts = []
+			for (var i = 0; i < nP; i++) {
+				push(coverages, [])
+				push(hashes, 0)
+				push(itemCounts, 0)
+			}
+			for (var Caster in CastersInOrder) {
+				if (Caster in ToSkipMap) continue
+				var MapCellItemAoe = getMapCellItemAoe(State[Caster], EnemyWalkCells[Caster])
+				for (var i = 0; i < nP; i++) {
+					var cell = pending[i]
+					if (!(cell in MapCellItemAoe)) continue
+					var itemMap = MapCellItemAoe[cell]
+					var cov = coverages[i]
+					push(cov, Caster)
+					push(cov, itemMap)
+					// Fold ORDONNÉ (casterId, contenu de la map) : présélection de bucket
+					// uniquement, jamais un critère de fusion.
+					hashes[i] = addValueToBinHash(addValueToBinHash(hashes[i], Caster), getHashFromItemAoeMap(itemMap))
+					itemCounts[i] += mapSize(itemMap)
+				}
+			}
+			var buckets = [: ]
+			for (var i = 0; i < nP; i++) {
+				var cov = coverages[i]
+				var h = hashes[i]
+				var bucket
+				if (h in buckets) {
+					bucket = buckets[h]
+				} else {
+					bucket = []
+					buckets[h] = bucket
+				}
+				var group = null
+				for (var candidate in bucket) {
+					// Une collision de hash n'ajoute qu'une comparaison : deux couvertures
+					// différentes ne fusionnent jamais.
+					if (sameCoverage(candidate.Coverage, cov)) {
+						group = candidate
+						break
+					}
+				}
+				if (group == null) {
+					group = new DangerGroupClass(cov, count(cov) >> 1, itemCounts[i])
+					push(bucket, group)
+					push(groups, group)
+				}
+				push(group.Cells, pending[i])
+				push(group.Keys, pendingKeys[i])
+				groupByCell[pending[i]] = group
+			}
+		}
+		// ====== MESURE TEMPORAIRE — À RETIRER ======
+		DGRP_MISSING += count(MissCells)
+		DGRP_CACHED += cachedCount
+		DGRP_GROUPS += count(groups)
+		for (var g in groups) {
+			var sz = count(g.Cells)
+			if (sz > DGRP_LARGEST) DGRP_LARGEST = sz
+		}
+		// ===========================================
+		return [groupByCell, groups]
+	}
+
+	/*
+	 * Danger d'un groupe : la chaîne n'est déroulée qu'au PREMIER accès (la recherche de fuite
+	 * peut sortir sur un zéro avant d'avoir touché tous les groupes) puis la map obtenue est
+	 * partagée en LECTURE SEULE par toutes les cellules du groupe — netDamage ne fait que la
+	 * lire, comme toute entrée de CELL_DANGER_GET_CACHE.
+	 */
+	static dangerOfGroup(Group, State, TargetStats) {
+		if (Group.Danger != null) return Group.Danger
+		var dangerMap = evalChainFromCoverage(Group.Coverage, State, TargetStats)
+		Group.Danger = dangerMap
+		// Toutes les clés historiques du groupe sont renseignées, une cellule par une.
+		var keys = Group.Keys
+		var n = count(keys)
+		for (var i = 0; i < n; i++) {
+			CELL_DANGER_GET_CACHE[keys[i]] = dangerMap
+		}
+		return dangerMap
+	}
+
+	/* Deux couvertures identiques : mêmes casters, dans le MÊME ordre, avec des maps d'items
+	 * structurellement égales. L'ORDRE D'INSERTION des maps est préservé sans le comparer :
+	 * buildMapCellItemAoe insère dans l'ordre de la liste d'items DU CASTER, donc deux cellules
+	 * d'un même caster ayant le même jeu d'items ont forcément le même ordre — et la
+	 * comparaison épingle déjà le même caster à la même position. Le fold de bucket étant
+	 * lui-même ordonné, deux ordres différents ne se rencontrent de toute façon jamais. */
+	static sameCoverage(a, b) {
+		var n = count(a)
+		if (n != count(b)) return false
+		for (var i = 0; i < n; i += 2) {
+			if (a[i] != b[i]) return false
+			if (!sameItemAoeMap(a[i + 1], b[i + 1])) return false
+		}
+		return true
+	}
+
+	/* Même taille, mêmes items, même distance d'AoE pour chaque item (null explicite : un item
+	 * absent ne doit jamais s'égaler à une distance 0). */
+	static sameItemAoeMap(a, b) {
+		if (mapSize(a) != mapSize(b)) return false
+		for (var item: var dist in a) {
+			var other = b[item]
+			if (other == null || other != dist) return false
+		}
+		return true
 	}
 
 	/*
@@ -478,5 +650,27 @@ class DangerClass {
 		}
 		HAVE_AN_HITTABLE_ITEM_CACHE[CasterID] = false
 		return false
+	}
+}
+
+/*
+ * Cellules à couverture offensive EXACTEMENT identique : une seule chaîne de vulnés déroulée
+ * pour tout le groupe, une map de danger partagée en lecture seule. Les compteurs sont
+ * remplis pendant la construction de la couverture (le lot de priorité les lira sans rescan).
+ */
+class DangerGroupClass {
+	Coverage      // [casterId, itemMap, ...] ordonné (ordre de tour des casters)
+	Cells         // cellules du groupe, dans l'ordre de l'appelant
+	Keys          // clés CELL_DANGER_GET_CACHE alignées sur Cells (vide pour un hit existant)
+	CasterCount   // casters capables d'atteindre ces cellules
+	ItemCount     // entrées item totales atteignant la cellule représentante
+	Danger        // [casterId -> dégâts], null tant que la chaîne n'est pas déroulée
+	constructor(ThisCoverage, ThisCasterCount, ThisItemCount) {
+		this.Coverage = ThisCoverage
+		this.Cells = []
+		this.Keys = []
+		this.CasterCount = ThisCasterCount
+		this.ItemCount = ThisItemCount
+		this.Danger = null
 	}
 }
