@@ -115,3 +115,14 @@ global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
 // gloutonne + early-exit des chaînes). Attrape les résidus float des chips type Antidote /
 // Libération / Rémission quand aucun effet pertinent ne s'applique.
 global BFS_DELTA_EPSILON = 0.01
+
+// ====== MESURE TEMPORAIRE des dépendances caster -> cibles — À RETIRER après la mesure ======
+// Compteurs de tour, remis à zéro par ReloadCacheNewTurn (la VM est PERSISTANTE). Ils comptent
+// des ENTITÉS UNIQUES par nœud (chaque entité n'est visitée qu'une fois par la boucle).
+global DDEP_SIDE_DIRTY = 0      // termes qu'aurait relus l'ancien déclencheur par side
+global DDEP_EXACT_DIRTY = 0     // ... que la dépendance exacte retient quand même
+global DDEP_SKIPPED = 0         // ... qu'elle épargne
+global DDEP_FIXED_TESTS = 0     // tests de dépendance sur une cible immobile
+global DDEP_ME_TESTS = 0        // tests sur le domaine de fuite de Me
+global DDEP_ME_DIRTY = 0        // ... concluant à une intersection
+// ============================================================================================

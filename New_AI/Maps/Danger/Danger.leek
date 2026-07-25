@@ -149,6 +149,19 @@ class DangerClass {
 	}
 
 	/*
+	 * Couverture offensive d'un caster : [cellule cible -> ItemAoeMap], EXACTEMENT celle que
+	 * consomme le danger (mêmes caches, même approximation NoEntities). Sert au scoring à
+	 * savoir quelles cibles dépendent réellement de ce caster.
+	 * null quand le caster ne menace personne : absent, Me (toujours exclu du danger), mort,
+	 * ou sans item menaçant. La map rendue vient de MAP_CELL_ITEM_AOE_CACHE — READ-ONLY.
+	 */
+	static offensiveCoverageOf(CasterStats, CasterId) {
+		if (CasterStats == null || CasterId == Me || CasterStats.LIFE <= 0) return null
+		if (!HaveAnHittableItem(CasterStats, CasterId)) return null
+		return getMapCellItemAoe(CasterStats, WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(CasterStats), mapCellItemAoeKeyOf(CasterStats))
+	}
+
+	/*
 	 * Maps d'AoE des casters menaçants, à plat et dans l'ordre de tour :
 	 * [casterId, MapCellItemAoe, ...]. Construite UNE fois par recherche de fuite —
 	 * getMapCellItemAoe n'est donc appelée qu'une fois par caster, quel que soit le nombre
