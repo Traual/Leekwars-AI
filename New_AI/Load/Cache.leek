@@ -5,16 +5,9 @@
 include("../includes.leek")
 
 function ReloadCacheNewTurn() {
-    // ====== MESURE TEMPORAIRE du cache par couverture — À RETIRER après la mesure ======
-    DCOV_HITS = 0
-    DCOV_MISSES = 0
-    DCOV_CANDIDATE_CHECKS = 0
-    // ==================================================================================
-
     TARGETABLECACHE = [: ]
     MAP_CELL_ITEM_AOE_CACHE = [: ]
     DANGER_ITEM_AOE_HASH_CACHE = [: ]
-    DANGER_BY_COVERAGE_CACHE = [: ]
     CELL_DANGER_GET_CACHE = [: ]
     COMBO_FROM_ITEM_AOE_CACHE = [: ]
     HAVE_AN_HITTABLE_ITEM_CACHE = [: ]
@@ -158,11 +151,6 @@ global MAP_CELL_ITEM_AOE_CACHE = [: ]
 // Reset de tour OBLIGATOIRE, comme la map dont il décrit le contenu : l'inventaire
 // disponible est filtré par cooldown au moment du calcul.
 global DANGER_ITEM_AOE_HASH_CACHE = [: ]
-
-// Chaînes de vulnés déjà déroulées, clé = hash (contexte, cible, couverture) -> entrées
-// revérifiées une à une (le hash ne prouve rien). Reset de tour OBLIGATOIRE : les
-// couvertures qu'il retient pointent vers MAP_CELL_ITEM_AOE_CACHE, de même durée de vie.
-global DANGER_BY_COVERAGE_CACHE = [: ]
 global CELL_DANGER_GET_CACHE = [: ]
 global COMBO_FROM_ITEM_AOE_CACHE = [: ]
 global COMBO_DAMAGE_CACHE = [: ]

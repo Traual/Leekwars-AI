@@ -152,6 +152,7 @@ class DeltaClass {
         var meId = MeStats.ID
         var castersInOrder = null
         var casterMaps = null
+        var buckets = null
         for (var i = 0; i < nMiss; i++) {
             var cell = missCells[i]
             var dangerKey = DangerClass.cellCacheKey(statsHash, meId, cell)
@@ -165,8 +166,9 @@ class DeltaClass {
                     var enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash, statsHash)
                     if (castersInOrder == null) castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
                     casterMaps = DangerClass.buildCasterMaps(State, enemyWalkCells, toSkipMap, castersInOrder)
+                    buckets = [: ]   // couvertures rencontrées, locales à cette recherche de fuite
                 }
-                dangerAtCell = DangerClass.dangerOfCellCold(cell, dangerKey, State, MeStats, statsHash, casterMaps)
+                dangerAtCell = DangerClass.dangerOfCellCold(cell, dangerKey, State, MeStats, casterMaps, buckets)
             }
             // Danger vide -> delta 0 direct, sans même l'ordre de tour (déclenche l'early exit
             // "imbattable" dessous).
