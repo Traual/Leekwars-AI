@@ -130,7 +130,10 @@ global BFS_DELTA_EPSILON = 0.01
 // « capability seule » si celui-ci existait.
 global SCOMP_LOCAL_TOTAL = 0      // termes localement sales
 global SCOMP_CAP_ONLY_RAW = 0     // ... dont capability seule, avant les triggers globaux
-global SCOMP_CAP_ONLY_USABLE = 0  // ... et qu'aucun trigger global ne repasse en complet
+global SCOMP_CAP_ONLY_USABLE = 0  // ... et qu'aucun trigger n'invalide, borne BASSE certaine
+global SCOMP_CAP_DANGER_UNKNOWN = 0 // ... indécidables : un caster est sale, mais le sonder
+                                  // construirait des couvertures hors du chemin historique.
+                                  // usable + unknown = borne HAUTE.
 global SCOMP_FULL = 0             // termes locaux exigeant déjà le chemin complet
 global SCOMP_GLOBAL_ONLY = 0      // termes relus par un trigger global uniquement
 // ===========================================================================================

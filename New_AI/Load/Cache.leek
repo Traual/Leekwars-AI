@@ -9,6 +9,7 @@ function ReloadCacheNewTurn() {
     SCOMP_LOCAL_TOTAL = 0
     SCOMP_CAP_ONLY_RAW = 0
     SCOMP_CAP_ONLY_USABLE = 0
+    SCOMP_CAP_DANGER_UNKNOWN = 0
     SCOMP_FULL = 0
     SCOMP_GLOBAL_ONLY = 0
     // ===========================================================================================

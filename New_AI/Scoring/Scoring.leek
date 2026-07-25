@@ -147,20 +147,21 @@ class ScoringClass {
                 if (e in node.LOCAL_TERM_DIRTY) {
                     // ====== DIAGNOSTIC TEMPORAIRE ======
                     // Le termDelta appelé reste EXACTEMENT l'historique, au même endroit et
-                    // dans le même ordre : on regarde seulement si un trigger global aurait
-                    // de toute façon exigé le chemin complet.
+                    // dans le même ordre. Le diagnostic ne teste QUE les triggers qui ne
+                    // construisent rien : sonder la dépendance danger ici bâtirait des
+                    // couvertures et des WalkCells absentes du chemin historique, donc
+                    // réchaufferait les caches que le profil mesure.
                     SCOMP_LOCAL_TOTAL++
                     if (node.LOCAL_TERM_DIRTY[e] == TERM_DIRTY_CAPABILITY) {
                         SCOMP_CAP_ONLY_RAW++
                         var forced = (healChanged != null && stat.SIDE in healChanged)
                             || (coefChanged && stat.POISON_OVER_TIME > 0)
-                        if (!forced && hasDirtyCasters) {
-                            if (casterDeps == null) casterDeps = buildCasterDeps(node, State)
-                            forced = (e == Me)
-                                ? dangerAffectsCells(casterDeps, stat.SIDE, WalkCellsClass.getMaxLayer(State, Me, node.BASE_HASH))
-                                : dangerAffectsCell(casterDeps, stat.SIDE, stat.CELL)
+                        if (!forced) {
+                            // Sans caster sale, l'occasion est CERTAINE ; avec, elle est
+                            // indécidable sans calculer — d'où la borne haute séparée.
+                            if (hasDirtyCasters) SCOMP_CAP_DANGER_UNKNOWN++
+                            else SCOMP_CAP_ONLY_USABLE++
                         }
-                        if (!forced) SCOMP_CAP_ONLY_USABLE++
                     } else {
                         SCOMP_FULL++
                     }
