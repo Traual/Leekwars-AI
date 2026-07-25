@@ -178,7 +178,7 @@ class ActionSuite {
 
 			if (Workspace == null) Workspace = clone(State, 1)
 			var candidate = NodeClass.ActionToNodeInTree(act, Workspace, from, MyWalkCells, cost, Info, item, act.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE)
-			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, Workspace, ParentScore, Parent, MySide, Parent.POISON_KEY)
+			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, Workspace, ParentScore, Parent, Parent.HFP_BY_SIDE, MySide, Parent.POISON_KEY)
 			StateClass.restoreWorkspace(Workspace, candidate.CLONED)
 			candidate.CLONED = null
 			var deltaFromParent = candidateScore - ParentScore
@@ -216,7 +216,7 @@ class ActionSuite {
 			var Item = act.Item
 			if (Workspace == null) Workspace = clone(State, 1)
 			var node = NodeClass.ActionToNodeInTree(act, Workspace, act.From, MyWalkCells, pair[1], ITEMINFO[Item], Item, act.To, BaseHash, null, ParentTermNode, ParentContext, ParentHfp)
-			var nodeScore = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, ParentTermNode, MySide, ParentPoisonKey)
+			var nodeScore = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, ParentTermNode, ParentHfp, MySide, ParentPoisonKey)
 			// Scoring fait : le workspace redevient le State parent pour le candidat suivant,
 			// et CLONED est libéré (STATE_PATCH porte désormais les entités modifiées).
 			StateClass.restoreWorkspace(Workspace, node.CLONED)
