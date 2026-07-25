@@ -144,8 +144,6 @@ class DeltaClass {
             ENTITY_DELTA_CACHE_FOR_ME[outerKey] = minDelta
             return minDelta
         }
-        DGRP_NETMISSES += nMiss   // MESURE TEMPORAIRE
-
         // Passe 2 : cellule par cellule dans l'ordre historique de myWalkCells. TOUT le setup
         // est paresseux — l'ordre de tour n'est construit que si un danger non vide doit être
         // séquencé, les maps par caster qu'au premier vrai miss de CELL_DANGER_GET_CACHE. Le
@@ -157,12 +155,10 @@ class DeltaClass {
         var buckets = null
         for (var i = 0; i < nMiss; i++) {
             var cell = missCells[i]
-            DGRP_VISITED++   // MESURE TEMPORAIRE
             var dangerKey = DangerClass.cellCacheKey(statsHash, meId, cell)
             var dangerAtCell
             if (dangerKey in CELL_DANGER_GET_CACHE) {
-                DGRP_CACHED++   // MESURE TEMPORAIRE
-                // Hit : ni couverture, ni métadonnées, ni maps de casters.
+                // Hit : ni couverture, ni hash de contenu, ni maps de casters.
                 dangerAtCell = CELL_DANGER_GET_CACHE[dangerKey]
             } else {
                 if (casterMaps == null) {

@@ -105,7 +105,7 @@ class DangerClass {
 			push(Coverage, Caster)
 			push(Coverage, itemMap)
 			// Hash de contenu calculé UNE fois et transporté jusqu'au combo.
-			push(Coverage, itemAoeMetaOf(mapKey, Cell, itemMap)[0])
+			push(Coverage, itemAoeHashOf(mapKey, Cell, itemMap))
 		}
 		var _final = evalChainFromCoverage(Coverage, State, TargetStats)
 		CELL_DANGER_GET_CACHE[ThisHash] = _final
@@ -181,7 +181,6 @@ class DangerClass {
 	static dangerOfCellCold(Cell, key, State, TargetStats, CasterMaps, Buckets) {
 		var Coverage = []
 		var hash = 0
-		var itemCount = 0
 		var n = count(CasterMaps)
 		for (var i = 0; i < n; i += 3) {
 			var MapCellItemAoe = CasterMaps[i + 1]
@@ -190,15 +189,13 @@ class DangerClass {
 			var itemMap = MapCellItemAoe[Cell]
 			var Caster = CasterMaps[i]
 			// Contenu itéré une seule fois par (map, cellule) de tout le tour.
-			var meta = itemAoeMetaOf(CasterMaps[i + 2], Cell, itemMap)
-			var contentHash = meta[0]
+			var contentHash = itemAoeHashOf(CasterMaps[i + 2], Cell, itemMap)
 			push(Coverage, Caster)
 			push(Coverage, itemMap)
 			push(Coverage, contentHash)
 			// Fold ORDONNÉ (casterId, contenu de la map) : présélection de bucket uniquement,
 			// jamais un critère de fusion.
 			hash = addValueToBinHash(addValueToBinHash(hash, Caster), contentHash)
-			itemCount += meta[1]
 		}
 		var bucket
 		if (hash in Buckets) {
@@ -219,14 +216,9 @@ class DangerClass {
 		if (group == null) {
 			// Couverture inédite : chaîne déroulée immédiatement, une seule fois pour toutes
 			// les cellules qui la partageront ensuite.
-			group = new DangerGroupClass(Coverage, count(Coverage) / 3, itemCount, evalChainFromCoverage(Coverage, State, TargetStats))
+			group = new DangerGroupClass(Coverage, evalChainFromCoverage(Coverage, State, TargetStats))
 			push(bucket, group)
-			DGRP_NEWGROUPS++   // MESURE TEMPORAIRE
-		} else {
-			DGRP_GROUPHITS++   // MESURE TEMPORAIRE
 		}
-		group.CellCount = group.CellCount + 1
-		if (group.CellCount > DGRP_LARGEST) DGRP_LARGEST = group.CellCount   // MESURE TEMPORAIRE
 		CELL_DANGER_GET_CACHE[key] = group.Danger
 		return group.Danger
 	}
@@ -275,7 +267,7 @@ class DangerClass {
 	 *
 	 * @param ItemAoeMap [item -> minAoeDist] des items qui atteignent la cellule
 	 * @param HashedItemAoeMap hash de contenu d'ItemAoeMap, mémorisé par l'appelant
-	 *        (itemAoeMetaOf) — le contenu n'est donc jamais rescanné ici, même sur un hit
+	 *        (itemAoeHashOf) — le contenu n'est donc jamais rescanné ici, même sur un hit
 	 * @param TargetStats métadonnées de la cible (LIFE/SIDE/IS_SUMMON/Antidote) — JAMAIS muté
 	 * @param curAbs/curRel shields COURANTS de la cible (scalaires portés par la chaîne)
 	 * @return l'ENTRÉE de cache [dégâtsCombo, absFinal, relFinal] — que des scalaires, aucune
@@ -496,8 +488,8 @@ class DangerClass {
 	static MOVEMENT_KEY_MASK = 2097151   // (1 << 21) - 1 : isole movementKey dans la clé
 
 	/* Clé de MAP_CELL_ITEM_AOE_CACHE — SOURCE UNIQUE : buildCasterMaps s'en sert aussi comme
-	 * préfixe EXACT des clés de DANGER_ITEM_AOE_META_CACHE (une métadonnée ne doit jamais
-	 * survivre au changement de map qui l'a produite). */
+	 * préfixe EXACT des clés de DANGER_ITEM_AOE_HASH_CACHE (un hash de contenu ne doit jamais
+	 * survivre au changement de map qui l'a produit). */
 	static mapCellItemAoeKeyOf(EntityStats) {
 		var usesJumpLayer = WalkCellsClass.canJumpNextTurn(EntityStats) ? 1 : 0
 		// movementKey (21 bits, sans ID) décrit exactement la map NoEntities reçue :
@@ -506,17 +498,17 @@ class DangerClass {
 	}
 
 	/*
-	 * [hash de contenu, nombre d'items] d'une ItemAoeMap, mémorisé par (map, cellule) : le
-	 * contenu n'est donc itéré qu'UNE fois par couple, au lieu d'un scan à chaque signature de
-	 * couverture ET à chaque appel de combo. Clé exacte et injective (pas de hash
-	 * probabiliste) : la clé de MAP_CELL_ITEM_AOE_CACHE décalée de 10 bits, plus la cellule.
+	 * Hash de contenu d'une ItemAoeMap, mémorisé par (map, cellule) : le contenu n'est donc
+	 * itéré qu'UNE fois par couple, au lieu d'un scan à chaque signature de couverture ET à
+	 * chaque appel de combo. Clé exacte et injective (pas de hash probabiliste) : la clé de
+	 * MAP_CELL_ITEM_AOE_CACHE décalée de 10 bits, plus la cellule.
 	 */
-	static itemAoeMetaOf(MapKey, Cell, ItemAoeMap) {
+	static itemAoeHashOf(MapKey, Cell, ItemAoeMap) {
 		var key = (MapKey << 10) | Cell
-		if (key in DANGER_ITEM_AOE_META_CACHE) return DANGER_ITEM_AOE_META_CACHE[key]
-		var meta = [getHashFromItemAoeMap(ItemAoeMap), mapSize(ItemAoeMap)]
-		DANGER_ITEM_AOE_META_CACHE[key] = meta
-		return meta
+		if (key in DANGER_ITEM_AOE_HASH_CACHE) return DANGER_ITEM_AOE_HASH_CACHE[key]
+		var contentHash = getHashFromItemAoeMap(ItemAoeMap)
+		DANGER_ITEM_AOE_HASH_CACHE[key] = contentHash
+		return contentHash
 	}
 
 	/*
@@ -650,21 +642,13 @@ class DangerClass {
 
 /*
  * Cellules à couverture offensive EXACTEMENT identique : une seule chaîne de vulnés déroulée
- * pour tout le groupe, une map de danger partagée en lecture seule. Les compteurs sont
- * remplis au fil des cellules rencontrées (le lot de priorité les lira sans rescan) — les
- * cellules que l'early return n'a jamais visitées n'y figurent volontairement pas.
+ * pour tout le groupe, une map de danger partagée en lecture seule.
  */
 class DangerGroupClass {
-	Coverage      // [casterId, itemMap, ...] ordonné (ordre de tour des casters)
-	CellCount     // cellules du groupe effectivement rencontrées
-	CasterCount   // casters capables d'atteindre ces cellules
-	ItemCount     // entrées item totales atteignant la cellule représentante
-	Danger        // [casterId -> dégâts], déroulée dès la création du groupe
-	constructor(ThisCoverage, ThisCasterCount, ThisItemCount, ThisDanger) {
+	Coverage   // [casterId, itemMap, hashDuContenu, ...] ordonné (ordre de tour des casters)
+	Danger     // [casterId -> dégâts], déroulée dès la création du groupe
+	constructor(ThisCoverage, ThisDanger) {
 		this.Coverage = ThisCoverage
-		this.CellCount = 0
-		this.CasterCount = ThisCasterCount
-		this.ItemCount = ThisItemCount
 		this.Danger = ThisDanger
 	}
 }

@@ -115,14 +115,3 @@ global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
 // gloutonne + early-exit des chaînes). Attrape les résidus float des chips type Antidote /
 // Libération / Rémission quand aucun effet pertinent ne s'applique.
 global BFS_DELTA_EPSILON = 0.01
-
-// ====== MESURE TEMPORAIRE du groupement Danger — À RETIRER après la mesure ======
-// Compteurs de tour, remis à zéro par ReloadCacheNewTurn (la VM est PERSISTANTE : cette
-// initialisation seule ne suffirait pas). Résumés en UNE ligne par tour dans Main.leek.
-global DGRP_NETMISSES = 0    // cellules en miss de net
-global DGRP_VISITED = 0      // cellules réellement visitées (l'early return coupe le reste)
-global DGRP_CACHED = 0       // hits de CELL_DANGER_GET_CACHE
-global DGRP_NEWGROUPS = 0    // couvertures inédites (une chaîne déroulée chacune)
-global DGRP_GROUPHITS = 0    // cellules rattachées à une couverture déjà rencontrée
-global DGRP_LARGEST = 0      // plus grand groupe
-// ================================================================================

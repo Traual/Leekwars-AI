@@ -5,20 +5,9 @@
 include("../includes.leek")
 
 function ReloadCacheNewTurn() {
-    // ====== MESURE TEMPORAIRE du groupement Danger — À RETIRER après la mesure ======
-    // La VM est persistante d'un tour à l'autre : sans ce reset, les compteurs cumuleraient
-    // tout le combat au lieu de donner un résumé PAR TOUR.
-    DGRP_NETMISSES = 0
-    DGRP_VISITED = 0
-    DGRP_CACHED = 0
-    DGRP_NEWGROUPS = 0
-    DGRP_GROUPHITS = 0
-    DGRP_LARGEST = 0
-    // ================================================================================
-
     TARGETABLECACHE = [: ]
     MAP_CELL_ITEM_AOE_CACHE = [: ]
-    DANGER_ITEM_AOE_META_CACHE = [: ]
+    DANGER_ITEM_AOE_HASH_CACHE = [: ]
     CELL_DANGER_GET_CACHE = [: ]
     COMBO_FROM_ITEM_AOE_CACHE = [: ]
     HAVE_AN_HITTABLE_ITEM_CACHE = [: ]
@@ -158,10 +147,10 @@ global SUMMONER_LEVEL_TIMES = min(300, getLevel()) / 300
 
 global MAP_CELL_ITEM_AOE_CACHE = [: ]
 
-// [hash de contenu, nombre d'items] d'une ItemAoeMap, clé (clé de MAP_CELL_ITEM_AOE_CACHE
-// << 10) | cellule. Reset de tour OBLIGATOIRE, comme la map dont il décrit le contenu :
-// l'inventaire disponible est filtré par cooldown au moment du calcul.
-global DANGER_ITEM_AOE_META_CACHE = [: ]
+// Hash de contenu d'une ItemAoeMap, clé (clé de MAP_CELL_ITEM_AOE_CACHE << 10) | cellule.
+// Reset de tour OBLIGATOIRE, comme la map dont il décrit le contenu : l'inventaire
+// disponible est filtré par cooldown au moment du calcul.
+global DANGER_ITEM_AOE_HASH_CACHE = [: ]
 global CELL_DANGER_GET_CACHE = [: ]
 global COMBO_FROM_ITEM_AOE_CACHE = [: ]
 global COMBO_DAMAGE_CACHE = [: ]
