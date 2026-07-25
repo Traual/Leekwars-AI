@@ -39,7 +39,24 @@ class ScoringClass {
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            terms[e] = sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e], State, poisonKey) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
+            // ====== DIAGNOSTIC TEMPORAIRE — coût par composante (le net vient déjà de
+            // getNetDamageMap, mesuré par le bucket Delta) ======
+            var net = netDamageMap[e]
+            BenchOps.Start("ScoreImportance")
+            var importance = ImportanceClass.get(stat)
+            BenchOps.Stop("ScoreImportance")
+            BenchOps.Start("ScoreSurvival")
+            var survival = survivalValue(stat, net, State, poisonKey)
+            BenchOps.Stop("ScoreSurvival")
+            BenchOps.Start("ScoreCapability")
+            var capability = ImportanceClass.capability(stat)
+            BenchOps.Stop("ScoreCapability")
+            BenchOps.Start("ScoreDR")
+            var dr = drDeterrence(stat, net, State)
+            BenchOps.Stop("ScoreDR")
+            // Expression historique reconstruite à l'identique, mêmes appels dans le même ordre.
+            terms[e] = sign * (importance * survival + capability + dr)
+            // ===================================================================================
         }
         BenchOps.Stop("Scoring")
         return terms
@@ -262,10 +279,39 @@ class ScoringClass {
         var newTerm = 0
         if (stat.LIFE > 0) {
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            var net = DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)
-            newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, net, State, node.POISON_KEY) + ImportanceClass.capability(stat) + drDeterrence(stat, net, State))
+            // ====== DIAGNOSTIC TEMPORAIRE — coût par composante ======
+            // ScoreNetMe et ScoreNetOther sont DISJOINTS : leur comparaison dit si la
+            // recherche de cellule sûre de Me domine le reste. Les autres buckets sont
+            // imbriqués dans Scoring — ne pas les sommer aveuglément.
+            var net
+            if (e == Me) {
+                BenchOps.Start("ScoreNetMe")
+                net = DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)
+                BenchOps.Stop("ScoreNetMe")
+            } else {
+                BenchOps.Start("ScoreNetOther")
+                net = DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)
+                BenchOps.Stop("ScoreNetOther")
+            }
+            BenchOps.Start("ScoreImportance")
+            var importance = ImportanceClass.get(stat)
+            BenchOps.Stop("ScoreImportance")
+            BenchOps.Start("ScoreSurvival")
+            var survival = survivalValue(stat, net, State, node.POISON_KEY)
+            BenchOps.Stop("ScoreSurvival")
+            BenchOps.Start("ScoreCapability")
+            var capability = ImportanceClass.capability(stat)
+            BenchOps.Stop("ScoreCapability")
+            BenchOps.Start("ScoreDR")
+            var dr = drDeterrence(stat, net, State)
+            BenchOps.Stop("ScoreDR")
+            // Expression historique reconstruite à l'identique, mêmes appels dans le même ordre.
+            newTerm = sign * (importance * survival + capability + dr)
+            // =========================================================
         }
+        BenchOps.Start("ScoreTermLookup")   // DIAGNOSTIC TEMPORAIRE : coût de la chaîne TERMS_PARENT
         var oldTerm = termOf(ParentTermNode, e)
+        BenchOps.Stop("ScoreTermLookup")
         termsPatch[e] = newTerm
         return newTerm - oldTerm
     }
