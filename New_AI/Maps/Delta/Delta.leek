@@ -146,24 +146,41 @@ class DeltaClass {
         }
         DGRP_NETMISSES += nMiss   // MESURE TEMPORAIRE
 
-        // Passe 2 : setup au premier besoin réel de danger. Seules les maps PAR CASTER sont
-        // préparées ici — aucune couverture de cellule n'est construite d'avance.
-        var toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
-        var enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash, statsHash)
-        var castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
-        var casterMaps = DangerClass.buildCasterMaps(State, enemyWalkCells, toSkipMap, castersInOrder)
-        var buckets = [: ]   // couvertures déjà rencontrées, locales à cette recherche de fuite
-
-        // Passe 3 : cellule par cellule dans l'ordre historique de myWalkCells. Le danger est
-        // partagé entre couvertures identiques, mais le net et le heal restent PAR CELLULE —
-        // même minimum, mêmes additions dans netDamage. Une cellule postérieure au premier
-        // zéro ne voit jamais sa couverture ni son hash calculés.
+        // Passe 2 : cellule par cellule dans l'ordre historique de myWalkCells. TOUT le setup
+        // est paresseux — l'ordre de tour n'est construit que si un danger non vide doit être
+        // séquencé, les maps par caster qu'au premier vrai miss de CELL_DANGER_GET_CACHE. Le
+        // danger est partagé entre couvertures identiques, mais le net et le heal restent PAR
+        // CELLULE : même minimum, mêmes additions dans netDamage.
+        var meId = MeStats.ID
+        var castersInOrder = null
+        var casterMaps = null
+        var buckets = null
         for (var i = 0; i < nMiss; i++) {
             var cell = missCells[i]
             DGRP_VISITED++   // MESURE TEMPORAIRE
-            var dangerAtCell = DangerClass.dangerOfCell(cell, State, MeStats, statsHash, casterMaps, buckets)
-            // Danger vide -> delta 0 direct (déclenche l'early exit "imbattable" dessous).
-            var delta = mapIsEmpty(dangerAtCell) ? 0 : netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
+            var dangerKey = DangerClass.cellCacheKey(statsHash, meId, cell)
+            var dangerAtCell
+            if (dangerKey in CELL_DANGER_GET_CACHE) {
+                DGRP_CACHED++   // MESURE TEMPORAIRE
+                // Hit : ni couverture, ni métadonnées, ni maps de casters.
+                dangerAtCell = CELL_DANGER_GET_CACHE[dangerKey]
+            } else {
+                if (casterMaps == null) {
+                    var toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
+                    var enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash, statsHash)
+                    if (castersInOrder == null) castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
+                    casterMaps = DangerClass.buildCasterMaps(State, enemyWalkCells, toSkipMap, castersInOrder)
+                    buckets = [: ]   // couvertures rencontrées, locales à cette recherche de fuite
+                }
+                dangerAtCell = DangerClass.dangerOfCellCold(cell, dangerKey, State, MeStats, casterMaps, buckets)
+            }
+            // Danger vide -> delta 0 direct, sans même l'ordre de tour (déclenche l'early exit
+            // "imbattable" dessous).
+            var delta = 0
+            if (!mapIsEmpty(dangerAtCell)) {
+                if (castersInOrder == null) castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
+                delta = netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
+            }
             CELL_NETDAMAGE_FOR_ME_CACHE[rotSeed ^ cell] = delta
             if (delta < minDelta) {
                 if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // imbattable

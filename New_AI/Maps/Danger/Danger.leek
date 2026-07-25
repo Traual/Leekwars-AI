@@ -96,11 +96,15 @@ class DangerClass {
 		var Coverage = []
 		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
-			var MapCellItemAoe = getMapCellItemAoe(State[Caster], EnemyWalkCells[Caster])
-			// Caster incapable d'atteindre cette cellule : aucune paire, aucun combo.
+			var CasterStats = State[Caster]
+			var MapCellItemAoe = getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster])
+			// Caster incapable d'atteindre cette cellule : aucun triplet, aucun combo.
 			if (!(Cell in MapCellItemAoe)) continue
+			var itemMap = MapCellItemAoe[Cell]
 			push(Coverage, Caster)
-			push(Coverage, MapCellItemAoe[Cell])
+			push(Coverage, itemMap)
+			// Hash de contenu calculé UNE fois et transporté jusqu'au combo.
+			push(Coverage, itemAoeMetaOf(mapCellItemAoeKeyOf(CasterStats), Cell, itemMap)[0])
 		}
 		var _final = evalChainFromCoverage(Coverage, State, TargetStats)
 		CELL_DANGER_GET_CACHE[ThisHash] = _final
@@ -115,7 +119,8 @@ class DangerClass {
 	}
 
 	/*
-	 * Déroulé de la chaîne de vulnés pour une couverture ordonnée [casterId, itemMap, ...] :
+	 * Déroulé de la chaîne de vulnés pour une couverture ordonnée
+	 * [casterId, itemMap, hashDuContenu, ...] :
 	 * SOURCE UNIQUE, appelée aussi bien par get (couverture d'une cellule) que par le chemin
 	 * groupé (couverture partagée par plusieurs cellules). La cible n'est jamais mutée : seuls
 	 * ses deux shields COURANTS évoluent le long de la chaîne, en scalaires. TargetStats reste
@@ -128,9 +133,9 @@ class DangerClass {
 		var chainAbs = TargetStats.ABSOLUTE_SHIELD
 		var chainRel = TargetStats.RELATIVE_SHIELD
 		var n = count(Coverage)
-		for (var i = 0; i < n; i += 2) {
+		for (var i = 0; i < n; i += 3) {
 			var Caster = Coverage[i]
-			var combo = getComboFromItemAoe(Coverage[i + 1], State[Caster], TargetStats, chainAbs, chainRel)
+			var combo = getComboFromItemAoe(Coverage[i + 1], Coverage[i + 2], State[Caster], TargetStats, chainAbs, chainRel)
 			if (combo[0] > 0) {
 				// Le crit est appliqué EN PROFONDEUR (formules d'EntityDanger avant les shields + vulnés
 				// de chaîne critées), pas ici : (d − ABS)·1.3 ≠ d·1.3 − ABS.
@@ -152,45 +157,46 @@ class DangerClass {
 		var _final = []
 		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
+			var CasterStats = State[Caster]
 			push(_final, Caster)
-			push(_final, getMapCellItemAoe(State[Caster], EnemyWalkCells[Caster]))
+			push(_final, getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster]))
+			push(_final, mapCellItemAoeKeyOf(CasterStats))   // préfixe des clés de métadonnées
 		}
 		return _final
 	}
 
 	/*
-	 * Danger d'UNE cellule de fuite, avec partage entre cellules à couverture identique.
-	 * PROGRESSIF : la couverture et le hash d'une cellule ne sont construits qu'au moment où
-	 * l'appelant la consomme réellement — une cellule jamais atteinte (early return sur un
-	 * zéro) ne coûte rien du tout.
+	 * Danger d'UNE cellule de fuite en MISS de CELL_DANGER_GET_CACHE, avec partage entre
+	 * cellules à couverture identique. PROGRESSIF : la couverture et les métadonnées d'une
+	 * cellule ne sont construites qu'au moment où l'appelant la consomme réellement — une
+	 * cellule jamais atteinte (early return sur un zéro) ne coûte rien du tout. Chemin FROID
+	 * uniquement : l'appelant a déjà testé le cache et passe la clé qu'il a calculée.
 	 *
 	 * @param CasterMaps liste plate de buildCasterMaps
 	 * @param Buckets [hash de couverture -> groupes], local à la recherche de fuite en cours
 	 * @return [casterId -> dégâts], partagée en LECTURE SEULE par les cellules du groupe
 	 */
-	static dangerOfCell(Cell, State, TargetStats, StatsHashForDanger, CasterMaps, Buckets) {
-		var key = cellCacheKey(StatsHashForDanger, TargetStats.ID, Cell)
-		if (key in CELL_DANGER_GET_CACHE) {
-			DGRP_CACHED++   // MESURE TEMPORAIRE
-			// Hit existant conservé tel quel : ni couverture ni hash construits.
-			return CELL_DANGER_GET_CACHE[key]
-		}
+	static dangerOfCellCold(Cell, key, State, TargetStats, CasterMaps, Buckets) {
 		var Coverage = []
 		var hash = 0
 		var itemCount = 0
 		var n = count(CasterMaps)
-		for (var i = 0; i < n; i += 2) {
+		for (var i = 0; i < n; i += 3) {
 			var MapCellItemAoe = CasterMaps[i + 1]
-			// Caster incapable d'atteindre cette cellule : aucune paire, aucun combo.
+			// Caster incapable d'atteindre cette cellule : aucun triplet, aucun combo.
 			if (!(Cell in MapCellItemAoe)) continue
 			var itemMap = MapCellItemAoe[Cell]
 			var Caster = CasterMaps[i]
+			// Contenu itéré une seule fois par (map, cellule) de tout le tour.
+			var meta = itemAoeMetaOf(CasterMaps[i + 2], Cell, itemMap)
+			var contentHash = meta[0]
 			push(Coverage, Caster)
 			push(Coverage, itemMap)
+			push(Coverage, contentHash)
 			// Fold ORDONNÉ (casterId, contenu de la map) : présélection de bucket uniquement,
 			// jamais un critère de fusion.
-			hash = addValueToBinHash(addValueToBinHash(hash, Caster), getHashFromItemAoeMap(itemMap))
-			itemCount += mapSize(itemMap)
+			hash = addValueToBinHash(addValueToBinHash(hash, Caster), contentHash)
+			itemCount += meta[1]
 		}
 		var bucket
 		if (hash in Buckets) {
@@ -211,7 +217,7 @@ class DangerClass {
 		if (group == null) {
 			// Couverture inédite : chaîne déroulée immédiatement, une seule fois pour toutes
 			// les cellules qui la partageront ensuite.
-			group = new DangerGroupClass(Coverage, count(Coverage) >> 1, itemCount, evalChainFromCoverage(Coverage, State, TargetStats))
+			group = new DangerGroupClass(Coverage, count(Coverage) / 3, itemCount, evalChainFromCoverage(Coverage, State, TargetStats))
 			push(bucket, group)
 			DGRP_NEWGROUPS++   // MESURE TEMPORAIRE
 		} else {
@@ -232,8 +238,9 @@ class DangerClass {
 	static sameCoverage(a, b) {
 		var n = count(a)
 		if (n != count(b)) return false
-		for (var i = 0; i < n; i += 2) {
+		for (var i = 0; i < n; i += 3) {
 			if (a[i] != b[i]) return false
+			if (a[i + 2] != b[i + 2]) return false          // hash : présélection, pas une preuve
 			if (!sameItemAoeMap(a[i + 1], b[i + 1])) return false
 		}
 		return true
@@ -265,14 +272,15 @@ class DangerClass {
 	 * en premier tant que ça améliore les dégâts).
 	 *
 	 * @param ItemAoeMap [item -> minAoeDist] des items qui atteignent la cellule
+	 * @param HashedItemAoeMap hash de contenu d'ItemAoeMap, mémorisé par l'appelant
+	 *        (itemAoeMetaOf) — le contenu n'est donc jamais rescanné ici, même sur un hit
 	 * @param TargetStats métadonnées de la cible (LIFE/SIDE/IS_SUMMON/Antidote) — JAMAIS muté
 	 * @param curAbs/curRel shields COURANTS de la cible (scalaires portés par la chaîne)
 	 * @return l'ENTRÉE de cache [dégâtsCombo, absFinal, relFinal] — que des scalaires, aucune
 	 *         référence vers une entité du State ni du workspace transactionnel.
 	 */
-	static getComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, curAbs, curRel) {
+	static getComboFromItemAoe(ItemAoeMap, HashedItemAoeMap, CasterStats, TargetStats, curAbs, curRel) {
 		if (mapIsEmpty(ItemAoeMap)) return [0, curAbs, curRel]
-		var HashedItemAoeMap = getHashFromItemAoeMap(ItemAoeMap)
 		var HashWithShield = getStatsHashForDangerOneCaster(TargetStats, CasterStats, HashedItemAoeMap, curAbs, curRel)
 		if (HashWithShield in COMBO_FROM_ITEM_AOE_CACHE) return COMBO_FROM_ITEM_AOE_CACHE[HashWithShield]
 		// TOTAL_TP : le danger représente le potentiel max du prochain tour, pas les TP
@@ -475,15 +483,39 @@ class DangerClass {
 	 * MP < 1024 (10 bits), mp clampé (shacklé négatif == 0).
 	 */
 	static getMapCellItemAoe(EntityStats, EntityWalkCells) {
+		var TmpHash = mapCellItemAoeKeyOf(EntityStats)
+		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
+		// Les 21 bits bas sont exactement movementKey : les clés de géométrie de
+		// buildMapCellItemAoe doivent rester celles d'avant l'extraction de la clé.
+		var _final = buildMapCellItemAoe(EntityDangerClass.getItemsList(EntityStats), EntityWalkCells, TmpHash & MOVEMENT_KEY_MASK)
+		MAP_CELL_ITEM_AOE_CACHE[TmpHash] = _final
+		return _final
+	}
+
+	static MOVEMENT_KEY_MASK = 2097151   // (1 << 21) - 1 : isole movementKey dans la clé
+
+	/* Clé de MAP_CELL_ITEM_AOE_CACHE — SOURCE UNIQUE : buildCasterMaps s'en sert aussi comme
+	 * préfixe EXACT des clés de DANGER_ITEM_AOE_META_CACHE (une métadonnée ne doit jamais
+	 * survivre au changement de map qui l'a produite). */
+	static mapCellItemAoeKeyOf(EntityStats) {
 		var usesJumpLayer = WalkCellsClass.canJumpNextTurn(EntityStats) ? 1 : 0
 		// movementKey (21 bits, sans ID) décrit exactement la map NoEntities reçue :
 		// couche marche/saut, cellule de départ, budget MP.
-		var movementKey = (usesJumpLayer << 20) | (EntityStats.CELL << 10) | max(0, EntityStats.TOTAL_MP)
-		var TmpHash = (EntityStats.ID << 21) | movementKey
-		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
-		var _final = buildMapCellItemAoe(EntityDangerClass.getItemsList(EntityStats), EntityWalkCells, movementKey)
-		MAP_CELL_ITEM_AOE_CACHE[TmpHash] = _final
-		return _final
+		return (EntityStats.ID << 21) | (usesJumpLayer << 20) | (EntityStats.CELL << 10) | max(0, EntityStats.TOTAL_MP)
+	}
+
+	/*
+	 * [hash de contenu, nombre d'items] d'une ItemAoeMap, mémorisé par (map, cellule) : le
+	 * contenu n'est donc itéré qu'UNE fois par couple, au lieu d'un scan à chaque signature de
+	 * couverture ET à chaque appel de combo. Clé exacte et injective (pas de hash
+	 * probabiliste) : la clé de MAP_CELL_ITEM_AOE_CACHE décalée de 10 bits, plus la cellule.
+	 */
+	static itemAoeMetaOf(MapKey, Cell, ItemAoeMap) {
+		var key = (MapKey << 10) | Cell
+		if (key in DANGER_ITEM_AOE_META_CACHE) return DANGER_ITEM_AOE_META_CACHE[key]
+		var meta = [getHashFromItemAoeMap(ItemAoeMap), mapSize(ItemAoeMap)]
+		DANGER_ITEM_AOE_META_CACHE[key] = meta
+		return meta
 	}
 
 	/*

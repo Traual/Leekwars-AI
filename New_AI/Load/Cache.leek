@@ -18,6 +18,7 @@ function ReloadCacheNewTurn() {
 
     TARGETABLECACHE = [: ]
     MAP_CELL_ITEM_AOE_CACHE = [: ]
+    DANGER_ITEM_AOE_META_CACHE = [: ]
     CELL_DANGER_GET_CACHE = [: ]
     COMBO_FROM_ITEM_AOE_CACHE = [: ]
     HAVE_AN_HITTABLE_ITEM_CACHE = [: ]
@@ -156,6 +157,11 @@ global SUMMONER_LEVEL_TIMES = min(300, getLevel()) / 300
 // DANGER MAP
 
 global MAP_CELL_ITEM_AOE_CACHE = [: ]
+
+// [hash de contenu, nombre d'items] d'une ItemAoeMap, clé (clé de MAP_CELL_ITEM_AOE_CACHE
+// << 10) | cellule. Reset de tour OBLIGATOIRE, comme la map dont il décrit le contenu :
+// l'inventaire disponible est filtré par cooldown au moment du calcul.
+global DANGER_ITEM_AOE_META_CACHE = [: ]
 global CELL_DANGER_GET_CACHE = [: ]
 global COMBO_FROM_ITEM_AOE_CACHE = [: ]
 global COMBO_DAMAGE_CACHE = [: ]
