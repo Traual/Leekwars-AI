@@ -5,13 +5,6 @@
 include("../includes.leek")
 
 function ReloadCacheNewTurn() {
-    // ====== MESURE TEMPORAIRE de la priorité des cellules — À RETIRER après la mesure ======
-    EPRIO_WINDOWS = 0
-    EPRIO_COLD_PROBED = 0
-    EPRIO_COLD_EVALUATED = 0
-    EPRIO_ZERO_NO_CASTER = 0
-    // =======================================================================================
-
     TARGETABLECACHE = [: ]
     MAP_CELL_ITEM_AOE_CACHE = [: ]
     DANGER_ITEM_AOE_HASH_CACHE = [: ]

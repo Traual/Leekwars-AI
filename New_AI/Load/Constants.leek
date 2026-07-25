@@ -115,15 +115,3 @@ global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
 // gloutonne + early-exit des chaînes). Attrape les résidus float des chips type Antidote /
 // Libération / Rémission quand aucun effet pertinent ne s'applique.
 global BFS_DELTA_EPSILON = 0.01
-
-// Fenêtre de présélection des cellules de fuite (DeltaClass.minDeltaForMe) : borne le coût du
-// sondage et du tri, jamais le nombre de cellules évaluées ni le résultat.
-global PRIORITY_WINDOW = 8
-
-// ====== MESURE TEMPORAIRE de la priorité des cellules — À RETIRER après la mesure ======
-// Compteurs de tour, remis à zéro par ReloadCacheNewTurn (la VM est PERSISTANTE).
-global EPRIO_WINDOWS = 0
-global EPRIO_COLD_PROBED = 0
-global EPRIO_COLD_EVALUATED = 0
-global EPRIO_ZERO_NO_CASTER = 0
-// =======================================================================================
