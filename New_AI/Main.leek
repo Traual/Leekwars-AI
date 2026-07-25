@@ -10,3 +10,6 @@ Preload.InitStateClass()
 BenchOps.Reset()
 new Play()
 BenchOps.Dump()
+// ====== MESURE TEMPORAIRE des dépendances healer -> cibles — À RETIRER après la mesure ======
+debugW("HealDeps sideDirty=" + HDEP_SIDE_DIRTY + " exactDirty=" + HDEP_EXACT_DIRTY + " skipped=" + HDEP_SKIPPED + " fixedTests=" + HDEP_FIXED_TESTS + " meTests=" + HDEP_ME_TESTS + " meDirty=" + HDEP_ME_DIRTY)
+// ============================================================================================

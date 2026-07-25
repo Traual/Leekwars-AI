@@ -115,3 +115,15 @@ global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
 // gloutonne + early-exit des chaînes). Attrape les résidus float des chips type Antidote /
 // Libération / Rémission quand aucun effet pertinent ne s'applique.
 global BFS_DELTA_EPSILON = 0.01
+
+// ====== MESURE TEMPORAIRE des dépendances healer -> cibles — À RETIRER après la mesure ======
+// Compteurs de tour, remis à zéro par ReloadCacheNewTurn (la VM est PERSISTANTE). Ils ne
+// portent QUE sur les termes qui n'étaient pas déjà sales pour une autre raison, d'où
+// l'identité HDEP_SIDE_DIRTY == HDEP_EXACT_DIRTY + HDEP_SKIPPED.
+global HDEP_SIDE_DIRTY = 0
+global HDEP_EXACT_DIRTY = 0
+global HDEP_SKIPPED = 0
+global HDEP_FIXED_TESTS = 0
+global HDEP_ME_TESTS = 0
+global HDEP_ME_DIRTY = 0
+// ============================================================================================

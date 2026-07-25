@@ -32,6 +32,9 @@ class NodeClass {
 	                  // courant — aucune map vide n'est allouée). Le scoring en déduit, par
 	                  // intersection de couverture, les seules cibles à recalculer — au lieu de
 	                  // relire tout un side. Me n'y figure jamais : il est exclu du contexte.
+	HEAL_DIRTY_CASTERS   // [id -> true] des healers réellement modifiés, NULL quand il n'y en a
+	                  // aucun. Même usage côté soin, même exclusion de Me (healerContributionOf
+	                  // le gate déjà à 0).
 	TERMS             // [id -> terme signé] : PATCH local — les seuls termes recalculés par CE nœud
 	                  // (la racine noPlay porte la map complète). Résolution via ScoringClass.termOf.
 	TERMS_PARENT      // nœud portant le snapshot de termes précédent — chaîne IMMUABLE, indépendante
@@ -121,6 +124,7 @@ class NodeClass {
 		// Allouée seulement si un contexte offensif bouge vraiment : une attaque ordinaire non
 		// létale clone des entités sans rien changer à leur menace, et ne doit rien payer.
 		var dangerDirtyCasters = null
+		var healDirtyCasters = null
 		for (var tar: var parentStat in clonedIds) {
 			var newStat = ThisActionStats[tar]
 			// Entité NÉE dans l'action (summon) : aucune contribution ancienne à retirer, on
@@ -137,7 +141,11 @@ class NodeClass {
 					for (var s in ctxSides) if (s != newStat.SIDE) ctx[s] ^= addCtx
 				}
 				var addHfp = HealClass.healerContributionOf(newStat, tar)
-				if (addHfp != 0) hfpMap[newStat.SIDE] = ((newStat.SIDE in hfpMap) ? hfpMap[newStat.SIDE] : 0) ^ addHfp
+				if (addHfp != 0) {
+					if (healDirtyCasters == null) healDirtyCasters = [: ]
+					healDirtyCasters[tar] = true
+					hfpMap[newStat.SIDE] = ((newStat.SIDE in hfpMap) ? hfpMap[newStat.SIDE] : 0) ^ addHfp
+				}
 				continue
 			}
 			// Masque différentiel UNIQUE : une seule comparaison parent/clone pilote les
@@ -159,6 +167,8 @@ class NodeClass {
 			if (mask & DIFF_HFP) {
 				var deltaHfp = HealClass.healerContributionOf(parentStat, tar) ^ HealClass.healerContributionOf(newStat, tar)
 				if (deltaHfp != 0) {             // fingerprint du side de l'entité elle-même
+					if (healDirtyCasters == null) healDirtyCasters = [: ]
+					healDirtyCasters[tar] = true
 					var hfpSide = newStat.SIDE
 					hfpMap[hfpSide] = ((hfpSide in hfpMap) ? hfpMap[hfpSide] : 0) ^ deltaHfp
 				}
@@ -177,6 +187,7 @@ class NodeClass {
 		result.CLONED = clonedIds
 		result.LOCAL_TERM_DIRTY = localTermDirty
 		result.DANGER_DIRTY_CASTERS = dangerDirtyCasters
+		result.HEAL_DIRTY_CASTERS = healDirtyCasters
 		result.BASE_HASH = bh
 		result.CONTEXT_BY_SIDE = ctx
 		result.HFP_BY_SIDE = hfpMap

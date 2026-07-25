@@ -134,10 +134,31 @@ class HealClass {
      * franchissement du coût de Jump, qui change la couche géométrique).
      */
     static getCasterCoverage(casterStats) {
+        return getCasterCoverageWithKey(casterStats, casterCoverageKeyOf(casterStats))
+    }
+
+    /* Clé de HEAL_COVERAGE_CACHE — SOURCE UNIQUE : (id, movementKey, classe de crit, WIS
+     * effective, TOTAL_TP). Le scoring s'en sert aussi pour comparer deux géométries de heal
+     * sans reconstruire la couverture. */
+    static casterCoverageKeyOf(casterStats) {
         // Crit binaire asymétrique (Constants) : healer ENNEMI craint critique dès
         // MIN_AGILITY_ENEMY_CRIT (son soutien joue contre moi), healer allié crédité
-        // seulement à MIN_AGILITY_TO_FULLY_CRIT. Facteur commun -> post-multiplication de la
-        // couverture (l'ordre du combo ne change pas), les combos restent crit-free.
+        // seulement à MIN_AGILITY_TO_FULLY_CRIT.
+        var critAt = (casterStats.SIDE != getSide(Me)) ? MIN_AGILITY_ENEMY_CRIT : MIN_AGILITY_TO_FULLY_CRIT
+        var critFactor = (casterStats.AGILITY >= critAt) ? CRITICAL_FACTOR : 1
+        var usesJumpLayer = WalkCellsClass.canJumpNextTurn(casterStats) ? 1 : 0
+        var movementKey = (usesJumpLayer << 20) | (casterStats.CELL << 10) | max(0, casterStats.TOTAL_MP)
+        var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, movementKey)
+        return addValueToBinHash(key, ((critFactor > 1 ? 1 : 0) << 30) | (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
+    }
+
+    /* Même couverture, avec la clé DÉJÀ calculée par l'appelant : sur un hit, rien n'est
+     * reconstruit. Le chemin froid recalcule ses invariants de géométrie, négligeable devant
+     * l'assemblage complet qu'il déclenche. */
+    static getCasterCoverageWithKey(casterStats, key) {
+        if (key in HEAL_COVERAGE_CACHE) return HEAL_COVERAGE_CACHE[key]
+        // Facteur commun -> post-multiplication de la couverture (l'ordre du combo ne change
+        // pas), les combos restent crit-free.
         var critAt = (casterStats.SIDE != getSide(Me)) ? MIN_AGILITY_ENEMY_CRIT : MIN_AGILITY_TO_FULLY_CRIT
         var critFactor = (casterStats.AGILITY >= critAt) ? CRITICAL_FACTOR : 1
         // Couche marche/saut FUTURE du caster (source unique canJumpNextTurn), calculée UNE
@@ -147,9 +168,6 @@ class HealClass {
         // movementKey (21 bits, sans ID) : le contexte de déplacement partagé avec Danger —
         // clé des géométries persistantes du builder commun.
         var movementKey = (usesJumpLayer << 20) | (casterStats.CELL << 10) | max(0, casterStats.TOTAL_MP)
-        var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, movementKey)
-        key = addValueToBinHash(key, ((critFactor > 1 ? 1 : 0) << 30) | (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
-        if (key in HEAL_COVERAGE_CACHE) return HEAL_COVERAGE_CACHE[key]
 
         // Couche assemblage — clé (id, couche, cellule, MP), même pack que la danger map.
         var geomKey = (casterStats.ID << 21) | movementKey
@@ -179,6 +197,19 @@ class HealClass {
         }
         HEAL_COVERAGE_CACHE[key] = _final
         return _final
+    }
+
+    /*
+     * Couverture de soin d'un healer, EXACTEMENT celle que consomme le net (mêmes caches).
+     * Sert au scoring à savoir quelles cibles dépendent réellement de ce healer.
+     * null quand il ne soigne personne : absent, Me (mes soins sont le travail du BFS), mort,
+     * ou sans item de heal. La map rendue vient de HEAL_COVERAGE_CACHE — READ-ONLY.
+     * CoverageKey est la clé DÉJÀ calculée par l'appelant, jamais reconstruite ici.
+     */
+    static healingCoverageOf(casterStats, casterId, CoverageKey) {
+        if (casterStats == null || casterId == Me || casterStats.LIFE <= 0) return null
+        if (!hasHealItem(casterStats)) return null
+        return getCasterCoverageWithKey(casterStats, CoverageKey)
     }
 
     /* [cell -> [item -> minAoeDist]] : quelles cellules chaque item de heal atteint —
