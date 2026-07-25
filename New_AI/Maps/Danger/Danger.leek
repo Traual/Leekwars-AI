@@ -97,14 +97,15 @@ class DangerClass {
 		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
 			var CasterStats = State[Caster]
-			var MapCellItemAoe = getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster])
+			var mapKey = mapCellItemAoeKeyOf(CasterStats)
+			var MapCellItemAoe = getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster], mapKey)
 			// Caster incapable d'atteindre cette cellule : aucun triplet, aucun combo.
 			if (!(Cell in MapCellItemAoe)) continue
 			var itemMap = MapCellItemAoe[Cell]
 			push(Coverage, Caster)
 			push(Coverage, itemMap)
 			// Hash de contenu calculé UNE fois et transporté jusqu'au combo.
-			push(Coverage, itemAoeMetaOf(mapCellItemAoeKeyOf(CasterStats), Cell, itemMap)[0])
+			push(Coverage, itemAoeMetaOf(mapKey, Cell, itemMap)[0])
 		}
 		var _final = evalChainFromCoverage(Coverage, State, TargetStats)
 		CELL_DANGER_GET_CACHE[ThisHash] = _final
@@ -158,9 +159,10 @@ class DangerClass {
 		for (var Caster in CastersInOrder) {
 			if (Caster in ToSkipMap) continue
 			var CasterStats = State[Caster]
+			var mapKey = mapCellItemAoeKeyOf(CasterStats)
 			push(_final, Caster)
-			push(_final, getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster]))
-			push(_final, mapCellItemAoeKeyOf(CasterStats))   // préfixe des clés de métadonnées
+			push(_final, getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster], mapKey))
+			push(_final, mapKey)   // préfixe des clés de métadonnées
 		}
 		return _final
 	}
@@ -482,8 +484,7 @@ class DangerClass {
 	 * décrivent la même couche. Pack direct injectif : cellule <= 612 (10 bits),
 	 * MP < 1024 (10 bits), mp clampé (shacklé négatif == 0).
 	 */
-	static getMapCellItemAoe(EntityStats, EntityWalkCells) {
-		var TmpHash = mapCellItemAoeKeyOf(EntityStats)
+	static getMapCellItemAoe(EntityStats, EntityWalkCells, TmpHash) {
 		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
 		// Les 21 bits bas sont exactement movementKey : les clés de géométrie de
 		// buildMapCellItemAoe doivent rester celles d'avant l'extraction de la clé.
