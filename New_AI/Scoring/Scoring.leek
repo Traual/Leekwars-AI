@@ -107,7 +107,18 @@ class ScoringClass {
 
         if (!hasDirtyCasters && healChanged == null && !coefChanged) {
             // Cas courant : le masque du Node a déjà déterminé les termes locaux sales.
-            for (var e: var _d in node.LOCAL_TERM_DIRTY) {
+            for (var e: var family in node.LOCAL_TERM_DIRTY) {
+                // ====== DIAGNOSTIC TEMPORAIRE ======
+                // Aucun trigger global n'est actif : une famille capability seule est
+                // exploitable telle quelle.
+                SCOMP_LOCAL_TOTAL++
+                if (family == TERM_DIRTY_CAPABILITY) {
+                    SCOMP_CAP_ONLY_RAW++
+                    SCOMP_CAP_ONLY_USABLE++
+                } else {
+                    SCOMP_FULL++
+                }
+                // ===================================
                 delta += termDelta(e, State, node, termsPatch, ParentTermNode, healMap, MySide)
             }
         } else {
@@ -117,6 +128,26 @@ class ScoringClass {
                 if (stat.LIFE <= 0 && !(e in cloned)) continue
                 // Terme local déjà sale : aucun test de dépendance à payer.
                 if (e in node.LOCAL_TERM_DIRTY) {
+                    // ====== DIAGNOSTIC TEMPORAIRE ======
+                    // Le termDelta appelé reste EXACTEMENT l'historique, au même endroit et
+                    // dans le même ordre : on regarde seulement si un trigger global aurait
+                    // de toute façon exigé le chemin complet.
+                    SCOMP_LOCAL_TOTAL++
+                    if (node.LOCAL_TERM_DIRTY[e] == TERM_DIRTY_CAPABILITY) {
+                        SCOMP_CAP_ONLY_RAW++
+                        var forced = (healChanged != null && stat.SIDE in healChanged)
+                            || (coefChanged && stat.POISON_OVER_TIME > 0)
+                        if (!forced && hasDirtyCasters) {
+                            if (casterDeps == null) casterDeps = buildCasterDeps(node, State)
+                            forced = (e == Me)
+                                ? dangerAffectsCells(casterDeps, stat.SIDE, WalkCellsClass.getMaxLayer(State, Me, node.BASE_HASH))
+                                : dangerAffectsCell(casterDeps, stat.SIDE, stat.CELL)
+                        }
+                        if (!forced) SCOMP_CAP_ONLY_USABLE++
+                    } else {
+                        SCOMP_FULL++
+                    }
+                    // ===================================
                     delta += termDelta(e, State, node, termsPatch, ParentTermNode, healMap, MySide)
                     continue
                 }
@@ -135,6 +166,7 @@ class ScoringClass {
                     }
                 }
                 if (!globalDirty) continue
+                SCOMP_GLOBAL_ONLY++   // DIAGNOSTIC TEMPORAIRE
                 delta += termDelta(e, State, node, termsPatch, ParentTermNode, healMap, MySide)
             }
         }
