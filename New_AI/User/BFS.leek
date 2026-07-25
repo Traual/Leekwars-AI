@@ -222,6 +222,18 @@ class ActionSuite {
 			StateClass.restoreWorkspace(Workspace, node.CLONED)
 			node.CLONED = null
 			var delta = nodeScore - ReferenceScore
+			// ====== DIAGNOSTIC TEMPORAIRE Libération — À RETIRER (revert) ======
+			// Delta IMMÉDIAT de l'entrée racine (l'action SEULE), à distinguer du Delta du
+			// log "Best" qui est celui de la meilleure CHAÎNE. Désarme la trace one-shot.
+			if (DIAG_LIB_ACTIVE) {
+				debugW("[DIAG-LIB] DELTA IMMÉDIAT de l'entrée racine Libération (action seule) = " + delta
+					+ "   [score de référence " + ReferenceScore + " -> score du nœud " + nodeScore + "]")
+				debugW("[DIAG-LIB] (le Delta affiché par 'Best' est celui de la CHAÎNE, pas celui-ci)")
+				debugW("[DIAG-LIB] filtre epsilon : delta " + (delta <= BFS_DELTA_EPSILON ? "REJETÉ" : "RETENU") + " (seuil " + BFS_DELTA_EPSILON + ")")
+				DIAG_LIB_ACTIVE = false
+				DIAG_LIB_ARMED = false
+			}
+			// ==================================================================
 			if (delta <= BFS_DELTA_EPSILON) continue
 			push(Entries, [act, delta, node, nodeScore])
 		}

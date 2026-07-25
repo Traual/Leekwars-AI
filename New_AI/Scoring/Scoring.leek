@@ -140,11 +140,49 @@ class ScoringClass {
             var sign = (stat.SIDE == MySide) ? 1 : -1
             var net = DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)
             newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, net, State, node.POISON_KEY) + ImportanceClass.capability(stat) + drDeterrence(stat, net, State))
+            // ====== DIAGNOSTIC TEMPORAIRE Libération — À RETIRER (revert) ======
+            // Décomposition du terme de Me pendant le cast tracé (appels PURS et memoïsés :
+            // aucune influence sur le calcul ci-dessus, déjà effectué).
+            if (DIAG_LIB_ACTIVE && e == Me) {
+                debugW("[DIAG-LIB] --- sous-composantes du terme de Me APRÈS le débuff ---")
+                debugW("[DIAG-LIB] netDamage(min de fuite) = " + net)
+                debugW("[DIAG-LIB] importance = " + ImportanceClass.get(stat) + " | survival = " + survivalValue(stat, net, State, node.POISON_KEY))
+                debugW("[DIAG-LIB] capability = " + ImportanceClass.capability(stat) + " | drDeterrence = " + drDeterrence(stat, net, State) + "   (DAMAGE_RETURN = " + stat.DAMAGE_RETURN + ", part physique adverse = " + ((DR_PHYSRATIO_BY_SIDE == null) ? "null" : DR_PHYSRATIO_BY_SIDE[stat.SIDE]) + ")")
+                debugW("[DIAG-LIB] newTerm = " + newTerm)
+            }
+            // ==================================================================
         }
         var oldTerm = termOf(ParentTermNode, e)
+        // ====== DIAGNOSTIC TEMPORAIRE Libération — À RETIRER (revert) ======
+        // Provenance EXACTE de l'ancien terme : à quelle profondeur de la chaîne
+        // TERMS_PARENT il a été trouvé, et par quelle action ce nœud a été produit.
+        if (DIAG_LIB_ACTIVE && e == Me) {
+            debugW("[DIAG-LIB] oldTerm = " + oldTerm + " | " + diagTermSource(ParentTermNode, e))
+            debugW("[DIAG-LIB] delta immédiat du terme de Me = " + (newTerm - oldTerm))
+        }
+        // ==================================================================
         termsPatch[e] = newTerm
         return newTerm - oldTerm
     }
+
+    // ====== DIAGNOSTIC TEMPORAIRE Libération — À RETIRER (revert) ======
+    /* D'où vient l'ancien terme : profondeur dans la chaîne + action du nœud fournisseur
+     * (permet de vérifier qu'il provient bien de la racine COURANTE, donc d'un état qui
+     * inclut déjà Forteresse/Solidification/Mur, et non d'un snapshot antérieur). */
+    static diagTermSource(termNode, entityId) {
+        var n = termNode
+        var depth = 0
+        while (n != null) {
+            if (entityId in n.TERMS) {
+                var act = (n.ACTION == null) ? "racine noPlay (aucune action)" : ITEMINFO[n.ACTION.Item].NAME
+                return "trouvé à la profondeur " + depth + " de la chaîne TERMS_PARENT, nœud produit par : " + act
+            }
+            n = n.TERMS_PARENT
+            depth++
+        }
+        return "ABSENT de toute la chaîne TERMS_PARENT -> oldTerm vaut 0 par défaut (profondeur parcourue " + depth + ")"
+    }
+    // ==================================================================
 
     /*
      * Terme courant d'une entité dans la chaîne de snapshots : le patch le plus PROCHE qui

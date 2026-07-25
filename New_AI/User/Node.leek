@@ -85,7 +85,20 @@ class NodeClass {
 		}
 		ThisActionStats[Me].TP -= Cost
 		if (Info.IS_WEAPON) ThisActionStats[Me].WEAPON = Item
+		// ============ DIAGNOSTIC TEMPORAIRE Libération — À RETIRER (revert) ============
+		// Arme la trace au PREMIER cast simulé de Libération visant ma propre cellule.
+		if (DIAG_LIB_ARMED && Item == CHIP_LIBERATION && To == From) {
+			DIAG_LIB_ACTIVE = true
+			DIAG_LIB_BEFORE = diagSnapshotOfMe(ThisActionStats[Me])
+		}
+		// ==============================================================================
 		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash, clonedIds, Act.RESURRECT_ID)
+		// ============ DIAGNOSTIC TEMPORAIRE Libération — À RETIRER (revert) ============
+		if (DIAG_LIB_ACTIVE && DIAG_LIB_BEFORE != null) {
+			diagDumpDebuff(DIAG_LIB_BEFORE, diagSnapshotOfMe(ThisActionStats[Me]), ThisActionStats[Me])
+			DIAG_LIB_BEFORE = null
+		}
+		// ==============================================================================
 		// Écritures d'inventaire via les setters différentiels : elles ne touchent que le
 		// patch local du clone de Me, jamais un ancêtre.
 		StateClass.setCooldown(ThisActionStats[Me], Item, Info.COOLDOWN)
@@ -172,6 +185,29 @@ class NodeClass {
 		BenchOps.Stop("Node")
 		return result
 	}
+
+	// ============ DIAGNOSTIC TEMPORAIRE Libération — À RETIRER (revert) ============
+
+	/* Scalaires de Me lus par le scoring + copie plate du ledger. */
+	static diagSnapshotOfMe(s) {
+		var led = []
+		for (var eff in s.EFFECTS) push(led, [eff[0], eff[1], eff[3], eff[5], eff[7]])
+		return [s.RELATIVE_SHIELD, s.ABSOLUTE_SHIELD, s.RESISTANCE, s.DAMAGE_RETURN,
+			s.POISON, s.POISON_OVER_TIME, s.AFTEREFFECT, s.AFTEREFFECT_OVER_TIME, s.HEAL, s.HEAL_OVER_TIME,
+			s.LIFE, s.TOTAL_LIFE, s.STRENGTH, s.AGILITY, s.TOTAL_TP, s.TOTAL_MP, led]
+	}
+
+	static diagDumpDebuff(b, a, s) {
+		debugW("[DIAG-LIB] ===== CAST DE LIBÉRATION SUR MOI — ÉTAT AVANT -> APRÈS =====")
+		debugW("[DIAG-LIB] RELATIVE_SHIELD " + b[0] + " -> " + a[0] + "   ABSOLUTE_SHIELD " + b[1] + " -> " + a[1] + "   RESISTANCE " + b[2] + " -> " + a[2])
+		debugW("[DIAG-LIB] DAMAGE_RETURN " + b[3] + " -> " + a[3])
+		debugW("[DIAG-LIB] flux POISON " + b[4] + "->" + a[4] + " POT " + b[5] + "->" + a[5] + " AFTEREFFECT " + b[6] + "->" + a[6] + " AOT " + b[7] + "->" + a[7] + " HEAL " + b[8] + "->" + a[8] + " HOT " + b[9] + "->" + a[9])
+		debugW("[DIAG-LIB] LIFE " + b[10] + "->" + a[10] + " TOTAL_LIFE " + b[11] + "->" + a[11] + " STRENGTH " + b[12] + "->" + a[12] + " AGILITY " + b[13] + "->" + a[13] + " TOTAL_TP " + b[14] + "->" + a[14] + " TOTAL_MP " + b[15] + "->" + a[15])
+		debugW("[DIAG-LIB] ledger AVANT (type, value, turns, item, modifiers) : " + b[16])
+		debugW("[DIAG-LIB] ledger APRÈS (type, value, turns, item, modifiers) : " + a[16])
+	}
+
+	// ============ FIN DIAGNOSTIC TEMPORAIRE Libération ============
 
 	/*
 	 * Fige les entités modifiées par l'action : STATE_PATCH prend, pour chaque id touché, la
