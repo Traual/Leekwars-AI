@@ -5,15 +5,6 @@
 include("../includes.leek")
 
 function ReloadCacheNewTurn() {
-    // ====== MESURE TEMPORAIRE des dépendances healer -> cibles — À RETIRER après la mesure ======
-    HDEP_SIDE_DIRTY = 0
-    HDEP_EXACT_DIRTY = 0
-    HDEP_SKIPPED = 0
-    HDEP_FIXED_TESTS = 0
-    HDEP_ME_TESTS = 0
-    HDEP_ME_DIRTY = 0
-    // ============================================================================================
-
     TARGETABLECACHE = [: ]
     MAP_CELL_ITEM_AOE_CACHE = [: ]
     DANGER_ITEM_AOE_HASH_CACHE = [: ]
