@@ -91,11 +91,6 @@ class DangerClass {
 		// (id << 10 | cellule) : même raison que getEntityDanger — l'ordre des casters (donc
 		// la chaîne de vulnés) dépend de l'IDENTITÉ de la cible, pas que de ses stats.
 		var ThisHash = addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), (TargetStats.ID << 10) | Cell)
-		// ====== DIAGNOSTIC #3 — À RETIRER (revert) ======
-		var diag3 = (DIAG3_CELL == Cell && DIAG3_CELL != 0)
-		if (diag3) debugW("[DIAG3]   CELL_DANGER_GET_CACHE : " + ((ThisHash in CELL_DANGER_GET_CACHE) ? "HIT" : "MISS")
-			+ " | shields d'entrée de la chaîne : ABS " + TargetStats.ABSOLUTE_SHIELD + " / REL " + TargetStats.RELATIVE_SHIELD)
-		// ===============================================
 		if (ThisHash in CELL_DANGER_GET_CACHE) return CELL_DANGER_GET_CACHE[ThisHash]
 		var _final = [: ]   // par caster, pas sommé : le net séquence par ordre de tour
 		// La cible n'est jamais mutée : seuls ses deux shields COURANTS évoluent le long de la
@@ -108,14 +103,7 @@ class DangerClass {
 			var MapCellItemAoe = getMapCellItemAoe(CasterStats, EnemyWalkCells[Caster])
 			// Caster incapable d'atteindre cette cellule : aucun combo ni map vide alloués.
 			if (!(Cell in MapCellItemAoe)) continue
-			// ====== DIAGNOSTIC #3 — À RETIRER (revert) ======
-			if (diag3) debugW("[DIAG3]   >> caster " + Caster + " (" + getName(Caster) + ") | items atteignant la cellule : "
-				+ MapCellItemAoe[Cell] + " | TP=" + CasterStats.TOTAL_TP + " | shields chaîne ABS " + chainAbs + " / REL " + chainRel)
-			// ===============================================
 			var combo = getComboFromItemAoe(MapCellItemAoe[Cell], CasterStats, TargetStats, chainAbs, chainRel)
-			// ====== DIAGNOSTIC #3 ======
-			if (diag3) debugW("[DIAG3]   >> combo retenu = " + combo[0] + " | shields finaux ABS " + combo[1] + " / REL " + combo[2])
-			// ===========================
 			if (combo[0] > 0) {
 				// Le crit est appliqué EN PROFONDEUR (formules d'EntityDanger avant les shields + vulnés
 				// de chaîne critées), pas ici : (d − ABS)·1.3 ≠ d·1.3 − ABS.
@@ -152,10 +140,6 @@ class DangerClass {
 		if (mapIsEmpty(ItemAoeMap)) return [0, curAbs, curRel]
 		var HashedItemAoeMap = getHashFromItemAoeMap(ItemAoeMap)
 		var HashWithShield = getStatsHashForDangerOneCaster(TargetStats, CasterStats, HashedItemAoeMap, curAbs, curRel)
-		// ====== DIAGNOSTIC #3 — À RETIRER (revert) ======
-		var diag3c = (DIAG3_CELL != 0)
-		if (diag3c) debugW("[DIAG3]      COMBO_FROM_ITEM_AOE_CACHE : " + ((HashWithShield in COMBO_FROM_ITEM_AOE_CACHE) ? "HIT" : "MISS"))
-		// ===============================================
 		if (HashWithShield in COMBO_FROM_ITEM_AOE_CACHE) return COMBO_FROM_ITEM_AOE_CACHE[HashWithShield]
 		// TOTAL_TP : le danger représente le potentiel max du prochain tour, pas les TP
 		// restants de ce tour — stable d'un step de BFS à l'autre.
@@ -166,9 +150,6 @@ class DangerClass {
 		// le chemin sans vulné).
 		var playedUses = null
 		var _final = getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, BaseTp, playedUses, curAbs, curRel)
-		// ====== DIAGNOSTIC #3 ======
-		if (diag3c) debugW("[DIAG3]      total du combo BRUT (sans vulnérabilité) = " + _final + "   [TP " + BaseTp + ", ABS " + curAbs + ", REL " + curRel + "]")
-		// ===========================
 		var ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, playedUses, curAbs, curRel)
 		while ((ComboWithVulne instanceof DangerClass) && (ComboWithVulne.EndValueDamage > _final)) {
 			_final = ComboWithVulne.EndValueDamage
@@ -176,14 +157,8 @@ class DangerClass {
 			curRel = ComboWithVulne.EndRelativeShield
 			playedUses = ComboWithVulne.EndPlayedUses
 			BaseTp = ComboWithVulne.EndTp
-			// ====== DIAGNOSTIC #3 ======
-			if (diag3c) debugW("[DIAG3]      VULNÉRABILITÉ retenue -> total " + _final + " | shields après vulné ABS " + curAbs + " / REL " + curRel + " | TP restant " + BaseTp)
-			// ===========================
 			ComboWithVulne = getFirstComboVulneFrom(ItemAoeMap, CasterStats, TargetStats, BaseTp, playedUses, curAbs, curRel)
 		}
-		// ====== DIAGNOSTIC #3 ======
-		if (diag3c) debugW("[DIAG3]      TOTAL FINAL du caster = " + _final)
-		// ===========================
 		// Entrée en SCALAIRES : le cache ne retient plus aucune référence vers une entité,
 		// donc plus rien à figer par un clone (sans vulné jouée, on stocke les shields
 		// d'entrée tels quels).
@@ -310,14 +285,6 @@ class DangerClass {
 	static getGreedyComboFromItemAoe(ItemAoeMap, CasterStats, TargetStats, CasterTP, playedUses, curAbs, curRel) {
 		var EntityDangerArray = EntityDangerClass.get(CasterStats, TargetStats, curAbs, curRel)
 		var ComboHash = getGreedyComboHash(ItemAoeMap, EntityDangerArray, CasterTP, playedUses)
-		// ====== DIAGNOSTIC #3 — À RETIRER (revert) ======
-		var diag3g = (DIAG3_CELL != 0 && DIAG3_TRACES < DIAG3_MAX)
-		if (diag3g) {
-			DIAG3_TRACES++
-			debugW("[DIAG3]        [glouton] COMBO_DAMAGE_CACHE : " + ((ComboHash in COMBO_DAMAGE_CACHE) ? ("HIT -> " + COMBO_DAMAGE_CACHE[ComboHash]) : "MISS")
-				+ " | TP=" + CasterTP + " | ABS=" + curAbs + " REL=" + curRel + " | " + count(EntityDangerArray) + " entrées triées")
-		}
-		// ===============================================
 		if (ComboHash in COMBO_DAMAGE_CACHE) return COMBO_DAMAGE_CACHE[ComboHash]
 		var _final = 0
 		for (var EntityDanger in EntityDangerArray) {
@@ -326,31 +293,14 @@ class DangerClass {
 				var CostEntityDanger = EntityDanger.Cost
 				var MaxUsesOfItem = ITEMINFO[ItemEntityDanger].MAX_USES
 				var itemUses = playedUses == null ? 0 : ((ItemEntityDanger in playedUses) ? playedUses[ItemEntityDanger] : 0)
-				// ====== DIAGNOSTIC #3 ======
-				var diagTpBefore = CasterTP
-				var diagN = 0
-				// ===========================
 				while (CasterTP >= CostEntityDanger && itemUses < MaxUsesOfItem) {
 					_final += EntityDanger.Damages
 					CasterTP -= CostEntityDanger
 					itemUses++
-					if (diag3g) diagN++
 				}
-				// ====== DIAGNOSTIC #3 — À RETIRER (revert) ======
-				if (diag3g && diagN > 0) {
-					debugW("[DIAG3]          item " + ItemEntityDanger + " (" + ITEMINFO[ItemEntityDanger].NAME + ")"
-						+ " | aoe=" + EntityDanger.Aoe + " | dégâts/cast=" + EntityDanger.Damages
-						+ " | coût=" + CostEntityDanger + " | dégâts/TP=" + EntityDanger.DamagesPerTp
-						+ " | utilisations=" + diagN + " | TP " + diagTpBefore + " -> " + CasterTP
-						+ " | cumul=" + _final)
-				}
-				// ===============================================
 			}
 		}
 		COMBO_DAMAGE_CACHE[ComboHash] = _final
-		// ====== DIAGNOSTIC #3 ======
-		if (diag3g) debugW("[DIAG3]        [glouton] TOTAL = " + _final + " | TP restant " + CasterTP)
-		// ===========================
 		return _final
 	}
 

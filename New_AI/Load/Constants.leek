@@ -115,32 +115,3 @@ global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
 // gloutonne + early-exit des chaînes). Attrape les résidus float des chips type Antidote /
 // Libération / Rémission quand aucun effet pertinent ne s'applique.
 global BFS_DELTA_EPSILON = 0.01
-
-// ============================================================================
-// DIAGNOSTIC TEMPORAIRE — faux positif de Libération sur soi — À RETIRER (revert)
-// One-shot : le premier cast simulé de CHIP_LIBERATION sur Me est tracé de bout en bout
-// (état avant/après, ledger, sous-composantes du terme, provenance de l'ancien terme).
-// Aucun changement de formule ni de décision : uniquement des debug().
-// ============================================================================
-// Signature EXACTE du cas fautif (ArkansasBlack tour 6, après Forteresse 46 + Mur 36) :
-// tout autre cast de Libération est ignoré, le one-shot n'est donc plus consommé par la
-// Libération du tour 1 (REL 44->26, delta -15.1872, comportement correct).
-global DIAG_LIB_ARMED = true    // désarmé APRÈS le match exact seulement
-global DIAG_LIB_ACTIVE = false  // vrai pendant la simulation + le scoring de CE cast
-global DIAG_LIB_BEFORE = null   // snapshot des scalaires de Me avant les conséquences
-global DIAG_LIB_PATH = ""       // provenance : racine (enumerateAndSort) ou chemin réutilisé (findBestNextNode)
-
-// DIAGNOSTIC #2 — canal survival/net de Me (la trace #1 a innocenté Consequences, le
-// ledger, TERMS_PARENT et drDeterrence). Vise les deux états d'ArkansasBlack au tour 6 :
-// REL 82 / RES 536 (avant Libération) puis REL 50 / RES 462 (après).
-global DIAG2_ON = false      // posé une fois par tour dans Play (tour 6 + ArkansasBlack)
-global DIAG2_TRACES = 0      // borne le volume de log
-global DIAG2_MAX = 8
-
-// DIAGNOSTIC #3 — niveau DANGER (les deux caches de Me sont innocentés : MISS complets sur
-// 67 cellules et recalcul frais identique). Cible : cellule 513 (celle du minimum) et 424
-// (témoin, où le danger augmente normalement), pour les deux états REL82 et REL50.
-global DIAG3_CELL = 0        // cellule en cours de traitement, 0 = trace inactive
-global DIAG3_LABEL = ""      // "AVANT REL82" ou "APRES REL50"
-global DIAG3_TRACES = 0
-global DIAG3_MAX = 400       // borne large : le séquençage par caster est verbeux

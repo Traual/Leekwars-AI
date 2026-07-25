@@ -34,41 +34,12 @@ class ScoringClass {
      */
     static buildTermsMap(State, MySide, BaseHash, contextBySide, hfpBySide, poisonKey) {
         BenchOps.Start("Scoring")
-        // ====== DIAGNOSTIC TEMPORAIRE #2 — À RETIRER (revert) ======
-        // Play REJOUE un BFS complet après CHAQUE action : le tour 6 construit donc plusieurs
-        // racines (Forteresse, Blindage, Solidification, Mur, ...). On n'arme QUE sur la
-        // racine dont l'état est EXACTEMENT celui d'avant Libération, et on y remet le
-        // compteur de traces à zéro — sinon les replans précédents le consomment.
-        DIAG2_ON = false
-        if (getTurn() == 6 && getName(Me) == "ArkansasBlack") {
-            var dm = State[Me]
-            if (abs(dm.RELATIVE_SHIELD - 82) < 1 && abs(dm.ABSOLUTE_SHIELD - 112) < 1
-                && abs(dm.RESISTANCE - 536) < 1 && abs(dm.LIFE - 4168) < 1) {
-                DIAG2_ON = true
-                DIAG2_TRACES = 0
-            }
-        }
-        // ===========================================================
         var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash, contextBySide, hfpBySide)
         var terms = [: ]
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
             var sign = (stat.SIDE == MySide) ? 1 : -1
             terms[e] = sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e], State, poisonKey) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
-            // ====== DIAGNOSTIC TEMPORAIRE #2 — À RETIRER (revert) ======
-            // Terme de Me à la RACINE (état AVANT Libération) : c'est la borne de référence.
-            if (DIAG2_ON && e == Me) {
-                var dnet = netDamageMap[e]
-                debugW("[DIAG2] ===== RACINE CIBLÉE du replan (état d'avant le cast de Libération) — terme de Me =====")
-                debugW("[DIAG2]   NB : après le cast réel, la racine du replan suivant portera REL 50 = état APRÈS Libération")
-                debugW("[DIAG2]   REL=" + stat.RELATIVE_SHIELD + " ABS=" + stat.ABSOLUTE_SHIELD + " RES=" + stat.RESISTANCE + " LIFE=" + stat.LIFE + " TOTAL_LIFE=" + stat.TOTAL_LIFE)
-                debugW("[DIAG2]   net=" + dnet)
-                debugW("[DIAG2]   survival=" + survivalValue(stat, dnet, State, poisonKey))
-                debugW("[DIAG2]   capability=" + ImportanceClass.capability(stat) + "   (borne attendue >= 79.4976)")
-                debugW("[DIAG2]   importance=" + ImportanceClass.get(stat) + " | drDeterrence=" + drDeterrence(stat, dnet, State))
-                debugW("[DIAG2]   TERME FINAL=" + terms[e])
-            }
-            // ===========================================================
         }
         BenchOps.Stop("Scoring")
         return terms
@@ -169,49 +140,11 @@ class ScoringClass {
             var sign = (stat.SIDE == MySide) ? 1 : -1
             var net = DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)
             newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, net, State, node.POISON_KEY) + ImportanceClass.capability(stat) + drDeterrence(stat, net, State))
-            // ====== DIAGNOSTIC TEMPORAIRE Libération — À RETIRER (revert) ======
-            // Décomposition du terme de Me pendant le cast tracé (appels PURS et memoïsés :
-            // aucune influence sur le calcul ci-dessus, déjà effectué).
-            if (DIAG_LIB_ACTIVE && e == Me) {
-                debugW("[DIAG-LIB] --- sous-composantes du terme de Me APRÈS le débuff ---")
-                debugW("[DIAG-LIB] netDamage(min de fuite) = " + net)
-                debugW("[DIAG-LIB] importance = " + ImportanceClass.get(stat) + " | survival = " + survivalValue(stat, net, State, node.POISON_KEY))
-                debugW("[DIAG-LIB] capability = " + ImportanceClass.capability(stat) + " | drDeterrence = " + drDeterrence(stat, net, State) + "   (DAMAGE_RETURN = " + stat.DAMAGE_RETURN + ", part physique adverse = " + ((DR_PHYSRATIO_BY_SIDE == null) ? "null" : DR_PHYSRATIO_BY_SIDE[stat.SIDE]) + ")")
-                debugW("[DIAG-LIB] newTerm = " + newTerm)
-            }
-            // ==================================================================
         }
         var oldTerm = termOf(ParentTermNode, e)
-        // ====== DIAGNOSTIC TEMPORAIRE Libération — À RETIRER (revert) ======
-        // Provenance EXACTE de l'ancien terme : à quelle profondeur de la chaîne
-        // TERMS_PARENT il a été trouvé, et par quelle action ce nœud a été produit.
-        if (DIAG_LIB_ACTIVE && e == Me) {
-            debugW("[DIAG-LIB] oldTerm = " + oldTerm + " | " + diagTermSource(ParentTermNode, e))
-            debugW("[DIAG-LIB] delta immédiat du terme de Me = " + (newTerm - oldTerm))
-        }
-        // ==================================================================
         termsPatch[e] = newTerm
         return newTerm - oldTerm
     }
-
-    // ====== DIAGNOSTIC TEMPORAIRE Libération — À RETIRER (revert) ======
-    /* D'où vient l'ancien terme : profondeur dans la chaîne + action du nœud fournisseur
-     * (permet de vérifier qu'il provient bien de la racine COURANTE, donc d'un état qui
-     * inclut déjà Forteresse/Solidification/Mur, et non d'un snapshot antérieur). */
-    static diagTermSource(termNode, entityId) {
-        var n = termNode
-        var depth = 0
-        while (n != null) {
-            if (entityId in n.TERMS) {
-                var act = (n.ACTION == null) ? "racine noPlay (aucune action)" : ITEMINFO[n.ACTION.Item].NAME
-                return "trouvé à la profondeur " + depth + " de la chaîne TERMS_PARENT, nœud produit par : " + act
-            }
-            n = n.TERMS_PARENT
-            depth++
-        }
-        return "ABSENT de toute la chaîne TERMS_PARENT -> oldTerm vaut 0 par défaut (profondeur parcourue " + depth + ")"
-    }
-    // ==================================================================
 
     /*
      * Terme courant d'une entité dans la chaîne de snapshots : le patch le plus PROCHE qui
