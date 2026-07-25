@@ -166,10 +166,24 @@ class DeltaClass {
                     enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash, statsHash)
                     castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
                 }
+                // ====== DIAGNOSTIC #3 — À RETIRER (revert) : cible 513 (min) et 424 (témoin) ======
+                if (diag2 && (cell == 513 || cell == 424) && DIAG3_TRACES < DIAG3_MAX) {
+                    DIAG3_CELL = cell
+                    DIAG3_LABEL = (MeStats.RELATIVE_SHIELD >= 70) ? "AVANT REL82" : "APRES REL50"
+                    debugW("[DIAG3] ########## CELLULE " + cell + " — état " + DIAG3_LABEL
+                        + " (REL " + MeStats.RELATIVE_SHIELD + " / ABS " + MeStats.ABSOLUTE_SHIELD + " / RES " + MeStats.RESISTANCE + ") ##########")
+                }
+                // =================================================================================
                 var dangerAtCell = DangerClass.get(cell, State, MeStats, enemyWalkCells, toSkipMap, statsHash, castersInOrder)
                 // Danger vide -> delta 0 direct (déclenche l'early exit "imbattable" dessous).
                 delta = mapIsEmpty(dangerAtCell) ? 0 : netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
                 CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
+                // ====== DIAGNOSTIC #3 — À RETIRER (revert) ======
+                if (DIAG3_CELL != 0) {
+                    debugW("[DIAG3]   => net FINAL à la cellule " + cell + " (" + DIAG3_LABEL + ") = " + delta)
+                    DIAG3_CELL = 0
+                }
+                // ===============================================
             }
             // ====== DIAGNOSTIC TEMPORAIRE #2 — À RETIRER (revert) ======
             if (diag2) {
@@ -200,7 +214,7 @@ class DeltaClass {
         // ====== DIAGNOSTIC #2 : comparaison fraîche AUSSI après un calcul normal (MISS) ======
         if (diag2) {
             debugW("[DIAG2]   (MISS externe) MIN calculé = " + minDelta + " à la cellule " + diagMinCell
-                + " | cellules accessibles=" + count(myWalkCells) + " | internes HIT=" + diagInnerHits + " MISS=" + diagInnerMiss)
+                + " | cellules accessibles=" + mapSize(myWalkCells) + " | internes HIT=" + diagInnerHits + " MISS=" + diagInnerMiss)
             diagFreshMinCompare(MeStats, State, BaseHash, statsHash, hfp, healMap, rotSeed, minDelta, "MISS externe (calcul normal)")
         }
         // ===================================================================================
@@ -278,9 +292,20 @@ class DeltaClass {
         // turnOrder = les casters jouant APRÈS la cible, cible EXCLUE (rotation de
         // getEntitiesInTurnOrderAfterEntity) -> jamais de self-heal ici, profil par type.
         var allyProfile = stat.IS_SUMMON ? HEAL_PROFILE_ALLY_SUMMON : HEAL_PROFILE_ALLY_LEEK
+        // ====== DIAGNOSTIC #3 — À RETIRER (revert) ======
+        var diag3 = (DIAG3_CELL == cell && DIAG3_CELL != 0)
+        if (diag3) debugW("[DIAG3]   -- séquençage netDamage à la cellule " + cell + " (" + DIAG3_LABEL + ") : LIFE de départ " + life + " / TOTAL " + totalLife)
+        // ===============================================
         for (var caster in turnOrder) {
+            // ====== DIAGNOSTIC #3 ======
+            var diagLifeBefore = life
+            var diagDmg = 0
+            var diagHeal = 0
+            var diagVita = 0
+            // ===========================
             if (caster in dangerToT) {
                 life -= DANGER_COEF * dangerToT[caster]
+                if (diag3) diagDmg = DANGER_COEF * dangerToT[caster]
             }
             if (life > 0 && State[caster].SIDE == stat.SIDE && caster in healMap) {
                 var coverage = healMap[caster][allyProfile]
@@ -291,9 +316,21 @@ class DeltaClass {
                     life += projectedVitality
                     life += HEAL_COEF * parts[0]
                     if (life > totalLife) life = totalLife
+                    if (diag3) { diagVita = projectedVitality ; diagHeal = HEAL_COEF * parts[0] }
                 }
             }
+            // ====== DIAGNOSTIC #3 — À RETIRER (revert) ======
+            if (diag3 && (diagDmg != 0 || diagHeal != 0 || diagVita != 0)) {
+                debugW("[DIAG3]     caster " + caster + " (" + getName(caster) + ", camp " + State[caster].SIDE
+                    + (State[caster].SIDE == stat.SIDE ? " = ALLIÉ" : " = ENNEMI") + ")"
+                    + " | danger appliqué=" + diagDmg + " | heal=" + diagHeal + " | vitalité=" + diagVita
+                    + " | LIFE " + diagLifeBefore + " -> " + life)
+            }
+            // ===============================================
         }
+        // ====== DIAGNOSTIC #3 ======
+        if (diag3) debugW("[DIAG3]   -- net = max(0, " + stat.LIFE + " - " + life + ") = " + max(0, stat.LIFE - life))
+        // ===========================
         return max(0, stat.LIFE - life)
     }
 

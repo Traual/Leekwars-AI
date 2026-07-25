@@ -33,6 +33,12 @@ class EntityDangerClass {
 	 */
 	static get(CasterStats, TargetStats, curAbs, curRel) {
 		var Hash = MapHash(CasterStats, TargetStats, curAbs, curRel)
+		// ====== DIAGNOSTIC #3 — À RETIRER (revert) ======
+		if (DIAG3_CELL != 0 && DIAG3_TRACES < DIAG3_MAX) {
+			debugW("[DIAG3]        [items] DANGER_ENTITY_CACHE : " + ((Hash in DANGER_ENTITY_CACHE) ? ("HIT -> " + count(DANGER_ENTITY_CACHE[Hash]) + " entrées") : "MISS")
+				+ " | caster " + CasterStats.ID + " vs cible ABS " + curAbs + " / REL " + curRel)
+		}
+		// ===============================================
 		if (Hash in DANGER_ENTITY_CACHE) return DANGER_ENTITY_CACHE[Hash]
 		var Tmp = []
 		// Garde cible morte : liste vide — l'ancienne garde de getItemDanger rendait 0 à
