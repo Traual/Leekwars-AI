@@ -154,11 +154,13 @@ class DangerClass {
 	 * savoir quelles cibles dépendent réellement de ce caster.
 	 * null quand le caster ne menace personne : absent, Me (toujours exclu du danger), mort,
 	 * ou sans item menaçant. La map rendue vient de MAP_CELL_ITEM_AOE_CACHE — READ-ONLY.
+	 * MapKey est la clé DÉJÀ calculée par l'appelant (qui s'en sert aussi pour comparer les
+	 * géométries) : jamais reconstruite ici.
 	 */
-	static offensiveCoverageOf(CasterStats, CasterId) {
+	static offensiveCoverageOf(CasterStats, CasterId, MapKey) {
 		if (CasterStats == null || CasterId == Me || CasterStats.LIFE <= 0) return null
 		if (!HaveAnHittableItem(CasterStats, CasterId)) return null
-		return getMapCellItemAoe(CasterStats, WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(CasterStats), mapCellItemAoeKeyOf(CasterStats))
+		return getMapCellItemAoe(CasterStats, WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(CasterStats), MapKey)
 	}
 
 	/*

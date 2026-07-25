@@ -5,15 +5,6 @@
 include("../includes.leek")
 
 function ReloadCacheNewTurn() {
-    // ====== MESURE TEMPORAIRE des dépendances caster -> cibles — À RETIRER après la mesure ======
-    DDEP_SIDE_DIRTY = 0
-    DDEP_EXACT_DIRTY = 0
-    DDEP_SKIPPED = 0
-    DDEP_FIXED_TESTS = 0
-    DDEP_ME_TESTS = 0
-    DDEP_ME_DIRTY = 0
-    // ============================================================================================
-
     TARGETABLECACHE = [: ]
     MAP_CELL_ITEM_AOE_CACHE = [: ]
     DANGER_ITEM_AOE_HASH_CACHE = [: ]

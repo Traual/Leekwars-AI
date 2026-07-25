@@ -10,6 +10,3 @@ Preload.InitStateClass()
 BenchOps.Reset()
 new Play()
 BenchOps.Dump()
-// ====== MESURE TEMPORAIRE des dépendances caster -> cibles — À RETIRER après la mesure ======
-debugW("DangerDeps sideDirty=" + DDEP_SIDE_DIRTY + " exactDirty=" + DDEP_EXACT_DIRTY + " skipped=" + DDEP_SKIPPED + " fixedTests=" + DDEP_FIXED_TESTS + " meTests=" + DDEP_ME_TESTS + " meDirty=" + DDEP_ME_DIRTY)
-// ============================================================================================
