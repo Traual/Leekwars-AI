@@ -122,6 +122,10 @@ global BFS_DELTA_EPSILON = 0.01
 // (état avant/après, ledger, sous-composantes du terme, provenance de l'ancien terme).
 // Aucun changement de formule ni de décision : uniquement des debug().
 // ============================================================================
-global DIAG_LIB_ARMED = true    // désarmé après le premier cast tracé
+// Signature EXACTE du cas fautif (ArkansasBlack tour 6, après Forteresse 46 + Mur 36) :
+// tout autre cast de Libération est ignoré, le one-shot n'est donc plus consommé par la
+// Libération du tour 1 (REL 44->26, delta -15.1872, comportement correct).
+global DIAG_LIB_ARMED = true    // désarmé APRÈS le match exact seulement
 global DIAG_LIB_ACTIVE = false  // vrai pendant la simulation + le scoring de CE cast
 global DIAG_LIB_BEFORE = null   // snapshot des scalaires de Me avant les conséquences
+global DIAG_LIB_PATH = ""       // provenance : racine (enumerateAndSort) ou chemin réutilisé (findBestNextNode)

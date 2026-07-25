@@ -86,25 +86,25 @@ class NodeClass {
 		ThisActionStats[Me].TP -= Cost
 		if (Info.IS_WEAPON) ThisActionStats[Me].WEAPON = Item
 		// ============ DIAGNOSTIC TEMPORAIRE Libération — À RETIRER (revert) ============
-		// Arme la trace sur un cast simulé de Libération visant ma propre cellule. Le
-		// désarmement n'a lieu QUE si le ledger était non vide (cas reproductible :
-		// ArkansasBlack après Forteresse/Solidification/Mur) — sinon on continue de chercher.
-		if (DIAG_LIB_ARMED && Item == CHIP_LIBERATION && To == From) {
+		// Garde de signature EXACTE : tour 6, ArkansasBlack, Libération sur soi, et l'état
+		// d'après Forteresse 46 + Mur 36 (REL >= 80) avec Solidification (RES >= 500). Toute
+		// autre Libération (dont celle du tour 1) est ignorée : le one-shot est réservé au
+		// cas fautif.
+		if (DIAG_LIB_ARMED && Item == CHIP_LIBERATION && To == From
+			&& getTurn() == 6 && getName(Me) == "ArkansasBlack"
+			&& ThisActionStats[Me].RELATIVE_SHIELD >= 80 && ThisActionStats[Me].RESISTANCE >= 500) {
 			DIAG_LIB_ACTIVE = true
 			DIAG_LIB_BEFORE = diagSnapshotOfMe(ThisActionStats[Me])
+			debugW("[DIAG-LIB] >>> MATCH DE LA SIGNATURE CIBLE : tour " + getTurn() + ", " + getName(Me)
+				+ ", Libération sur soi (cellule " + From + "), REL " + ThisActionStats[Me].RELATIVE_SHIELD
+				+ " / RES " + ThisActionStats[Me].RESISTANCE + " | provenance : " + DIAG_LIB_PATH)
 		}
 		// ==============================================================================
 		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash, clonedIds, Act.RESURRECT_ID)
 		// ============ DIAGNOSTIC TEMPORAIRE Libération — À RETIRER (revert) ============
 		if (DIAG_LIB_ACTIVE && DIAG_LIB_BEFORE != null) {
-			var diagLedgerCount = count(DIAG_LIB_BEFORE[16])
-			if (diagLedgerCount == 0) {
-				// Rien à réduire : cas sans intérêt, on ne trace pas et on reste armé.
-				DIAG_LIB_ACTIVE = false
-			} else {
-				debugW("[DIAG-LIB] (lignes de ledger avant le débuff : " + diagLedgerCount + ")")
-				diagDumpDebuff(DIAG_LIB_BEFORE, diagSnapshotOfMe(ThisActionStats[Me]), ThisActionStats[Me])
-			}
+			debugW("[DIAG-LIB] (lignes de ledger avant le débuff : " + count(DIAG_LIB_BEFORE[16]) + ")")
+			diagDumpDebuff(DIAG_LIB_BEFORE, diagSnapshotOfMe(ThisActionStats[Me]), ThisActionStats[Me])
 			DIAG_LIB_BEFORE = null
 		}
 		// ==============================================================================
