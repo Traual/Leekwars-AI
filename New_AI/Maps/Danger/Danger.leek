@@ -143,122 +143,84 @@ class DangerClass {
 	}
 
 	/*
-	 * Danger de PLUSIEURS cellules d'un coup (recherche de fuite de Me) : les cellules dont la
-	 * couverture offensive est EXACTEMENT identique ne déroulent qu'une seule chaîne.
-	 * Construction caster-first : une seule sélection de map d'AoE par caster pour toutes les
-	 * cellules, au lieu d'une par couple (caster, cellule).
-	 *
-	 * @param MissCells cellules à évaluer, dans l'ordre de l'appelant
-	 * @return [ [cellule -> groupe], groupes ] — le groupe porte ses compteurs (cellules,
-	 *         casters, entrées item de la représentante) pour le futur lot de priorité.
+	 * Maps d'AoE des casters menaçants, à plat et dans l'ordre de tour :
+	 * [casterId, MapCellItemAoe, ...]. Construite UNE fois par recherche de fuite —
+	 * getMapCellItemAoe n'est donc appelée qu'une fois par caster, quel que soit le nombre
+	 * de cellules ensuite visitées.
 	 */
-	static getForCells(MissCells, State, TargetStats, EnemyWalkCells, ToSkipMap, StatsHashForDanger, CastersInOrder) {
-		var TargetId = TargetStats.ID
-		var groupByCell = [: ]
-		var groups = []
-		var pending = []
-		var pendingKeys = []
-		var cachedCount = 0
-		for (var cell in MissCells) {
-			var key = cellCacheKey(StatsHashForDanger, TargetId, cell)
-			if (key in CELL_DANGER_GET_CACHE) {
-				// Hit existant : traité en singleton déjà évalué, jamais regroupé (on ne perd
-				// pas un hit pour tenter une fusion).
-				var hitGroup = new DangerGroupClass([], 0, 0)
-				hitGroup.Danger = CELL_DANGER_GET_CACHE[key]
-				push(hitGroup.Cells, cell)
-				groupByCell[cell] = hitGroup
-				cachedCount++
-			} else {
-				push(pending, cell)
-				push(pendingKeys, key)
-			}
+	static buildCasterMaps(State, EnemyWalkCells, ToSkipMap, CastersInOrder) {
+		var _final = []
+		for (var Caster in CastersInOrder) {
+			if (Caster in ToSkipMap) continue
+			push(_final, Caster)
+			push(_final, getMapCellItemAoe(State[Caster], EnemyWalkCells[Caster]))
 		}
-		var nP = count(pending)
-		if (nP > 0) {
-			var coverages = []
-			var hashes = []
-			var itemCounts = []
-			for (var i = 0; i < nP; i++) {
-				push(coverages, [])
-				push(hashes, 0)
-				push(itemCounts, 0)
-			}
-			for (var Caster in CastersInOrder) {
-				if (Caster in ToSkipMap) continue
-				var MapCellItemAoe = getMapCellItemAoe(State[Caster], EnemyWalkCells[Caster])
-				for (var i = 0; i < nP; i++) {
-					var cell = pending[i]
-					if (!(cell in MapCellItemAoe)) continue
-					var itemMap = MapCellItemAoe[cell]
-					var cov = coverages[i]
-					push(cov, Caster)
-					push(cov, itemMap)
-					// Fold ORDONNÉ (casterId, contenu de la map) : présélection de bucket
-					// uniquement, jamais un critère de fusion.
-					hashes[i] = addValueToBinHash(addValueToBinHash(hashes[i], Caster), getHashFromItemAoeMap(itemMap))
-					itemCounts[i] += mapSize(itemMap)
-				}
-			}
-			var buckets = [: ]
-			for (var i = 0; i < nP; i++) {
-				var cov = coverages[i]
-				var h = hashes[i]
-				var bucket
-				if (h in buckets) {
-					bucket = buckets[h]
-				} else {
-					bucket = []
-					buckets[h] = bucket
-				}
-				var group = null
-				for (var candidate in bucket) {
-					// Une collision de hash n'ajoute qu'une comparaison : deux couvertures
-					// différentes ne fusionnent jamais.
-					if (sameCoverage(candidate.Coverage, cov)) {
-						group = candidate
-						break
-					}
-				}
-				if (group == null) {
-					group = new DangerGroupClass(cov, count(cov) >> 1, itemCounts[i])
-					push(bucket, group)
-					push(groups, group)
-				}
-				push(group.Cells, pending[i])
-				push(group.Keys, pendingKeys[i])
-				groupByCell[pending[i]] = group
-			}
-		}
-		// ====== MESURE TEMPORAIRE — À RETIRER ======
-		DGRP_MISSING += count(MissCells)
-		DGRP_CACHED += cachedCount
-		DGRP_GROUPS += count(groups)
-		for (var g in groups) {
-			var sz = count(g.Cells)
-			if (sz > DGRP_LARGEST) DGRP_LARGEST = sz
-		}
-		// ===========================================
-		return [groupByCell, groups]
+		return _final
 	}
 
 	/*
-	 * Danger d'un groupe : la chaîne n'est déroulée qu'au PREMIER accès (la recherche de fuite
-	 * peut sortir sur un zéro avant d'avoir touché tous les groupes) puis la map obtenue est
-	 * partagée en LECTURE SEULE par toutes les cellules du groupe — netDamage ne fait que la
-	 * lire, comme toute entrée de CELL_DANGER_GET_CACHE.
+	 * Danger d'UNE cellule de fuite, avec partage entre cellules à couverture identique.
+	 * PROGRESSIF : la couverture et le hash d'une cellule ne sont construits qu'au moment où
+	 * l'appelant la consomme réellement — une cellule jamais atteinte (early return sur un
+	 * zéro) ne coûte rien du tout.
+	 *
+	 * @param CasterMaps liste plate de buildCasterMaps
+	 * @param Buckets [hash de couverture -> groupes], local à la recherche de fuite en cours
+	 * @return [casterId -> dégâts], partagée en LECTURE SEULE par les cellules du groupe
 	 */
-	static dangerOfGroup(Group, State, TargetStats) {
-		if (Group.Danger != null) return Group.Danger
-		var dangerMap = evalChainFromCoverage(Group.Coverage, State, TargetStats)
-		Group.Danger = dangerMap
-		// Toutes les clés historiques du groupe sont renseignées, une cellule par une.
-		var keys = Group.Keys
-		var n = count(keys)
-		for (var i = 0; i < n; i++) {
-			CELL_DANGER_GET_CACHE[keys[i]] = dangerMap
+	static dangerOfCell(Cell, State, TargetStats, StatsHashForDanger, CasterMaps, Buckets) {
+		var key = cellCacheKey(StatsHashForDanger, TargetStats.ID, Cell)
+		if (key in CELL_DANGER_GET_CACHE) {
+			DGRP_CACHED++   // MESURE TEMPORAIRE
+			// Hit existant conservé tel quel : ni couverture ni hash construits.
+			return CELL_DANGER_GET_CACHE[key]
 		}
-		return dangerMap
+		var Coverage = []
+		var hash = 0
+		var itemCount = 0
+		var n = count(CasterMaps)
+		for (var i = 0; i < n; i += 2) {
+			var MapCellItemAoe = CasterMaps[i + 1]
+			// Caster incapable d'atteindre cette cellule : aucune paire, aucun combo.
+			if (!(Cell in MapCellItemAoe)) continue
+			var itemMap = MapCellItemAoe[Cell]
+			var Caster = CasterMaps[i]
+			push(Coverage, Caster)
+			push(Coverage, itemMap)
+			// Fold ORDONNÉ (casterId, contenu de la map) : présélection de bucket uniquement,
+			// jamais un critère de fusion.
+			hash = addValueToBinHash(addValueToBinHash(hash, Caster), getHashFromItemAoeMap(itemMap))
+			itemCount += mapSize(itemMap)
+		}
+		var bucket
+		if (hash in Buckets) {
+			bucket = Buckets[hash]
+		} else {
+			bucket = []
+			Buckets[hash] = bucket
+		}
+		var group = null
+		for (var candidate in bucket) {
+			// Une collision de hash n'ajoute qu'une comparaison : deux couvertures différentes
+			// ne fusionnent jamais.
+			if (sameCoverage(candidate.Coverage, Coverage)) {
+				group = candidate
+				break
+			}
+		}
+		if (group == null) {
+			// Couverture inédite : chaîne déroulée immédiatement, une seule fois pour toutes
+			// les cellules qui la partageront ensuite.
+			group = new DangerGroupClass(Coverage, count(Coverage) >> 1, itemCount, evalChainFromCoverage(Coverage, State, TargetStats))
+			push(bucket, group)
+			DGRP_NEWGROUPS++   // MESURE TEMPORAIRE
+		} else {
+			DGRP_GROUPHITS++   // MESURE TEMPORAIRE
+		}
+		group.CellCount = group.CellCount + 1
+		if (group.CellCount > DGRP_LARGEST) DGRP_LARGEST = group.CellCount   // MESURE TEMPORAIRE
+		CELL_DANGER_GET_CACHE[key] = group.Danger
+		return group.Danger
 	}
 
 	/* Deux couvertures identiques : mêmes casters, dans le MÊME ordre, avec des maps d'items
@@ -656,21 +618,20 @@ class DangerClass {
 /*
  * Cellules à couverture offensive EXACTEMENT identique : une seule chaîne de vulnés déroulée
  * pour tout le groupe, une map de danger partagée en lecture seule. Les compteurs sont
- * remplis pendant la construction de la couverture (le lot de priorité les lira sans rescan).
+ * remplis au fil des cellules rencontrées (le lot de priorité les lira sans rescan) — les
+ * cellules que l'early return n'a jamais visitées n'y figurent volontairement pas.
  */
 class DangerGroupClass {
 	Coverage      // [casterId, itemMap, ...] ordonné (ordre de tour des casters)
-	Cells         // cellules du groupe, dans l'ordre de l'appelant
-	Keys          // clés CELL_DANGER_GET_CACHE alignées sur Cells (vide pour un hit existant)
+	CellCount     // cellules du groupe effectivement rencontrées
 	CasterCount   // casters capables d'atteindre ces cellules
 	ItemCount     // entrées item totales atteignant la cellule représentante
-	Danger        // [casterId -> dégâts], null tant que la chaîne n'est pas déroulée
-	constructor(ThisCoverage, ThisCasterCount, ThisItemCount) {
+	Danger        // [casterId -> dégâts], déroulée dès la création du groupe
+	constructor(ThisCoverage, ThisCasterCount, ThisItemCount, ThisDanger) {
 		this.Coverage = ThisCoverage
-		this.Cells = []
-		this.Keys = []
+		this.CellCount = 0
 		this.CasterCount = ThisCasterCount
 		this.ItemCount = ThisItemCount
-		this.Danger = null
+		this.Danger = ThisDanger
 	}
 }

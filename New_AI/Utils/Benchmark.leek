@@ -25,7 +25,7 @@
 **/
 
 class BenchOps {
-	static ENABLED = false
+	static ENABLED = true
 	static STARTS = [: ]
 	static TOTALS = [: ]
 	static CALLS  = [: ]

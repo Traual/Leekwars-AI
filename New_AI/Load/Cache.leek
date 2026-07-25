@@ -5,6 +5,17 @@
 include("../includes.leek")
 
 function ReloadCacheNewTurn() {
+    // ====== MESURE TEMPORAIRE du groupement Danger — À RETIRER après la mesure ======
+    // La VM est persistante d'un tour à l'autre : sans ce reset, les compteurs cumuleraient
+    // tout le combat au lieu de donner un résumé PAR TOUR.
+    DGRP_NETMISSES = 0
+    DGRP_VISITED = 0
+    DGRP_CACHED = 0
+    DGRP_NEWGROUPS = 0
+    DGRP_GROUPHITS = 0
+    DGRP_LARGEST = 0
+    // ================================================================================
+
     TARGETABLECACHE = [: ]
     MAP_CELL_ITEM_AOE_CACHE = [: ]
     CELL_DANGER_GET_CACHE = [: ]

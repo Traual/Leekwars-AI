@@ -144,21 +144,24 @@ class DeltaClass {
             ENTITY_DELTA_CACHE_FOR_ME[outerKey] = minDelta
             return minDelta
         }
+        DGRP_NETMISSES += nMiss   // MESURE TEMPORAIRE
 
-        // Passe 2 : setup + groupement des seules cellules en miss. Les cellules à couverture
-        // offensive identique partageront une unique chaîne de vulnés.
+        // Passe 2 : setup au premier besoin réel de danger. Seules les maps PAR CASTER sont
+        // préparées ici — aucune couverture de cellule n'est construite d'avance.
         var toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
         var enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash, statsHash)
         var castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
-        var groupByCell = DangerClass.getForCells(missCells, State, MeStats, enemyWalkCells, toSkipMap, statsHash, castersInOrder)[0]
+        var casterMaps = DangerClass.buildCasterMaps(State, enemyWalkCells, toSkipMap, castersInOrder)
+        var buckets = [: ]   // couvertures déjà rencontrées, locales à cette recherche de fuite
 
-        // Passe 3 : le net et le heal restent PAR CELLULE (seul le danger est partagé), dans
-        // l'ordre historique de myWalkCells — même minimum, mêmes additions dans netDamage.
+        // Passe 3 : cellule par cellule dans l'ordre historique de myWalkCells. Le danger est
+        // partagé entre couvertures identiques, mais le net et le heal restent PAR CELLULE —
+        // même minimum, mêmes additions dans netDamage. Une cellule postérieure au premier
+        // zéro ne voit jamais sa couverture ni son hash calculés.
         for (var i = 0; i < nMiss; i++) {
             var cell = missCells[i]
-            // Chaîne déroulée au premier accès au groupe : l'early exit ci-dessous ne paie
-            // jamais les groupes qu'il n'atteint pas.
-            var dangerAtCell = DangerClass.dangerOfGroup(groupByCell[cell], State, MeStats)
+            DGRP_VISITED++   // MESURE TEMPORAIRE
+            var dangerAtCell = DangerClass.dangerOfCell(cell, State, MeStats, statsHash, casterMaps, buckets)
             // Danger vide -> delta 0 direct (déclenche l'early exit "imbattable" dessous).
             var delta = mapIsEmpty(dangerAtCell) ? 0 : netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
             CELL_NETDAMAGE_FOR_ME_CACHE[rotSeed ^ cell] = delta
