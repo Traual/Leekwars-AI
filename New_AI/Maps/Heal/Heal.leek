@@ -171,14 +171,27 @@ class HealClass {
         var packSummon = (HEAL_PROFILE_ALLY_SUMMON << 34) | statPack
         var leekMap = [: ]
         var summonMap = [: ]
+        // Quelques centaines de cellules pour une poignée de contenus distincts : les deux
+        // combos d'un contenu déjà vu dans CE build sont repris par un unique lookup local, au
+        // lieu de deux clés reconstruites et deux lectures du cache global. Adressé par le même
+        // hash de contenu que ce cache : aucune identité nouvelle, donc aucun risque nouveau.
+        var seen = [: ]
         for (var cell: var itemAoeMap in mapCellItemAoe) {
             // Hash de contenu calculé UNE fois par cellule, partagé entre les deux profils.
             var contentHash = ItemCoverageClass.hashItemAoeMap(itemAoeMap)
-            var comboLeek = comboAtCell(itemAoeMap, casterStats, HEAL_PROFILE_ALLY_LEEK, packLeek, contentHash)
+            var pair
+            if (contentHash in seen) {
+                pair = seen[contentHash]
+            } else {
+                pair = [comboAtCell(itemAoeMap, casterStats, HEAL_PROFILE_ALLY_LEEK, packLeek, contentHash),
+                        comboAtCell(itemAoeMap, casterStats, HEAL_PROFILE_ALLY_SUMMON, packSummon, contentHash)]
+                seen[contentHash] = pair
+            }
+            var comboLeek = pair[0]
             if (comboLeek[0] > 0 || comboLeek[1] > 0) {
                 leekMap[cell] = [comboLeek[0] * critFactor, comboLeek[1] * critFactor]
             }
-            var comboSummon = comboAtCell(itemAoeMap, casterStats, HEAL_PROFILE_ALLY_SUMMON, packSummon, contentHash)
+            var comboSummon = pair[1]
             if (comboSummon[0] > 0 || comboSummon[1] > 0) {
                 summonMap[cell] = [comboSummon[0] * critFactor, comboSummon[1] * critFactor]
             }
