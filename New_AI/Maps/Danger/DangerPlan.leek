@@ -126,6 +126,27 @@ class DangerPlanClass {
 	}
 
 	/*
+	 * Même séquence, restreinte aux casters qui peuvent CHANGER le net de la cible : ceux qui
+	 * la menacent (map offensive non nulle — les seuls qui peuvent entrer dans la map de danger)
+	 * et ceux qui peuvent la soigner (vivants, non-Me, porteurs d'un item de soin — les seuls
+	 * que la heal map contient). Les autres traversent le déroulé sans jamais rien y ajouter :
+	 * les écarter ne change ni valeur ni ordre des additions flottantes.
+	 */
+	static netSequenceFor(Plan, TargetId) {
+		if (TargetId in Plan.NET_SEQ_BY_ID) return Plan.NET_SEQ_BY_ID[TargetId]
+		var seq = sequenceFor(Plan, TargetId)
+		var actives = Plan.ACTIVE
+		var n = count(seq)
+		var netSeq = []
+		for (var k = 0; k < n; k++) {
+			var idx = seq[k]
+			if (actives[idx]) push(netSeq, idx)
+		}
+		Plan.NET_SEQ_BY_ID[TargetId] = netSeq
+		return netSeq
+	}
+
+	/*
 	 * Plan offensif contre un camp. Une SEULE boucle sur l'ordre de tour global : chaque entrée
 	 * reçoit sa map offensive (null si elle ne menace pas ce camp), sa clé de map, son pack
 	 * offensif canonique et son facteur critique — tous calculés une seule fois.
@@ -146,6 +167,7 @@ class DangerPlanClass {
 		var mapKeys = []
 		var packs = []
 		var crits = []
+		var actives = []
 		var n = count(order)
 		for (var i = 0; i < n; i++) {
 			var id = order[i]
@@ -169,8 +191,11 @@ class DangerPlanClass {
 			push(mapKeys, mapKey)
 			push(packs, pack)
 			push(crits, crit)
+			// Peut-il changer le net d'une cible de ce camp ? Menace, ou soigneur éligible à la
+			// heal map (mêmes conditions que healerContributionOf).
+			push(actives, offMap != null || (id != Me && stat.LIFE > 0 && HealClass.hasHealItem(stat)))
 		}
-		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, packs, crits)
+		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, packs, crits, actives)
 		DANGER_TEAM_PLAN_CACHE[key] = plan
 		return plan
 	}
@@ -187,16 +212,20 @@ class DangerTeamPlanClass {
 	TURN_ORDERS     // [i] = TURN_ORDER de ORDER[i], aligné
 	SEQ_BY_ID       // [id cible -> indices de ORDER dans l'ordre de jeu], construit paresseusement
 	COV_SEQ_BY_ID   // idem, restreinte aux casters à map offensive non nulle
+	NET_SEQ_BY_ID   // idem, restreinte aux casters qui peuvent changer le net (menace ou soin)
+	ACTIVE          // [i] = ce caster peut-il changer un net de ce camp ?
 	OFFENSIVE_MAPS  // [i] = [cellule -> ItemAoeMap] du caster, ou null s'il ne menace pas
 	MAP_KEYS        // [i] = clé de cette map (préfixe des hashs de contenu), ou null
 	CASTER_PACKS    // [i] = pack offensif canonique du caster, ou null
 	CRIT_FACTORS    // [i] = facteur critique déjà résolu, 1 par défaut
-	constructor(ThisOrder, ThisOrderById, ThisTurnOrders, ThisMaps, ThisMapKeys, ThisPacks, ThisCrits) {
+	constructor(ThisOrder, ThisOrderById, ThisTurnOrders, ThisMaps, ThisMapKeys, ThisPacks, ThisCrits, ThisActives) {
 		this.ORDER = ThisOrder
 		this.ORDER_BY_ID = ThisOrderById
 		this.TURN_ORDERS = ThisTurnOrders
 		this.SEQ_BY_ID = [: ]
 		this.COV_SEQ_BY_ID = [: ]
+		this.NET_SEQ_BY_ID = [: ]
+		this.ACTIVE = ThisActives
 		this.OFFENSIVE_MAPS = ThisMaps
 		this.MAP_KEYS = ThisMapKeys
 		this.CASTER_PACKS = ThisPacks

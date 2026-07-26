@@ -49,7 +49,7 @@ class FinalCell {
 
         // Plan et buckets PARESSEUX : une cellule déjà en cache n'en construit aucun.
         var plan = null
-        var mySeq = null
+        var myNetSeq = null   // séquence restreinte aux casters qui peuvent changer mon net
         var myCovSeq = null   // séquence restreinte aux menaces, pour les couvertures de cellule
         var buckets = null
 
@@ -62,7 +62,6 @@ class FinalCell {
             } else {
                 if (plan == null) {
                     plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
-                    mySeq = DangerPlanClass.sequenceFor(plan, myId)
                     buckets = [: ]
                 }
                 // Le plan a pu naître dans le bloc du net : la séquence de couverture se résout
@@ -72,11 +71,9 @@ class FinalCell {
             }
             var net = 0
             if (!mapIsEmpty(dangerMap)) {
-                if (plan == null) {
-                    plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
-                    mySeq = DangerPlanClass.sequenceFor(plan, myId)
-                }
-                net = DeltaClass.netDamage(MyState, dangerMap, healMap, State, plan.ORDER, mySeq, cell)
+                if (plan == null) plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
+                if (myNetSeq == null) myNetSeq = DangerPlanClass.netSequenceFor(plan, myId)
+                net = DeltaClass.netDamage(MyState, dangerMap, healMap, State, plan.ORDER, myNetSeq, cell)
             }
             if (net == 0) { bestCell = cell ; bestNet = 0 ; break }   // meilleure gravité ET sûre -> fini
             if (net < bestNet) { bestNet = net ; bestCell = cell }

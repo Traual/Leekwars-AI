@@ -111,7 +111,7 @@ class DeltaClass {
         // Les casters frappent dans l'ordre où ils jouent APRÈS la cible ce round : la
         // séquence du plan est construite une fois par cible, puis partagée.
         var plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, targetSide)
-        var nd = netDamage(stat, dangerToT, healMap, State, plan.ORDER, DangerPlanClass.sequenceFor(plan, e), cell)
+        var nd = netDamage(stat, dangerToT, healMap, State, plan.ORDER, DangerPlanClass.netSequenceFor(plan, e), cell)
         NETDAMAGE_CACHE[ndKey] = nd
         return nd
     }
@@ -151,7 +151,7 @@ class DeltaClass {
         var dangerCellSeed = DangerClass.cellCacheSeed(targetSeed, MeStats.ID)
         var mySide = MeStats.SIDE
         var plan = null
-        var mySeq = null
+        var myNetSeq = null   // séquence restreinte aux casters qui peuvent changer mon net
         var myCovSeq = null   // séquence restreinte aux menaces, pour les couvertures de cellule
         var buckets = null
         for (var cell: var mp in myWalkCells) {
@@ -168,7 +168,6 @@ class DeltaClass {
                 } else {
                     if (plan == null) {
                         plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
-                        mySeq = DangerPlanClass.sequenceFor(plan, Me)
                         buckets = [: ]   // couvertures rencontrées, locales à cette recherche de fuite
                     }
                     // Le plan a pu naître dans le bloc du net : la séquence de couverture se
@@ -180,11 +179,9 @@ class DeltaClass {
                 // exit "imbattable" dessous).
                 delta = 0
                 if (!mapIsEmpty(dangerAtCell)) {
-                    if (plan == null) {
-                        plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
-                        mySeq = DangerPlanClass.sequenceFor(plan, Me)
-                    }
-                    delta = netDamage(MeStats, dangerAtCell, healMap, State, plan.ORDER, mySeq, cell)
+                    if (plan == null) plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
+                    if (myNetSeq == null) myNetSeq = DangerPlanClass.netSequenceFor(plan, Me)
+                    delta = netDamage(MeStats, dangerAtCell, healMap, State, plan.ORDER, myNetSeq, cell)
                 }
                 CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
             }
