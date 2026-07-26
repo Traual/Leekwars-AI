@@ -111,17 +111,19 @@ class DeltaClass {
         // seed = tout ce qui fixe net(cellule) SAUF la cellule : contexte ennemi + mes shields
         // (statsHash), mes healers (hfp), ma vie courante et max (cap du heal, coupure à 0),
         // et mon PROFIL de cible heal (id, IS_SUMMON — un bulbe lit la couverture summon).
-        // Le sel sépare automatiquement les deux niveaux (le seed nourrit leurs deux clés).
-        var seed = addValueToBinHash(addValueToBinHash(statsHash ^ hfp, (MeStats.LIFE << 16) | MeStats.TOTAL_LIFE), (Me << 1) | (MeStats.IS_SUMMON ? 1 : 0))
-        // rotl13(seed) précalculé : addValueToBinHash(seed, x) == rotl13(seed) ^ x, donc la clé
-        // externe et chaque clé interne se réduisent à un XOR (mêmes clés bit-exactes).
-        var rotSeed = (seed << SHIFT) | ((seed >> HIGH_SHIFT) & MASK_HIGH)
+        // UN seul chaînage : les champs locaux sont packés dans des slots DISJOINTS, avec les
+        // dix bits bas laissés libres pour la cellule. Invariants déjà tenus par l'ancien
+        // packing : cellule <= 612 (bits 0-9), id < 64 (bits 11-16), TOTAL_LIFE et LIFE sur
+        // leurs slots historiques de 16 bits (bits 17-32 et 33-48).
+        var seed = addValueToBinHash(statsHash ^ hfp,
+            (MeStats.LIFE << 33) | (MeStats.TOTAL_LIFE << 17) | (Me << 11) | (MeStats.IS_SUMMON ? 1024 : 0))
 
         // Externe : même état de Me sur le même TERRAIN -> recherche entière sautée. BaseHash
         // dans la clé : le DOMAINE du min est mes cellules accessibles, qui dépendent des
         // obstacles (un allié qui apparaît ou bouge le réduit sans toucher seed ni walkHash).
-        // meWalkFp est celle du nœud, déjà calculée par Node/BFS : clé bit-identique.
-        var outerKey = rotSeed ^ addValueToBinHash(BaseHash, meWalkFp)
+        // meWalkFp est celle du nœud, déjà calculée par Node/BFS. Aucune rotation n'est
+        // nécessaire pour séparer les deux niveaux : ce sont deux MAPS distinctes.
+        var outerKey = seed ^ addValueToBinHash(BaseHash, meWalkFp)
         if (outerKey in ENTITY_DELTA_CACHE_FOR_ME) return ENTITY_DELTA_CACHE_FOR_ME[outerKey]
 
         var myWalkCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
@@ -131,7 +133,7 @@ class DeltaClass {
         var minDelta = MAX_VALUE
         var missCells = []
         for (var cell: var mp in myWalkCells) {
-            var innerKey = rotSeed ^ cell
+            var innerKey = seed ^ cell
             if (innerKey in CELL_NETDAMAGE_FOR_ME_CACHE) {
                 var delta = CELL_NETDAMAGE_FOR_ME_CACHE[innerKey]
                 if (delta < minDelta) {
@@ -142,8 +144,7 @@ class DeltaClass {
                 push(missCells, cell)
             }
         }
-        var nMiss = count(missCells)
-        if (nMiss == 0) {
+        if (count(missCells) == 0) {
             ENTITY_DELTA_CACHE_FOR_ME[outerKey] = minDelta
             return minDelta
         }
@@ -152,13 +153,14 @@ class DeltaClass {
         // séquencé, les maps par caster qu'au premier vrai miss de CELL_DANGER_GET_CACHE. Le
         // danger est partagé entre couvertures identiques, mais le net et le heal restent PAR
         // CELLULE : même minimum, mêmes additions dans netDamage.
-        var meId = MeStats.ID
+        // Partie constante de la clé danger : hoistée une fois, après la sortie entièrement
+        // chaude, la cellule ne fait plus qu'un XOR sur ses dix bits bas.
+        var dangerCellSeed = DangerClass.cellCacheSeed(statsHash, MeStats.ID)
         var castersInOrder = null
         var casterMaps = null
         var buckets = null
-        for (var i = 0; i < nMiss; i++) {
-            var cell = missCells[i]
-            var dangerKey = DangerClass.cellCacheKey(statsHash, meId, cell)
+        for (var cell in missCells) {
+            var dangerKey = dangerCellSeed ^ cell
             var dangerAtCell
             if (dangerKey in CELL_DANGER_GET_CACHE) {
                 // Hit : ni couverture, ni hash de contenu, ni maps de casters.
@@ -180,7 +182,7 @@ class DeltaClass {
                 if (castersInOrder == null) castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
                 delta = netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
             }
-            CELL_NETDAMAGE_FOR_ME_CACHE[rotSeed ^ cell] = delta
+            CELL_NETDAMAGE_FOR_ME_CACHE[seed ^ cell] = delta
             if (delta < minDelta) {
                 if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // imbattable
                 minDelta = delta

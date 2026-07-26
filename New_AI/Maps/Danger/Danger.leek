@@ -88,7 +88,7 @@ class DangerClass {
 	 * @return [casterId -> dégâts]
 	 */
 	static get(Cell, State, TargetStats, EnemyWalkCells, ToSkipMap, StatsHashForDanger, CastersInOrder) {
-		var ThisHash = cellCacheKey(StatsHashForDanger, TargetStats.ID, Cell)
+		var ThisHash = cellCacheSeed(StatsHashForDanger, TargetStats.ID) ^ Cell
 		if (ThisHash in CELL_DANGER_GET_CACHE) return CELL_DANGER_GET_CACHE[ThisHash]
 		// Couverture ordonnée de la cellule : la cellule ne sert QU'À sélectionner les maps
 		// d'items, elle n'est plus lue ensuite (vérifié sur toute la chaîne : combo, hash de
@@ -112,11 +112,15 @@ class DangerClass {
 		return _final
 	}
 
-	/* Clé de CELL_DANGER_GET_CACHE — SOURCE UNIQUE (get et le chemin groupé la partagent).
-	 * (id << 10 | cellule) : même raison que getEntityDanger — l'ordre des casters (donc la
+	/* Partie CONSTANTE de la clé de CELL_DANGER_GET_CACHE — SOURCE UNIQUE : la cellule s'y
+	 * ajoute par un simple XOR sur ses dix bits bas, disjoints de l'id.
+	 * clé == cellCacheSeed(...) ^ Cell, bit à bit identique à l'ancien
+	 * addValueToBinHash(OFFSET_BASIS ^ hash, (id << 10) | Cell) : (id << 10) | Cell vaut
+	 * (id << 10) ^ Cell puisque Cell <= 612, et le XOR est associatif.
+	 * L'id est OBLIGATOIRE : même raison que getEntityDanger — l'ordre des casters (donc la
 	 * chaîne de vulnés) dépend de l'IDENTITÉ de la cible, pas que de ses stats. */
-	static cellCacheKey(StatsHashForDanger, TargetId, Cell) {
-		return addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), (TargetId << 10) | Cell)
+	static cellCacheSeed(StatsHashForDanger, TargetId) {
+		return addValueToBinHash((OFFSET_BASIS ^ StatsHashForDanger), TargetId << 10)
 	}
 
 	/*
