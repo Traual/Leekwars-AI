@@ -109,31 +109,9 @@ global DIFF_BASE = 1        // contribution BaseHash (vivant<->mort, cellule d'u
 global DIFF_CONTEXT = 2     // contribution contexte danger (inputs effectifs offensifs)
 global DIFF_HFP = 4         // contribution fingerprint heal (inputs effectifs de healer)
 global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
-global DIFF_LOCAL_CAP = 16  // ... dont un input de capability SEULE (aucun effet sur le net)
-global DIFF_LOCAL_FULL = 32 // ... dont un input du net, de la survie ou de la dissuasion
-
-// Familles de saleté locale stockées dans NodeClass.LOCAL_TERM_DIRTY (l'appartenance à la
-// map reste le seul critère du recompute-set actuel). Les deux bits peuvent coexister ; un
-// terme portant TERM_DIRTY_FULL exige le chemin complet.
-global TERM_DIRTY_CAPABILITY = 1
-global TERM_DIRTY_FULL = 2
 
 // BFS :
 // Seuil de Δ sous lequel une action de base est traitée comme un no-op (skip de l'expansion
 // gloutonne + early-exit des chaînes). Attrape les résidus float des chips type Antidote /
 // Libération / Rémission quand aucun effet pertinent ne s'applique.
 global BFS_DELTA_EPSILON = 0.01
-
-// ====== DIAGNOSTIC TEMPORAIRE de décomposition du scoring — À RETIRER après la mesure ======
-// Compteurs de tour, remis à zéro par ReloadCacheNewTurn (la VM est PERSISTANTE). Ils ne
-// changent aucun score : ils comptent combien de recalculs POURRAIENT emprunter un chemin
-// « capability seule » si celui-ci existait.
-global SCOMP_LOCAL_TOTAL = 0      // termes localement sales
-global SCOMP_CAP_ONLY_RAW = 0     // ... dont capability seule, avant les triggers globaux
-global SCOMP_CAP_ONLY_USABLE = 0  // ... et qu'aucun trigger n'invalide, borne BASSE certaine
-global SCOMP_CAP_DANGER_UNKNOWN = 0 // ... indécidables : un caster est sale, mais le sonder
-                                  // construirait des couvertures hors du chemin historique.
-                                  // usable + unknown = borne HAUTE.
-global SCOMP_FULL = 0             // termes locaux exigeant déjà le chemin complet
-global SCOMP_GLOBAL_ONLY = 0      // termes relus par un trigger global uniquement
-// ===========================================================================================

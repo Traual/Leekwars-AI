@@ -10,6 +10,3 @@ Preload.InitStateClass()
 BenchOps.Reset()
 new Play()
 BenchOps.Dump()
-// ====== DIAGNOSTIC TEMPORAIRE de décomposition du scoring — À RETIRER après la mesure ======
-debugW("ScoringComponents local=" + SCOMP_LOCAL_TOTAL + " capRaw=" + SCOMP_CAP_ONLY_RAW + " capUsable=" + SCOMP_CAP_ONLY_USABLE + " capDangerUnknown=" + SCOMP_CAP_DANGER_UNKNOWN + " full=" + SCOMP_FULL + " globalOnly=" + SCOMP_GLOBAL_ONLY)
-// ===========================================================================================

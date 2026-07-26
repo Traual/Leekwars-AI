@@ -5,15 +5,6 @@
 include("../includes.leek")
 
 function ReloadCacheNewTurn() {
-    // ====== DIAGNOSTIC TEMPORAIRE de décomposition du scoring — À RETIRER après la mesure ======
-    SCOMP_LOCAL_TOTAL = 0
-    SCOMP_CAP_ONLY_RAW = 0
-    SCOMP_CAP_ONLY_USABLE = 0
-    SCOMP_CAP_DANGER_UNKNOWN = 0
-    SCOMP_FULL = 0
-    SCOMP_GLOBAL_ONLY = 0
-    // ===========================================================================================
-
     TARGETABLECACHE = [: ]
     MAP_CELL_ITEM_AOE_CACHE = [: ]
     DANGER_ITEM_AOE_HASH_CACHE = [: ]

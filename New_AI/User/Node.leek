@@ -24,7 +24,7 @@ class NodeClass {
 	                  // (null pour un summon né en branche). Sert au clone-on-write, à la capture du
 	                  // patch et à la restauration du workspace, puis est libéré (null) par le BFS —
 	                  // STATE_PATCH reste la seule représentation persistante
-	LOCAL_TERM_DIRTY  // [id -> famille] : entités dont un input LOCAL du terme a réellement changé
+	LOCAL_TERM_DIRTY  // [id -> true] : entités dont un input LOCAL du terme a réellement changé
 	                  // (masque diffMaskOf + checks Me BaseHash/fingerprint) — le recompute-set
 	                  // du scoring l'itère directement
 	DANGER_DIRTY_CASTERS // [id -> true] : les non-Me dont la contribution au contexte danger a
@@ -127,7 +127,7 @@ class NodeClass {
 			// AJOUTE simplement les siennes. clonedIds est enregistré à la source par
 			// Consequences, donc Node n'a plus à deviner la nature de l'action.
 			if (parentStat == null) {
-				localTermDirty[tar] = TERM_DIRTY_FULL   // naissance : tout est neuf
+				localTermDirty[tar] = true
 				if (tar == Me) continue      // impossible en pratique : Me préexiste toujours
 				bh ^= StateClass.baseContribution(newStat, tar)
 				var addCtx = DeltaClass.contextContribution(newStat, tar)
@@ -144,14 +144,7 @@ class NodeClass {
 			// trois patchs de hash ET le terme local, et invalide les mémos dérivés
 			// (Me compris — il est seulement exclu des trois hashs).
 			var mask = StateClass.diffMaskOf(parentStat, newStat, tar == Me)
-			if (mask & DIFF_LOCAL_TERM) {
-				// La famille distingue un changement de capability SEULE (le net est intact)
-				// d'un changement qui touche le net, la survie ou la dissuasion.
-				var termFamily = 0
-				if (mask & DIFF_LOCAL_CAP) termFamily |= TERM_DIRTY_CAPABILITY
-				if (mask & DIFF_LOCAL_FULL) termFamily |= TERM_DIRTY_FULL
-				localTermDirty[tar] = termFamily
-			}
+			if (mask & DIFF_LOCAL_TERM) localTermDirty[tar] = true
 			if (tar == Me) continue          // Me est exclu des trois hashs
 			if (mask & DIFF_BASE) bh ^= StateClass.baseContribution(parentStat, tar) ^ StateClass.baseContribution(newStat, tar)
 			if (mask & DIFF_CONTEXT) {
@@ -178,7 +171,7 @@ class NodeClass {
 		if (!(Me in localTermDirty)
 			&& (bh != BaseHash
 				|| WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(clonedIds[Me]) != WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(ThisActionStats[Me]))) {
-			localTermDirty[Me] = TERM_DIRTY_FULL   // le domaine de sa recherche de fuite a bougé
+			localTermDirty[Me] = true
 		}
 
 		result.CLONED = clonedIds

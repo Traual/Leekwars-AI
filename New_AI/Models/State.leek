@@ -223,7 +223,7 @@ class StateClass {
 	 * parentStat null (summon né en branche) -> tout dirty, mémos laissés tels quels.
 	 */
 	static diffMaskOf(parentStat, childStat, isMe) {
-		if (parentStat == null) return DIFF_BASE | DIFF_CONTEXT | DIFF_HFP | DIFF_LOCAL_TERM | DIFF_LOCAL_FULL
+		if (parentStat == null) return DIFF_BASE | DIFF_CONTEXT | DIFF_HFP | DIFF_LOCAL_TERM
 		var mask = 0
 		var cellChanged = parentStat.CELL != childStat.CELL
 
@@ -231,24 +231,16 @@ class StateClass {
 		var totalLifeChanged = parentStat.TOTAL_LIFE != childStat.TOTAL_LIFE
 		if (totalLifeChanged && childStat.TLSQ_MEMO != null) childStat.TLSQ_MEMO = null
 
-		// Inputs de capability qui ne touchent QUE capability : le net ne les lit pas.
-		// EXCEPTION Me : sa mobilité fixe le DOMAINE de sa recherche de fuite, donc TOTAL_TP
-		// (seuil de coût de Jump/Télépo) et TOTAL_MP y comptent comme des inputs du net.
-		var capOnlyChanged = parentStat.STRENGTH != childStat.STRENGTH
+		var capChanged = parentStat.STRENGTH != childStat.STRENGTH
 			|| parentStat.MAGIC != childStat.MAGIC
 			|| parentStat.WISDOM != childStat.WISDOM
 			|| parentStat.SCIENCE != childStat.SCIENCE
 			|| parentStat.AGILITY != childStat.AGILITY
 			|| parentStat.RESISTANCE != childStat.RESISTANCE
-		var mobilityChanged = parentStat.TOTAL_TP != childStat.TOTAL_TP
+			|| parentStat.TOTAL_TP != childStat.TOTAL_TP
 			|| parentStat.TOTAL_MP != childStat.TOTAL_MP
-		if (!isMe) capOnlyChanged = capOnlyChanged || mobilityChanged
-		// Les shields entrent dans le net (la chaîne de vulnés les lit) : famille COMPLÈTE.
-		var shieldChanged = parentStat.ABSOLUTE_SHIELD != childStat.ABSOLUTE_SHIELD
+			|| parentStat.ABSOLUTE_SHIELD != childStat.ABSOLUTE_SHIELD
 			|| parentStat.RELATIVE_SHIELD != childStat.RELATIVE_SHIELD
-		// Invalidation de CAP_MEMO : STRICTEMENT les dix inputs historiques de capability,
-		// quelle que soit la famille dans laquelle chacun est classé.
-		var capChanged = capOnlyChanged || mobilityChanged || shieldChanged
 		if (capChanged && childStat.CAP_MEMO != null) childStat.CAP_MEMO = null
 
 		// Antidote : SEUL Me peut voir son cooldown bouger en simulation — les setters
@@ -262,9 +254,7 @@ class StateClass {
 			antidoteChanged = childStat.COOLDOWNS[CHIP_ANTIDOTE] != cooldownOf(parentStat, CHIP_ANTIDOTE)
 		}
 
-		// Famille COMPLÈTE : tout ce qui entre dans le net, la survie ou la dissuasion.
-		var fullChanged = shieldChanged || totalLifeChanged || cellChanged || antidoteChanged
-			|| (isMe && mobilityChanged)
+		if (capChanged || totalLifeChanged || cellChanged || antidoteChanged
 			|| parentStat.LIFE != childStat.LIFE
 			|| parentStat.DAMAGE_RETURN != childStat.DAMAGE_RETURN
 			|| parentStat.POISON != childStat.POISON
@@ -272,13 +262,8 @@ class StateClass {
 			|| parentStat.AFTEREFFECT != childStat.AFTEREFFECT
 			|| parentStat.AFTEREFFECT_OVER_TIME != childStat.AFTEREFFECT_OVER_TIME
 			|| parentStat.HEAL != childStat.HEAL
-			|| parentStat.HEAL_OVER_TIME != childStat.HEAL_OVER_TIME
-		// Union STRICTEMENT identique à l'ancienne condition : capOnly ∪ mobilité ∪ shields
-		// ∪ le reste == l'ancien capChanged ∪ le reste.
-		if (capOnlyChanged || fullChanged) {
+			|| parentStat.HEAL_OVER_TIME != childStat.HEAL_OVER_TIME) {
 			mask |= DIFF_LOCAL_TERM
-			if (capOnlyChanged) mask |= DIFF_LOCAL_CAP
-			if (fullChanged) mask |= DIFF_LOCAL_FULL
 		}
 
 		// Me est exclu des trois hashs (Node le saute juste après) : rien d'autre à calculer.
