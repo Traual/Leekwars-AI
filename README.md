@@ -113,10 +113,14 @@ Documentés comme des choix, pas des bugs à corriger immédiatement :
   cachée pendant le tour. Une mort reste immédiatement visible via les contributions
   vivant/mort. Ce compromis évite une invalidation globale de tous les termes adverses à
   chaque branche offensive (l'exactitude a été mesurée à +6,31 % d'opérations, misses
-  Danger ×4). Un oracle de HIT, qui recalcule à neuf la valeur servie par chaque cache de
-  combo, ne trouve aucun autre écart : 36 sur 195 324 hits sans la LIFE dans la clé, 0 sur
-  170 592 en la remettant — tous les écarts lui sont donc imputables, aucun autre champ ne
-  manque aux clés.
+  Danger ×4). Un oracle de HIT, qui recalcule à neuf la valeur servie par les caches de
+  danger, ne trouve aucun autre écart. Sans la LIFE dans la clé : 58 515 hits contrôlés sur
+  `DANGER_ENTITY_CACHE`, **zéro écart**, et 136 809 sur `COMBO_FROM_ITEM_AOE_CACHE`,
+  **36 écarts** — soit 195 324 hits contrôlés au total. En remettant la LIFE dans la clé :
+  85 326 hits Danger et 85 266 hits Combo, soit 170 592 au total, **zéro écart**. Remettre
+  la LIFE change les clés, donc la trajectoire : les deux runs ne contrôlent pas le même
+  ensemble de hits, mais le seul champ retiré entre eux est la LIFE et les écarts
+  disparaissent entièrement. Aucun autre champ ne manque donc aux clés.
 - Le tableau trié de `ENTITY_SORTED_BY_TURN_ORDER_CACHE` est persistant alors que
   `TURN_ORDER` est relu à chaque virtualisation : il peut être périmé. Le plan de danger
   reconstruit sa séquence par partition sur les ordres COURANTS, ce qui reproduit exactement
