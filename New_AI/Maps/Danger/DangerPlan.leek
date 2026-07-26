@@ -61,6 +61,7 @@ class DangerPlanClass {
 	static offensiveCoverageOf(CasterStats, CasterId, MapKey) {
 		if (CasterStats == null || CasterId == Me || CasterStats.LIFE <= 0) return null
 		if (count(EntityDangerClass.getItemsList(CasterStats)) == 0) return null
+		if (MapKey in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[MapKey]
 		return getMapCellItemAoe(CasterStats, WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(CasterStats), MapKey)
 	}
 
@@ -183,7 +184,10 @@ class DangerPlanClass {
 			// d'items EST la qualification, aucun second scan d'inventaire.
 			if (id != Me && stat.LIFE > 0 && stat.SIDE != TargetSide && count(EntityDangerClass.getItemsList(stat)) > 0) {
 				mapKey = mapCellItemAoeKeyOf(stat)
-				offMap = getMapCellItemAoe(stat, WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(stat), mapKey)
+				// Walkcells évaluées SEULEMENT au miss : l'argument était calculé à chaque
+				// caster alors que la map est déjà en cache neuf fois sur dix.
+				offMap = (mapKey in MAP_CELL_ITEM_AOE_CACHE) ? MAP_CELL_ITEM_AOE_CACHE[mapKey]
+					: getMapCellItemAoe(stat, WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(stat), mapKey)
 				crit = DangerComboClass.critFactorOf(stat)
 				pack = DangerComboClass.casterOffensivePack(stat, crit)
 			}
