@@ -154,14 +154,19 @@ class HealClass {
         // Couche assemblage — clé (id, couche, cellule, MP), même pack que la danger map.
         var geomKey = (casterStats.ID << 21) | movementKey
         var mapCellItemAoe
+        var cellHashes
         if (geomKey in HEAL_CELL_ITEM_AOE_CACHE) {
             mapCellItemAoe = HEAL_CELL_ITEM_AOE_CACHE[geomKey]
+            cellHashes = HEAL_CELL_HASH_CACHE[geomKey]
         } else {
             // Le booléen déjà calculé choisit la couche directement — pas de second
             // canJumpNextTurn via getMaxWalkOrJumpNoEntitiesFull.
             var walkCells = usesJumpLayer ? WalkCellsClass.getJumpNoEntitiesFull(casterStats) : WalkCellsClass.getWalkNoEntitiesFull(casterStats)
             mapCellItemAoe = getMapCellItemAoe(casterStats, walkCells, movementKey)
             HEAL_CELL_ITEM_AOE_CACHE[geomKey] = mapCellItemAoe
+            cellHashes = [: ]
+            for (var c: var m in mapCellItemAoe) cellHashes[c] = ItemCoverageClass.hashItemAoeMap(m)
+            HEAL_CELL_HASH_CACHE[geomKey] = cellHashes
         }
 
         // Part du caster dans la clé de combo : INVARIANTE sur toutes les cellules et sur les
@@ -177,8 +182,10 @@ class HealClass {
         // hash de contenu que ce cache : aucune identité nouvelle, donc aucun risque nouveau.
         var seen = [: ]
         for (var cell: var itemAoeMap in mapCellItemAoe) {
-            // Hash de contenu calculé UNE fois par cellule, partagé entre les deux profils.
-            var contentHash = ItemCoverageClass.hashItemAoeMap(itemAoeMap)
+            // Hash de contenu porté par la géométrie : calculé une seule fois par (géométrie,
+            // cellule), partagé entre les deux profils ET entre les couvertures qui réutilisent
+            // cette géométrie (stats de soin différentes, même déplacement).
+            var contentHash = cellHashes[cell]
             var pair
             if (contentHash in seen) {
                 pair = seen[contentHash]

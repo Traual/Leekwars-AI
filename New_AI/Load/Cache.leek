@@ -18,6 +18,7 @@ function ReloadCacheNewTurn() {
     SURVIVAL_CACHE = [: ]
     HEAL_COVERAGE_CACHE = [: ]
     HEAL_CELL_ITEM_AOE_CACHE = [: ]
+    HEAL_CELL_HASH_CACHE = [: ]
     HEAL_COMBO_CACHE = [: ]
     HEAL_ENTITY_INVENTORY = [: ]
     IMPORTANCE_BY_ID = [: ]
@@ -232,6 +233,11 @@ global CAPABILITY_COMBO_CACHE = [: ]
 // Plus la liste d'items de heal par caster. Tout reset au tour (cooldowns/positions).
 global HEAL_COVERAGE_CACHE = [: ]
 global HEAL_CELL_ITEM_AOE_CACHE = [: ]
+
+// Hashs de contenu des ItemAoeMap de heal, clés par la MÊME clé de géométrie : deux
+// couvertures qui partagent leur géométrie partagent aussi ses hashs. Même durée de vie
+// obligatoire — un hash ne doit jamais survivre à la map qui l'a produit.
+global HEAL_CELL_HASH_CACHE = [: ]
 global HEAL_COMBO_CACHE = [: ]
 global HEAL_ENTITY_INVENTORY = [: ]
 
