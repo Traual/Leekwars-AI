@@ -398,7 +398,18 @@ class ScoringClass {
         if (State[Me].LIFE <= 0) key ^= POISON_ME_DEAD_SALT
         for (var e in ANTIDOTE_CARRIER_IDS) {
             var s = State[e]
-            if (s.LIFE > 0) key ^= mix64((e << 20) | (max(0, s.TOTAL_MP) << 10) | min(1023, StateClass.cooldownOf(s, CHIP_ANTIDOTE)))
+            if (s.LIFE > 0) {
+                // Contribution memoisee sur l'objet stat : ses deux seuls inputs variables sont
+                // max(0, TOTAL_MP) et le cooldown effectif d'Antidote, que diffMaskOf invalide.
+                // Un clone dont ni l'un ni l'autre n'a bouge garde donc son memo, et la remontee
+                // de chaine du cooldown n'est plus payee a chaque noeud.
+                var contrib = s.PKEY_MEMO
+                if (contrib == null) {
+                    contrib = mix64((e << 20) | (max(0, s.TOTAL_MP) << 10) | min(1023, StateClass.cooldownOf(s, CHIP_ANTIDOTE)))
+                    s.PKEY_MEMO = contrib
+                }
+                key ^= contrib
+            }
         }
         return key
     }

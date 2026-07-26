@@ -25,6 +25,7 @@ class EntityStateClass extends EntityClass {
 	// un objet PARTAGÉ est sain : partage => stats identiques => même valeur.
 	CAP_MEMO    // ImportanceClass.capability(stat)
 	TLSQ_MEMO   // W_TOTAL_LIFE * sqrt(max(0, TOTAL_LIFE)) (terme hors cache de survivalValue)
+	PKEY_MEMO   // contribution de ce porteur a la cle de couverture antidote (ScoringClass.poisonKeyOf)
 	// Six flux périodiques SÉPARÉS et POSITIFS (jamais de "poison négatif") :
 	POISON                  // prochain tick des lignes EFFECT_POISON seules
 	POISON_OVER_TIME        // somme valeur × tours restants de ces lignes
