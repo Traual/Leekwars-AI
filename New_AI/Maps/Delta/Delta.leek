@@ -100,7 +100,7 @@ class DeltaClass {
             BenchOps.Start("Danger")
             var coldPlan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, targetSide)
             // Une seule cellule à évaluer pour cette cible : aucun groupement local.
-            dangerToT = DangerClass.dangerOfCellCold(cell, cellDangerKey, coldPlan, DangerPlanClass.sequenceFor(coldPlan, e), State, stat, antidoteCd, null)
+            dangerToT = DangerClass.dangerOfCellCold(cell, cellDangerKey, coldPlan, DangerPlanClass.coverageSequenceFor(coldPlan, e), State, stat, antidoteCd, null)
             BenchOps.Stop("Danger")
         }
         // Danger vide -> net 0 sans dérouler l'ordre de tour ni le séquenceur.
@@ -152,6 +152,7 @@ class DeltaClass {
         var mySide = MeStats.SIDE
         var plan = null
         var mySeq = null
+        var myCovSeq = null   // séquence restreinte aux menaces, pour les couvertures de cellule
         var buckets = null
         for (var cell: var mp in myWalkCells) {
             var innerKey = seed ^ cell
@@ -170,7 +171,10 @@ class DeltaClass {
                         mySeq = DangerPlanClass.sequenceFor(plan, Me)
                         buckets = [: ]   // couvertures rencontrées, locales à cette recherche de fuite
                     }
-                    dangerAtCell = DangerClass.dangerOfCellCold(cell, dangerKey, plan, mySeq, State, MeStats, antidoteCd, buckets)
+                    // Le plan a pu naître dans le bloc du net : la séquence de couverture se
+                    // résout donc ici, indépendamment de qui a créé le plan.
+                    if (myCovSeq == null) myCovSeq = DangerPlanClass.coverageSequenceFor(plan, Me)
+                    dangerAtCell = DangerClass.dangerOfCellCold(cell, dangerKey, plan, myCovSeq, State, MeStats, antidoteCd, buckets)
                 }
                 // Danger vide -> delta 0 direct, sans même l'ordre de tour (déclenche l'early
                 // exit "imbattable" dessous).

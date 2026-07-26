@@ -103,6 +103,29 @@ class DangerPlanClass {
 	}
 
 	/*
+	 * Même séquence, RESTREINTE aux casters qui menacent réellement ce camp. Les entrées à map
+	 * offensive nulle (Me, morts, même camp, sans item menaçant) ne produisent jamais de
+	 * couverture : les écarter du parcours ne change aucun résultat, mais la boucle par cellule
+	 * froide ne balaie plus tout l'ordre de tour. Mémorisée sur le plan comme la séquence pleine.
+	 * NE PAS l'utiliser pour le déroulé du net : un caster sans menace peut être un soigneur.
+	 */
+	static coverageSequenceFor(Plan, TargetId) {
+		if (TargetId in Plan.COV_SEQ_BY_ID) return Plan.COV_SEQ_BY_ID[TargetId]
+		var seq = sequenceFor(Plan, TargetId)
+		var maps = Plan.OFFENSIVE_MAPS
+		var n = count(seq)
+		var cov = []
+		for (var k = 0; k < n; k++) {
+			var idx = seq[k]
+			var offMap = maps[idx]
+			if (offMap == null) continue   // même test que le parcours historique
+			push(cov, idx)
+		}
+		Plan.COV_SEQ_BY_ID[TargetId] = cov
+		return cov
+	}
+
+	/*
 	 * Plan offensif contre un camp. Une SEULE boucle sur l'ordre de tour global : chaque entrée
 	 * reçoit sa map offensive (null si elle ne menace pas ce camp), sa clé de map, son pack
 	 * offensif canonique et son facteur critique — tous calculés une seule fois.
@@ -163,6 +186,7 @@ class DangerTeamPlanClass {
 	ORDER_BY_ID     // [id -> son TURN_ORDER] : pivot de la partition
 	TURN_ORDERS     // [i] = TURN_ORDER de ORDER[i], aligné
 	SEQ_BY_ID       // [id cible -> indices de ORDER dans l'ordre de jeu], construit paresseusement
+	COV_SEQ_BY_ID   // idem, restreinte aux casters à map offensive non nulle
 	OFFENSIVE_MAPS  // [i] = [cellule -> ItemAoeMap] du caster, ou null s'il ne menace pas
 	MAP_KEYS        // [i] = clé de cette map (préfixe des hashs de contenu), ou null
 	CASTER_PACKS    // [i] = pack offensif canonique du caster, ou null
@@ -172,6 +196,7 @@ class DangerTeamPlanClass {
 		this.ORDER_BY_ID = ThisOrderById
 		this.TURN_ORDERS = ThisTurnOrders
 		this.SEQ_BY_ID = [: ]
+		this.COV_SEQ_BY_ID = [: ]
 		this.OFFENSIVE_MAPS = ThisMaps
 		this.MAP_KEYS = ThisMapKeys
 		this.CASTER_PACKS = ThisPacks

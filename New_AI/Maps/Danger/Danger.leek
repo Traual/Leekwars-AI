@@ -32,15 +32,15 @@ class DangerClass {
 	 * aval ne lit son numéro (ni les combos, ni leurs clés, ni le glouton, ni EntityDanger,
 	 * ni les vulnés).
 	 */
-	static coverageOfCell(Cell, Plan, Seq) {
+	static coverageOfCell(Cell, Plan, CovSeq) {
 		var maps = Plan.OFFENSIVE_MAPS
 		var mapKeys = Plan.MAP_KEYS
-		var n = count(Seq)
+		var n = count(CovSeq)
 		var cov = []
 		for (var k = 0; k < n; k++) {
-			var idx = Seq[k]
+			var idx = CovSeq[k]
 			var offMap = maps[idx]
-			// null = ne menace pas ce camp (Me, mort, même camp, sans item menaçant).
+			// null = ne menace pas ce camp ; CovSeq l'exclut déjà, garde conservée.
 			if (offMap == null) continue
 			// Caster incapable d'atteindre cette cellule : aucun triplet, aucun combo.
 			if (!(Cell in offMap)) continue
@@ -96,8 +96,8 @@ class DangerClass {
 	 *
 	 * @return [casterId -> dégâts], partagée en LECTURE SEULE
 	 */
-	static dangerOfCellCold(Cell, CellDangerKey, Plan, Seq, State, TargetStats, AntidoteCd, Buckets) {
-		var coverage = coverageOfCell(Cell, Plan, Seq)
+	static dangerOfCellCold(Cell, CellDangerKey, Plan, CovSeq, State, TargetStats, AntidoteCd, Buckets) {
+		var coverage = coverageOfCell(Cell, Plan, CovSeq)
 		var danger
 		if (Buckets == null) {
 			danger = evalChainFromCoverage(coverage, Plan, State, TargetStats, AntidoteCd)

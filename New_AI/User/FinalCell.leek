@@ -50,6 +50,7 @@ class FinalCell {
         // Plan et buckets PARESSEUX : une cellule déjà en cache n'en construit aucun.
         var plan = null
         var mySeq = null
+        var myCovSeq = null   // séquence restreinte aux menaces, pour les couvertures de cellule
         var buckets = null
 
         debugC("--- Finding Best Final Cell (gravity-sorted, heal-aware net) ---", COLOR_BLUE)
@@ -64,7 +65,10 @@ class FinalCell {
                     mySeq = DangerPlanClass.sequenceFor(plan, myId)
                     buckets = [: ]
                 }
-                dangerMap = DangerClass.dangerOfCellCold(cell, dangerKey, plan, mySeq, State, MyState, antidoteCd, buckets)
+                // Le plan a pu naître dans le bloc du net : la séquence de couverture se résout
+                // donc ici, indépendamment de qui a créé le plan.
+                if (myCovSeq == null) myCovSeq = DangerPlanClass.coverageSequenceFor(plan, myId)
+                dangerMap = DangerClass.dangerOfCellCold(cell, dangerKey, plan, myCovSeq, State, MyState, antidoteCd, buckets)
             }
             var net = 0
             if (!mapIsEmpty(dangerMap)) {
