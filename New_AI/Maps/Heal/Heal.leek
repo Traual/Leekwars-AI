@@ -164,19 +164,28 @@ class HealClass {
             HEAL_CELL_ITEM_AOE_CACHE[geomKey] = mapCellItemAoe
         }
 
-        var _final = [: ]
-        _final[HEAL_PROFILE_ALLY_LEEK] = [: ]
-        _final[HEAL_PROFILE_ALLY_SUMMON] = [: ]
+        // Part du caster dans la clé de combo : INVARIANTE sur toutes les cellules et sur les
+        // deux profils au bit de profil près. Packée une fois ici, plus jamais dans la boucle.
+        var statPack = (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP)   // WIS encodée max(0, WIS+100), voir healerContribution
+        var packLeek = (HEAL_PROFILE_ALLY_LEEK << 34) | statPack
+        var packSummon = (HEAL_PROFILE_ALLY_SUMMON << 34) | statPack
+        var leekMap = [: ]
+        var summonMap = [: ]
         for (var cell: var itemAoeMap in mapCellItemAoe) {
             // Hash de contenu calculé UNE fois par cellule, partagé entre les deux profils.
             var contentHash = ItemCoverageClass.hashItemAoeMap(itemAoeMap)
-            for (var profile = HEAL_PROFILE_ALLY_LEEK; profile <= HEAL_PROFILE_ALLY_SUMMON; profile++) {
-                var combo = comboAtCell(itemAoeMap, casterStats, profile, contentHash)
-                if (combo[0] > 0 || combo[1] > 0) {
-                    _final[profile][cell] = [combo[0] * critFactor, combo[1] * critFactor]
-                }
+            var comboLeek = comboAtCell(itemAoeMap, casterStats, HEAL_PROFILE_ALLY_LEEK, packLeek, contentHash)
+            if (comboLeek[0] > 0 || comboLeek[1] > 0) {
+                leekMap[cell] = [comboLeek[0] * critFactor, comboLeek[1] * critFactor]
+            }
+            var comboSummon = comboAtCell(itemAoeMap, casterStats, HEAL_PROFILE_ALLY_SUMMON, packSummon, contentHash)
+            if (comboSummon[0] > 0 || comboSummon[1] > 0) {
+                summonMap[cell] = [comboSummon[0] * critFactor, comboSummon[1] * critFactor]
             }
         }
+        var _final = [: ]
+        _final[HEAL_PROFILE_ALLY_LEEK] = leekMap
+        _final[HEAL_PROFILE_ALLY_SUMMON] = summonMap
         HEAL_COVERAGE_CACHE[key] = _final
         return _final
     }
@@ -200,11 +209,11 @@ class HealClass {
      * contenu est dépendant de l'ordre d'itération : deux maps de même contenu construites
      * dans des ordres différents FRAGMENTENT seulement, jamais de collision.
      */
-    static comboAtCell(itemAoeMap, casterStats, profile, contentHash) {
-        // contentHash = fold de contenu de itemAoeMap, calculé par l'appelant (une fois par
-        // cellule, partagé entre les deux profils) — clé bit-identique à l'ancienne.
-        var comboKey = addValueToBinHash(OFFSET_BASIS ^ contentHash,
-            (profile << 34) | (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
+    static comboAtCell(itemAoeMap, casterStats, profile, ProfilePack, contentHash) {
+        // contentHash = fold de contenu de itemAoeMap, ProfilePack = (profil, WIS, TP) du
+        // caster : tous deux calculés par l'appelant, une fois par cellule et une fois par
+        // couverture — clé bit-identique à l'ancienne.
+        var comboKey = addValueToBinHash(OFFSET_BASIS ^ contentHash, ProfilePack)
         if (comboKey in HEAL_COMBO_CACHE) return HEAL_COMBO_CACHE[comboKey]
 
         // Facteur sagesse invariant du miss, calculé une fois (le moteur floor le SOIN, pas
