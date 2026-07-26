@@ -32,9 +32,9 @@ class ScoringClass {
      * hfpBySide et poisonKey sont construits UNE seule fois par l'appelant (racine du BFS)
      * et réutilisés ici, jamais reconstruits.
      */
-    static buildTermsMap(State, MySide, BaseHash, contextBySide, hfpBySide, poisonKey) {
+    static buildTermsMap(State, MySide, BaseHash, contextBySide, hfpBySide, poisonKey, meWalkFp) {
         BenchOps.Start("Scoring")
-        var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash, contextBySide, hfpBySide)
+        var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash, contextBySide, hfpBySide, meWalkFp)
         var terms = [: ]
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
@@ -230,7 +230,7 @@ class ScoringClass {
         var newTerm = 0
         if (stat.LIFE > 0) {
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            var net = DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap)
+            var net = DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap, node.ME_WALK_FINGERPRINT)
             newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, net, State, node.POISON_KEY) + ImportanceClass.capability(stat) + drDeterrence(stat, net, State))
         }
         var oldTerm = termOf(ParentTermNode, e)

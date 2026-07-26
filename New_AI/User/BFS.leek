@@ -45,7 +45,10 @@ class ActionSuite {
 		var RootContext = DeltaClass.buildContextBySide(State)
 		var RootHfp = HealClass.buildHfpBySide(State)
 		var RootPoisonKey = ScoringClass.poisonKeyOf(State, BaseHash)
-		var RootTerms = ScoringClass.buildTermsMap(State, MySide, BaseHash, RootContext, RootHfp, RootPoisonKey)
+		// Empreinte de mobilité de Me à la racine : construite UNE fois par getBestAction
+		// effectif, servie au scoring racine puis portée par noPlay pour ses enfants.
+		var RootWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MyStats)
+		var RootTerms = ScoringClass.buildTermsMap(State, MySide, BaseHash, RootContext, RootHfp, RootPoisonKey, RootWalkFingerprint)
 		var initialScore = ScoringClass.sumTerms(RootTerms)
 
 		// Cache par appel : scoredKeyOf(BaseHash, candidat résu) -> liste triée
@@ -59,6 +62,7 @@ class ActionSuite {
 		noPlay.TERMS_PARENT = null
 		noPlay.SCORE = initialScore
 		noPlay.BASE_HASH = BaseHash   // terrain de la racine des termes (comparaison parent/enfant pour Me)
+		noPlay.ME_WALK_FINGERPRINT = RootWalkFingerprint
 		// Racine des ÉTATS : elle seule porte la map complète d'office, patch vide.
 		noPlay.STATE_PARENT = null
 		noPlay.STATE_PATCH = [: ]

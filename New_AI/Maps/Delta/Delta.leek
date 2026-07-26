@@ -28,9 +28,11 @@ class DeltaClass {
      * @param BaseHash hash (id, cellule) des vivants
      * @param contextBySide [side -> hash de l'équipe adverse], patché sur les nœuds
      * @param hfpBySide [side -> fingerprint des healers], construit par l'appelant
+     * @param meWalkFp empreinte de mobilité de Me pour CET état — consommée par le seul
+     *        minDeltaForMe, ignorée des autres entités
      * @return [id -> net]
      */
-    static getNetDamageMap(State, BaseHash, contextBySide, hfpBySide) {
+    static getNetDamageMap(State, BaseHash, contextBySide, hfpBySide, meWalkFp) {
         BenchOps.Start("Delta")
 
         // Fingerprint combiné = fold XOR des fps par side reçus (même source unique
@@ -44,7 +46,7 @@ class DeltaClass {
         var _final = [: ]
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
-            _final[e] = netOf(e, stat, State, BaseHash, contextBySide, hfpBySide, healMap)
+            _final[e] = netOf(e, stat, State, BaseHash, contextBySide, hfpBySide, healMap, meWalkFp)
         }
 
         BenchOps.Stop("Delta")
@@ -70,13 +72,13 @@ class DeltaClass {
      * scoring incrémental recalcule un seul terme par la même machinerie.
      * Caché : NETDAMAGE_CACHE pour les autres, les deux caches de fuite pour Me.
      */
-    static netOf(e, stat, State, BaseHash, contextBySide, healersFingerprintBySide, healMap) {
+    static netOf(e, stat, State, BaseHash, contextBySide, healersFingerprintBySide, healMap, meWalkFp) {
         var statsHash = statsHashFor(stat, contextBySide)
         var hfp = (stat.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[stat.SIDE] : 0
 
         if (e == Me) {
             // Me BOUGE ce tour : min du net sur mes cellules accessibles.
-            return minDeltaForMe(stat, State, BaseHash, statsHash, hfp, healMap)
+            return minDeltaForMe(stat, State, BaseHash, statsHash, hfp, healMap, meWalkFp)
         }
 
         // Les autres ne bougent pas -> net à leur cellule courante. Une entité intouchée
@@ -105,7 +107,7 @@ class DeltaClass {
      * (danger et heal séquencés au même endroit). Deux niveaux de cache : externe = le min
      * entier par état de Me + set accessible, interne = le net d'une cellule.
      */
-    static minDeltaForMe(MeStats, State, BaseHash, statsHash, hfp, healMap) {
+    static minDeltaForMe(MeStats, State, BaseHash, statsHash, hfp, healMap, meWalkFp) {
         // seed = tout ce qui fixe net(cellule) SAUF la cellule : contexte ennemi + mes shields
         // (statsHash), mes healers (hfp), ma vie courante et max (cap du heal, coupure à 0),
         // et mon PROFIL de cible heal (id, IS_SUMMON — un bulbe lit la couverture summon).
@@ -118,7 +120,8 @@ class DeltaClass {
         // Externe : même état de Me sur le même TERRAIN -> recherche entière sautée. BaseHash
         // dans la clé : le DOMAINE du min est mes cellules accessibles, qui dépendent des
         // obstacles (un allié qui apparaît ou bouge le réduit sans toucher seed ni walkHash).
-        var outerKey = rotSeed ^ addValueToBinHash(BaseHash, WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MeStats))
+        // meWalkFp est celle du nœud, déjà calculée par Node/BFS : clé bit-identique.
+        var outerKey = rotSeed ^ addValueToBinHash(BaseHash, meWalkFp)
         if (outerKey in ENTITY_DELTA_CACHE_FOR_ME) return ENTITY_DELTA_CACHE_FOR_ME[outerKey]
 
         var myWalkCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)

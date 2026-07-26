@@ -36,6 +36,10 @@ class NodeClass {
 	                  // (la racine noPlay porte la map complète). Résolution via ScoringClass.termOf.
 	TERMS_PARENT      // nœud portant le snapshot de termes précédent — chaîne IMMUABLE, indépendante
 	                  // de PARENT (que le déroulé du BFS réassigne) ; null = racine des termes
+	ME_WALK_FINGERPRINT // empreinte de mobilité de Me pour l'état du nœud
+	                  // (HashWalkCellsWithItemsWithoutBaseHash). Suit STATE_PARENT, jamais
+	                  // PARENT : le déroulé et le ScoredCache réassignent PARENT. Calculée une
+	                  // seule fois par nœud et réutilisée par la clé externe de minDeltaForMe.
 	POISON_KEY        // clé de couverture antidote de l'état du nœud (posée par getStateScoreFromParent
 	                  // depuis le workspace encore muté, 0 sans antidote)
 	constructor(Act, StatsAfterAction, Parent) {
@@ -106,6 +110,10 @@ class NodeClass {
 				StateClass.setCooldown(ThisActionStats[Me], CHIP_TELEPORTATION, ITEMINFO[CHIP_TELEPORTATION].COOLDOWN)
 			}
 		}
+		// Empreinte de mobilité de Me : calculée UNE fois, après TOUTES ses écritures
+		// (cellule, MP, TP, conséquences, cooldowns d'item et de déplacement). Elle sert au
+		// test de saleté ci-dessous ET à la clé externe de minDeltaForMe.
+		var meWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(ThisActionStats[Me])
 		// END_STATS reste NULL : le nœud ne portera que son patch (matérialisation paresseuse).
 		var result = new NodeClass(Act, null, Parent)
 		result.STATE_PARENT = StateParent
@@ -115,7 +123,6 @@ class NodeClass {
 		// ressuscité était mort dans le parent -> ses contributions old valent 0 (LIFE-gated).
 		var bh = BaseHash
 		var ctx = clone(ParentContext, 1)    // copie : le contexte du parent n'est jamais muté
-		var ctxSides = mapKeys(ctx)
 		var hfpMap = clone(ParentHfp, 1)
 		var localTermDirty = [: ]
 		// Allouée seulement si un contexte offensif bouge vraiment : une attaque ordinaire non
@@ -134,7 +141,10 @@ class NodeClass {
 				if (addCtx != 0) {
 					if (dangerDirtyCasters == null) dangerDirtyCasters = [: ]
 					dangerDirtyCasters[tar] = true
-					for (var s in ctxSides) if (s != newStat.SIDE) ctx[s] ^= addCtx
+					// Itération directe : seules les VALEURS bougent, jamais les clés — pas
+					// besoin de matérialiser la liste des sides.
+					var bornSide = newStat.SIDE
+					for (var s: var _h in ctx) if (s != bornSide) ctx[s] ^= addCtx
 				}
 				var addHfp = HealClass.healerContributionOf(newStat, tar)
 				if (addHfp != 0) hfpMap[newStat.SIDE] = ((newStat.SIDE in hfpMap) ? hfpMap[newStat.SIDE] : 0) ^ addHfp
@@ -153,7 +163,7 @@ class NodeClass {
 					if (dangerDirtyCasters == null) dangerDirtyCasters = [: ]
 					dangerDirtyCasters[tar] = true
 					var side = newStat.SIDE
-					for (var s in ctxSides) if (s != side) ctx[s] ^= deltaCtx   // contextes des sides ADVERSES
+					for (var s: var _h in ctx) if (s != side) ctx[s] ^= deltaCtx   // contextes des sides ADVERSES
 				}
 			}
 			if (mask & DIFF_HFP) {
@@ -168,9 +178,9 @@ class NodeClass {
 		// Me : exclu des trois hashs, mais son terme dépend du domaine de fuite — BaseHash
 		// FINAL différent -> dirty ; sinon UNE comparaison des fingerprints WalkCells
 		// old/new (une dépense de TP sans franchir de seuil de mobilité ne salit rien).
+		// L'empreinte du parent est déjà portée par StateParent : plus rien à reconstruire.
 		if (!(Me in localTermDirty)
-			&& (bh != BaseHash
-				|| WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(clonedIds[Me]) != WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(ThisActionStats[Me]))) {
+			&& (bh != BaseHash || meWalkFingerprint != StateParent.ME_WALK_FINGERPRINT)) {
 			localTermDirty[Me] = true
 		}
 
@@ -178,6 +188,7 @@ class NodeClass {
 		result.LOCAL_TERM_DIRTY = localTermDirty
 		result.DANGER_DIRTY_CASTERS = dangerDirtyCasters
 		result.BASE_HASH = bh
+		result.ME_WALK_FINGERPRINT = meWalkFingerprint
 		result.CONTEXT_BY_SIDE = ctx
 		result.HFP_BY_SIDE = hfpMap
 		capturePatch(result, ThisActionStats, clonedIds)
