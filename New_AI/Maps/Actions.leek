@@ -206,15 +206,19 @@ class ActionsClass {
 		var HashedMapAoe = LoadHashedMapAoe(State, Item, BaseHash)
 		var DoneHashs = [: ]
 		var _final = []
-		var isLaser = ITEMINFO[Item].AREA == AREA_LASER_LINE
-		var MinRange = ITEMINFO[Item].MINRANGE
+		var ItemInfos = ITEMINFO[Item]
+		var isLaser = ItemInfos.AREA == AREA_LASER_LINE
+		var MinRange = ItemInfos.MINRANGE
+		// Toutes les LoS de cette boucle partagent le même BaseHash : la rotation de leur clé
+		// est hissée ici et chaque lookup ne paie plus qu'un XOR.
+		var losPrefix = CellClass.losKeyPrefix(BaseHash)
 		var laserDone = isLaser ? [: ] : null   // dédup exact (from << 10) | to — alloué lasers seulement
 
 		for (var from in SortedWalkCells) {
 			if (from in HashedMapAoe) {
 				for (var to: var toHash in HashedMapAoe[from]) {
 					if (toHash in DoneHashs) continue
-					if (CellClass.getLosWithBaseHash(from, to, State, BaseHash)) {
+					if (CellClass.getLosWithPrefix(from, to, State, BaseHash, losPrefix)) {
 						if (isLaser) {
 							// Dédup dans les DEUX ordres : un fallback ANTÉRIEUR a pu déjà viser
 							// cette cellule (B-Laser : le bloqueur est lui-même un candidat).

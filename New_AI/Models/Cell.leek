@@ -461,6 +461,22 @@ class CellClass {
 	}
 
 	/* LoS exacte sous un board donné (entités du State de branche comme obstacles). */
+	/* Préfixe INVARIANT de la clé de LoS pour un état donné. addValueToBinHash est une rotation
+	 * suivie d'un XOR : avb(h, x) == avb(h, 0) ^ x, donc un appelant qui enchaîne des LoS sous le
+	 * même BaseHash peut hisser la rotation et ne payer que le XOR. Clé bit-identique. */
+	static losKeyPrefix(BaseHash) {
+		return addValueToBinHash(OFFSET_BASIS ^ BaseHash, 0)
+	}
+
+	/* Même LoS, préfixe déjà rotationné par l'appelant. */
+	static getLosWithPrefix(cell1, cell2, State, BaseHash, Prefix) {
+		var Hash = Prefix ^ (cell1 < cell2 ? (cell1 << MAX_CELL_BINARY | cell2) : (cell2 << MAX_CELL_BINARY | cell1))
+		if (Hash in LOS_WITH_BASE_HASH_CACHE) return LOS_WITH_BASE_HASH_CACHE[Hash]
+		var TmpLos = getLosWithoutCache(cell1, cell2, State, BaseHash)
+		LOS_WITH_BASE_HASH_CACHE[Hash] = TmpLos
+		return TmpLos
+	}
+
 	static getLosWithBaseHash(cell1, cell2, State, BaseHash) {
 		// Clé CANONIQUE (min, max) sous BaseHash : LOS(A,B) == LOS(B,A).
 		var Hash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), cell1 < cell2 ? (cell1 << MAX_CELL_BINARY | cell2) : (cell2 << MAX_CELL_BINARY | cell1))
