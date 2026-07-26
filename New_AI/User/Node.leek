@@ -6,6 +6,15 @@
 include("../includes.leek")
 
 class NodeClass {
+
+	// Layer de déplacement empruntée pour arriver sur From — résolue une fois par nœud, relue
+	// par les cooldowns de déplacement.
+	static LAYER_NONE = 0
+	static LAYER_WALK = 1
+	static LAYER_JUMP = 2
+	static LAYER_TELEPORTATION = 3
+	static LAYER_TELEPORTATION_AND_JUMP = 4
+
 	ACTION
 	END_STATS         // CACHE PARESSEUX de l'état complet : rempli d'office sur la racine,
 	                  // null sur un candidat neuf, matérialisé (STATE_PARENT + STATE_PATCH)
@@ -81,39 +90,46 @@ class NodeClass {
 		StateClass.beginActionOnWorkspace(Workspace, clonedIds)
 		var ThisActionStats = Workspace
 
-		// Déplacement : retire les MP de la layer utilisée.
-		ThisActionStats[Me].CELL = From
+		// Déplacement : retire les MP de la layer utilisée. Le clone de Me et la layer d'arrivée
+		// sont résolus UNE fois — les cooldowns de déplacement plus bas les relisaient tous les deux.
+		var meStat = ThisActionStats[Me]
+		meStat.CELL = From
+		var usedLayer = LAYER_NONE
 		if (From in MyWalkCells.WALK) {
-			ThisActionStats[Me].MP -= MyWalkCells.WALK[From]
+			usedLayer = LAYER_WALK
+			meStat.MP -= MyWalkCells.WALK[From]
 		} else if (From in MyWalkCells.JUMP) {
-			ThisActionStats[Me].MP -= MyWalkCells.JUMP[From]
+			usedLayer = LAYER_JUMP
+			meStat.MP -= MyWalkCells.JUMP[From]
 		} else if (From in MyWalkCells.TELEPORTATION) {
-			ThisActionStats[Me].MP -= MyWalkCells.TELEPORTATION[From]
+			usedLayer = LAYER_TELEPORTATION
+			meStat.MP -= MyWalkCells.TELEPORTATION[From]
 		} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
-			ThisActionStats[Me].MP -= MyWalkCells.TELEPORTATION_AND_JUMP[From]
+			usedLayer = LAYER_TELEPORTATION_AND_JUMP
+			meStat.MP -= MyWalkCells.TELEPORTATION_AND_JUMP[From]
 		}
-		ThisActionStats[Me].TP -= Cost
-		if (Info.IS_WEAPON) ThisActionStats[Me].WEAPON = Item
+		meStat.TP -= Cost
+		if (Info.IS_WEAPON) meStat.WEAPON = Item
 		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash, clonedIds, Act.RESURRECT_ID)
+		// Relu une fois après les conséquences, qui ont pu remplacer l'objet de Me.
+		meStat = ThisActionStats[Me]
 		// Écritures d'inventaire via les setters différentiels : elles ne touchent que le
 		// patch local du clone de Me, jamais un ancêtre.
-		StateClass.setCooldown(ThisActionStats[Me], Item, Info.COOLDOWN)
-		StateClass.incrementUses(ThisActionStats[Me], Item)
+		StateClass.setCooldown(meStat, Item, Info.COOLDOWN)
+		StateClass.incrementUses(meStat, Item)
 		// Cooldowns des items de déplacement si la cellule d'arrivée vient d'une layer jump/télépo.
-		if (!(From in MyWalkCells.WALK)) {
-			if (From in MyWalkCells.JUMP) {
-				StateClass.setCooldown(ThisActionStats[Me], CHIP_JUMP, ITEMINFO[CHIP_JUMP].COOLDOWN)
-			} else if (From in MyWalkCells.TELEPORTATION) {
-				StateClass.setCooldown(ThisActionStats[Me], CHIP_TELEPORTATION, ITEMINFO[CHIP_TELEPORTATION].COOLDOWN)
-			} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
-				StateClass.setCooldown(ThisActionStats[Me], CHIP_JUMP, ITEMINFO[CHIP_JUMP].COOLDOWN)
-				StateClass.setCooldown(ThisActionStats[Me], CHIP_TELEPORTATION, ITEMINFO[CHIP_TELEPORTATION].COOLDOWN)
-			}
+		if (usedLayer == LAYER_JUMP) {
+			StateClass.setCooldown(meStat, CHIP_JUMP, ITEMINFO[CHIP_JUMP].COOLDOWN)
+		} else if (usedLayer == LAYER_TELEPORTATION) {
+			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, ITEMINFO[CHIP_TELEPORTATION].COOLDOWN)
+		} else if (usedLayer == LAYER_TELEPORTATION_AND_JUMP) {
+			StateClass.setCooldown(meStat, CHIP_JUMP, ITEMINFO[CHIP_JUMP].COOLDOWN)
+			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, ITEMINFO[CHIP_TELEPORTATION].COOLDOWN)
 		}
 		// Empreinte de mobilité de Me : calculée UNE fois, après TOUTES ses écritures
 		// (cellule, MP, TP, conséquences, cooldowns d'item et de déplacement). Elle sert au
 		// test de saleté ci-dessous ET à la clé externe de minDeltaForMe.
-		var meWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(ThisActionStats[Me])
+		var meWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(meStat)
 		// END_STATS reste NULL : le nœud ne portera que son patch (matérialisation paresseuse).
 		var result = new NodeClass(Act, null, Parent)
 		result.STATE_PARENT = StateParent
