@@ -8,10 +8,9 @@ function ReloadCacheNewTurn() {
     TARGETABLECACHE = [: ]
     MAP_CELL_ITEM_AOE_CACHE = [: ]
     DANGER_ITEM_AOE_HASH_CACHE = [: ]
+    DANGER_TEAM_PLAN_CACHE = [: ]
     CELL_DANGER_GET_CACHE = [: ]
     COMBO_FROM_ITEM_AOE_CACHE = [: ]
-    HAVE_AN_HITTABLE_ITEM_CACHE = [: ]
-    TO_SKIP_MAP_CACHE = [: ]
     ENTITY_DELTA_CACHE_FOR_ME = [: ]
     CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
@@ -31,23 +30,12 @@ function ReloadCacheNewTurn() {
     ACTIONS_SUMMON_CACHE = [: ]
     ACTIONS_ON_VOID_CACHE = [: ]
 
-    // Reset obligatoire : la clé est (base_hash, id) mais le contenu dépend de toSkipMap,
-    // qui peut changer d'un tour à l'autre pour la même clé (cooldowns qui descendent).
-    // Une map stale laisse EnemyWalkCells[caster] null pour un caster redevenu actif
-    // -> crash dans getMapCellItemAoe.
-    EVERY_ENEMIES_WALKABLES = [: ]
-
     // Reset obligatoire : getItemsList est clé par ID et filtre cooldown > 1 au moment du
     // calcul — sans reset, un item en cooldown à la première évaluation resterait exclu tout
     // le combat (danger sous-estimé). Les listes triées de DANGER_ENTITY_CACHE en dérivent
     // et leur clé ne porte pas les cooldowns : les deux se rafraîchissent ensemble.
     DANGER_ENTITY_INVENTORY = [: ]
     DANGER_ENTITY_CACHE = [: ]
-
-    // Même raison cooldowns, une couche au-dessus : la clé (statsHash, id, cell) ne porte
-    // pas les cooldowns, un hit inter-tours servirait un danger d'avant rafraîchissement
-    // (le gros chip d'un ennemi sortant de cooldown resterait invisible).
-    ENTITY_DANGER_CACHE_FOR_OTHERS = [: ]
 
     DR_PHYSRATIO_BY_SIDE = null
     POISON_COEF_CACHE = [: ]
@@ -151,18 +139,22 @@ global MAP_CELL_ITEM_AOE_CACHE = [: ]
 // Reset de tour OBLIGATOIRE, comme la map dont il décrit le contenu : l'inventaire
 // disponible est filtré par cooldown au moment du calcul.
 global DANGER_ITEM_AOE_HASH_CACHE = [: ]
+
+// Plans offensifs par (terrain, contexte offensif, camp visé) : qui menace ce camp, avec
+// quelle géométrie, quel pack de stats et quel facteur critique. Ne contient que des ids,
+// des nombres et des maps de caches — jamais un EntityState ni le workspace.
+global DANGER_TEAM_PLAN_CACHE = [: ]
+
 global CELL_DANGER_GET_CACHE = [: ]
+
+// Reset de tour OBLIGATOIRE : la clé dérive du couple caster/cible packé, qui ne porte PAS la
+// LIFE du caster (compromis LIFE_DAMAGE documenté au README). Les valeurs de la liste triée
+// dont ce combo dépend vivent dans DANGER_ENTITY_CACHE, lui-même vidé au tour ; garder ce
+// cache-ci plus longtemps servirait un combo calculé sur des dégâts d'un tour antérieur.
 global COMBO_FROM_ITEM_AOE_CACHE = [: ]
-global COMBO_DAMAGE_CACHE = [: ]
-global HAVE_AN_HITTABLE_ITEM_CACHE = [: ]
+
 global DANGER_ENTITY_CACHE = [: ]
 global DANGER_ENTITY_INVENTORY = [: ]
-global EVERY_ENEMIES_WALKABLES = [: ]
-
-// Même BaseHash -> même skip map (reset au tour).
-global TO_SKIP_MAP_CACHE = [: ]
-
-global ENTITY_DANGER_CACHE_FOR_OTHERS = [: ]
 
 // Recherche de fuite de Me (net minimal), deux niveaux : CELL_NETDAMAGE_FOR_ME_CACHE = le net
 // à UNE cellule de fuite, ENTITY_DELTA_CACHE_FOR_ME = le MIN entier sur mes cellules

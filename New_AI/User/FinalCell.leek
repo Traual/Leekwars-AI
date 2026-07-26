@@ -35,20 +35,45 @@ class FinalCell {
         // Meilleur placement d'abord.
         var cells = arraySort(mapKeys(possibleCells), function(a, b) { return gravityMap[b] - gravityMap[a] })
 
-        // MÊME famille de clés danger que le BFS (DeltaClass.statsHashFor) : FinalCell hérite
-        // des caches chauffés par la recherche au lieu de recalculer sous une seconde famille.
-        var thisStatsHashForDanger      = DeltaClass.statsHashFor(MyState, DeltaClass.buildContextBySide(State))
-        var thisToSkipMap               = DangerClass.EntitiesToSkip(MyState, State, BaseHash)
-        var thisEnemiesWalkableCellsMap = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, thisToSkipMap, BaseHash, thisStatsHashForDanger)
-        var thisCastersInOrder          = StateClass.getEntitiesInTurnOrderAfterEntity(State, myId)
+        // MÊME pipeline que le BFS : même graine de cible, même plan offensif, même primitive
+        // froide, même groupement local progressif. FinalCell hérite donc des caches chauffés
+        // par la recherche au lieu d'entretenir un quatrième chemin divergent.
+        var mySide                 = MyState.SIDE
+        var offensiveContextHash   = DeltaClass.buildContextBySide(State)[mySide]
+        var antidoteCd             = DangerComboClass.antidoteCdOf(MyState)
+        var targetSeed             = DeltaClass.targetDangerSeedOf(MyState, offensiveContextHash, antidoteCd)
+        var dangerCellSeed         = DangerClass.cellCacheSeed(targetSeed, myId)
 
         var bestCell = MyState.CELL
         var bestNet  = MAX_VALUE
 
+        // Plan et buckets PARESSEUX : une cellule déjà en cache n'en construit aucun.
+        var plan = null
+        var mySeq = null
+        var buckets = null
+
         debugC("--- Finding Best Final Cell (gravity-sorted, heal-aware net) ---", COLOR_BLUE)
         for (var cell in cells) {
-            var dangerMap = DangerClass.get(cell, State, MyState, thisEnemiesWalkableCellsMap, thisToSkipMap, thisStatsHashForDanger, thisCastersInOrder)
-            var net = DeltaClass.netDamage(MyState, dangerMap, healMap, State, thisCastersInOrder, cell)
+            var dangerKey = dangerCellSeed ^ cell
+            var dangerMap
+            if (dangerKey in CELL_DANGER_GET_CACHE) {
+                dangerMap = CELL_DANGER_GET_CACHE[dangerKey]
+            } else {
+                if (plan == null) {
+                    plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
+                    mySeq = DangerPlanClass.sequenceFor(plan, myId)
+                    buckets = [: ]
+                }
+                dangerMap = DangerClass.dangerOfCellCold(cell, dangerKey, plan, mySeq, State, MyState, antidoteCd, buckets)
+            }
+            var net = 0
+            if (!mapIsEmpty(dangerMap)) {
+                if (plan == null) {
+                    plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
+                    mySeq = DangerPlanClass.sequenceFor(plan, myId)
+                }
+                net = DeltaClass.netDamage(MyState, dangerMap, healMap, State, plan.ORDER, mySeq, cell)
+            }
             if (net == 0) { bestCell = cell ; bestNet = 0 ; break }   // meilleure gravité ET sûre -> fini
             if (net < bestNet) { bestNet = net ; bestCell = cell }
         }

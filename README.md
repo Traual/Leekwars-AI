@@ -113,7 +113,14 @@ Documentés comme des choix, pas des bugs à corriger immédiatement :
   cachée pendant le tour. Une mort reste immédiatement visible via les contributions
   vivant/mort. Ce compromis évite une invalidation globale de tous les termes adverses à
   chaque branche offensive (l'exactitude a été mesurée à +6,31 % d'opérations, misses
-  Danger ×4).
+  Danger ×4). Un oracle de HIT, qui recalcule à neuf la valeur servie par chaque cache de
+  combo, ne trouve aucun autre écart : 36 sur 195 324 hits sans la LIFE dans la clé, 0 sur
+  170 592 en la remettant — tous les écarts lui sont donc imputables, aucun autre champ ne
+  manque aux clés.
+- Le tableau trié de `ENTITY_SORTED_BY_TURN_ORDER_CACHE` est persistant alors que
+  `TURN_ORDER` est relu à chaque virtualisation : il peut être périmé. Le plan de danger
+  reconstruit sa séquence par partition sur les ordres COURANTS, ce qui reproduit exactement
+  le comportement hybride historique. Corriger la péremption du tri est un chantier distinct.
 - Collision théorique de certaines clés de cache au-delà de 4096 de force.
 - Cellule de Me **gelée** pendant un BFS pour la couverture Antidote.
 - LoS ignorée pour la couverture Antidote.

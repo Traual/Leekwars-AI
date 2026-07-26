@@ -42,30 +42,6 @@ class StateClass {
 	}
 
 	/*
-	 * Entités dans l'ordre où elles jouent APRÈS `entity` ce round (rotation du tri,
-	 * entity exclue).
-	 *
-	 * @param State [id -> stats]
-	 * @param entity id pivot
-	 * @return Array<id>
-	 */
-	static getEntitiesInTurnOrderAfterEntity(State, entity) {
-		var _toPush = []
-		var _final = []
-		var _turn_order_array = getSortedEntityByTurnOrder(State)
-		var _entity_turn_order = State[entity].TURN_ORDER
-		for (var e in _turn_order_array) {
-			if (State[e].TURN_ORDER < _entity_turn_order) {
-				push(_toPush, e)
-			} else {
-				if (e != entity) push(_final, e)
-			}
-		}
-		for (var e in _toPush) push(_final, e)
-		return _final
-	}
-
-	/*
 	 * Bit-set exact des ids VIVANTS : indépendant de l'ordre, zéro collision, ~3 ops/entité.
 	 * Valide tant que les ids < 64 (réels ~<50, bulbes virtuels = SUMMON_ID_BASE + 1..10).
 	 * Vivants seulement : le seul TURN_ORDER qui puisse changer sous une même clé est celui

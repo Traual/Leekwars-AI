@@ -25,15 +25,14 @@ class EntityDangerClass {
 
 	/*
 	 * Liste triée (dégâts/TP décroissant) des (item, aoeDist, dégâts) du caster sur la cible.
-	 * Cachée par MapHash (stats offensives du caster + shields/antidote de la cible).
-	 * Les formules de dégâts (ex-ConsequencesClass.getItemDanger, unique appelant) vivent
-	 * ICI : les facteurs invariants du couple (caster, cible) sont hoistés HORS des boucles
-	 * item/distance — sous-expressions IDENTIQUES, mêmes chaînes de multiplication, mêmes
-	 * additions successives et soustraction d'ABS par effet (parité flottante stricte).
+	 * Clé = la clé canonique du couple, calculée UNE fois par l'appelant (DangerComboClass) :
+	 * le lookup précède tout facteur froid, un hit ne recalcule aucune formule.
+	 * Les facteurs invariants du couple sont hoistés HORS des boucles item/distance —
+	 * sous-expressions IDENTIQUES, mêmes chaînes de multiplication, mêmes additions
+	 * successives et soustraction d'ABS par effet (parité flottante stricte).
 	 */
-	static get(CasterStats, TargetStats, curAbs, curRel) {
-		var Hash = MapHash(CasterStats, TargetStats, curAbs, curRel)
-		if (Hash in DANGER_ENTITY_CACHE) return DANGER_ENTITY_CACHE[Hash]
+	static getByPairKey(PairKey, CasterStats, TargetStats, CritFactor, AntidoteCd, curAbs, curRel) {
+		if (PairKey in DANGER_ENTITY_CACHE) return DANGER_ENTITY_CACHE[PairKey]
 		var Tmp = []
 		// Garde cible morte : liste vide — l'ancienne garde de getItemDanger rendait 0 à
 		// chaque distance, donc aucun EntityDanger n'était créé.
@@ -41,16 +40,15 @@ class EntityDangerClass {
 			var powerFactor = 1 + CasterStats.POWER / 100
 			var strengthFactor = 1 + max(0, CasterStats.STRENGTH) / 100 // plancher à l'usage, comme le moteur
 			var magicFactor = 1 + max(0, CasterStats.MAGIC) / 100
-			// Crit binaire asymétrique (Constants), appliqué AVANT les shields comme le
-			// moteur : (d·1.3 − ABS) ≠ (d − ABS)·1.3.
-			var critFactor = DangerClass.critFactorOf(CasterStats)
+			// Crit binaire asymétrique, appliqué AVANT les shields comme le moteur :
+			// (d·1.3 − ABS) ≠ (d − ABS)·1.3. Résolu une fois par le plan.
+			var critFactor = CritFactor
 			// Shields de la cible en SCALAIRES (la chaîne de vulnés ne mute jamais l'objet).
 			var shieldFactor = 1 - curRel / 100
 			var lifeFactor = CasterStats.LIFE / 100
 			// 99 = pas d'antidote dans l'inventaire (jamais de cure -> le poison compte sa
-			// durée PLEINE), distinct d'un antidote prêt (0).
-			var effAntidoteCd = StateClass.cooldownOf(TargetStats, CHIP_ANTIDOTE)
-			var antidoteCd = (effAntidoteCd == null) ? 99 : effAntidoteCd
+			// durée PLEINE), distinct d'un antidote prêt (0). Résolu une fois par cible.
+			var antidoteCd = AntidoteCd
 			var isSummonTarget = TargetStats.IS_SUMMON
 			for (var i in getItemsList(CasterStats)) {
 				var Multiplier = 1 // Plasma évalué à multiplicateur 1 (compromis, voir README)
@@ -86,12 +84,14 @@ class EntityDangerClass {
 			}
 		}
 		var _final = SortTmp(Tmp)
-		DANGER_ENTITY_CACHE[Hash] = _final
+		DANGER_ENTITY_CACHE[PairKey] = _final
 		return _final
 	}
 
 	/* Items menaçants castables de l'entité (cooldown <= 1), cachés par id pour le tour.
-	 * Parcourt INVENTORY (même ordre que l'ancienne map de cooldowns) + cooldown effectif. */
+	 * SOURCE UNIQUE de la qualification « ce caster menace-t-il ? » : une liste vide signifie
+	 * qu'il ne compte dans aucune danger map.
+	 * Parcourt INVENTORY (l'ordre d'insertion des items en dépend) + cooldown effectif. */
 	static getItemsList(EntityStats) {
 		var Hash = EntityStats.ID
 		if (Hash in DANGER_ENTITY_INVENTORY) return DANGER_ENTITY_INVENTORY[Hash]
@@ -110,35 +110,6 @@ class EntityDangerClass {
 		return arraySort(ActualTmp, function(a, b) {
 			return b.DamagesPerTp - a.DamagesPerTp
 		})
-	}
-
-	/*
-	 * Clé du couple (caster, cible) : id + stats offensives du caster (TOTAL_TP = potentiel
-	 * max du prochain tour, stats clampées à 0) + shields/antidote de la cible (masqués à
-	 * leur slot : une vulné est un shield négatif ; antidote 99 = pas de chip, distinct
-	 * de prêt). COMPROMIS ASSUMÉ (documenté au README) : la LIFE courante du caster n'entre
-	 * PAS dans la clé — la projection d'un LIFE_DAMAGE peut rester celle cachée avant des
-	 * dégâts non létaux ce tour (une mort reste immédiatement visible via vivant/mort) ;
-	 * l'exactitude coûtait une invalidation globale mesurée à +6,31 %.
-	 */
-	static MapHash(EntityStats, MyStats, curAbs, curRel) {
-		var hash_value = (OFFSET_BASIS ^ EntityStats.ID)
-
-		var effAntidoteCdMe = StateClass.cooldownOf(MyStats, CHIP_ANTIDOTE)
-		var antidoteCdMe = (effAntidoteCdMe == null) ? 99 : effAntidoteCdMe
-		// Bit 50 = type de la cible (poireau/summon) : les vues de dégâts filtrent les effets par
-		// leurs masques NON_SUMMONS/SUMMONS — deux types ne partagent jamais une liste. Les
-		// shields sont ceux COURANTS de la chaîne (scalaires), pas l'objet cible.
-		var combinedMe = ((MyStats.IS_SUMMON ? 1 : 0) << 50) | ((curAbs & 0xFFFFF) << 30) | ((curRel & 0x7FFF) << 15) | antidoteCdMe
-		hash_value = addValueToBinHash(hash_value, combinedMe)
-
-		// Bit 62 = classe de crit du caster (les valeurs d'items en dépendent depuis que
-		// les formules de get appliquent le crit avant les shields).
-		var critBit = (DangerClass.critFactorOf(EntityStats) > 1) ? 1 : 0
-		var combinedEnemy = (critBit << 62) | (max(0, EntityStats.TOTAL_TP) << 45) | (max(0, EntityStats.STRENGTH) << 30) | (max(0, EntityStats.MAGIC) << 15) | EntityStats.POWER
-		hash_value = addValueToBinHash(hash_value, combinedEnemy)
-
-		return hash_value
 	}
 
 	static MapDistPossibles = [

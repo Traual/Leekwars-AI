@@ -15,12 +15,15 @@ include("Load/Preload.leek")
 
 include("Maps/WalkCells.leek")
 include("Maps/Actions.leek")
+include("Maps/ItemCoverage.leek")
 
 include("Modifier/BulbState.leek")
 include("Modifier/Resurrection.leek")
 include("Modifier/Consequences.leek")
 
 include("Maps/Danger/EntityDanger.leek")
+include("Maps/Danger/DangerCombo.leek")
+include("Maps/Danger/DangerPlan.leek")
 include("Maps/Danger/Danger.leek")
 include("Maps/Heal/Heal.leek")
 include("Maps/Delta/Delta.leek")

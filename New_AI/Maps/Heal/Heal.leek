@@ -169,7 +169,7 @@ class HealClass {
         _final[HEAL_PROFILE_ALLY_SUMMON] = [: ]
         for (var cell: var itemAoeMap in mapCellItemAoe) {
             // Hash de contenu calculé UNE fois par cellule, partagé entre les deux profils.
-            var contentHash = DangerClass.getHashFromItemAoeMap(itemAoeMap)
+            var contentHash = ItemCoverageClass.hashItemAoeMap(itemAoeMap)
             for (var profile = HEAL_PROFILE_ALLY_LEEK; profile <= HEAL_PROFILE_ALLY_SUMMON; profile++) {
                 var combo = comboAtCell(itemAoeMap, casterStats, profile, contentHash)
                 if (combo[0] > 0 || combo[1] > 0) {
@@ -182,10 +182,10 @@ class HealClass {
     }
 
     /* [cell -> [item -> minAoeDist]] : quelles cellules chaque item de heal atteint —
-     * même assemblage mutualisé que la danger map (source unique, géométries persistantes
-     * partagées via movementKey). */
+     * même assemblage mutualisé que la danger map (source unique ItemCoverageClass,
+     * géométries persistantes partagées via movementKey). */
     static getMapCellItemAoe(casterStats, walkCells, movementKey) {
-        return DangerClass.buildMapCellItemAoe(getHealItemsList(casterStats), walkCells, movementKey)
+        return ItemCoverageClass.buildMapCellItemAoe(getHealItemsList(casterStats), walkCells, movementKey)
     }
 
     /*

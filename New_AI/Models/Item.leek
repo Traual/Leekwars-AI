@@ -36,7 +36,7 @@ class ItemClass {
 	HEAL_EFFECTS_ALLY_SUMMON           // idem, ALLIES + SUMMONS
 	DANGER_DAMAGE_EFFECTS_ENEMY_LEEK   // DAMAGE/LIFE_DAMAGE/POISON non ON_CASTER, ENEMIES + NON_SUMMONS
 	DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON // idem, ENEMIES + SUMMONS
-	DANGER_VULNE_EFFECTS_ENEMY_LEEK    // DEBUFF/VULNE/ABS_VULNE, ENEMIES + NON_SUMMONS (pas de filtre ON_CASTER : réplique getRoughVulneConsequences)
+	DANGER_VULNE_EFFECTS_ENEMY_LEEK    // DEBUFF/VULNE/ABS_VULNE, ENEMIES + NON_SUMMONS (pas de filtre ON_CASTER)
 	DANGER_VULNE_EFFECTS_ENEMY_SUMMON  // idem, ENEMIES + SUMMONS
 	//SHOULD_CASTER_GET_HIT
 	constructor(id) {
@@ -73,17 +73,17 @@ class ItemClass {
 				var t = eff[0]
 				var mask = eff[4]
 				var onCaster = eff[5] & EFFECT_MODIFIER_ON_CASTER
-				// Qualification "item menaçant" : table de vérité EXACTE de l'ancien
-				// MapHittables — volontairement GÉNÉRALE (aucun filtre de masque, de profil
-				// ni ON_CASTER), pour reproduire IsToCheck et HaveAnHittableItem.
+				// Qualification "item menaçant" : volontairement GÉNÉRALE — aucun filtre de
+				// masque, de profil ni ON_CASTER. Elle répond à « cet item peut-il compter
+				// dans une danger map ? » ; le filtrage fin vit dans les vues ci-dessous.
 				if (t == EFFECT_DAMAGE || t == EFFECT_LIFE_DAMAGE || t == EFFECT_POISON
 					|| t == EFFECT_DEBUFF || t == EFFECT_VULNERABILITY || t == EFFECT_ABSOLUTE_VULNERABILITY) {
 					this.IS_DANGER_ITEM = true
 				}
 				if (t == EFFECT_DEBUFF || t == EFFECT_VULNERABILITY || t == EFFECT_ABSOLUTE_VULNERABILITY) {
 					this.IS_VULNERABILITY = true
-					// Vues vulné : PAS de filtre ON_CASTER (l'ancien getRoughVulneConsequences
-					// ne passait que par isHitable — masques de cible seuls).
+					// Vues vulné : PAS de filtre ON_CASTER — la chaîne de vulnés ne
+					// discrimine que par masque de cible.
 					if (mask & EFFECT_TARGET_ENEMIES) {
 						if (mask & EFFECT_TARGET_NON_SUMMONS) {
 							if (this.DANGER_VULNE_EFFECTS_ENEMY_LEEK == null) this.DANGER_VULNE_EFFECTS_ENEMY_LEEK = []

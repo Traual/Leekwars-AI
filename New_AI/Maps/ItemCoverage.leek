@@ -1,0 +1,112 @@
+/*
+ * Géométrie d'items, commune à Danger et Heal : quelles cellules chaque item atteint depuis
+ * l'ensemble des positions accessibles d'un caster, et à quelle distance d'AoE.
+ * Ne connaît ni les dégâts, ni les soins, ni les camps — seulement des portées et des zones.
+ */
+
+include("../includes.leek")
+
+class ItemCoverageClass {
+
+	/* Hash de contenu d'une map [item -> dist] : chaîne rotate-XOR, entrée (item 9 bits | dist 4 bits).
+	 * Dépendant de l'ordre d'itération : deux maps de même contenu construites dans des ordres
+	 * différents FRAGMENTENT seulement, elles ne collisionnent jamais. */
+	static hashItemAoeMap(ItemAoeMap) {
+		var Hash_Final = 0
+		for (var item: var dist in ItemAoeMap) {
+			Hash_Final = addValueToBinHash(Hash_Final, (item << 4) | dist)
+		}
+		return Hash_Final
+	}
+
+	/*
+	 * [cell -> [item -> minAoeDist]] pour une liste d'items et les walkcells du caster.
+	 * Les géométries vivent dans deux caches PERSISTANTS (jamais vidés au tour) clés par
+	 * (movementKey, signature) — movementKey détermine exactement la map NoEntities,
+	 * elle-même statique : même contexte au tour suivant ou chez un autre caster -> géométrie
+	 * réutilisée telle quelle. Même FULL_GEOMETRY_KEY -> toute la map d'AoE partagée ; même
+	 * LAUNCH_GEOMETRY_KEY -> l'union des cellules directement lançables partagée. Maps cachées
+	 * STRICTEMENT read-only.
+	 * Seul l'ASSEMBLAGE dépend de la liste d'items (cooldown-filtrée par tour) — il reste
+	 * caché par tour chez les appelants. L'ordre d'insertion des items = l'ordre de la liste
+	 * (le fold dépendant de l'ordre de hashItemAoeMap, les clés de combo et l'ordre glouton
+	 * en dépendent).
+	 */
+	static buildMapCellItemAoe(items, walkCellsMap, movementKey) {
+		var _final = [: ]
+		for (var Item in items) {
+			var Infos = ITEMINFO[Item]
+			var fullKey = (movementKey << 30) | Infos.FULL_GEOMETRY_KEY
+			var itemMap
+			if (fullKey in ITEM_FULL_GEOMETRY_CACHE) {
+				itemMap = ITEM_FULL_GEOMETRY_CACHE[fullKey]
+			} else {
+				var launchKey = (movementKey << 25) | Infos.LAUNCH_GEOMETRY_KEY
+				var directCells
+				if (launchKey in ITEM_LAUNCH_GEOMETRY_CACHE) {
+					directCells = ITEM_LAUNCH_GEOMETRY_CACHE[launchKey]
+				} else {
+					directCells = getMapHittableCellsTotal(Infos, walkCellsMap)
+					ITEM_LAUNCH_GEOMETRY_CACHE[launchKey] = directCells
+				}
+				itemMap = getMapAoeForItem(Infos, directCells)
+				ITEM_FULL_GEOMETRY_CACHE[fullKey] = itemMap
+			}
+			for (var Cell: var MinAoeDist in itemMap) {
+				if (Cell in _final) {
+					_final[Cell][Item] = MinAoeDist
+				} else {
+					_final[Cell] = [: ]
+					_final[Cell][Item] = MinAoeDist
+				}
+			}
+		}
+		return _final
+	}
+
+	/*
+	 * [cellule -> distance d'AoE minimale] pour un item : les cellules touchables en direct
+	 * (MapCellsBool, déjà calculées par l'appelant) valent 0, puis l'expansion d'AoE remplit
+	 * le reste au plus près. Ne dépend que de la map directe, d'AREA et d'AREA_MAX.
+	 */
+	static getMapAoeForItem(ItemInfos, MapCellsBool) {
+		var _final = [: ]
+		for (var cell: var bool in MapCellsBool) {
+			_final[cell] = 0
+		}
+		if (ItemInfos.AREA_MAX > 0) {
+			var area = ItemInfos.AREA
+			for (var cell: var bool in MapCellsBool) {
+				for (var Aoe: var AoeDist in CellClass.getAreaDist(area, cell)) {
+					var ActualCellDist = _final[Aoe]
+					if (ActualCellDist == null || ActualCellDist > AoeDist) {
+						_final[Aoe] = AoeDist
+					}
+				}
+			}
+		}
+		return _final
+	}
+
+	/*
+	 * [cellule -> true] : toutes les cellules touchables en direct par l'item depuis
+	 * n'importe quelle cellule accessible du caster.
+	 */
+	static getMapHittableCellsTotal(ItemInfos, WalkCellsMap) {
+		var _final = [: ]
+		var LaunchType = ItemInfos.LAUNCHTYPE
+		var MinRange = ItemInfos.MINRANGE
+		var MaxRange = ItemInfos.MAXRANGE
+		if (ItemInfos.NEEDLOS) {
+			for (var EntityCell: var mp in WalkCellsMap) {
+				_final += ActionsClass.LaunchWithLos[LaunchType](EntityCell, MinRange, MaxRange)
+			}
+		} else {
+			for (var EntityCell: var mp in WalkCellsMap) {
+				_final += ActionsClass.LaunchWithoutLos[LaunchType](EntityCell, MinRange, MaxRange)
+			}
+		}
+
+		return _final
+	}
+}

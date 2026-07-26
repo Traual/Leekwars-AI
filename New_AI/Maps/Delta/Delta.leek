@@ -8,8 +8,8 @@
  *   - caster allié     -> vitalité D'ABORD (monte le cap ET la vie), puis heal ordinaire,
  *     seulement si life > 0 (un mort n'est pas soigné), plafonné au NOUVEAU total — une
  *     vitalité reçue à pleine vie absorbe donc les dégâts suivants ; profil de cible par
- *     TYPE de la cible (summon/poireau — jamais SELF : la liste des casters exclut la
- *     cible), le tout × HEAL_COEF
+ *     TYPE de la cible (summon/poireau — jamais SELF : la rotation exclut la cible), le tout
+ *     × HEAL_COEF
  * net = max(0, LIFE − life). Le poison reste dans la formule de survie, pas ici.
  *
  * Les autres encaissent à leur cellule courante (ils ne bougent pas pendant mon tour).
@@ -54,17 +54,14 @@ class DeltaClass {
     }
 
     /*
-     * Graine des clés de cache danger pour UNE cible : contexte adverse de son side + ses
-     * propres shields/antidote. SOURCE UNIQUE pour tous les consommateurs (netOf, FinalCell) :
-     * un second chemin de construction fragmenterait ou ferait collisionner les caches.
-     * Shields MASQUÉS à leur slot : une vulné est un shield NÉGATIF, non masqué le signe
-     * s'étend par << et absorbe les champs supérieurs. antidoteCd 99 = pas d'antidote,
-     * distinct d'un antidote prêt (0).
+     * Graine des clés de cache danger pour UNE cible : contexte offensif adverse chaîné avec
+     * son pack DÉFENSIF (shields courants + antidote). SOURCE UNIQUE pour tous les
+     * consommateurs (netOf, FinalCell) — un second chemin de construction fragmenterait ou
+     * ferait collisionner les caches. Le type de la cible n'entre PAS ici : il est immuable
+     * pour un id, et l'id est déjà porté à part par la clé de cellule.
      */
-    static statsHashFor(stat, contextBySide) {
-        var effAntidoteCd = StateClass.cooldownOf(stat, CHIP_ANTIDOTE)
-        var antidoteCd = (effAntidoteCd == null) ? 99 : effAntidoteCd
-        return addValueToBinHash(contextBySide[stat.SIDE], ((stat.ABSOLUTE_SHIELD & 0xFFFFF) << 30) | ((stat.RELATIVE_SHIELD & 0x7FFF) << 15) | antidoteCd)
+    static targetDangerSeedOf(stat, offensiveContextHash, antidoteCd) {
+        return addValueToBinHash(offensiveContextHash, DangerComboClass.targetDefensePack(stat.ABSOLUTE_SHIELD, stat.RELATIVE_SHIELD, antidoteCd))
     }
 
     /*
@@ -73,31 +70,48 @@ class DeltaClass {
      * Caché : NETDAMAGE_CACHE pour les autres, les deux caches de fuite pour Me.
      */
     static netOf(e, stat, State, BaseHash, contextBySide, healersFingerprintBySide, healMap, meWalkFp) {
-        var statsHash = statsHashFor(stat, contextBySide)
-        var hfp = (stat.SIDE in healersFingerprintBySide) ? healersFingerprintBySide[stat.SIDE] : 0
+        // Contexte offensif et antidote lus UNE fois, puis transportés en scalaires : aucun
+        // lecteur profond ne relit contextBySide ni ne recalcule le cooldown.
+        var targetSide = stat.SIDE
+        var offensiveContextHash = contextBySide[targetSide]
+        var antidoteCd = DangerComboClass.antidoteCdOf(stat)
+        var targetSeed = targetDangerSeedOf(stat, offensiveContextHash, antidoteCd)
+        var hfp = (targetSide in healersFingerprintBySide) ? healersFingerprintBySide[targetSide] : 0
 
         if (e == Me) {
             // Me BOUGE ce tour : min du net sur mes cellules accessibles.
-            return minDeltaForMe(stat, State, BaseHash, statsHash, hfp, healMap, meWalkFp)
+            return minDeltaForMe(stat, State, BaseHash, offensiveContextHash, targetSeed, antidoteCd, hfp, healMap, meWalkFp)
         }
 
         // Les autres ne bougent pas -> net à leur cellule courante. Une entité intouchée
         // garde la même clé d'un nœud à l'autre -> hit, tout le déroulé est sauté.
         // Salée par (id, IS_SUMMON) : le PROFIL de couverture heal (poireau/summon) est un
-        // input du net depuis la vitalité — sans ce sel, un poireau et un summon aux mêmes
-        // valeurs partageraient un net calculé avec la mauvaise couverture.
-        var ndKey = addValueToBinHash(addValueToBinHash(statsHash ^ hfp, (stat.CELL << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE), (e << 1) | (stat.IS_SUMMON ? 1 : 0))
+        // input du net depuis la vitalité.
+        var ndKey = addValueToBinHash(addValueToBinHash(targetSeed ^ hfp, (stat.CELL << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE), (e << 1) | (stat.IS_SUMMON ? 1 : 0))
         if (ndKey in NETDAMAGE_CACHE) return NETDAMAGE_CACHE[ndKey]
 
-        var dangerToT = DangerClass.getEntityDanger(stat, State, e, BaseHash, statsHash)
+        var cell = stat.CELL
+        var cellDangerKey = DangerClass.cellCacheSeed(targetSeed, e) ^ cell
+        var dangerToT
+        if (cellDangerKey in CELL_DANGER_GET_CACHE) {
+            // Hit de cellule : ni plan, ni couverture, ni ordre, ni bucket.
+            dangerToT = CELL_DANGER_GET_CACHE[cellDangerKey]
+        } else {
+            BenchOps.Start("Danger")
+            var coldPlan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, targetSide)
+            // Une seule cellule à évaluer pour cette cible : aucun groupement local.
+            dangerToT = DangerClass.dangerOfCellCold(cell, cellDangerKey, coldPlan, DangerPlanClass.sequenceFor(coldPlan, e), State, stat, antidoteCd, null)
+            BenchOps.Stop("Danger")
+        }
         // Danger vide -> net 0 sans dérouler l'ordre de tour ni le séquenceur.
         if (mapIsEmpty(dangerToT)) {
             NETDAMAGE_CACHE[ndKey] = 0
             return 0
         }
-        // Les casters frappent dans l'ordre où ils jouent APRÈS la cible ce round.
-        var afterOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, e)
-        var nd = netDamage(stat, dangerToT, healMap, State, afterOrder, stat.CELL)
+        // Les casters frappent dans l'ordre où ils jouent APRÈS la cible ce round : la
+        // séquence du plan est construite une fois par cible, puis partagée.
+        var plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, targetSide)
+        var nd = netDamage(stat, dangerToT, healMap, State, plan.ORDER, DangerPlanClass.sequenceFor(plan, e), cell)
         NETDAMAGE_CACHE[ndKey] = nd
         return nd
     }
@@ -107,15 +121,14 @@ class DeltaClass {
      * (danger et heal séquencés au même endroit). Deux niveaux de cache : externe = le min
      * entier par état de Me + set accessible, interne = le net d'une cellule.
      */
-    static minDeltaForMe(MeStats, State, BaseHash, statsHash, hfp, healMap, meWalkFp) {
+    static minDeltaForMe(MeStats, State, BaseHash, offensiveContextHash, targetSeed, antidoteCd, hfp, healMap, meWalkFp) {
         // seed = tout ce qui fixe net(cellule) SAUF la cellule : contexte ennemi + mes shields
-        // (statsHash), mes healers (hfp), ma vie courante et max (cap du heal, coupure à 0),
-        // et mon PROFIL de cible heal (id, IS_SUMMON — un bulbe lit la couverture summon).
+        // et mon antidote (targetSeed), mes healers (hfp), ma vie courante et max (cap du heal,
+        // coupure à 0), et mon PROFIL de cible heal (id, IS_SUMMON).
         // UN seul chaînage : les champs locaux sont packés dans des slots DISJOINTS, avec les
-        // dix bits bas laissés libres pour la cellule. Invariants déjà tenus par l'ancien
-        // packing : cellule <= 612 (bits 0-9), id < 64 (bits 11-16), TOTAL_LIFE et LIFE sur
-        // leurs slots historiques de 16 bits (bits 17-32 et 33-48).
-        var seed = addValueToBinHash(statsHash ^ hfp,
+        // dix bits bas laissés libres pour la cellule. Invariants : cellule <= 612 (bits 0-9),
+        // id < 64 (bits 11-16), TOTAL_LIFE et LIFE sur leurs slots de 16 bits (17-32 et 33-48).
+        var seed = addValueToBinHash(targetSeed ^ hfp,
             (MeStats.LIFE << 33) | (MeStats.TOTAL_LIFE << 17) | (Me << 11) | (MeStats.IS_SUMMON ? 1024 : 0))
 
         // Externe : même état de Me sur le même TERRAIN -> recherche entière sautée. BaseHash
@@ -129,7 +142,7 @@ class DeltaClass {
         var myWalkCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
 
         // Passe 1 : consommer les cellules déjà nettes dans l'ordre historique. Sur un nœud
-        // entièrement chaud, aucun setup danger et aucun groupement ne sont construits.
+        // entièrement chaud, aucun plan, aucun ordre, aucune couverture, aucun bucket.
         var minDelta = MAX_VALUE
         var missCells = []
         for (var cell: var mp in myWalkCells) {
@@ -148,39 +161,38 @@ class DeltaClass {
             ENTITY_DELTA_CACHE_FOR_ME[outerKey] = minDelta
             return minDelta
         }
-        // Passe 2 : cellule par cellule dans l'ordre historique de myWalkCells. TOUT le setup
-        // est paresseux — l'ordre de tour n'est construit que si un danger non vide doit être
-        // séquencé, les maps par caster qu'au premier vrai miss de CELL_DANGER_GET_CACHE. Le
-        // danger est partagé entre couvertures identiques, mais le net et le heal restent PAR
-        // CELLULE : même minimum, mêmes additions dans netDamage.
-        // Partie constante de la clé danger : hoistée une fois, après la sortie entièrement
-        // chaude, la cellule ne fait plus qu'un XOR sur ses dix bits bas.
-        var dangerCellSeed = DangerClass.cellCacheSeed(statsHash, MeStats.ID)
-        var castersInOrder = null
-        var casterMaps = null
+        // Passe 2 : cellule par cellule dans l'ordre historique de myWalkCells. TOUT reste
+        // paresseux — le plan et les buckets ne naissent qu'au premier VRAI miss de
+        // CELL_DANGER_GET_CACHE. Le danger est partagé entre couvertures identiques, mais le
+        // net et le heal restent PAR CELLULE : même minimum, mêmes additions dans netDamage.
+        var dangerCellSeed = DangerClass.cellCacheSeed(targetSeed, MeStats.ID)
+        var mySide = MeStats.SIDE
+        var plan = null
+        var mySeq = null
         var buckets = null
         for (var cell in missCells) {
             var dangerKey = dangerCellSeed ^ cell
             var dangerAtCell
             if (dangerKey in CELL_DANGER_GET_CACHE) {
-                // Hit : ni couverture, ni hash de contenu, ni maps de casters.
+                // Hit : ni plan, ni couverture, ni hash de contenu, ni bucket.
                 dangerAtCell = CELL_DANGER_GET_CACHE[dangerKey]
             } else {
-                if (casterMaps == null) {
-                    var toSkipMap      = DangerClass.EntitiesToSkip(MeStats, State, BaseHash)
-                    var enemyWalkCells = DangerClass.LoadEnemiesWalkableCellsMap(State, Me, toSkipMap, BaseHash, statsHash)
-                    if (castersInOrder == null) castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
-                    casterMaps = DangerClass.buildCasterMaps(State, enemyWalkCells, toSkipMap, castersInOrder)
+                if (plan == null) {
+                    plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
+                    mySeq = DangerPlanClass.sequenceFor(plan, Me)
                     buckets = [: ]   // couvertures rencontrées, locales à cette recherche de fuite
                 }
-                dangerAtCell = DangerClass.dangerOfCellCold(cell, dangerKey, State, MeStats, casterMaps, buckets)
+                dangerAtCell = DangerClass.dangerOfCellCold(cell, dangerKey, plan, mySeq, State, MeStats, antidoteCd, buckets)
             }
             // Danger vide -> delta 0 direct, sans même l'ordre de tour (déclenche l'early exit
             // "imbattable" dessous).
             var delta = 0
             if (!mapIsEmpty(dangerAtCell)) {
-                if (castersInOrder == null) castersInOrder = StateClass.getEntitiesInTurnOrderAfterEntity(State, Me)
-                delta = netDamage(MeStats, dangerAtCell, healMap, State, castersInOrder, cell)
+                if (plan == null) {
+                    plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
+                    mySeq = DangerPlanClass.sequenceFor(plan, Me)
+                }
+                delta = netDamage(MeStats, dangerAtCell, healMap, State, plan.ORDER, mySeq, cell)
             }
             CELL_NETDAMAGE_FOR_ME_CACHE[seed ^ cell] = delta
             if (delta < minDelta) {
@@ -197,25 +209,30 @@ class DeltaClass {
      * compte), le heal ne s'applique que vivante. Vitalité AVANT heal : le cap local monte
      * d'abord (et la vie avec), puis le heal ordinaire est plafonné au NOUVEAU total —
      * une vitalité à pleine vie reste utile contre les dégâts suivants.
+     *
+     * L'ordre de jeu vient de la séquence du plan (partition sur les TURN_ORDER, cible
+     * exclue), construite une seule fois par cible et partagée par toutes les cellules.
      */
-    static netDamage(stat, dangerToT, healMap, State, turnOrder, cell) {
+    static netDamage(stat, dangerToT, healMap, State, Order, Seq, cell) {
         // Sans danger entrant, un heal/une vitalité ne peut jamais produire un net positif
         // (la vie ne fait que monter, net = max(0, LIFE − life)) : 0 direct.
         if (mapIsEmpty(dangerToT)) return 0
         var life = stat.LIFE
+        var n = count(Seq)
         // Sans healer nulle part : mêmes soustractions successives (comportement flottant
         // conservé — pas de somme globale), sans les tests de side/couverture heal.
         if (mapIsEmpty(healMap)) {
-            for (var caster in turnOrder) {
-                if (caster in dangerToT) life -= DANGER_COEF * dangerToT[caster]
+            for (var k = 0; k < n; k++) {
+                var casterNoHeal = Order[Seq[k]]
+                if (casterNoHeal in dangerToT) life -= DANGER_COEF * dangerToT[casterNoHeal]
             }
             return max(0, stat.LIFE - life)
         }
         var totalLife = stat.TOTAL_LIFE
-        // turnOrder = les casters jouant APRÈS la cible, cible EXCLUE (rotation de
-        // getEntitiesInTurnOrderAfterEntity) -> jamais de self-heal ici, profil par type.
+        // La séquence exclut la cible -> jamais de self-heal ici, profil par type.
         var allyProfile = stat.IS_SUMMON ? HEAL_PROFILE_ALLY_SUMMON : HEAL_PROFILE_ALLY_LEEK
-        for (var caster in turnOrder) {
+        for (var k = 0; k < n; k++) {
+            var caster = Order[Seq[k]]
             if (caster in dangerToT) {
                 life -= DANGER_COEF * dangerToT[caster]
             }

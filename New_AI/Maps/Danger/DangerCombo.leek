@@ -1,0 +1,209 @@
+/*
+ * Combo d'UN caster sur une cible : packing canonique du couple, combo glouton dégâts/TP,
+ * et chaîne de vulnérabilités du caster (essayer une vulné d'abord tant que ça améliore).
+ *
+ * Un seul packing par famille — le pack défensif de la cible et le pack offensif du caster
+ * n'existent qu'ici, et toutes les clés du danger en dérivent.
+ */
+
+include("../../includes.leek")
+
+class DangerComboClass {
+
+	// Slots du pack de cible — déclarés UNE fois, les deux niveaux les partagent.
+	static ABS_MASK = 1048575        // 20 bits
+	static ABS_SHIFT = 30
+	static REL_MASK = 32767          // 15 bits
+	static REL_SHIFT = 15
+	static TARGET_TYPE_SHIFT = 50
+
+	/*
+	 * Pack DÉFENSIF de la cible : shields COURANTS de la chaîne et antidote, RIEN d'autre.
+	 * Chaque champ est masqué à son slot — une vulné est un shield NÉGATIF, non masqué son
+	 * signe s'étendrait et absorberait les champs hauts. antidoteCd 99 = pas d'antidote dans
+	 * l'inventaire (jamais de cure, le poison compte sa durée PLEINE), distinct d'un antidote
+	 * prêt (0).
+	 * C'est ce niveau qui nourrit la graine des clés de CELLULE : l'identité de la cible y est
+	 * déjà portée à part, et son type est immuable pour un id donné — l'ajouter n'apporterait
+	 * aucune information et déplacerait toutes les clés pour rien.
+	 */
+	static targetDefensePack(CurAbs, CurRel, AntidoteCd) {
+		return ((CurAbs & ABS_MASK) << ABS_SHIFT) | ((CurRel & REL_MASK) << REL_SHIFT) | AntidoteCd
+	}
+
+	/*
+	 * Pack du couple : le pack défensif ÉTENDU d'un seul bit de type. Les vues d'effets
+	 * filtrent réellement par masque poireau/summon, donc deux types ne doivent jamais
+	 * partager une liste de dégâts ni un combo. Aucun champ n'est repacké ici.
+	 */
+	static targetPairPack(IsSummon, DefensePack) {
+		return DefensePack | ((IsSummon ? 1 : 0) << TARGET_TYPE_SHIFT)
+	}
+
+	/* Cooldown effectif d'Antidote, 99 quand l'item n'est pas dans l'inventaire. Calculé UNE
+	 * fois par évaluation de cible puis transporté en scalaire. */
+	static antidoteCdOf(TargetStats) {
+		var eff = StateClass.cooldownOf(TargetStats, CHIP_ANTIDOTE)
+		return (eff == null) ? 99 : eff
+	}
+
+	/*
+	 * Pack OFFENSIF canonique du caster : classe de crit + stats qui pilotent les formules de
+	 * dégâts. Stats clampées à 0 (le moteur plancher à l'usage : une stat shacklée négative
+	 * produit le même danger que 0), TOTAL_TP car le danger est le potentiel du PROCHAIN tour.
+	 * COMPROMIS ASSUMÉ (README) : la LIFE courante du caster n'entre PAS dans le pack — la
+	 * projection d'un LIFE_DAMAGE peut rester celle cachée avant des dégâts non létaux ce tour
+	 * (une mort reste immédiatement visible via vivant/mort) ; l'exactitude coûtait +6,31 %.
+	 * Slots : POWER 0-14, TOTAL_TP 15-29, MAGIC 30-44, STRENGTH 45-59, crit 62.
+	 */
+	static casterOffensivePack(CasterStats, CritFactor) {
+		var critBit = (CritFactor > 1) ? 1 : 0
+		return (critBit << 62) | (max(0, CasterStats.STRENGTH) << 45) | (max(0, CasterStats.MAGIC) << 30) | (max(0, CasterStats.TOTAL_TP) << 15) | CasterStats.POWER
+	}
+
+	/*
+	 * Facteur de crit binaire asymétrique d'un caster (doctrine dans Constants) : un caster
+	 * ADVERSE est craint critique dès MIN_AGILITY_ENEMY_CRIT, un allié n'est crédité qu'à
+	 * partir de MIN_AGILITY_TO_FULLY_CRIT (on ne compte pas sur sa chance).
+	 */
+	static critFactorOf(CasterStats) {
+		var critAt = (CasterStats.SIDE != getSide(Me)) ? MIN_AGILITY_ENEMY_CRIT : MIN_AGILITY_TO_FULLY_CRIT
+		return (CasterStats.AGILITY >= critAt) ? CRITICAL_FACTOR : 1
+	}
+
+	/* Clé CANONIQUE du couple (caster, cible-avec-ses-shields-courants) — SOURCE UNIQUE.
+	 * Clé de DANGER_ENTITY_CACHE, et racine des clés de combo : plus aucune seconde fonction
+	 * ne repacke les mêmes champs. L'id du caster est dedans : sa liste d'items lui est propre. */
+	static dangerPairKey(CasterId, CasterPack, TargetPack) {
+		return addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ CasterId, TargetPack), CasterPack)
+	}
+
+	/*
+	 * Meilleur combo du caster sur la cible, vulnés comprises.
+	 *
+	 * @param ItemAoeMap [item -> minAoeDist] des items du caster qui atteignent la cellule
+	 * @param ContentHash hash de contenu d'ItemAoeMap, mémorisé par l'appelant
+	 * @param CasterPack / CritFactor packs du plan, déjà calculés une fois pour tout le tour
+	 * @param curAbs/curRel shields COURANTS de la cible (scalaires portés par la chaîne)
+	 * @return [dégâts, absFinal, relFinal] — que des scalaires, aucune référence retenue
+	 */
+	static comboOfCaster(ItemAoeMap, ContentHash, CasterId, CasterPack, CritFactor, CasterStats, TargetStats, curAbs, curRel, AntidoteCd) {
+		if (mapIsEmpty(ItemAoeMap)) return [0, curAbs, curRel]
+		var isSummon = TargetStats.IS_SUMMON
+		var pairKey = dangerPairKey(CasterId, CasterPack, targetPairPack(isSummon, targetDefensePack(curAbs, curRel, AntidoteCd)))
+		var comboKey = addValueToBinHash(pairKey, ContentHash)
+		if (comboKey in COMBO_FROM_ITEM_AOE_CACHE) return COMBO_FROM_ITEM_AOE_CACHE[comboKey]
+
+		// TOTAL_TP : le danger représente le potentiel max du prochain tour, pas les TP
+		// restants de ce tour — stable d'un step de BFS à l'autre.
+		var baseTp = CasterStats.TOTAL_TP
+		// Uses : racine TOUJOURS zéro (caster jamais Me, EntityState initialise à 0 et le
+		// danger est son prochain tour) — playedUses est l'overlay SPARSE des seuls items
+		// consommés par la chaîne, null tant qu'aucun ne l'est.
+		var playedUses = null
+		var best = greedyDamage(ItemAoeMap, pairKey, CasterStats, TargetStats, CritFactor, AntidoteCd, curAbs, curRel, baseTp, playedUses, -1, 0)
+
+		// Les vulnés jouées d'abord peuvent améliorer le combat : on retient la meilleure tant
+		// qu'elle bat STRICTEMENT le total courant. Aucun candidat REJETÉ n'alloue quoi que ce
+		// soit — ni tableau de shields, ni structure de résultat, ni clone de l'overlay.
+		var vulneEffs = isSummon ? 1 : 0   // sélection de vue résolue une fois hors boucle
+		var targetAlive = TargetStats.LIFE > 0
+		while (true) {
+			var bestDamage = 0
+			var bestItem = -1
+			var bestAbs = 0
+			var bestRel = 0
+			var bestTp = 0
+			var bestUses = 0
+			for (var item: var aoe in ItemAoeMap) {
+				var Infos = ITEMINFO[item]
+				var used = (playedUses == null) ? 0 : ((item in playedUses) ? playedUses[item] : 0)
+				if (used < Infos.MAX_USES && baseTp >= Infos.COST && Infos.IS_VULNERABILITY) {
+					// Shields après cette vulné, EN SCALAIRES. Ordre des lignes et facteur
+					// critique conservés, ABS puis REL pour le debuff. Cible morte ou vue
+					// vide : shields inchangés (l'ancien isHitable refusait tout sur un mort).
+					var newAbs = curAbs
+					var newRel = curRel
+					if (targetAlive) {
+						var effs = vulneEffs ? Infos.DANGER_VULNE_EFFECTS_ENEMY_SUMMON : Infos.DANGER_VULNE_EFFECTS_ENEMY_LEEK
+						if (effs != null) {
+							for (var eff in effs) {
+								var EffType = eff[0]
+								if (EffType == EFFECT_DEBUFF) {
+									var keep = max(0, 1 - (eff[1] * CritFactor / 100))   // clampé : un débuff crité peut dépasser 100%
+									newAbs *= keep   // ABS puis REL, même ordre qu'avant
+									newRel *= keep
+								} else if (EffType == EFFECT_VULNERABILITY) {
+									newRel -= eff[1] * CritFactor
+								} else {   // EFFECT_ABSOLUTE_VULNERABILITY
+									newAbs -= eff[1] * CritFactor
+								}
+							}
+						}
+					}
+					var thisTp = baseTp - Infos.COST
+					var thisUses = used + 1
+					var newPairKey = dangerPairKey(CasterId, CasterPack, targetPairPack(isSummon, targetDefensePack(newAbs, newRel, AntidoteCd)))
+					var damages = greedyDamage(ItemAoeMap, newPairKey, CasterStats, TargetStats, CritFactor, AntidoteCd, newAbs, newRel, thisTp, playedUses, item, thisUses)
+					if (bestDamage < damages) {   // strict : à égalité, le PREMIER item gagne
+						bestDamage = damages
+						bestItem = item
+						bestAbs = newAbs
+						bestRel = newRel
+						bestTp = thisTp
+						bestUses = thisUses
+					}
+				}
+			}
+			if (bestItem == -1 || bestDamage <= best) break
+			best = bestDamage
+			curAbs = bestAbs
+			curRel = bestRel
+			baseTp = bestTp
+			// SEUL le candidat retenu matérialise l'overlay : création si null, sinon un unique
+			// clone. L'overlay du parent n'est jamais muté.
+			playedUses = (playedUses == null) ? [: ] : clone(playedUses)
+			playedUses[bestItem] = bestUses
+		}
+		var entry = [best, curAbs, curRel]
+		COMBO_FROM_ITEM_AOE_CACHE[comboKey] = entry
+		return entry
+	}
+
+	/*
+	 * Combo glouton sans vulné : empile les items par dégâts/TP décroissant (liste triée
+	 * d'EntityDanger) dans le budget TP + MAX_USES.
+	 *
+	 * Volontairement NON caché : sa clé serait un sur-ensemble strict de celle du combo, donc
+	 * tout hit possible est déjà intercepté en amont par COMBO_FROM_ITEM_AOE_CACHE.
+	 *
+	 * CandidateItem/-Uses forment un overlay VIRTUEL : la valeur du candidat remplace (ou
+	 * ajoute) son entrée sans cloner l'overlay engagé. CandidateItem = -1 quand il n'y en a pas.
+	 *
+	 * @return dégâts totaux du combo
+	 */
+	static greedyDamage(ItemAoeMap, PairKey, CasterStats, TargetStats, CritFactor, AntidoteCd, curAbs, curRel, CasterTP, PlayedUses, CandidateItem, CandidateUses) {
+		var EntityDangerArray = EntityDangerClass.getByPairKey(PairKey, CasterStats, TargetStats, CritFactor, AntidoteCd, curAbs, curRel)
+		var _final = 0
+		var tp = CasterTP
+		for (var EntityDanger in EntityDangerArray) {
+			var ItemEntityDanger = EntityDanger.Item
+			if (ItemAoeMap[ItemEntityDanger] == EntityDanger.Aoe) {
+				var CostEntityDanger = EntityDanger.Cost
+				var MaxUsesOfItem = ITEMINFO[ItemEntityDanger].MAX_USES
+				var itemUses
+				if (ItemEntityDanger == CandidateItem) {
+					itemUses = CandidateUses
+				} else {
+					itemUses = (PlayedUses == null) ? 0 : ((ItemEntityDanger in PlayedUses) ? PlayedUses[ItemEntityDanger] : 0)
+				}
+				while (tp >= CostEntityDanger && itemUses < MaxUsesOfItem) {
+					_final += EntityDanger.Damages
+					tp -= CostEntityDanger
+					itemUses++
+				}
+			}
+		}
+		return _final
+	}
+}

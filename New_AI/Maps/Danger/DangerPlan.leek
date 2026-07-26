@@ -1,0 +1,180 @@
+/*
+ * Plan offensif : qui menace une cible, avec quelle géométrie et quelles stats.
+ *
+ * Un plan est construit UNE fois par (terrain, contexte offensif, camp de la cible) et
+ * partagé par toutes les cibles de ce camp et toutes leurs cellules. Il ne retient que des
+ * ids, des nombres et des maps issues des caches de tour — JAMAIS un EntityState ni une
+ * référence vers le workspace, qu'une restauration pourrait rendre incohérente.
+ */
+
+include("../../includes.leek")
+
+class DangerPlanClass {
+
+	static MOVEMENT_KEY_MASK = 2097151   // (1 << 21) - 1 : isole movementKey dans la clé
+
+	/* Clé de MAP_CELL_ITEM_AOE_CACHE — SOURCE UNIQUE, aussi utilisée comme préfixe EXACT des
+	 * clés de DANGER_ITEM_AOE_HASH_CACHE (un hash de contenu ne doit jamais survivre au
+	 * changement de map qui l'a produit).
+	 * L'ID est OBLIGATOIRE : la valeur embarque la liste d'items du caster, deux ennemis
+	 * déplacés sur la même cellule (attract/push) avec le même MP ne doivent pas partager
+	 * d'entrée. usesJumpLayer = canJumpNextTurn (source unique) : un buff/shackle TP
+	 * franchissant le coût de Jump change la couche sans toucher ID/cellule/MP, le bit
+	 * garantit que la map reçue et la clé décrivent la même couche. Pack direct injectif :
+	 * cellule <= 612 (10 bits), MP < 1024 (10 bits), mp clampé (shacklé négatif == 0). */
+	static mapCellItemAoeKeyOf(EntityStats) {
+		var usesJumpLayer = WalkCellsClass.canJumpNextTurn(EntityStats) ? 1 : 0
+		return (EntityStats.ID << 21) | (usesJumpLayer << 20) | (EntityStats.CELL << 10) | max(0, EntityStats.TOTAL_MP)
+	}
+
+	/* [cellule -> [item -> plus petite distance d'AoE]] : ce que le caster peut atteindre.
+	 * TmpHash est la clé DÉJÀ calculée par l'appelant, jamais reconstruite ici. */
+	static getMapCellItemAoe(EntityStats, EntityWalkCells, TmpHash) {
+		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
+		// Les 21 bits bas sont exactement movementKey, clé des géométries persistantes.
+		var _final = ItemCoverageClass.buildMapCellItemAoe(EntityDangerClass.getItemsList(EntityStats), EntityWalkCells, TmpHash & MOVEMENT_KEY_MASK)
+		MAP_CELL_ITEM_AOE_CACHE[TmpHash] = _final
+		return _final
+	}
+
+	/*
+	 * Hash de contenu d'une ItemAoeMap, mémorisé par (map, cellule) : le contenu n'est donc
+	 * itéré qu'UNE fois par couple de tout le tour, au lieu d'un scan à chaque signature de
+	 * couverture ET à chaque appel de combo. Clé exacte et injective (pas de hash
+	 * probabiliste) : la clé de MAP_CELL_ITEM_AOE_CACHE décalée de 10 bits, plus la cellule.
+	 */
+	static itemAoeHashOf(MapKey, Cell, ItemAoeMap) {
+		var key = (MapKey << 10) | Cell
+		if (key in DANGER_ITEM_AOE_HASH_CACHE) return DANGER_ITEM_AOE_HASH_CACHE[key]
+		var contentHash = ItemCoverageClass.hashItemAoeMap(ItemAoeMap)
+		DANGER_ITEM_AOE_HASH_CACHE[key] = contentHash
+		return contentHash
+	}
+
+	/*
+	 * Couverture offensive d'un caster isolé : [cellule -> ItemAoeMap], EXACTEMENT celle que
+	 * le plan retiendrait pour lui. Sert au ciblage exact caster -> cibles du scoring, qui ne
+	 * doit PAS construire un plan d'équipe entier pour tester un caster sale.
+	 * null quand le caster ne menace personne : absent, Me (toujours exclu du danger), mort,
+	 * ou sans item menaçant. Map issue de MAP_CELL_ITEM_AOE_CACHE — READ-ONLY.
+	 */
+	static offensiveCoverageOf(CasterStats, CasterId, MapKey) {
+		if (CasterStats == null || CasterId == Me || CasterStats.LIFE <= 0) return null
+		if (count(EntityDangerClass.getItemsList(CasterStats)) == 0) return null
+		return getMapCellItemAoe(CasterStats, WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(CasterStats), MapKey)
+	}
+
+	/* Clé du plan d'équipe : terrain + contexte offensif du camp visé + ce camp. Volontairement
+	 * CONSERVATRICE — elle peut fragmenter sur une stat offensive sans effet géométrique, mais
+	 * elle est exacte et ne coûte aucun nouveau scan : BaseHash et le contexte viennent des
+	 * fingerprints déjà portés par le Node.
+	 * Elle ne contient NI les shields, NI l'antidote, NI la LIFE, NI l'id de la cible : deux
+	 * cibles du même camp partagent leur plan, seul leur point de départ dans l'ordre diffère. */
+	static dangerTeamPlanKeyOf(BaseHash, OffensiveContextHash, TargetSide) {
+		return addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ BaseHash, OffensiveContextHash), TargetSide)
+	}
+
+	/*
+	 * Séquence de jeu vue par une cible : les indices de ORDER de ceux qui jouent APRÈS elle
+	 * (TURN_ORDER >= le sien, cible exclue), puis ceux qui ont déjà joué. C'est une PARTITION
+	 * sur les TURN_ORDER, pas une rotation d'index : le tableau trié est un cache persistant
+	 * clé par le set des vivants, il peut être désynchronisé des ordres relus au tour.
+	 * Construite UNE fois par (plan, cible) et réutilisée par toutes les cellules et tous les
+	 * nœuds qui partagent ce plan.
+	 */
+	static sequenceFor(Plan, TargetId) {
+		if (TargetId in Plan.SEQ_BY_ID) return Plan.SEQ_BY_ID[TargetId]
+		var order = Plan.ORDER
+		var ords = Plan.TURN_ORDERS
+		var targetOrder = Plan.ORDER_BY_ID[TargetId]
+		var n = count(order)
+		var seq = []
+		for (var i = 0; i < n; i++) {
+			if (ords[i] < targetOrder) continue
+			if (order[i] == TargetId) continue
+			push(seq, i)
+		}
+		for (var i = 0; i < n; i++) {
+			if (ords[i] >= targetOrder) continue
+			push(seq, i)
+		}
+		Plan.SEQ_BY_ID[TargetId] = seq
+		return seq
+	}
+
+	/*
+	 * Plan offensif contre un camp. Une SEULE boucle sur l'ordre de tour global : chaque entrée
+	 * reçoit sa map offensive (null si elle ne menace pas ce camp), sa clé de map, son pack
+	 * offensif canonique et son facteur critique — tous calculés une seule fois.
+	 *
+	 * ORDRE : le tableau trié est un cache PERSISTANT clé par le set des vivants, il peut donc
+	 * être désynchronisé des TURN_ORDER relus à chaque tour. La séquence de jeu ne se déduit
+	 * PAS de ses index : elle se reconstruit par PARTITION sur les TURN_ORDER (ceux >= celui de
+	 * la cible d'abord, cible exclue, puis ceux <), exactement comme le séquenceur historique.
+	 * Le plan porte donc les TURN_ORDER alignés sur l'ordre.
+	 */
+	static getTeamPlan(State, BaseHash, OffensiveContextHash, TargetSide) {
+		var key = dangerTeamPlanKeyOf(BaseHash, OffensiveContextHash, TargetSide)
+		if (key in DANGER_TEAM_PLAN_CACHE) return DANGER_TEAM_PLAN_CACHE[key]
+		var order = StateClass.getSortedEntityByTurnOrder(State)
+		var ordersById = [: ]
+		var orders = []
+		var maps = []
+		var mapKeys = []
+		var packs = []
+		var crits = []
+		var n = count(order)
+		for (var i = 0; i < n; i++) {
+			var id = order[i]
+			ordersById[id] = State[id] == null ? 0 : State[id].TURN_ORDER
+			push(orders, ordersById[id])
+			var stat = State[id]
+			var offMap = null
+			var mapKey = null
+			var pack = null
+			var crit = 1
+			// Exclusions : Me (ma menace est le travail du BFS, jamais le danger ambiant),
+			// le camp de la cible, les morts, et les casters sans item menaçant — la liste
+			// d'items EST la qualification, aucun second scan d'inventaire.
+			if (id != Me && stat.LIFE > 0 && stat.SIDE != TargetSide && count(EntityDangerClass.getItemsList(stat)) > 0) {
+				mapKey = mapCellItemAoeKeyOf(stat)
+				offMap = getMapCellItemAoe(stat, WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(stat), mapKey)
+				crit = DangerComboClass.critFactorOf(stat)
+				pack = DangerComboClass.casterOffensivePack(stat, crit)
+			}
+			push(maps, offMap)
+			push(mapKeys, mapKey)
+			push(packs, pack)
+			push(crits, crit)
+		}
+		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, packs, crits)
+		DANGER_TEAM_PLAN_CACHE[key] = plan
+		return plan
+	}
+}
+
+/*
+ * Tableaux PARALLÈLES alignés sur ORDER (l'ordre de tour global, morts compris — les
+ * consommateurs filtrent déjà). Un seul objet par plan : pas d'objet par caster, donc pas
+ * d'allocation ni d'accès de champ supplémentaires par entrée.
+ */
+class DangerTeamPlanClass {
+	ORDER           // ids du tableau trié (cache persistant, potentiellement désynchronisé)
+	ORDER_BY_ID     // [id -> son TURN_ORDER] : pivot de la partition
+	TURN_ORDERS     // [i] = TURN_ORDER de ORDER[i], aligné
+	SEQ_BY_ID       // [id cible -> indices de ORDER dans l'ordre de jeu], construit paresseusement
+	OFFENSIVE_MAPS  // [i] = [cellule -> ItemAoeMap] du caster, ou null s'il ne menace pas
+	MAP_KEYS        // [i] = clé de cette map (préfixe des hashs de contenu), ou null
+	CASTER_PACKS    // [i] = pack offensif canonique du caster, ou null
+	CRIT_FACTORS    // [i] = facteur critique déjà résolu, 1 par défaut
+	constructor(ThisOrder, ThisOrderById, ThisTurnOrders, ThisMaps, ThisMapKeys, ThisPacks, ThisCrits) {
+		this.ORDER = ThisOrder
+		this.ORDER_BY_ID = ThisOrderById
+		this.TURN_ORDERS = ThisTurnOrders
+		this.SEQ_BY_ID = [: ]
+		this.OFFENSIVE_MAPS = ThisMaps
+		this.MAP_KEYS = ThisMapKeys
+		this.CASTER_PACKS = ThisPacks
+		this.CRIT_FACTORS = ThisCrits
+	}
+}

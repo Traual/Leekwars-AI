@@ -164,19 +164,19 @@ class ScoringClass {
             var newStat = State[caster]
             // Une clé au plus par état, et aucune pour un caster absent ou mort : sa couverture
             // est nulle sans le moindre calcul.
-            var oldKey = (oldStat != null && oldStat.LIFE > 0) ? DangerClass.mapCellItemAoeKeyOf(oldStat) : null
-            var newKey = (newStat.LIFE > 0) ? DangerClass.mapCellItemAoeKeyOf(newStat) : null
+            var oldKey = (oldStat != null && oldStat.LIFE > 0) ? DangerPlanClass.mapCellItemAoeKeyOf(oldStat) : null
+            var newKey = (newStat.LIFE > 0) ? DangerPlanClass.mapCellItemAoeKeyOf(newStat) : null
             var oldMap = null
             var newMap = null
             if (oldKey != null && oldKey == newKey) {
                 // Géométrie inchangée (même id, cellule, MP totale et couche Jump) : la
                 // couverture est LA MÊME map. STR/MAG/POWER/AGI et shields ne déplacent
                 // personne, et l'inventaire d'un non-Me est figé pour le tour, déjà caché par id.
-                oldMap = DangerClass.offensiveCoverageOf(oldStat, caster, oldKey)
+                oldMap = DangerPlanClass.offensiveCoverageOf(oldStat, caster, oldKey)
                 newMap = oldMap
             } else {
-                if (oldKey != null) oldMap = DangerClass.offensiveCoverageOf(oldStat, caster, oldKey)
-                if (newKey != null) newMap = DangerClass.offensiveCoverageOf(newStat, caster, newKey)
+                if (oldKey != null) oldMap = DangerPlanClass.offensiveCoverageOf(oldStat, caster, oldKey)
+                if (newKey != null) newMap = DangerPlanClass.offensiveCoverageOf(newStat, caster, newKey)
             }
             push(deps, (oldMap == null) ? -1 : oldStat.SIDE)
             push(deps, oldMap)
