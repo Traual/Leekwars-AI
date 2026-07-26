@@ -71,9 +71,19 @@ class ScoringClass {
         var cloned = node.CLONED
         var hfpMap = node.HFP_BY_SIDE
 
-        // Heal map de l'enfant via le fold combiné des fingerprints (hit sauf healer modifié).
+        // UN seul parcours des fingerprints par side, qui produit les deux informations qu'on en
+        // tire : le fold combiné (clé de la heal map, hit sauf healer modifié) et les sides dont
+        // les inputs heal ont changé. Comparaison 0-défaut : le patch ne fait qu'AJOUTER des
+        // clés, donc la map enfant ⊇ la map parent -> itérer l'enfant suffit.
         var combinedHfp = 0
-        for (var s: var h in hfpMap) combinedHfp ^= h
+        var healChanged = null
+        for (var s: var h in hfpMap) {
+            combinedHfp ^= h
+            if (((s in ParentHfp) ? ParentHfp[s] : 0) != h) {
+                if (healChanged == null) healChanged = [: ]
+                healChanged[s] = true
+            }
+        }
         var healMap = HealClass.getHealMapByFp(State, combinedHfp)
 
         // Casters offensifs réellement modifiés par l'action (posés par le Node depuis les
@@ -82,16 +92,6 @@ class ScoringClass {
         // null = aucun caster sale (cas courant, aucune map allouée par le Node).
         var hasDirtyCasters = node.DANGER_DIRTY_CASTERS != null
         var casterDeps = null   // descripteurs construits paresseusement, une fois par nœud
-
-        // Sides dont les inputs heal ont changé. Comparaison 0-défaut : le patch ne fait
-        // qu'AJOUTER des clés, donc la map enfant ⊇ la map parent -> itérer l'enfant suffit.
-        var healChanged = null
-        for (var s: var h in hfpMap) {
-            if (((s in ParentHfp) ? ParentHfp[s] : 0) != h) {
-                if (healChanged == null) healChanged = [: ]
-                healChanged[s] = true
-            }
-        }
         // Couverture antidote : POISON_KEY (poisonKeyOf — BaseHash, porteurs, ancre, Me
         // vivant) comparée à celle du parent. Déclenche exactement sur les vrais événements
         // (kill, summon, résu, push, cd/MP d'un porteur, mort de Me), jamais sur mes moves ni
