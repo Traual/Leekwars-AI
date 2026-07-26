@@ -30,6 +30,7 @@ class BulbState {
 	CAP_MEMO    // memos de champs dérivés, même contrat qu'EntityState (copiés au clone puis validés)
 	TLSQ_MEMO
 	PKEY_MEMO   // contribution de ce porteur a la cle de couverture antidote (ScoringClass.poisonKeyOf)
+	ANTICD_MEMO // cooldown effectif d'Antidote, 99 sans le chip (DangerComboClass.antidoteCdOf)
 	POISON
 	POISON_OVER_TIME
 	AFTEREFFECT

@@ -43,8 +43,15 @@ class DangerComboClass {
 	/* Cooldown effectif d'Antidote, 99 quand l'item n'est pas dans l'inventaire. Calculé UNE
 	 * fois par évaluation de cible puis transporté en scalaire. */
 	static antidoteCdOf(TargetStats) {
+		// Memoise sur l'objet stat, meme contrat que CAP_MEMO : son unique input est le
+		// cooldown effectif d'Antidote, qu'invalide antidoteChanged dans diffMaskOf. Evite la
+		// remontee de chaine ITEM_STATE_PARENT a chaque evaluation de cible.
+		var memo = TargetStats.ANTICD_MEMO
+		if (memo != null) return memo
 		var eff = StateClass.cooldownOf(TargetStats, CHIP_ANTIDOTE)
-		return (eff == null) ? 99 : eff
+		var cd = (eff == null) ? 99 : eff
+		TargetStats.ANTICD_MEMO = cd
+		return cd
 	}
 
 	/*

@@ -232,6 +232,7 @@ class StateClass {
 		// PKEY_MEMO <- max(0, TOTAL_MP) et cooldown effectif d'Antidote, rien d'autre :
 		// capChanged couvre le premier, antidoteChanged le second (seul Me peut le voir bouger).
 		if ((capChanged || antidoteChanged) && childStat.PKEY_MEMO != null) childStat.PKEY_MEMO = null
+		if (antidoteChanged && childStat.ANTICD_MEMO != null) childStat.ANTICD_MEMO = null
 
 		if (capChanged || totalLifeChanged || cellChanged || antidoteChanged
 			|| parentStat.LIFE != childStat.LIFE
