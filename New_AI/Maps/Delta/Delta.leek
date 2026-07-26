@@ -141,60 +141,49 @@ class DeltaClass {
 
         var myWalkCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
 
-        // Passe 1 : consommer les cellules déjà nettes dans l'ordre historique. Sur un nœud
-        // entièrement chaud, aucun plan, aucun ordre, aucune couverture, aucun bucket.
+        // Un SEUL parcours des cellules, dans l'ordre historique : chaque cellule est servie par
+        // le cache interne ou évaluée sur place. Le minimum est commutatif, l'ordre d'évaluation
+        // ne change donc aucune valeur. TOUT reste paresseux — le plan et les buckets ne
+        // naissent qu'au premier VRAI miss de CELL_DANGER_GET_CACHE. Le danger est partagé entre
+        // couvertures identiques, mais le net et le heal restent PAR CELLULE : même minimum,
+        // mêmes additions dans netDamage.
         var minDelta = MAX_VALUE
-        var missCells = []
-        for (var cell: var mp in myWalkCells) {
-            var innerKey = seed ^ cell
-            if (innerKey in CELL_NETDAMAGE_FOR_ME_CACHE) {
-                var delta = CELL_NETDAMAGE_FOR_ME_CACHE[innerKey]
-                if (delta < minDelta) {
-                    if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // imbattable
-                    minDelta = delta
-                }
-            } else {
-                push(missCells, cell)
-            }
-        }
-        if (count(missCells) == 0) {
-            ENTITY_DELTA_CACHE_FOR_ME[outerKey] = minDelta
-            return minDelta
-        }
-        // Passe 2 : cellule par cellule dans l'ordre historique de myWalkCells. TOUT reste
-        // paresseux — le plan et les buckets ne naissent qu'au premier VRAI miss de
-        // CELL_DANGER_GET_CACHE. Le danger est partagé entre couvertures identiques, mais le
-        // net et le heal restent PAR CELLULE : même minimum, mêmes additions dans netDamage.
         var dangerCellSeed = DangerClass.cellCacheSeed(targetSeed, MeStats.ID)
         var mySide = MeStats.SIDE
         var plan = null
         var mySeq = null
         var buckets = null
-        for (var cell in missCells) {
-            var dangerKey = dangerCellSeed ^ cell
-            var dangerAtCell
-            if (dangerKey in CELL_DANGER_GET_CACHE) {
-                // Hit : ni plan, ni couverture, ni hash de contenu, ni bucket.
-                dangerAtCell = CELL_DANGER_GET_CACHE[dangerKey]
+        for (var cell: var mp in myWalkCells) {
+            var innerKey = seed ^ cell
+            var delta
+            if (innerKey in CELL_NETDAMAGE_FOR_ME_CACHE) {
+                delta = CELL_NETDAMAGE_FOR_ME_CACHE[innerKey]
             } else {
-                if (plan == null) {
-                    plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
-                    mySeq = DangerPlanClass.sequenceFor(plan, Me)
-                    buckets = [: ]   // couvertures rencontrées, locales à cette recherche de fuite
+                var dangerKey = dangerCellSeed ^ cell
+                var dangerAtCell
+                if (dangerKey in CELL_DANGER_GET_CACHE) {
+                    // Hit : ni plan, ni couverture, ni hash de contenu, ni bucket.
+                    dangerAtCell = CELL_DANGER_GET_CACHE[dangerKey]
+                } else {
+                    if (plan == null) {
+                        plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
+                        mySeq = DangerPlanClass.sequenceFor(plan, Me)
+                        buckets = [: ]   // couvertures rencontrées, locales à cette recherche de fuite
+                    }
+                    dangerAtCell = DangerClass.dangerOfCellCold(cell, dangerKey, plan, mySeq, State, MeStats, antidoteCd, buckets)
                 }
-                dangerAtCell = DangerClass.dangerOfCellCold(cell, dangerKey, plan, mySeq, State, MeStats, antidoteCd, buckets)
-            }
-            // Danger vide -> delta 0 direct, sans même l'ordre de tour (déclenche l'early exit
-            // "imbattable" dessous).
-            var delta = 0
-            if (!mapIsEmpty(dangerAtCell)) {
-                if (plan == null) {
-                    plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
-                    mySeq = DangerPlanClass.sequenceFor(plan, Me)
+                // Danger vide -> delta 0 direct, sans même l'ordre de tour (déclenche l'early
+                // exit "imbattable" dessous).
+                delta = 0
+                if (!mapIsEmpty(dangerAtCell)) {
+                    if (plan == null) {
+                        plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
+                        mySeq = DangerPlanClass.sequenceFor(plan, Me)
+                    }
+                    delta = netDamage(MeStats, dangerAtCell, healMap, State, plan.ORDER, mySeq, cell)
                 }
-                delta = netDamage(MeStats, dangerAtCell, healMap, State, plan.ORDER, mySeq, cell)
+                CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
             }
-            CELL_NETDAMAGE_FOR_ME_CACHE[seed ^ cell] = delta
             if (delta < minDelta) {
                 if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // imbattable
                 minDelta = delta
