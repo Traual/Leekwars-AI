@@ -23,7 +23,13 @@ class Target {
 		var binSidesEqual = EntitySide == CasterSide ? 1 : 0
 		var binTarEqualCaster = EntityState.ID == CastState.ID ? 1 : 0
 		var binSummon = EntityState.IS_SUMMON ? 1 : 0
-		var Hash = binTarEqualCaster << 36 | binSummon << 34 | binSidesEqual << 32 | item
+		// Bit de VIE (33, libre) : isHitable rend false sur une cible morte. Sans lui, la
+		// première évaluation du tour sur un cadavre fige `false` pour TOUTE la classe
+		// (même camp, même type, même item) — y compris les cibles vivantes. Ce sont les
+		// seuls inputs d'isHitable : vie, TarIsCaster, égalité de camp, type de cible, et
+		// les masques d'effet, statiques par item.
+		var binAlive = EntityState.LIFE > 0 ? 1 : 0
+		var Hash = binTarEqualCaster << 36 | binSummon << 34 | binAlive << 33 | binSidesEqual << 32 | item
 		if (Hash in TARGETABLECACHE) return TARGETABLECACHE[Hash]
 		if (item in MapEnemyOkWeird) {
 			if (EntitySide != CasterSide) {
