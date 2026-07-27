@@ -37,6 +37,12 @@ class ItemCoverageClass {
 		for (var Item in items) {
 			var Infos = ITEMINFO[Item]
 			var fullKey = (movementKey << 30) | Infos.FULL_GEOMETRY_KEY
+			// Sans zone d'effet, la map d'item vaut 0 sur exactement les cellules directement
+			// lançables : ses valeurs ne portent aucune information et l'union des cellules
+			// lançables tient lieu de jeu de clés. AREA_MAX ne dépend que d'AREA, lui-même dans
+			// FULL_GEOMETRY_KEY — deux items ne peuvent donc pas partager une entrée du cache
+			// avec des AREA_MAX différents.
+			var flat = Infos.AREA_MAX == 0
 			var itemMap
 			if (fullKey in ITEM_FULL_GEOMETRY_CACHE) {
 				itemMap = ITEM_FULL_GEOMETRY_CACHE[fullKey]
@@ -49,15 +55,27 @@ class ItemCoverageClass {
 					directCells = getMapHittableCellsTotal(Infos, walkCellsMap)
 					ITEM_LAUNCH_GEOMETRY_CACHE[launchKey] = directCells
 				}
-				itemMap = getMapAoeForItem(Infos, directCells)
+				itemMap = flat ? directCells : getMapAoeForItem(Infos, directCells)
 				ITEM_FULL_GEOMETRY_CACHE[fullKey] = itemMap
 			}
-			for (var Cell: var MinAoeDist in itemMap) {
-				if (Cell in _final) {
-					_final[Cell][Item] = MinAoeDist
-				} else {
-					_final[Cell] = [: ]
-					_final[Cell][Item] = MinAoeDist
+			// Deux boucles plutôt qu'un test par cellule : le fold est le point chaud.
+			if (flat) {
+				for (var Cell: var Direct in itemMap) {
+					if (Cell in _final) {
+						_final[Cell][Item] = 0
+					} else {
+						_final[Cell] = [: ]
+						_final[Cell][Item] = 0
+					}
+				}
+			} else {
+				for (var Cell: var MinAoeDist in itemMap) {
+					if (Cell in _final) {
+						_final[Cell][Item] = MinAoeDist
+					} else {
+						_final[Cell] = [: ]
+						_final[Cell][Item] = MinAoeDist
+					}
 				}
 			}
 		}
