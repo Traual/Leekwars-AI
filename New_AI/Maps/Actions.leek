@@ -179,6 +179,15 @@ class ActionsClass {
 		var Hash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), combined)
 		if (Hash in ENTITY_ACTIONS_CACHE) return ENTITY_ACTIONS_CACHE[Hash]
 		var SortedWalkCells = WalkCellsClass.LoadSortedWalkCells(WalkCells)
+		// Set de mes cellules de tir, construit une fois pour tous les items : les maps d'AoE
+		// ne sont bâties que pour ces cellules-là, seules lues par la boucle ci-dessous.
+		var WalkSet = [: ]
+		for (var wc in SortedWalkCells) WalkSet[wc] = true
+		// Identité EXACTE du set : l'empreinte de mobilité porte la cellule, les MP et surtout
+		// l'accessibilité des couches saut/téléportation, qui dépend des TP et des cooldowns.
+		// (BaseHash, MP, cellule) ne suffit PAS : deux nœuds identiques sur ces trois champs
+		// mais aux TP différents n'ont pas les mêmes cellules de tir.
+		var WalkSetKey = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(State[Me])
 
 		var _final = []
 		for (var item in Inventory) {
@@ -186,7 +195,7 @@ class ActionsClass {
 			if (Infos.AREA == AREA_FIRST_INLINE) { //Special case where i don't want to hit caster but a cell
 				pushAll(_final, getFirstInlineActions(State, Infos, item, SortedWalkCells, BaseHash))
 			} else { //Normal case
-				pushAll(_final, getActionsOnEveryone(State, item, BaseHash, SortedWalkCells, LeekCells))
+				pushAll(_final, getActionsOnEveryone(State, item, BaseHash, SortedWalkCells, LeekCells, WalkSet, WalkSetKey))
 			}
 		}
 		ENTITY_ACTIONS_CACHE[Hash] = _final
@@ -201,9 +210,9 @@ class ActionsClass {
 	 * vraie), on vise la PREMIÈRE entité bloquante (endpoint valide) : le laser continue
 	 * derrière et Consequences touche toute la ligne. Fallback payé UNIQUEMENT sur les
 	 * candidats laser réellement bloqués par une entité. */
-	static getActionsOnEveryone(State, Item, BaseHash, SortedWalkCells, LeekCells) {
+	static getActionsOnEveryone(State, Item, BaseHash, SortedWalkCells, LeekCells, WalkSet, WalkKey) {
 
-		var HashedMapAoe = LoadHashedMapAoe(State, Item, BaseHash)
+		var HashedMapAoe = LoadHashedMapAoe(State, Item, BaseHash, WalkSet, WalkKey)
 		var DoneHashs = [: ]
 		var _final = []
 		var ItemInfos = ITEMINFO[Item]
@@ -334,8 +343,11 @@ class ActionsClass {
 
 	/* [from -> [to -> hash des (entité, distance d'AoE) touchées]] pour un item — la matière
 	 * du dédoublonnage de getActionsOnEveryone. */
-	static LoadHashedMapAoe(State, Item, BaseHash) {
-		var Hash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), Item)
+	static LoadHashedMapAoe(State, Item, BaseHash, WalkSet, WalkKey) {
+		// WalkKey (cellule + MP de Me) entre dans la clé : la map est RESTREINTE à mes cellules
+		// de tir, elle n'est donc valable que pour ce set — le même couple que la clé du cache
+		// d'actions au-dessus, aucune fragmentation supplémentaire en pratique.
+		var Hash = addValueToBinHash(addValueToBinHash((OFFSET_BASIS ^ BaseHash), Item), WalkKey)
 		if (Hash in HASHED_MAP_ITEM_CACHE) return HASHED_MAP_ITEM_CACHE[Hash]
 		var _final = [: ]
 		var Infos = ITEMINFO[Item]
@@ -344,6 +356,8 @@ class ActionsClass {
 		for (var entity: var EntityState in State) {
 			if (entity == Me || !Target.Targetable(Item, EntityState, CastState) || EntityState.LIFE <= 0) continue
 			for (var from: var MapToHash in LoadMapFromAoeForAnEntity(Item, EntityState.CELL, Infos, LaunchFct)) {
+				// Cellule d'où je ne peux pas tirer : la boucle d'énumération ne la lira jamais.
+				if (!(from in WalkSet)) continue
 				var Tmp = from in _final ? _final[from] : _final[from] = [: ]
 				for (var to: var TmpHash in MapToHash) {
 					// Packing : l'ENTITÉ dans les bits hauts, la DISTANCE dans le slot 3 bits
