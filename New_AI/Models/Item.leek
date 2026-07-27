@@ -136,7 +136,10 @@ class ItemClass {
 	}
 	
 	static Cooldown(id, entity) {
-		return isChip(id) ? getCooldown(id, entity) : 0
+		// isChip est un appel moteur, refait pour chaque item de chaque entité à chaque
+		// construction d'état. ITEMINFO couvre getAllChips() + getAllWeapons(), donc tout
+		// inventaire possible : l'information y est déjà figée au préchargement.
+		return ITEMINFO[id].IS_WEAPON ? 0 : getCooldown(id, entity)
 	}
     
 	static isSpecialWeap(item) {
