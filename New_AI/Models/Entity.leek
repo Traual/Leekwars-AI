@@ -16,16 +16,32 @@ class EntityClass {
     NAME
     STATIC
     constructor(id) {
-		  this.SUMMONER = getSummoner(id)
-		  this.IS_SUMMON = isSummon(id)
 		  this.ID = id
-		  this.INVENTORY = getWeapons(id) + getChips(id)
-          for (var i in this.INVENTORY) {
-			if (ItemClass.isSpecialWeap(i)) this.SPECIAL_WEAPON = i
-		  }
-		  this.SIDE = getSide(id)
+		  // Le moteur insère un summon dans l'ordre en cours de tour : l'ordre est relu.
 		  this.TURN_ORDER = getEntityTurnOrder(id)
-		  this.NAME = getName(id)
-		  this.STATIC = isStatic(id)
+		  // Le reste est constant pendant le tour — relevé une seule fois par entité, alors
+		  // qu'un état complet est reconstruit à chaque replan réel. L'inventaire est partagé :
+		  // personne ne l'écrit pendant la simulation.
+		  if (id in ENTITY_CONST_BY_ID) {
+			var known = ENTITY_CONST_BY_ID[id]
+			this.SUMMONER = known[0]
+			this.IS_SUMMON = known[1]
+			this.INVENTORY = known[2]
+			this.SPECIAL_WEAPON = known[3]
+			this.SIDE = known[4]
+			this.NAME = known[5]
+			this.STATIC = known[6]
+		  } else {
+			this.SUMMONER = getSummoner(id)
+			this.IS_SUMMON = isSummon(id)
+			this.INVENTORY = getWeapons(id) + getChips(id)
+			for (var i in this.INVENTORY) {
+				if (ItemClass.isSpecialWeap(i)) this.SPECIAL_WEAPON = i
+			}
+			this.SIDE = getSide(id)
+			this.NAME = getName(id)
+			this.STATIC = isStatic(id)
+			ENTITY_CONST_BY_ID[id] = [this.SUMMONER, this.IS_SUMMON, this.INVENTORY, this.SPECIAL_WEAPON, this.SIDE, this.NAME, this.STATIC]
+		  }
     }
 }
