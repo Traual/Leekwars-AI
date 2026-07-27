@@ -73,7 +73,7 @@ class FinalCell {
             if (!mapIsEmpty(dangerMap)) {
                 if (plan == null) plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
                 if (myNetSeq == null) myNetSeq = DangerPlanClass.netSequenceFor(plan, myId)
-                net = DeltaClass.netDamage(MyState, dangerMap, healMap, State, plan.ORDER, myNetSeq, cell)
+                net = DeltaClass.netDamage(MyState, dangerMap, healMap, State, myNetSeq, cell)
             }
             if (net == 0) { bestCell = cell ; bestNet = 0 ; break }   // meilleure gravité ET sûre -> fini
             if (net < bestNet) { bestNet = net ; bestCell = cell }

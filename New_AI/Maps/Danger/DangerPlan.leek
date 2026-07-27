@@ -132,16 +132,20 @@ class DangerPlanClass {
 	 * et ceux qui peuvent la soigner (vivants, non-Me, porteurs d'un item de soin — les seuls
 	 * que la heal map contient). Les autres traversent le déroulé sans jamais rien y ajouter :
 	 * les écarter ne change ni valeur ni ordre des additions flottantes.
+	 *
+	 * Contrairement aux deux séquences ci-dessus, elle porte les IDENTIFIANTS des casters et
+	 * non leurs index : son seul consommateur, le déroulé du net, les résout à chaque cellule.
 	 */
 	static netSequenceFor(Plan, TargetId) {
 		if (TargetId in Plan.NET_SEQ_BY_ID) return Plan.NET_SEQ_BY_ID[TargetId]
 		var seq = sequenceFor(Plan, TargetId)
 		var actives = Plan.ACTIVE
+		var order = Plan.ORDER
 		var n = count(seq)
 		var netSeq = []
 		for (var k = 0; k < n; k++) {
 			var idx = seq[k]
-			if (actives[idx]) push(netSeq, idx)
+			if (actives[idx]) push(netSeq, order[idx])
 		}
 		Plan.NET_SEQ_BY_ID[TargetId] = netSeq
 		return netSeq

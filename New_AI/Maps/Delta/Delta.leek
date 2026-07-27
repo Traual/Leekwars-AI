@@ -111,7 +111,7 @@ class DeltaClass {
         // Les casters frappent dans l'ordre où ils jouent APRÈS la cible ce round : la
         // séquence du plan est construite une fois par cible, puis partagée.
         var plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, targetSide)
-        var nd = netDamage(stat, dangerToT, healMap, State, plan.ORDER, DangerPlanClass.netSequenceFor(plan, e), cell)
+        var nd = netDamage(stat, dangerToT, healMap, State, DangerPlanClass.netSequenceFor(plan, e), cell)
         NETDAMAGE_CACHE[ndKey] = nd
         return nd
     }
@@ -181,7 +181,7 @@ class DeltaClass {
                 if (!mapIsEmpty(dangerAtCell)) {
                     if (plan == null) plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
                     if (myNetSeq == null) myNetSeq = DangerPlanClass.netSequenceFor(plan, Me)
-                    delta = netDamage(MeStats, dangerAtCell, healMap, State, plan.ORDER, myNetSeq, cell)
+                    delta = netDamage(MeStats, dangerAtCell, healMap, State, myNetSeq, cell)
                 }
                 CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
             }
@@ -201,9 +201,10 @@ class DeltaClass {
      * une vitalité à pleine vie reste utile contre les dégâts suivants.
      *
      * L'ordre de jeu vient de la séquence du plan (partition sur les TURN_ORDER, cible
-     * exclue), construite une seule fois par cible et partagée par toutes les cellules.
+     * exclue), construite une seule fois par cible et partagée par toutes les cellules. Elle
+     * porte les identifiants des casters, pas leurs index dans l'ordre de tour.
      */
-    static netDamage(stat, dangerToT, healMap, State, Order, Seq, cell) {
+    static netDamage(stat, dangerToT, healMap, State, Seq, cell) {
         // Sans danger entrant, un heal/une vitalité ne peut jamais produire un net positif
         // (la vie ne fait que monter, net = max(0, LIFE − life)) : 0 direct.
         if (mapIsEmpty(dangerToT)) return 0
@@ -213,7 +214,7 @@ class DeltaClass {
         // conservé — pas de somme globale), sans les tests de side/couverture heal.
         if (mapIsEmpty(healMap)) {
             for (var k = 0; k < n; k++) {
-                var casterNoHeal = Order[Seq[k]]
+                var casterNoHeal = Seq[k]
                 if (casterNoHeal in dangerToT) life -= DANGER_COEF * dangerToT[casterNoHeal]
             }
             return max(0, stat.LIFE - life)
@@ -222,7 +223,7 @@ class DeltaClass {
         // La séquence exclut la cible -> jamais de self-heal ici, profil par type.
         var allyProfile = stat.IS_SUMMON ? HEAL_PROFILE_ALLY_SUMMON : HEAL_PROFILE_ALLY_LEEK
         for (var k = 0; k < n; k++) {
-            var caster = Order[Seq[k]]
+            var caster = Seq[k]
             if (caster in dangerToT) {
                 life -= DANGER_COEF * dangerToT[caster]
             }
