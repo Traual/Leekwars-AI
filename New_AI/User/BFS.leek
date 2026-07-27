@@ -158,6 +158,10 @@ class ActionSuite {
 		// Workspace créé au PREMIER candidat réellement simulé (les filtres ci-dessous en
 		// écartent souvent tous), puis réutilisé et restauré entre chaque candidat.
 		var Workspace = null
+		// Verdicts de jouabilité par item : cooldownOf et usesOf remontent la chaîne
+		// ITEM_STATE_PARENT à chaque appel alors que MyStats est invariant sur toute la boucle.
+		// Le même item revient une fois par cellule de tir, son verdict ne change pas.
+		var playable = [: ]
 
 		for (var entry in Entries) {
 			var initialDelta = entry[1]
@@ -166,9 +170,13 @@ class ActionSuite {
 			var act = entry[0]
 			var item = act.Item
 
-			if (StateClass.cooldownOf(MyStats, item) > 0) continue
+			var itemPlayable = playable[item]
+			if (itemPlayable == null) {
+				itemPlayable = !(StateClass.cooldownOf(MyStats, item) > 0) && !(StateClass.usesOf(MyStats, item) >= ITEMINFO[item].MAX_USES)
+				playable[item] = itemPlayable
+			}
+			if (!itemPlayable) continue
 			var Info = ITEMINFO[item]
-			if (StateClass.usesOf(MyStats, item) >= Info.MAX_USES) continue
 			var from = act.From
 			if (!(from in MyMax)) continue
 
