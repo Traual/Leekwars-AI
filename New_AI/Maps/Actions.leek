@@ -175,19 +175,20 @@ class ActionsClass {
 
 	/* Actions offensives/soutien sur les autres entités, dédoublonnées par hash de cibles. */
 	static getEveryActionsOnEveryOne(MyCell, Inventory, State, WalkCells, BaseHash, LeekCells) {
+		// Identité EXACTE du domaine de tir : l'empreinte de mobilité porte la cellule, les MP et
+		// surtout l'accessibilité des couches saut/téléportation, qui dépend des TP et des
+		// cooldowns. (BaseHash, MP, cellule) ne suffit PAS — deux nœuds identiques sur ces trois
+		// champs mais aux TP différents n'ont pas les mêmes cellules de tir, donc pas la même
+		// liste d'actions. Elle entre dans la clé du cache ET dans celle des maps d'AoE.
+		var WalkSetKey = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(State[Me])
 		var combined = (State[Me].MP << 20) | MyCell
-		var Hash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), combined)
+		var Hash = addValueToBinHash(addValueToBinHash((OFFSET_BASIS ^ BaseHash), combined), WalkSetKey)
 		if (Hash in ENTITY_ACTIONS_CACHE) return ENTITY_ACTIONS_CACHE[Hash]
 		var SortedWalkCells = WalkCellsClass.LoadSortedWalkCells(WalkCells)
 		// Set de mes cellules de tir, construit une fois pour tous les items : les maps d'AoE
 		// ne sont bâties que pour ces cellules-là, seules lues par la boucle ci-dessous.
 		var WalkSet = [: ]
 		for (var wc in SortedWalkCells) WalkSet[wc] = true
-		// Identité EXACTE du set : l'empreinte de mobilité porte la cellule, les MP et surtout
-		// l'accessibilité des couches saut/téléportation, qui dépend des TP et des cooldowns.
-		// (BaseHash, MP, cellule) ne suffit PAS : deux nœuds identiques sur ces trois champs
-		// mais aux TP différents n'ont pas les mêmes cellules de tir.
-		var WalkSetKey = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(State[Me])
 
 		var _final = []
 		for (var item in Inventory) {
