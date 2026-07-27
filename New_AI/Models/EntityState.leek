@@ -62,12 +62,14 @@ class EntityStateClass extends EntityClass {
 		this.ITEM_STATE_PARENT = null   // état réel = racine : maps complètes
 		this.COOLDOWNS = [: ]
 		this.USES = [: ]
+		// getItemUses est un builtin ENTITÉ COURANTE (1 arg) : l'appeler pour un autre id
+		// stockerait MES compteurs chez tout le monde. Le moteur clear les uses au endTurn de
+		// chaque entité -> pendant mon tour, les autres sont toujours à 0, et usesOf rend déjà
+		// 0 sur un item absent de toute la chaîne : leurs entrées ne sont pas matérialisées.
+		var isSelf = id == Me
 		for (var i in this.INVENTORY) {
 			this.COOLDOWNS[i] = ItemClass.Cooldown(i, id)
-			// getItemUses est un builtin ENTITÉ COURANTE (1 arg) : l'appeler pour un autre id
-			// stockerait MES compteurs chez tout le monde. Le moteur clear les uses au endTurn
-			// de chaque entité -> pendant mon tour, les autres sont toujours à 0.
-			this.USES[i] = id == Me ? getItemUses(i) : 0
+			if (isSelf) this.USES[i] = getItemUses(i)
 		}
 		this.EFFECTS = getEffects(id)
 		// Flux périodiques remplis en UNE passe, dans le déroulé d'effets plus bas.
