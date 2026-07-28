@@ -143,12 +143,18 @@ class DeltaClass {
         var myWalkCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
 
         // Une cellule qui a rendu 0 pour cette graine le rend TOUJOURS : le net à une cellule
-        // ne dépend que de (graine, cellule). Si elle est encore accessible, le minimum est
-        // imbattable et aucune cellule n'a besoin d'être balayée. Sinon la recherche reprend
+        // ne dépend que de (graine, cellule). Si l'une d'elles est encore accessible, le minimum
+        // est imbattable et aucune cellule n'a besoin d'être balayée. Sinon la recherche reprend
         // normalement — l'indice n'est jamais lu autrement que comme un raccourci exact.
-        if (seed in SAFE_CELL_FOR_ME_CACHE && SAFE_CELL_FOR_ME_CACHE[seed] in myWalkCells) {
-            ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0
-            return 0
+        // Parcours à l'ENVERS : la plus récemment trouvée est la plus susceptible de tenir.
+        if (seed in SAFE_CELL_FOR_ME_CACHE) {
+            var hints = SAFE_CELL_FOR_ME_CACHE[seed]
+            for (var hi = count(hints) - 1; hi >= 0; hi--) {
+                if (hints[hi] in myWalkCells) {
+                    ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0
+                    return 0
+                }
+            }
         }
 
         // Un SEUL parcours des cellules, dans l'ordre historique : chaque cellule est servie par
@@ -200,7 +206,12 @@ class DeltaClass {
                 CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
             }
             if (delta < minDelta) {
-                if (delta == 0) { SAFE_CELL_FOR_ME_CACHE[seed] = cell; ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // imbattable
+                if (delta == 0) {   // imbattable
+                    var hints = seed in SAFE_CELL_FOR_ME_CACHE ? SAFE_CELL_FOR_ME_CACHE[seed] : (SAFE_CELL_FOR_ME_CACHE[seed] = [])
+                    push(hints, cell)
+                    ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0
+                    return 0
+                }
                 minDelta = delta
             }
         }
