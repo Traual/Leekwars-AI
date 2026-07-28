@@ -39,9 +39,8 @@ class DangerClass {
 		var cov = []
 		for (var k = 0; k < n; k++) {
 			var idx = CovSeq[k]
+			// CONTRAT : CovSeq ne retient que les casters à map offensive non nulle.
 			var offMap = maps[idx]
-			// null = ne menace pas ce camp ; CovSeq l'exclut déjà, garde conservée.
-			if (offMap == null) continue
 			// Caster incapable d'atteindre cette cellule : aucun triplet, aucun combo.
 			if (!(Cell in offMap)) continue
 			var itemMap = offMap[Cell]

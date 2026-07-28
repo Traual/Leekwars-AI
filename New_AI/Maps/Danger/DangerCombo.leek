@@ -95,7 +95,8 @@ class DangerComboClass {
 	 * @return [dégâts, absFinal, relFinal] — que des scalaires, aucune référence retenue
 	 */
 	static comboOfCaster(ItemAoeMap, ContentHash, CasterId, CasterPack, CritFactor, CasterStats, TargetStats, curAbs, curRel, AntidoteCd) {
-		if (mapIsEmpty(ItemAoeMap)) return [0, curAbs, curRel]
+		// CONTRAT : la map d'items n'est jamais vide — elle vient d'une couverture, et
+		// buildMapCellItemAoe ne crée l'entrée d'une cellule qu'en y écrivant un item.
 		var isSummon = TargetStats.IS_SUMMON
 		var pairKey = dangerPairKey(CasterId, CasterPack, targetPairPack(isSummon, targetDefensePack(curAbs, curRel, AntidoteCd)))
 		var comboKey = addValueToBinHash(pairKey, ContentHash)
