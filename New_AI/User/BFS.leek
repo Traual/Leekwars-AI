@@ -168,6 +168,12 @@ class ActionSuite {
 			if (BestDeltaFromParent >= initialDelta) break   // borne du tri : plus rien à battre
 
 			var act = entry[0]
+			// Cellule de tir d'abord : un test d'appartenance coûte moitié moins qu'une lecture
+			// du mémo de jouabilité, et il écarte trois entrées sur quatre. Les deux gardes sont
+			// des prédicats purs, les inverser ne change pas ce qui survit — et le mémo n'est
+			// plus renseigné que pour les items dont une cellule de tir est atteignable.
+			var from = act.From
+			if (!(from in MyMax)) continue
 			var item = act.Item
 
 			var itemPlayable = playable[item]
@@ -177,8 +183,6 @@ class ActionSuite {
 			}
 			if (!itemPlayable) continue
 			var Info = ITEMINFO[item]
-			var from = act.From
-			if (!(from in MyMax)) continue
 
 			var cost = (Info.IS_WEAPON && MyWeapon != item) ? Info.COST + 1 : Info.COST
 			if (!(from in MyOnlyWalk)) {
