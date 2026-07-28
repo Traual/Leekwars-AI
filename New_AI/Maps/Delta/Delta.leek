@@ -141,6 +141,15 @@ class DeltaClass {
 
         var myWalkCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
 
+        // Une cellule qui a rendu 0 pour cette graine le rend TOUJOURS : le net à une cellule
+        // ne dépend que de (graine, cellule). Si elle est encore accessible, le minimum est
+        // imbattable et aucune cellule n'a besoin d'être balayée. Sinon la recherche reprend
+        // normalement — l'indice n'est jamais lu autrement que comme un raccourci exact.
+        if (seed in SAFE_CELL_FOR_ME_CACHE && SAFE_CELL_FOR_ME_CACHE[seed] in myWalkCells) {
+            ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0
+            return 0
+        }
+
         // Un SEUL parcours des cellules, dans l'ordre historique : chaque cellule est servie par
         // le cache interne ou évaluée sur place. Le minimum est commutatif, l'ordre d'évaluation
         // ne change donc aucune valeur. TOUT reste paresseux — le plan et les buckets ne
@@ -186,7 +195,7 @@ class DeltaClass {
                 CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
             }
             if (delta < minDelta) {
-                if (delta == 0) { ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // imbattable
+                if (delta == 0) { SAFE_CELL_FOR_ME_CACHE[seed] = cell; ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0; return 0 }   // imbattable
                 minDelta = delta
             }
         }

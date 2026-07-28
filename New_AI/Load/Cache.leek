@@ -15,6 +15,7 @@ function ReloadCacheNewTurn() {
     COMBO_FROM_ITEM_AOE_CACHE = [: ]
     ENTITY_DELTA_CACHE_FOR_ME = [: ]
     CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
+    SAFE_CELL_FOR_ME_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
     SURVIVAL_CACHE = [: ]
@@ -180,6 +181,10 @@ global DANGER_ENTITY_INVENTORY = [: ]
 // BaseHash + fingerprint du set accessible (le domaine du min dépend des obstacles).
 global CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
 global ENTITY_DELTA_CACHE_FOR_ME = [: ]
+// [graine -> une cellule dont le net vaut 0 pour cette graine] : simple projection du cache
+// ci-dessus, même clé et même durée de vie. Le net à une cellule ne dépend que de la graine
+// et de la cellule ; seule l'ACCESSIBILITÉ change d'un nœud à l'autre.
+global SAFE_CELL_FOR_ME_CACHE = [: ]
 
 // WALKCELLS (par layer)
 
