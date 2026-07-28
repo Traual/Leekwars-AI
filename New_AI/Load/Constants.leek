@@ -68,14 +68,20 @@ global MASK_HIGH = (1 << SHIFT) - 1
  *
  *    Deux instruments admis, tous deux non linéaires À CHAQUE PAS :
  *      a. mix64 par pas — avalanche complète en continu, le défaut ;
- *      b. `h = (h ^ terme) * MIX_A` par pas, PUIS un unique mix64 en sortie — pour les folds
- *         chauds. La multiplication par une constante impaire est une bijection modulo 2^64 :
- *         l'accumulateur ne s'effondre jamais, et elle propage les bits bas vers les hauts,
- *         ce qui casse le span GF(2). Sa seule faiblesse — le bit k d'un produit ne dépend que
- *         des bits <= k, donc les bits bas sont peu brassés — est exactement ce que répare le
- *         finaliseur, obligatoire avant tout usage de la valeur comme clé.
+ *      b. `h = (h ^ terme) * MIX_A` par pas — pour les folds chauds. La multiplication par une
+ *         constante impaire est une bijection modulo 2^64 : l'accumulateur ne s'effondre
+ *         jamais, et elle propage les bits bas vers les hauts, ce qui casse le span GF(2).
+ *         Sa faiblesse est locale : le bit k d'un produit ne dépend que des bits <= k, donc les
+ *         bits BAS sont peu brassés (le bit 0 reste linéaire).
  *      Vérifié sur le banc : sur 562 642 contenus hachés (3 083 distincts), (a) et (b)
  *      induisent la MÊME partition, zéro collision dans les deux sens.
+ *
+ *    QUAND FINALISER PAR mix64 — un finaliseur est une BIJECTION, il ne retire donc aucune
+ *    collision et ne sert jamais à « renforcer » un digest comparé en entier. Il est requis
+ *    dès que la valeur est consommée AUTREMENT qu'en égalité pleine : tranche de bits,
+ *    troncature, ou insertion dans un slot d'une autre clé. En pratique : on finalise (b)
+ *    quand le digest voyage vers d'autres constructions de clés, pas quand il ne sert que de
+ *    clé de map comparée telle quelle et qu'il agrège des termes déjà avalanchés.
  *
  * Aucune de ces clés n'est doublée d'une vérification structurelle : la famille 3 a été
  * mesurée collisionnante en linéaire (un combat de banc sur quatre divergeait), et ne l'est

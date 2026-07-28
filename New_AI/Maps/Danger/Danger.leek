@@ -51,7 +51,10 @@ class DangerClass {
 			push(cov, itemMap)
 			push(cov, contentHash)
 			// Même fold que le regroupement par bucket, mais sur les valeurs déjà en main.
-			hash = addValueToBinHash(hash, contentHash ^ (idx << 56))
+			// Digest de longueur variable : chaîne à MULTIPLICATION (contrat des clés, famille
+			// 3b). Pas de finaliseur — il n'existe qu'une consommation, une égalité pleine de
+			// clé de bucket, et les termes agrégés sont déjà avalanchés.
+			hash = (hash ^ (contentHash ^ (idx << 56))) * MIX_A
 		}
 		LAST_COVERAGE_HASH = hash
 		return cov
