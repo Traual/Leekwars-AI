@@ -49,7 +49,12 @@ class HealClass {
         var critClass = (stat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((stat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
         // Clé WIS = max(0, WIS + 100) : le facteur moteur est max(0, 1 + WIS/100), donc -50
         // (soigne 50%) doit se distinguer de 0 (100%) ; -100 et -150 partagent 0 (facteur nul).
-        return addValueToBinHash(OFFSET_BASIS ^ id, (max(0, stat.WISDOM + 100) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | (critClass << 10) | stat.CELL)
+        // mix64 et non addValueToBinHash : ces contributions sont XOR-foldees par camp. Un fold
+        // XOR de sorties LINEAIRES se reduit a (XOR des termes d'id) ^ (XOR des packs) : deux
+        // soigneurs qui echangent leurs stats rendent le meme fingerprint, et HEAL_MAP_CACHE
+        // sert alors la map d'une AUTRE configuration. Mesure avant correctif : 2 245 hits
+        // faux sur 59 812 (3,75 %). Meme forme que contextContribution ; (id + 1) car mix64(0) = 0.
+        return mix64(mix64(id + 1) ^ ((max(0, stat.WISDOM + 100) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | (critClass << 10) | stat.CELL))
     }
 
     /*
