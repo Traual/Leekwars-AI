@@ -93,14 +93,15 @@ class DeltaClass {
         var cell = stat.CELL
         var cellDangerKey = DangerClass.cellCacheSeed(targetSeed, e) ^ cell
         var dangerToT
+        var plan = null
         if (cellDangerKey in CELL_DANGER_GET_CACHE) {
             // Hit de cellule : ni plan, ni couverture, ni ordre, ni bucket.
             dangerToT = CELL_DANGER_GET_CACHE[cellDangerKey]
         } else {
             BenchOps.Start("Danger")
-            var coldPlan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, targetSide)
+            plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, targetSide)
             // Une seule cellule à évaluer pour cette cible : aucun groupement local.
-            dangerToT = DangerClass.dangerOfCellCold(cell, cellDangerKey, coldPlan, DangerPlanClass.coverageSequenceFor(coldPlan, e), State, stat, antidoteCd, null)
+            dangerToT = DangerClass.dangerOfCellCold(cell, cellDangerKey, plan, DangerPlanClass.coverageSequenceFor(plan, e), State, stat, antidoteCd, null)
             BenchOps.Stop("Danger")
         }
         // Danger vide -> net 0 sans dérouler l'ordre de tour ni le séquenceur.
@@ -110,7 +111,7 @@ class DeltaClass {
         }
         // Les casters frappent dans l'ordre où ils jouent APRÈS la cible ce round : la
         // séquence du plan est construite une fois par cible, puis partagée.
-        var plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, targetSide)
+        if (plan == null) plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, targetSide)
         var nd = netDamage(stat, dangerToT, healMap, State, DangerPlanClass.netSequenceFor(plan, e), cell)
         NETDAMAGE_CACHE[ndKey] = nd
         return nd
