@@ -186,6 +186,10 @@ class ActionSuite {
 			var Info = ITEMINFO[item]
 
 			var cost = (Info.IS_WEAPON && MyWeapon != item) ? Info.COST + 1 : Info.COST
+			// Le supplément de couche ne fait qu'AJOUTER : un coût de base déjà hors budget le
+			// restera. Trois quarts des entrées qui arrivent ici sont dans ce cas, autant leur
+			// épargner les recherches de couche.
+			if (cost > MyTp) continue
 			if (!(from in MyOnlyWalk)) {
 				if (from in MyWalkCells.JUMP)                          cost += JumpCost
 				else if (from in MyWalkCells.TELEPORTATION)            cost += TeleCost
