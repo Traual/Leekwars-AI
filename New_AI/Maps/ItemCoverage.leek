@@ -11,14 +11,16 @@ class ItemCoverageClass {
 	/* Hash de contenu d'une map [item -> dist] : chaîne NON LINÉAIRE, entrée (item 9 bits |
 	 * dist 4 bits). Dépendant de l'ordre d'itération : deux maps de même contenu construites
 	 * dans des ordres différents FRAGMENTENT seulement, elles ne collisionnent jamais.
-	 * La CHAÎNE elle-même est non linéaire : ce digest résume un contenu de longueur variable
-	 * et personne ne le vérifie — voir le contrat des clés en tête de Constants.leek. */
+	 * Digest de longueur variable que personne ne vérifie : chaîne à MULTIPLICATION puis un
+	 * seul finaliseur — la variante bon marché de la famille 3, décrite dans le contrat des
+	 * clés en tête de Constants.leek. C'est le fold le plus chaud de l'IA, d'où le finaliseur
+	 * unique plutôt qu'un mix64 par item. */
 	static hashItemAoeMap(ItemAoeMap) {
 		var Hash_Final = 0
 		for (var item: var dist in ItemAoeMap) {
-			Hash_Final = mix64(Hash_Final ^ ((item << 4) | dist))
+			Hash_Final = (Hash_Final ^ ((item << 4) | dist)) * MIX_A
 		}
-		return Hash_Final
+		return mix64(Hash_Final)
 	}
 
 	/*

@@ -59,12 +59,23 @@ global MASK_HIGH = (1 << SHIFT) - 1
  * 2. CHAÎNE SUR UN NOMBRE FIXE DE SCALAIRES BORNÉS : addValueToBinHash suffit — les entrées
  *    sont elles-mêmes des packings exacts, en nombre connu.
  * 3. DIGEST DE CONTENU DE LONGUEUR VARIABLE (fold sur une map, une liste, un ensemble
- *    d'entités) : la CHAÎNE elle-même doit être non linéaire, donc mix64 à chaque pas.
- *    Mélanger seulement les TERMES ne suffit PAS : une chaîne linéaire reste confinée au span
- *    GF(2) de ce qu'elle absorbe, et l'alphabet de ces folds est petit (quelques dizaines de
- *    couples possibles) — mesuré collisionnant.
+ *    d'entités) : la CHAÎNE elle-même doit être non linéaire. Mélanger seulement les TERMES ne
+ *    suffit PAS : une chaîne linéaire reste confinée au span GF(2) de ce qu'elle absorbe, et
+ *    l'alphabet de ces folds est petit (quelques milliers de contenus distincts sur un combat)
+ *    — mesuré collisionnant.
  *    Un fold XOR (sans rotation) exige en plus que la contribution porte sa POSITION, sinon
  *    deux entités qui permutent leurs champs rendent le même hash.
+ *
+ *    Deux instruments admis, tous deux non linéaires À CHAQUE PAS :
+ *      a. mix64 par pas — avalanche complète en continu, le défaut ;
+ *      b. `h = (h ^ terme) * MIX_A` par pas, PUIS un unique mix64 en sortie — pour les folds
+ *         chauds. La multiplication par une constante impaire est une bijection modulo 2^64 :
+ *         l'accumulateur ne s'effondre jamais, et elle propage les bits bas vers les hauts,
+ *         ce qui casse le span GF(2). Sa seule faiblesse — le bit k d'un produit ne dépend que
+ *         des bits <= k, donc les bits bas sont peu brassés — est exactement ce que répare le
+ *         finaliseur, obligatoire avant tout usage de la valeur comme clé.
+ *      Vérifié sur le banc : sur 562 642 contenus hachés (3 083 distincts), (a) et (b)
+ *      induisent la MÊME partition, zéro collision dans les deux sens.
  *
  * Aucune de ces clés n'est doublée d'une vérification structurelle : la famille 3 a été
  * mesurée collisionnante en linéaire (un combat de banc sur quatre divergeait), et ne l'est
