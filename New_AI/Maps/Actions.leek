@@ -367,10 +367,13 @@ class ActionsClass {
 					// ce hash résume un ENSEMBLE de cibles de taille variable, et DoneHashs s'en
 					// sert pour écarter une action déjà vue — une collision ferait disparaître
 					// une action distincte de la recherche.
+					// Chaîne à MULTIPLICATION (contrat des clés, famille 3b), sans finaliseur :
+					// le hash n'est comparé qu'entier. Chaque pas reste une bijection, exactement
+					// comme un pas mix64 — c'est ce qui porte l'injectivité, pas l'avalanche.
 					if (to in Tmp) {
-						Tmp[to] = mix64(Tmp[to] ^ ((entity << MAX_AOE_DIST_BINARY) | TmpHash))
+						Tmp[to] = (Tmp[to] ^ ((entity << MAX_AOE_DIST_BINARY) | TmpHash)) * MIX_A
 					} else {
-						Tmp[to] = mix64(OFFSET_BASIS ^ ((entity << MAX_AOE_DIST_BINARY) | TmpHash))
+						Tmp[to] = (OFFSET_BASIS ^ ((entity << MAX_AOE_DIST_BINARY) | TmpHash)) * MIX_A
 					}
 				}
 			}
@@ -381,7 +384,7 @@ class ActionsClass {
 				var MapAoeCellsOfFrom = AoeDistItem(Item, from)
 				for (var to: var TmpHash in MapToHash) {
 					if (to in MapAoeCellsOfFrom) {
-						MapToHash[to] = mix64(MapToHash[to] ^ ((Me << MAX_AOE_DIST_BINARY) | MapAoeCellsOfFrom[to]))
+						MapToHash[to] = (MapToHash[to] ^ ((Me << MAX_AOE_DIST_BINARY) | MapAoeCellsOfFrom[to])) * MIX_A
 					}
 				}
 			}
