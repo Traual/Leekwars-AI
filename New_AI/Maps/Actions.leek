@@ -363,11 +363,16 @@ class ActionsClass {
 				for (var to: var TmpHash in MapToHash) {
 					// Packing : l'ENTITÉ dans les bits hauts, la DISTANCE dans le slot 3 bits
 					// (dist <= 6 y tient, pas les ids — inverser ferait collisionner des
-					// ensembles de cibles distincts dans DoneHashs).
+					// ensembles de cibles distincts dans DoneHashs). mix64 et non
+					// addValueToBinHash : ce hash résume un ENSEMBLE de cibles de taille
+					// variable, et DoneHashs s'en sert pour écarter une action déjà vue — une
+					// collision ferait disparaître une action distincte de la recherche.
+					var term = (entity << MAX_AOE_DIST_BINARY) | TmpHash
+					var mixed = term in MIXED_TARGET_TERM ? MIXED_TARGET_TERM[term] : MIXED_TARGET_TERM[term] = mix64(term)
 					if (to in Tmp) {
-						Tmp[to] = addValueToBinHash(Tmp[to], (entity << MAX_AOE_DIST_BINARY) | TmpHash)
+						Tmp[to] = addValueToBinHash(Tmp[to], mixed)
 					} else {
-						Tmp[to] = addValueToBinHash(OFFSET_BASIS, (entity << MAX_AOE_DIST_BINARY) | TmpHash)
+						Tmp[to] = addValueToBinHash(OFFSET_BASIS, mixed)
 					}
 				}
 			}
@@ -378,7 +383,8 @@ class ActionsClass {
 				var MapAoeCellsOfFrom = AoeDistItem(Item, from)
 				for (var to: var TmpHash in MapToHash) {
 					if (to in MapAoeCellsOfFrom) {
-						MapToHash[to] = addValueToBinHash(MapToHash[to], (Me << MAX_AOE_DIST_BINARY) | MapAoeCellsOfFrom[to])
+						var meTerm = (Me << MAX_AOE_DIST_BINARY) | MapAoeCellsOfFrom[to]
+						MapToHash[to] = addValueToBinHash(MapToHash[to], meTerm in MIXED_TARGET_TERM ? MIXED_TARGET_TERM[meTerm] : MIXED_TARGET_TERM[meTerm] = mix64(meTerm))
 					}
 				}
 			}

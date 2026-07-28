@@ -134,6 +134,12 @@ global TARGETABLECACHE = [: ]
 // second passage sur le tableau les relirait pour rien. Lu immédiatement par le seul appelant.
 global LAST_COVERAGE_HASH = 0
 
+// mix64 des couples (entité, distance d'AoE) du hash d'ensemble de cibles, mémorisé : le fold
+// tourne dans la boucle la plus interne de l'énumération, et ces couples sont peu nombreux
+// (une entité par distance). Mélanger l'ENTRÉE une fois suffit — la chaîne peut rester
+// linéaire dès lors que ce qu'elle absorbe ne l'est pas.
+global MIXED_TARGET_TERM = [: ]
+
 global ENTITY_COOLDOWNS_BY_ID = [: ]
 // Champs d'entité constants pendant le tour (invocateur, camp, inventaire, nom, statique),
 // relevés une seule fois par entité. TURN_ORDER en est EXCLU : le moteur insère un summon
