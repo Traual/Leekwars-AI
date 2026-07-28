@@ -52,8 +52,11 @@ class ActionSuite {
 		var initialScore = ScoringClass.sumTerms(RootTerms)
 
 		// Cache par appel : scoredKeyOf(BaseHash, candidat résu) -> liste triée
-		// [act, delta, node, nodeScore].
+		// [act, delta, node, nodeScore, cellule de tir, item].
 		var ScoredCache = [:]
+		// Même liste, restreinte aux entrées dont la cellule de tir m'est ATTEIGNABLE. Clé
+		// salée par l'empreinte de mobilité, qui fixe exactement ce set avec le terrain.
+		var ReachableCache = [:]
 
 		// noPlay = plancher "ne rien jouer" ET racine de la chaîne de termes : il porte la
 		// map complète, chaque nœud n'empile ensuite qu'un PATCH (TERMS_PARENT).
@@ -80,7 +83,7 @@ class ActionSuite {
 			var baseNode = entry[2]
 			baseNode.SCORE = entry[3]
 			if (baseNode.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = baseNode
-			best = unroll(baseNode, ScoredCache, MySide, 1, best)
+			best = unroll(baseNode, ScoredCache, ReachableCache, MySide, 1, best)
 		}
 		BenchOps.Stop("BFS")
 
@@ -95,12 +98,12 @@ class ActionSuite {
 	 * Déroulé glouton récursif d'une branche : descend la meilleure action suivante tant
 	 * qu'il y en a une, en suivant le meilleur nœud rencontré.
 	 */
-	static unroll(node, ScoredCache, MySide, depth, best) {
-		var next = findBestNextNode(node, ScoredCache, MySide)
+	static unroll(node, ScoredCache, ReachableCache, MySide, depth, best) {
+		var next = findBestNextNode(node, ScoredCache, ReachableCache, MySide)
 		if (next == null) return best
 		if (next.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = next
 		BFS_CHAIN_STEPS++
-		return unroll(next, ScoredCache, MySide, depth + 1, best)
+		return unroll(next, ScoredCache, ReachableCache, MySide, depth + 1, best)
 	}
 
 	/*
@@ -112,7 +115,7 @@ class ActionSuite {
 	 *    (cooldown/uses/coût) et re-score chaque candidat dans les stats réelles du parent,
 	 *    avec break dès que la borne triée ne peut plus battre le meilleur delta.
 	 */
-	static findBestNextNode(Parent, ScoredCache, MySide) {
+	static findBestNextNode(Parent, ScoredCache, ReachableCache, MySide) {
 		// Le nœud est réellement développé : c'est ICI (et seulement ici) que son état complet
 		// est reconstruit depuis sa chaîne de patches, puis caché.
 		var State = StateClass.materializeNodeState(Parent)
@@ -148,6 +151,21 @@ class ActionSuite {
 		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 		var MyOnlyWalk = MyWalkCells.WALK
 		var MyMax = MyWalkCells.MAX
+
+		// Le filtre de cellule de tir écartait trois entrées sur quatre et ne dépend que de
+		// MyMax, donc de (empreinte de mobilité, terrain). On le paie une fois par couple, pas
+		// une fois par nœud : mesuré 8,3 réutilisations par couple.
+		var ReachableKey = addValueToBinHash(CacheKey, Parent.ME_WALK_FINGERPRINT)
+		var Reachable
+		if (ReachableKey in ReachableCache) {
+			Reachable = ReachableCache[ReachableKey]
+		} else {
+			Reachable = []
+			for (var e in Entries) {
+				if (e[4] in MyMax) push(Reachable, e)
+			}
+			ReachableCache[ReachableKey] = Reachable
+		}
 		var MyWeapon = MyStats.WEAPON
 		var ParentScore = Parent.SCORE
 		var JumpCost = ITEMINFO[CHIP_JUMP].COST
@@ -163,18 +181,14 @@ class ActionSuite {
 		// Le même item revient une fois par cellule de tir, son verdict ne change pas.
 		var playable = [: ]
 
-		for (var entry in Entries) {
+		for (var entry in Reachable) {
 			var initialDelta = entry[1]
 			if (BestDeltaFromParent >= initialDelta) break   // borne du tri : plus rien à battre
 
-			// Cellule de tir d'abord : un test d'appartenance coûte moitié moins qu'une lecture
-			// du mémo de jouabilité, et il écarte trois entrées sur quatre. Les deux gardes sont
-			// des prédicats purs, les inverser ne change pas ce qui survit — et le mémo n'est
-			// plus renseigné que pour les items dont une cellule de tir est atteignable.
-			// Cellule et item sont PORTÉS PAR L'ENTRÉE : le rejet, qui est le cas de très loin
-			// le plus fréquent, ne déréférence jamais l'action.
+			// La cellule de tir est déjà garantie atteignable par la liste filtrée. Cellule et
+			// item sont PORTÉS PAR L'ENTRÉE : rien ici ne déréférence l'action, elle n'est lue
+			// que pour les entrées réellement simulées.
 			var from = entry[4]
-			if (!(from in MyMax)) continue
 			var item = entry[5]
 
 			var itemPlayable = playable[item]
