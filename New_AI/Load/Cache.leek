@@ -129,6 +129,11 @@ global TARGETABLECACHE = [: ]
 // pendant le mien, leurs cooldowns ne bougent donc pas. Map partagée par toutes les racines
 // de l'entité — personne n'écrit une racine non-Me (setCooldown ne touche que le clone de Me,
 // qui reçoit une map neuve).
+// Hash de contenu de la DERNIÈRE couverture produite par coverageOfCell. Le fold se fait
+// pendant la construction, où idx et le hash de contenu sont déjà en variables locales : un
+// second passage sur le tableau les relirait pour rien. Lu immédiatement par le seul appelant.
+global LAST_COVERAGE_HASH = 0
+
 global ENTITY_COOLDOWNS_BY_ID = [: ]
 // Champs d'entité constants pendant le tour (invocateur, camp, inventaire, nom, statique),
 // relevés une seule fois par entité. TURN_ORDER en est EXCLU : le moteur insère un summon

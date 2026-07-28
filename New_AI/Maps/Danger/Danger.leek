@@ -37,6 +37,7 @@ class DangerClass {
 		var mapKeys = Plan.MAP_KEYS
 		var n = count(CovSeq)
 		var cov = []
+		var hash = 0
 		for (var k = 0; k < n; k++) {
 			var idx = CovSeq[k]
 			// CONTRAT : CovSeq ne retient que les casters à map offensive non nulle.
@@ -44,11 +45,15 @@ class DangerClass {
 			// Caster incapable d'atteindre cette cellule : aucun triplet, aucun combo.
 			if (!(Cell in offMap)) continue
 			var itemMap = offMap[Cell]
+			// Hash de contenu mémorisé par (map, cellule) et transporté jusqu'au combo.
+			var contentHash = DangerPlanClass.itemAoeHashOf(mapKeys[idx], Cell, itemMap)
 			push(cov, idx)
 			push(cov, itemMap)
-			// Hash de contenu mémorisé par (map, cellule) et transporté jusqu'au combo.
-			push(cov, DangerPlanClass.itemAoeHashOf(mapKeys[idx], Cell, itemMap))
+			push(cov, contentHash)
+			// Même fold que le regroupement par bucket, mais sur les valeurs déjà en main.
+			hash = addValueToBinHash(hash, contentHash ^ (idx << 56))
 		}
+		LAST_COVERAGE_HASH = hash
 		return cov
 	}
 
@@ -104,11 +109,7 @@ class DangerClass {
 			// Un seul fold par caster : le contenu de sa map, perturbé par sa POSITION dans
 			// l'ordre (deux couvertures aux mêmes maps mais aux casters différents ou
 			// permutés ne partagent pas de bucket).
-			var hash = 0
-			var n = count(coverage)
-			for (var i = 0; i < n; i += COVERAGE_STRIDE) {
-				hash = addValueToBinHash(hash, coverage[i + 2] ^ (coverage[i] << 56))
-			}
+			var hash = LAST_COVERAGE_HASH
 			var bucket
 			if (hash in Buckets) {
 				bucket = Buckets[hash]
