@@ -96,6 +96,11 @@ class ItemCoverageClass {
 			var area = ItemInfos.AREA
 			for (var cell: var bool in MapCellsBool) {
 				for (var Aoe: var AoeDist in CellClass.getAreaDist(area, cell)) {
+					// Une cellule directement lançable vaut déjà 0 et AoeDist n'est jamais
+					// négatif : l'écriture serait toujours un no-op. Le set direct est dense,
+					// c'est le cas de la grande majorité des cellules de zone visitées, et le
+					// test d'appartenance coûte trois fois moins qu'une lecture.
+					if (Aoe in MapCellsBool) continue
 					var ActualCellDist = _final[Aoe]
 					if (ActualCellDist == null || ActualCellDist > AoeDist) {
 						_final[Aoe] = AoeDist
