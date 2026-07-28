@@ -21,7 +21,6 @@ function ReloadCacheNewTurn() {
     SURVIVAL_CACHE = [: ]
     HEAL_COVERAGE_CACHE = [: ]
     HEAL_CELL_ITEM_AOE_CACHE = [: ]
-    HEAL_CELL_HASH_CACHE = [: ]
     HEAL_COMBO_CACHE = [: ]
     HEAL_ENTITY_INVENTORY = [: ]
     IMPORTANCE_BY_ID = [: ]
@@ -238,14 +237,15 @@ global CAPABILITY_ITEMS_BY_ID = [: ]
 global CAPABILITY_COMBO_CACHE = [: ]
 
 // HEAL MAP — trois couches, miroir de la danger map :
-//  - HEAL_COVERAGE_CACHE : la couverture complète d'un caster, PAR PROFIL de cible
-//    [ALLY_LEEK | ALLY_SUMMON -> [cell -> [heal, vitalité]]] (pas de SELF : le séquenceur
-//    exclut la cible de sa liste de casters), clé (id, couche marche/saut, cell, mp, wis,
-//    tp) — le fast path.
-//  - HEAL_CELL_ITEM_AOE_CACHE : la GÉOMÉTRIE [cell -> [item -> aoeDist]], clé
+//  - HEAL_COVERAGE_CACHE : la couverture d'un caster, résolue PAR CELLULE À LA DEMANDE et par
+//    profil de cible (pas de SELF : le séquenceur exclut la cible de sa liste de casters),
+//    clé (id, couche marche/saut, cell, mp, wis, tp) — le fast path. Le déroulé du net
+//    n'interroge qu'une cellule par appel : tout assembler serait du travail jeté.
+//  - HEAL_CELL_ITEM_AOE_CACHE : la GÉOMÉTRIE paresseuse par item, clé
 //    (id<<21)|(coucheJump<<20)|(cell<<10)|max(0,mp) — position + couche marche/saut future
-//    (canJumpNextTurn), COMMUNE aux deux profils ; un buff/shackle WIS/TP ne reconstruit
-//    que la couche valeur, SAUF franchissement du coût de Jump (couche géométrique).
+//    (canJumpNextTurn), COMMUNE aux deux profils ; elle porte aussi les hashs de contenu des
+//    cellules déjà assemblées. Un buff/shackle WIS/TP ne reconstruit que la couche valeur,
+//    SAUF franchissement du coût de Jump (couche géométrique).
 //  - HEAL_COMBO_CACHE : la VALEUR [heal, vitalité], memoïsée par CONTENU (fold des entrées
 //    [item -> dist] + wis/tp + PROFIL) — deux profils ne partagent jamais un combo, deux
 //    casters de types différents partagent un combo allié identique.
@@ -255,10 +255,6 @@ global CAPABILITY_COMBO_CACHE = [: ]
 global HEAL_COVERAGE_CACHE = [: ]
 global HEAL_CELL_ITEM_AOE_CACHE = [: ]
 
-// Hashs de contenu des ItemAoeMap de heal, clés par la MÊME clé de géométrie : deux
-// couvertures qui partagent leur géométrie partagent aussi ses hashs. Même durée de vie
-// obligatoire — un hash ne doit jamais survivre à la map qui l'a produit.
-global HEAL_CELL_HASH_CACHE = [: ]
 global HEAL_COMBO_CACHE = [: ]
 global HEAL_ENTITY_INVENTORY = [: ]
 

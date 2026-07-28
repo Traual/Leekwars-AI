@@ -39,29 +39,8 @@ class ItemCoverageClass {
 	static buildMapCellItemAoe(items, walkCellsMap, movementKey) {
 		var _final = [: ]
 		for (var Item in items) {
-			var Infos = ITEMINFO[Item]
-			var fullKey = (movementKey << 30) | Infos.FULL_GEOMETRY_KEY
-			// Sans zone d'effet, la map d'item vaut 0 sur exactement les cellules directement
-			// lançables : ses valeurs ne portent aucune information et l'union des cellules
-			// lançables tient lieu de jeu de clés. AREA_MAX ne dépend que d'AREA, lui-même dans
-			// FULL_GEOMETRY_KEY — deux items ne peuvent donc pas partager une entrée du cache
-			// avec des AREA_MAX différents.
-			var flat = Infos.AREA_MAX == 0
-			var itemMap
-			if (fullKey in ITEM_FULL_GEOMETRY_CACHE) {
-				itemMap = ITEM_FULL_GEOMETRY_CACHE[fullKey]
-			} else {
-				var launchKey = (movementKey << 25) | Infos.LAUNCH_GEOMETRY_KEY
-				var directCells
-				if (launchKey in ITEM_LAUNCH_GEOMETRY_CACHE) {
-					directCells = ITEM_LAUNCH_GEOMETRY_CACHE[launchKey]
-				} else {
-					directCells = getMapHittableCellsTotal(Infos, walkCellsMap)
-					ITEM_LAUNCH_GEOMETRY_CACHE[launchKey] = directCells
-				}
-				itemMap = flat ? directCells : getMapAoeForItem(Infos, directCells)
-				ITEM_FULL_GEOMETRY_CACHE[fullKey] = itemMap
-			}
+			var flat = ITEMINFO[Item].AREA_MAX == 0
+			var itemMap = geometryOfItem(Item, walkCellsMap, movementKey)
 			// Deux boucles plutôt qu'un test par cellule : le fold est le point chaud.
 			if (flat) {
 				for (var Cell: var Direct in itemMap) {
@@ -84,6 +63,80 @@ class ItemCoverageClass {
 			}
 		}
 		return _final
+	}
+
+	/* Géométrie d'UN item depuis toutes les positions accessibles du caster, mémorisée dans
+	 * les deux caches persistants. Partagée par l'assemblage complet et par le paresseux.
+	 * Sans zone d'effet, la map d'item vaut 0 sur exactement les cellules directement
+	 * lançables : ses valeurs ne portent aucune information et l'union des cellules lançables
+	 * tient lieu de jeu de clés. AREA_MAX ne dépend que d'AREA, lui-même dans
+	 * FULL_GEOMETRY_KEY — deux items ne peuvent donc pas partager une entrée du cache avec des
+	 * AREA_MAX différents. */
+	static geometryOfItem(Item, walkCellsMap, movementKey) {
+		var Infos = ITEMINFO[Item]
+		var fullKey = (movementKey << 30) | Infos.FULL_GEOMETRY_KEY
+		if (fullKey in ITEM_FULL_GEOMETRY_CACHE) return ITEM_FULL_GEOMETRY_CACHE[fullKey]
+		var launchKey = (movementKey << 25) | Infos.LAUNCH_GEOMETRY_KEY
+		var directCells
+		if (launchKey in ITEM_LAUNCH_GEOMETRY_CACHE) {
+			directCells = ITEM_LAUNCH_GEOMETRY_CACHE[launchKey]
+		} else {
+			directCells = getMapHittableCellsTotal(Infos, walkCellsMap)
+			ITEM_LAUNCH_GEOMETRY_CACHE[launchKey] = directCells
+		}
+		var itemMap = Infos.AREA_MAX == 0 ? directCells : getMapAoeForItem(Infos, directCells)
+		ITEM_FULL_GEOMETRY_CACHE[fullKey] = itemMap
+		return itemMap
+	}
+
+	/*
+	 * Même information que buildMapCellItemAoe, gardée sous forme des géométries par item :
+	 * l'assemblage d'une cellule n'a lieu qu'à la demande. Pour un consommateur qui ne lit que
+	 * quelques cellules sur les quelques centaines que le caster atteint, l'assemblage complet
+	 * est presque entièrement du travail jeté.
+	 */
+	static buildLazyCellItemAoe(items, walkCellsMap, movementKey) {
+		var geoms = []
+		var flats = []
+		for (var Item in items) {
+			push(geoms, geometryOfItem(Item, walkCellsMap, movementKey))
+			// Géométrie d'un item sans zone d'effet : VALEURS BOOLÉENNES, la distance vaut zéro.
+			push(flats, ITEMINFO[Item].AREA_MAX == 0)
+		}
+		return new LazyCoverageClass(items, geoms, flats)
+	}
+
+	/*
+	 * [item -> distance d'AoE minimale] à UNE cellule, ou null si aucun item ne l'atteint.
+	 * L'ordre d'insertion suit la liste d'items, exactement comme l'assemblage complet — le
+	 * hash de contenu et l'ordre glouton en dépendent. Mémorisé, absences comprises.
+	 */
+	static itemAoeAt(Coverage, Cell) {
+		var memo = Coverage.CELLS
+		if (Cell in memo) return memo[Cell]
+		var items = Coverage.ITEMS
+		var geoms = Coverage.GEOMS
+		var flats = Coverage.FLATS
+		var n = count(items)
+		var _final = null
+		for (var k = 0; k < n; k++) {
+			var geom = geoms[k]
+			if (!(Cell in geom)) continue
+			if (_final == null) _final = [: ]
+			_final[items[k]] = flats[k] ? 0 : geom[Cell]
+		}
+		memo[Cell] = _final
+		return _final
+	}
+
+	/* Hash de contenu de la cellule, mémorisé sur la géométrie : partagé par tous ceux qui
+	 * réutilisent cette géométrie (mêmes déplacements, stats différentes). */
+	static contentHashAt(Coverage, Cell, ItemAoeMap) {
+		var memo = Coverage.HASHES
+		if (Cell in memo) return memo[Cell]
+		var h = hashItemAoeMap(ItemAoeMap)
+		memo[Cell] = h
+		return h
 	}
 
 	/*
@@ -135,5 +188,25 @@ class ItemCoverageClass {
 		}
 
 		return _final
+	}
+}
+
+/*
+ * Couverture d'un caster gardée par item, avec les cellules déjà assemblées et leurs hashs de
+ * contenu. Personne ne l'itère : on lui demande une cellule, via ItemCoverageClass.
+ */
+class LazyCoverageClass {
+	ITEMS    // liste d'items, dans l'ordre qui fixe l'assemblage et l'ordre glouton
+	GEOMS    // [k] = [cellule -> distance d'AoE] de ITEMS[k], VALEURS BOOLÉENNES si FLATS[k]
+	FLATS    // [k] = ITEMS[k] est sans zone d'effet -> sa distance d'AoE vaut toujours zéro
+	CELLS    // [cellule -> [item -> distance]] assemblées à la demande, absences comprises
+	HASHES   // [cellule -> hash de contenu], mémorisé au premier besoin
+
+	constructor(ThisItems, ThisGeoms, ThisFlats) {
+		this.ITEMS = ThisItems
+		this.GEOMS = ThisGeoms
+		this.FLATS = ThisFlats
+		this.CELLS = [: ]
+		this.HASHES = [: ]
 	}
 }

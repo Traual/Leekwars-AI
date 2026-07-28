@@ -236,9 +236,8 @@ class DeltaClass {
             // de healerContributionOf, qui décide l'appartenance à la heal map. Un allié de
             // la séquence est donc toujours dans healMap.
             if (life > 0 && State[caster].SIDE == stat.SIDE) {
-                var coverage = healMap[caster][allyProfile]
-                if (cell in coverage) {
-                    var parts = coverage[cell]
+                var parts = HealClass.partsAt(healMap[caster], allyProfile, cell)
+                if (parts != null) {
                     var projectedVitality = HEAL_COEF * parts[1]
                     totalLife += projectedVitality
                     life += projectedVitality
