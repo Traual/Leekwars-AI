@@ -59,11 +59,11 @@ global MASK_HIGH = (1 << SHIFT) - 1
  * 2. CHAÎNE SUR UN NOMBRE FIXE DE SCALAIRES BORNÉS : addValueToBinHash suffit — les entrées
  *    sont elles-mêmes des packings exacts, en nombre connu.
  * 3. DIGEST DE CONTENU DE LONGUEUR VARIABLE (fold sur une map, une liste, un ensemble
- *    d'entités) : ce que le fold ABSORBE doit être non linéaire. addValueToBinHash est
- *    LINÉAIRE — un fold linéaire sur des entrées STRUCTURÉES (des champs packés bruts) se
- *    réduit algébriquement et collisionne bien au-delà de 2^-64. Passer chaque terme par
- *    mix64 suffit : la chaîne peut rester linéaire dès lors qu'elle n'absorbe que du mélangé.
- *    Un fold XOR (sans rotation) exige en plus que la contribution porte sa position, sinon
+ *    d'entités) : la CHAÎNE elle-même doit être non linéaire, donc mix64 à chaque pas.
+ *    Mélanger seulement les TERMES ne suffit PAS : une chaîne linéaire reste confinée au span
+ *    GF(2) de ce qu'elle absorbe, et l'alphabet de ces folds est petit (quelques dizaines de
+ *    couples possibles) — mesuré collisionnant.
+ *    Un fold XOR (sans rotation) exige en plus que la contribution porte sa POSITION, sinon
  *    deux entités qui permutent leurs champs rendent le même hash.
  *
  * Aucune de ces clés n'est doublée d'une vérification structurelle : la famille 3 a été

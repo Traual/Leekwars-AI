@@ -11,8 +11,8 @@ class ItemCoverageClass {
 	/* Hash de contenu d'une map [item -> dist] : chaîne NON LINÉAIRE, entrée (item 9 bits |
 	 * dist 4 bits). Dépendant de l'ordre d'itération : deux maps de même contenu construites
 	 * dans des ordres différents FRAGMENTENT seulement, elles ne collisionnent jamais.
-	 * mix64 et non addValueToBinHash : ce digest résume un contenu de longueur VARIABLE et
-	 * personne ne le vérifie — voir le contrat des clés en tête de Constants.leek. */
+	 * La CHAÎNE elle-même est non linéaire : ce digest résume un contenu de longueur variable
+	 * et personne ne le vérifie — voir le contrat des clés en tête de Constants.leek. */
 	static hashItemAoeMap(ItemAoeMap) {
 		var Hash_Final = 0
 		for (var item: var dist in ItemAoeMap) {
