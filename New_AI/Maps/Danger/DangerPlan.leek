@@ -141,14 +141,26 @@ class DangerPlanClass {
 		var seq = sequenceFor(Plan, TargetId)
 		var actives = Plan.ACTIVE
 		var order = Plan.ORDER
+		var sameSides = Plan.SAME_SIDE
 		var n = count(seq)
 		var netSeq = []
+		var allySeq = []
 		for (var k = 0; k < n; k++) {
 			var idx = seq[k]
-			if (actives[idx]) push(netSeq, order[idx])
+			if (!actives[idx]) continue
+			push(netSeq, order[idx])
+			push(allySeq, sameSides[idx])
 		}
 		Plan.NET_SEQ_BY_ID[TargetId] = netSeq
+		Plan.NET_ALLY_BY_ID[TargetId] = allySeq
 		return netSeq
+	}
+
+	/* Drapeaux « du même camp que la cible » alignés sur la séquence de net, construits avec
+	 * elle. Le déroulé du net les lit au lieu de rouvrir l'état à chaque caster. */
+	static netAllySeqFor(Plan, TargetId) {
+		if (!(TargetId in Plan.NET_ALLY_BY_ID)) netSequenceFor(Plan, TargetId)
+		return Plan.NET_ALLY_BY_ID[TargetId]
 	}
 
 	/*
@@ -173,6 +185,7 @@ class DangerPlanClass {
 		var packs = []
 		var crits = []
 		var actives = []
+		var sameSides = []
 		var n = count(order)
 		for (var i = 0; i < n; i++) {
 			var id = order[i]
@@ -202,8 +215,12 @@ class DangerPlanClass {
 			// Peut-il changer le net d'une cible de ce camp ? Menace, ou soigneur éligible à la
 			// heal map (mêmes conditions que healerContributionOf).
 			push(actives, offMap != null || (id != Me && stat.LIFE > 0 && HealClass.hasHealItem(stat)))
+			// Le plan est TOUJOURS construit avec le camp de sa propre cible : « du même camp
+			// que la cible » est donc une constante du plan, pas une question à reposer à
+			// chaque cellule et à chaque nœud dans le déroulé du net.
+			push(sameSides, stat != null && stat.SIDE == TargetSide)
 		}
-		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, packs, crits, actives)
+		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, packs, crits, actives, sameSides)
 		DANGER_TEAM_PLAN_CACHE[key] = plan
 		return plan
 	}
@@ -221,18 +238,22 @@ class DangerTeamPlanClass {
 	SEQ_BY_ID       // [id cible -> indices de ORDER dans l'ordre de jeu], construit paresseusement
 	COV_SEQ_BY_ID   // idem, restreinte aux casters à map offensive non nulle
 	NET_SEQ_BY_ID   // idem, restreinte aux casters qui peuvent changer le net (menace ou soin)
+	NET_ALLY_BY_ID  // [id cible -> drapeaux « même camp », alignés sur NET_SEQ_BY_ID]
+	SAME_SIDE       // [i] = ce caster est-il du camp visé par le plan ?
 	ACTIVE          // [i] = ce caster peut-il changer un net de ce camp ?
 	OFFENSIVE_MAPS  // [i] = [cellule -> ItemAoeMap] du caster, ou null s'il ne menace pas
 	MAP_KEYS        // [i] = clé de cette map (préfixe des hashs de contenu), ou null
 	CASTER_PACKS    // [i] = pack offensif canonique du caster, ou null
 	CRIT_FACTORS    // [i] = facteur critique déjà résolu, 1 par défaut
-	constructor(ThisOrder, ThisOrderById, ThisTurnOrders, ThisMaps, ThisMapKeys, ThisPacks, ThisCrits, ThisActives) {
+	constructor(ThisOrder, ThisOrderById, ThisTurnOrders, ThisMaps, ThisMapKeys, ThisPacks, ThisCrits, ThisActives, ThisSameSides) {
 		this.ORDER = ThisOrder
 		this.ORDER_BY_ID = ThisOrderById
 		this.TURN_ORDERS = ThisTurnOrders
 		this.SEQ_BY_ID = [: ]
 		this.COV_SEQ_BY_ID = [: ]
 		this.NET_SEQ_BY_ID = [: ]
+		this.NET_ALLY_BY_ID = [: ]
+		this.SAME_SIDE = ThisSameSides
 		this.ACTIVE = ThisActives
 		this.OFFENSIVE_MAPS = ThisMaps
 		this.MAP_KEYS = ThisMapKeys

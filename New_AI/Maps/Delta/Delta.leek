@@ -112,7 +112,7 @@ class DeltaClass {
         // Les casters frappent dans l'ordre où ils jouent APRÈS la cible ce round : la
         // séquence du plan est construite une fois par cible, puis partagée.
         if (plan == null) plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, targetSide)
-        var nd = netDamage(stat, dangerToT, healMap, State, DangerPlanClass.netSequenceFor(plan, e), cell)
+        var nd = netDamage(stat, dangerToT, healMap, State, DangerPlanClass.netSequenceFor(plan, e), DangerPlanClass.netAllySeqFor(plan, e), cell)
         NETDAMAGE_CACHE[ndKey] = nd
         return nd
     }
@@ -162,6 +162,7 @@ class DeltaClass {
         var mySide = MeStats.SIDE
         var plan = null
         var myNetSeq = null   // séquence restreinte aux casters qui peuvent changer mon net
+        var myNetAlly = null  // drapeaux « mon camp » alignés dessus
         var myCovSeq = null   // séquence restreinte aux menaces, pour les couvertures de cellule
         var buckets = null
         for (var cell: var mp in myWalkCells) {
@@ -190,8 +191,11 @@ class DeltaClass {
                 delta = 0
                 if (!mapIsEmpty(dangerAtCell)) {
                     if (plan == null) plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
-                    if (myNetSeq == null) myNetSeq = DangerPlanClass.netSequenceFor(plan, Me)
-                    delta = netDamage(MeStats, dangerAtCell, healMap, State, myNetSeq, cell)
+                    if (myNetSeq == null) {
+                        myNetSeq = DangerPlanClass.netSequenceFor(plan, Me)
+                        myNetAlly = DangerPlanClass.netAllySeqFor(plan, Me)
+                    }
+                    delta = netDamage(MeStats, dangerAtCell, healMap, State, myNetSeq, myNetAlly, cell)
                 }
                 CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
             }
@@ -214,7 +218,7 @@ class DeltaClass {
      * exclue), construite une seule fois par cible et partagée par toutes les cellules. Elle
      * porte les identifiants des casters, pas leurs index dans l'ordre de tour.
      */
-    static netDamage(stat, dangerToT, healMap, State, Seq, cell) {
+    static netDamage(stat, dangerToT, healMap, State, Seq, AllySeq, cell) {
         // CONTRAT : la map de danger n'est jamais vide ici, les trois appelants le testent
         // avant d'appeler (un danger vide vaut net 0 sans dérouler l'ordre de tour).
         var life = stat.LIFE
@@ -235,7 +239,9 @@ class DeltaClass {
             // sa map offensive est nulle. Or cette clause est mot pour mot la qualification
             // de healerContributionOf, qui décide l'appartenance à la heal map. Un allié de
             // la séquence est donc toujours dans healMap.
-            if (life > 0 && State[caster].SIDE == stat.SIDE) {
+            // Le camp est un drapeau du plan, aligné sur la séquence : le déroulé n'a plus à
+            // rouvrir l'état pour chaque caster, à chaque cellule et à chaque nœud.
+            if (life > 0 && AllySeq[k]) {
                 var parts = HealClass.partsAt(healMap[caster], allyProfile, cell)
                 if (parts != null) {
                     var projectedVitality = HEAL_COEF * parts[1]
