@@ -39,43 +39,42 @@ class ItemCoverageClass {
 	static buildMapCellItemAoe(items, walkCellsMap, movementKey) {
 		var _final = [: ]
 		for (var Item in items) {
-			var flat = ITEMINFO[Item].AREA_MAX == 0
-			var itemMap = geometryOfItem(Item, walkCellsMap, movementKey)
-			// Deux boucles plutôt qu'un test par cellule : le fold est le point chaud.
-			if (flat) {
-				for (var Cell: var Direct in itemMap) {
-					if (Cell in _final) {
-						_final[Cell][Item] = 0
-					} else {
-						_final[Cell] = [: ]
-						_final[Cell][Item] = 0
-					}
+			var geom = geometryOfItem(Item, walkCellsMap, movementKey)
+			// Couche directe : distance nulle, aucune valeur à relire.
+			for (var Cell: var Direct in geom[0]) {
+				if (Cell in _final) {
+					_final[Cell][Item] = 0
+				} else {
+					_final[Cell] = [: ]
+					_final[Cell][Item] = 0
 				}
-			} else {
-				for (var Cell: var MinAoeDist in itemMap) {
-					if (Cell in _final) {
-						_final[Cell][Item] = MinAoeDist
-					} else {
-						_final[Cell] = [: ]
-						_final[Cell][Item] = MinAoeDist
-					}
+			}
+			var aoeOnly = geom[1]
+			if (aoeOnly == null) continue
+			// Couche de zone : disjointe de la précédente par construction.
+			for (var Cell: var MinAoeDist in aoeOnly) {
+				if (Cell in _final) {
+					_final[Cell][Item] = MinAoeDist
+				} else {
+					_final[Cell] = [: ]
+					_final[Cell][Item] = MinAoeDist
 				}
 			}
 		}
 		return _final
 	}
 
-	/* Géométrie d'UN item depuis toutes les positions accessibles du caster, mémorisée dans
-	 * les deux caches persistants. Partagée par l'assemblage complet et par le paresseux.
-	 * Sans zone d'effet, la map d'item vaut 0 sur exactement les cellules directement
-	 * lançables : ses valeurs ne portent aucune information et l'union des cellules lançables
-	 * tient lieu de jeu de clés. AREA_MAX ne dépend que d'AREA, lui-même dans
-	 * FULL_GEOMETRY_KEY — deux items ne peuvent donc pas partager une entrée du cache avec des
-	 * AREA_MAX différents. */
+	/*
+	 * Géométrie d'UN item en DEUX couches disjointes : [0] les cellules directement lançables
+	 * (distance de zone nulle par définition), [1] les seules cellules atteintes PAR LA ZONE,
+	 * null si l'item n'en a pas. Les fusionner recopierait la première couche dans la seconde
+	 * à chaque géométrie produite — or elle est déjà cachée à part, et les deux consommateurs
+	 * lisent deux couches aussi bien qu'une.
+	 * AREA_MAX ne dépend que d'AREA, lui-même dans FULL_GEOMETRY_KEY : deux items ne peuvent
+	 * pas partager une entrée du cache avec des AREA_MAX différents.
+	 */
 	static geometryOfItem(Item, walkCellsMap, movementKey) {
 		var Infos = ITEMINFO[Item]
-		var fullKey = (movementKey << 30) | Infos.FULL_GEOMETRY_KEY
-		if (fullKey in ITEM_FULL_GEOMETRY_CACHE) return ITEM_FULL_GEOMETRY_CACHE[fullKey]
 		var launchKey = (movementKey << 25) | Infos.LAUNCH_GEOMETRY_KEY
 		var directCells
 		if (launchKey in ITEM_LAUNCH_GEOMETRY_CACHE) {
@@ -84,9 +83,16 @@ class ItemCoverageClass {
 			directCells = getMapHittableCellsTotal(Infos, walkCellsMap)
 			ITEM_LAUNCH_GEOMETRY_CACHE[launchKey] = directCells
 		}
-		var itemMap = Infos.AREA_MAX == 0 ? directCells : getMapAoeForItem(Infos, directCells)
-		ITEM_FULL_GEOMETRY_CACHE[fullKey] = itemMap
-		return itemMap
+		if (Infos.AREA_MAX == 0) return [directCells, null]
+		var fullKey = (movementKey << 30) | Infos.FULL_GEOMETRY_KEY
+		var aoeOnly
+		if (fullKey in ITEM_FULL_GEOMETRY_CACHE) {
+			aoeOnly = ITEM_FULL_GEOMETRY_CACHE[fullKey]
+		} else {
+			aoeOnly = getMapAoeForItem(Infos, directCells)
+			ITEM_FULL_GEOMETRY_CACHE[fullKey] = aoeOnly
+		}
+		return [directCells, aoeOnly]
 	}
 
 	/*
@@ -96,14 +102,14 @@ class ItemCoverageClass {
 	 * est presque entièrement du travail jeté.
 	 */
 	static buildLazyCellItemAoe(items, walkCellsMap, movementKey) {
-		var geoms = []
-		var flats = []
+		var directs = []
+		var aoes = []
 		for (var Item in items) {
-			push(geoms, geometryOfItem(Item, walkCellsMap, movementKey))
-			// Géométrie d'un item sans zone d'effet : VALEURS BOOLÉENNES, la distance vaut zéro.
-			push(flats, ITEMINFO[Item].AREA_MAX == 0)
+			var geom = geometryOfItem(Item, walkCellsMap, movementKey)
+			push(directs, geom[0])
+			push(aoes, geom[1])
 		}
-		return new LazyCoverageClass(items, geoms, flats)
+		return new LazyCoverageClass(items, directs, aoes)
 	}
 
 	/*
@@ -115,15 +121,21 @@ class ItemCoverageClass {
 		var memo = Coverage.CELLS
 		if (Cell in memo) return memo[Cell]
 		var items = Coverage.ITEMS
-		var geoms = Coverage.GEOMS
-		var flats = Coverage.FLATS
+		var directs = Coverage.DIRECTS
+		var aoes = Coverage.AOES
 		var n = count(items)
 		var _final = null
 		for (var k = 0; k < n; k++) {
-			var geom = geoms[k]
-			if (!(Cell in geom)) continue
+			var dist
+			if (Cell in directs[k]) {
+				dist = 0
+			} else {
+				var aoe = aoes[k]
+				if (aoe == null || !(Cell in aoe)) continue
+				dist = aoe[Cell]
+			}
 			if (_final == null) _final = [: ]
-			_final[items[k]] = flats[k] ? 0 : geom[Cell]
+			_final[items[k]] = dist
 		}
 		memo[Cell] = _final
 		return _final
@@ -140,28 +152,24 @@ class ItemCoverageClass {
 	}
 
 	/*
-	 * [cellule -> distance d'AoE minimale] pour un item : les cellules touchables en direct
-	 * (MapCellsBool, déjà calculées par l'appelant) valent 0, puis l'expansion d'AoE remplit
-	 * le reste au plus près. Ne dépend que de la map directe, d'AREA et d'AREA_MAX.
+	 * [cellule -> distance de zone minimale] pour les SEULES cellules atteintes par la zone :
+	 * les cellules touchables en direct (MapCellsBool) en sont exclues — l'appelant les tient
+	 * déjà à part et leur distance vaut zéro. Ne dépend que de la map directe et d'AREA.
+	 * Appelée pour les seuls items à zone (AREA_MAX > 0).
 	 */
 	static getMapAoeForItem(ItemInfos, MapCellsBool) {
 		var _final = [: ]
+		var area = ItemInfos.AREA
 		for (var cell: var bool in MapCellsBool) {
-			_final[cell] = 0
-		}
-		if (ItemInfos.AREA_MAX > 0) {
-			var area = ItemInfos.AREA
-			for (var cell: var bool in MapCellsBool) {
-				for (var Aoe: var AoeDist in CellClass.getAreaDist(area, cell)) {
-					// Une cellule directement lançable vaut déjà 0 et AoeDist n'est jamais
-					// négatif : l'écriture serait toujours un no-op. Le set direct est dense,
-					// c'est le cas de la grande majorité des cellules de zone visitées, et le
-					// test d'appartenance coûte trois fois moins qu'une lecture.
-					if (Aoe in MapCellsBool) continue
-					var ActualCellDist = _final[Aoe]
-					if (ActualCellDist == null || ActualCellDist > AoeDist) {
-						_final[Aoe] = AoeDist
-					}
+			for (var Aoe: var AoeDist in CellClass.getAreaDist(area, cell)) {
+				// Une cellule directement lançable appartient à l'AUTRE couche : l'écrire ici
+				// la dédoublerait. Le set direct est dense, c'est le cas de la grande majorité
+				// des cellules de zone visitées, et le test d'appartenance coûte trois fois
+				// moins qu'une lecture.
+				if (Aoe in MapCellsBool) continue
+				var ActualCellDist = _final[Aoe]
+				if (ActualCellDist == null || ActualCellDist > AoeDist) {
+					_final[Aoe] = AoeDist
 				}
 			}
 		}
@@ -197,15 +205,15 @@ class ItemCoverageClass {
  */
 class LazyCoverageClass {
 	ITEMS    // liste d'items, dans l'ordre qui fixe l'assemblage et l'ordre glouton
-	GEOMS    // [k] = [cellule -> distance d'AoE] de ITEMS[k], VALEURS BOOLÉENNES si FLATS[k]
-	FLATS    // [k] = ITEMS[k] est sans zone d'effet -> sa distance d'AoE vaut toujours zéro
+	DIRECTS  // [k] = cellules directement lançables de ITEMS[k], distance nulle
+	AOES     // [k] = [cellule -> distance] atteintes par la zone, null si l'item n'en a pas
 	CELLS    // [cellule -> [item -> distance]] assemblées à la demande, absences comprises
 	HASHES   // [cellule -> hash de contenu], mémorisé au premier besoin
 
-	constructor(ThisItems, ThisGeoms, ThisFlats) {
+	constructor(ThisItems, ThisDirects, ThisAoes) {
 		this.ITEMS = ThisItems
-		this.GEOMS = ThisGeoms
-		this.FLATS = ThisFlats
+		this.DIRECTS = ThisDirects
+		this.AOES = ThisAoes
 		this.CELLS = [: ]
 		this.HASHES = [: ]
 	}
