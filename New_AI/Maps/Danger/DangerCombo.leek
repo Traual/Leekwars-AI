@@ -125,8 +125,12 @@ class DangerComboClass {
 			var bestUses = 0
 			for (var item: var aoe in ItemAoeMap) {
 				var Infos = ITEMINFO[item]
+				// Le test le plus sélectif d'abord : la plupart des items atteignant la cellule
+				// ne sont pas des vulnérabilités, et l'overlay d'usages n'a alors pas à être
+				// consulté. Mêmes trois conditions, court-circuitées dans un autre ordre.
+				if (!Infos.IS_VULNERABILITY) continue
 				var used = (playedUses == null) ? 0 : ((item in playedUses) ? playedUses[item] : 0)
-				if (used < Infos.MAX_USES && baseTp >= Infos.COST && Infos.IS_VULNERABILITY) {
+				if (used < Infos.MAX_USES && baseTp >= Infos.COST) {
 					// Shields après cette vulné, EN SCALAIRES. Ordre des lignes et facteur
 					// critique conservés, ABS puis REL pour le debuff. Cible morte ou vue
 					// vide : shields inchangés (l'ancien isHitable refusait tout sur un mort).
