@@ -375,11 +375,10 @@ class ActionsClass {
 		// M'ajoute au hash si je suis dans l'AoE depuis from (même packing entité-haut/dist-bas).
 		if (Target.Targetable(Item, CastState, CastState) && Infos.MINRANGE <= Infos.AREA_MAX && Infos.AREA_MAX > 0) {
 			for (var from: var MapToHash in _final) {
-				var Tmp = _final[from]
 				var MapAoeCellsOfFrom = AoeDistItem(Item, from)
 				for (var to: var TmpHash in MapToHash) {
 					if (to in MapAoeCellsOfFrom) {
-						Tmp[to] = addValueToBinHash(Tmp[to], (Me << MAX_AOE_DIST_BINARY) | MapAoeCellsOfFrom[to])
+						MapToHash[to] = addValueToBinHash(MapToHash[to], (Me << MAX_AOE_DIST_BINARY) | MapAoeCellsOfFrom[to])
 					}
 				}
 			}
