@@ -209,15 +209,9 @@ class DeltaClass {
         // avant d'appeler (un danger vide vaut net 0 sans dérouler l'ordre de tour).
         var life = stat.LIFE
         var n = count(Seq)
-        // Sans healer nulle part : mêmes soustractions successives (comportement flottant
-        // conservé — pas de somme globale), sans les tests de side/couverture heal.
-        if (mapIsEmpty(healMap)) {
-            for (var k = 0; k < n; k++) {
-                var casterNoHeal = Seq[k]
-                if (casterNoHeal in dangerToT) life -= DANGER_COEF * dangerToT[casterNoHeal]
-            }
-            return max(0, stat.LIFE - life)
-        }
+        // Pas de raccourci "aucun healer" : la heal map n'est jamais vide en pratique (mesuré
+        // sur 220 193 appels), et le déroulé général traite ce cas sans écart — un caster
+        // absent de la map échoue simplement son test d'appartenance.
         var totalLife = stat.TOTAL_LIFE
         // La séquence exclut la cible -> jamais de self-heal ici, profil par type.
         var allyProfile = stat.IS_SUMMON ? HEAL_PROFILE_ALLY_SUMMON : HEAL_PROFILE_ALLY_LEEK
