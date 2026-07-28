@@ -8,13 +8,15 @@ include("../includes.leek")
 
 class ItemCoverageClass {
 
-	/* Hash de contenu d'une map [item -> dist] : chaîne rotate-XOR, entrée (item 9 bits | dist 4 bits).
-	 * Dépendant de l'ordre d'itération : deux maps de même contenu construites dans des ordres
-	 * différents FRAGMENTENT seulement, elles ne collisionnent jamais. */
+	/* Hash de contenu d'une map [item -> dist] : chaîne NON LINÉAIRE, entrée (item 9 bits |
+	 * dist 4 bits). Dépendant de l'ordre d'itération : deux maps de même contenu construites
+	 * dans des ordres différents FRAGMENTENT seulement, elles ne collisionnent jamais.
+	 * mix64 et non addValueToBinHash : ce digest résume un contenu de longueur VARIABLE et
+	 * personne ne le vérifie — voir le contrat des clés en tête de Constants.leek. */
 	static hashItemAoeMap(ItemAoeMap) {
 		var Hash_Final = 0
 		for (var item: var dist in ItemAoeMap) {
-			Hash_Final = addValueToBinHash(Hash_Final, (item << 4) | dist)
+			Hash_Final = mix64(Hash_Final ^ ((item << 4) | dist))
 		}
 		return Hash_Final
 	}

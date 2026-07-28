@@ -93,10 +93,9 @@ class DangerClass {
 	 * construit ni plan, ni couverture, ni ordre, ni bucket.
 	 *
 	 * Buckets null : la chaîne est déroulée directement (une seule cellule à évaluer).
-	 * Buckets non null : groupement local exact et PROGRESSIF — les cellules de couverture
-	 * strictement identique partagent une unique chaîne. Le hash n'est qu'une présélection de
-	 * bucket, la comparaison structurelle reste la preuve ; une collision n'ajoute qu'une
-	 * comparaison, jamais une fusion incorrecte.
+	 * Buckets non null : groupement local PROGRESSIF — les cellules dont le hash de couverture
+	 * coïncide partagent une unique chaîne. Le hash 64 bits non linéaire fait foi, comme
+	 * partout ailleurs dans l'IA (contrat des clés en tête de Constants.leek).
 	 *
 	 * @return [casterId -> dégâts], partagée en LECTURE SEULE
 	 */
@@ -110,68 +109,15 @@ class DangerClass {
 			// l'ordre (deux couvertures aux mêmes maps mais aux casters différents ou
 			// permutés ne partagent pas de bucket).
 			var hash = LAST_COVERAGE_HASH
-			var bucket
 			if (hash in Buckets) {
-				bucket = Buckets[hash]
+				danger = Buckets[hash]
 			} else {
-				bucket = []
-				Buckets[hash] = bucket
+				danger = evalChainFromCoverage(coverage, Plan, State, TargetStats, AntidoteCd)
+				Buckets[hash] = danger
 			}
-			var group = null
-			for (var candidate in bucket) {
-				if (sameCoverage(candidate.Coverage, coverage)) {
-					group = candidate
-					break
-				}
-			}
-			if (group == null) {
-				group = new DangerGroupClass(coverage, evalChainFromCoverage(coverage, Plan, State, TargetStats, AntidoteCd))
-				push(bucket, group)
-			}
-			danger = group.Danger
 		}
 		CELL_DANGER_GET_CACHE[CellDangerKey] = danger
 		return danger
 	}
 
-	/* Deux couvertures identiques : mêmes casters, dans le MÊME ordre, avec des maps d'items
-	 * structurellement égales. L'ORDRE D'INSERTION des maps est préservé sans le comparer :
-	 * buildMapCellItemAoe insère dans l'ordre de la liste d'items DU CASTER, donc deux cellules
-	 * d'un même caster ayant le même jeu d'items ont forcément le même ordre — et la
-	 * comparaison épingle déjà le même caster à la même position. */
-	static sameCoverage(a, b) {
-		var n = count(a)
-		if (n != count(b)) return false
-		for (var i = 0; i < n; i += COVERAGE_STRIDE) {
-			if (a[i] != b[i]) return false
-			if (a[i + 2] != b[i + 2]) return false          // hash : présélection, pas une preuve
-			if (!sameItemAoeMap(a[i + 1], b[i + 1])) return false
-		}
-		return true
-	}
-
-	/* Même taille, mêmes items, même distance d'AoE pour chaque item (null explicite : un item
-	 * absent ne doit jamais s'égaler à une distance 0). */
-	static sameItemAoeMap(a, b) {
-		if (mapSize(a) != mapSize(b)) return false
-		for (var item: var dist in a) {
-			var other = b[item]
-			if (other == null || other != dist) return false
-		}
-		return true
-	}
-}
-
-/*
- * Cellules à couverture offensive EXACTEMENT identique : une seule chaîne de vulnés déroulée
- * pour tout le groupe, une map de danger partagée en lecture seule. Les buckets qui portent
- * ces groupes sont LOCAUX à une recherche de fuite ou à un placement final.
- */
-class DangerGroupClass {
-	Coverage   // couverture ordonnée, layout interne de DangerClass
-	Danger     // [casterId -> dégâts], déroulée dès la création du groupe
-	constructor(ThisCoverage, ThisDanger) {
-		this.Coverage = ThisCoverage
-		this.Danger = ThisDanger
-	}
 }

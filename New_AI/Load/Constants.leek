@@ -50,8 +50,25 @@ global SHIFT = 13
 global HIGH_SHIFT = 64 - SHIFT
 global MASK_HIGH = (1 << SHIFT) - 1
 
-/* Chaînage de hash : rotation 13 bits + XOR de la nouvelle valeur. LINÉAIRE — pour un fold
- * XOR composable, passer par mix64 ci-dessous. */
+/*
+ * CONTRAT DES CLÉS DE CACHE — trois familles, une règle par famille.
+ *
+ * 1. PACKING EXACT : les champs tiennent dans des slots disjoints de 64 bits, la clé est
+ *    injective par construction (ex. (cell << 14) | (minradius << 7) | radius). Aucune
+ *    collision possible, aucune vérification à écrire. C'est la majorité des caches.
+ * 2. CHAÎNE SUR UN NOMBRE FIXE DE SCALAIRES BORNÉS : addValueToBinHash suffit — les entrées
+ *    sont elles-mêmes des packings exacts, en nombre connu.
+ * 3. DIGEST DE CONTENU DE LONGUEUR VARIABLE (fold sur une map, une liste, un ensemble
+ *    d'entités) : OBLIGATOIREMENT mix64. addValueToBinHash est LINÉAIRE, et un fold linéaire
+ *    sur un contenu variable collisionne bien au-delà de 2^-64.
+ *
+ * Aucune de ces clés n'est doublée d'une vérification structurelle : la famille 3 a été
+ * mesurée collisionnante en linéaire (un combat de banc sur quatre divergeait), et ne l'est
+ * plus en mix64. Ajouter un mixeur à la source, jamais une comparaison à l'arrivée.
+ */
+
+/* Chaînage de hash : rotation 13 bits + XOR de la nouvelle valeur. LINÉAIRE — réservé à la
+ * famille 2 ; pour un digest de contenu variable, passer par mix64 ci-dessous. */
 function addValueToBinHash(BaseHashValue, AddedValue) {
     return ((BaseHashValue << SHIFT) | ((BaseHashValue >> HIGH_SHIFT) & MASK_HIGH)) ^ AddedValue
 }
