@@ -167,14 +167,15 @@ class ActionSuite {
 			var initialDelta = entry[1]
 			if (BestDeltaFromParent >= initialDelta) break   // borne du tri : plus rien à battre
 
-			var act = entry[0]
 			// Cellule de tir d'abord : un test d'appartenance coûte moitié moins qu'une lecture
 			// du mémo de jouabilité, et il écarte trois entrées sur quatre. Les deux gardes sont
 			// des prédicats purs, les inverser ne change pas ce qui survit — et le mémo n'est
 			// plus renseigné que pour les items dont une cellule de tir est atteignable.
-			var from = act.From
+			// Cellule et item sont PORTÉS PAR L'ENTRÉE : le rejet, qui est le cas de très loin
+			// le plus fréquent, ne déréférence jamais l'action.
+			var from = entry[4]
 			if (!(from in MyMax)) continue
-			var item = act.Item
+			var item = entry[5]
 
 			var itemPlayable = playable[item]
 			if (itemPlayable == null) {
@@ -193,6 +194,7 @@ class ActionSuite {
 			if (cost > MyTp) continue
 
 			if (Workspace == null) Workspace = clone(State, 1)
+			var act = entry[0]
 			var candidate = NodeClass.ActionToNodeInTree(act, Workspace, from, MyWalkCells, cost, Info, item, act.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE)
 			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, Workspace, ParentScore, Parent, Parent.HFP_BY_SIDE, MySide, Parent.POISON_KEY)
 			StateClass.restoreWorkspace(Workspace, candidate.CLONED)
@@ -239,7 +241,7 @@ class ActionSuite {
 			node.CLONED = null
 			var delta = nodeScore - ReferenceScore
 			if (delta <= BFS_DELTA_EPSILON) continue
-			push(Entries, [act, delta, node, nodeScore])
+			push(Entries, [act, delta, node, nodeScore, act.From, Item])
 		}
 		// arraySort RENVOIE le tableau trié (doc LS) : il faut capturer le retour.
 		return arraySort(Entries, function(a, b) {
