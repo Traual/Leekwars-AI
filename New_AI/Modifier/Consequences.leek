@@ -88,6 +88,7 @@ class ConsequencesClass {
 							push(newEffects, eff)
 						}
 					}
+					// Pas de refreshShieldExpiry : seules des lignes de POISON sont retirées.
 					targetStats.EFFECTS = newEffects
 				}
 				break
@@ -697,6 +698,9 @@ class ConsequencesClass {
 			var eff = effects[i]
 			if (eff[0] == EffectType && eff[5] == Item && eff[3] == Duration && eff[2] == CasterId) { mergeIdx = i; break }
 		}
+		// Pas de refreshShieldExpiry ici ni plus bas : aucun bouclier castable ne dure un
+		// seul tour, une ligne posée ou fusionnée n'entre donc jamais dans SHIELD_EXPIRY (la
+		// fusion exige d'ailleurs une durée ÉGALE).
 		if (mergeIdx == -1) {
 			TarStats.EFFECTS = effects + [[EffectType, AppliedValue, CasterId, Duration, Critical, Item, TarStats.ID, Modifiers]]
 			return;
@@ -741,6 +745,7 @@ class ConsequencesClass {
 			push(newEffects, eff)
 		}
 		TarStats.EFFECTS = newEffects
+		EntityStateClass.refreshShieldExpiry(TarStats)
 	}
 
 	/*
@@ -773,6 +778,7 @@ class ConsequencesClass {
 				}
 			}
 			stat.EFFECTS = newEffects
+			EntityStateClass.refreshShieldExpiry(stat)
 		}
 	}
 
@@ -1015,6 +1021,7 @@ class ConsequencesClass {
 			if (newValue > 0) push(newEffects, [eff[0], newValue, eff[2], eff[3], eff[4], eff[5], eff[6], eff[7]])
 		}
 		TarStats.EFFECTS = newEffects
+		EntityStateClass.refreshShieldExpiry(TarStats)
 	}
 
 	/*
@@ -1035,6 +1042,7 @@ class ConsequencesClass {
 				push(newEffects, eff)
 			}
 		}
+		// Pas de refreshShieldExpiry : seules des lignes de SHACKLE sont retirées.
 		TarStats.EFFECTS = newEffects
 	}
 

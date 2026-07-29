@@ -61,7 +61,10 @@ class DeltaClass {
      * pour un id, et l'id est déjà porté à part par la clé de cellule.
      */
     static targetDangerSeedOf(stat, offensiveContextHash, antidoteCd) {
-        return addValueToBinHash(offensiveContextHash, DangerComboClass.targetDefensePack(stat.ABSOLUTE_SHIELD, stat.RELATIVE_SHIELD, antidoteCd))
+        // L'échéance des boucliers entre dans la graine : deux états aux mêmes boucliers TOTAUX
+        // mais dont l'un perd le sien en cours de fenêtre n'ont pas le même déroulé de chaîne.
+        // Le digest vaut exactement 0 quand rien n'expire — la graine est alors inchangée.
+        return addValueToBinHash(offensiveContextHash ^ stat.SHIELD_EXPIRY_HASH, DangerComboClass.targetDefensePack(stat.ABSOLUTE_SHIELD, stat.RELATIVE_SHIELD, antidoteCd))
     }
 
     /*

@@ -17,6 +17,38 @@ class DangerClass {
 	 * ni le scoring ne le voient. */
 	static COVERAGE_STRIDE = 3
 
+	/* Décalage de la seconde moitié de la partition de sequenceFor : plus grand que tout écart
+	 * de TURN_ORDER, il range « a déjà joué » après « joue encore ». Sert aussi de marque de
+	 * retrait consommé. */
+	static SEQ_WRAP = 1000
+
+	/*
+	 * Les boucliers expirants de la cible, convertis en RANGS dans sa séquence de jeu :
+	 * [rang du lanceur, retrait absolu, retrait relatif]. Même partition que sequenceFor.
+	 * Le lanceur est un allié, il n'apparaît donc jamais dans la chaîne de danger — c'est son
+	 * rang, pas sa présence, qui dit quels attaquants le bouclier ne couvre plus.
+	 * Liste NEUVE à chaque appel : le déroulé y marque les retraits consommés.
+	 */
+	static expiryDropsByRank(Plan, TargetStats) {
+		var raw = TargetStats.SHIELD_EXPIRY
+		if (raw == null) return null
+		var ordersById = Plan.ORDER_BY_ID
+		var targetOrder = ordersById[TargetStats.ID]
+		var out = []
+		var n = count(raw)
+		for (var i = 0; i < n; i += 3) {
+			var casterId = raw[i]
+			// Lanceur absent de l'ordre de tour : plus rien à retirer de son fait.
+			if (!(casterId in ordersById)) continue
+			var o = ordersById[casterId]
+			push(out, o >= targetOrder ? o - targetOrder : o - targetOrder + SEQ_WRAP)
+			push(out, raw[i + 1])
+			push(out, raw[i + 2])
+		}
+		if (count(out) == 0) return null
+		return out
+	}
+
 	/* Partie CONSTANTE de la clé de CELL_DANGER_GET_CACHE — SOURCE UNIQUE : la cellule s'y
 	 * ajoute par un simple XOR sur ses dix bits bas, disjoints de l'id.
 	 * L'id de la cible est OBLIGATOIRE : la chaîne cross-casters pivote sur ELLE, deux cibles
@@ -75,8 +107,26 @@ class DangerClass {
 		var packs = Plan.CASTER_PACKS
 		var crits = Plan.CRIT_FACTORS
 		var n = count(Coverage)
+		// Boucliers alliés qui tombent pendant la fenêtre. Presque toujours null : le déroulé
+		// est alors exactement celui d'avant, à un test près.
+		var drops = expiryDropsByRank(Plan, TargetStats)
+		var dn = drops == null ? 0 : count(drops)
+		var ords = dn > 0 ? Plan.TURN_ORDERS : null
+		var targetOrder = dn > 0 ? Plan.ORDER_BY_ID[TargetStats.ID] : 0
 		for (var i = 0; i < n; i += COVERAGE_STRIDE) {
 			var idx = Coverage[i]
+			if (dn > 0) {
+				// Ce caster joue-t-il après le lanceur du bouclier ? Si oui, il ne le voit plus.
+				// Balayage plutôt que tri : la liste tient en un ou deux retraits.
+				var o = ords[idx]
+				var rank = o >= targetOrder ? o - targetOrder : o - targetOrder + SEQ_WRAP
+				for (var k = 0; k < dn; k += 3) {
+					if (drops[k] >= rank) continue
+					chainAbs -= drops[k + 1]
+					chainRel -= drops[k + 2]
+					drops[k] = SEQ_WRAP * 2   // consommé : ne repassera sous aucun rang
+				}
+			}
 			var casterId = order[idx]
 			var combo = DangerComboClass.comboOfCaster(Coverage[i + 1], Coverage[i + 2], casterId, packs[idx], crits[idx], State[casterId], TargetStats, chainAbs, chainRel, AntidoteCd)
 			if (combo[0] > 0) {

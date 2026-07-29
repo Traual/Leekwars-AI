@@ -27,6 +27,7 @@ class ResurrectionClass {
 		// états parents, mais le revived est un clone frais : l'assignation ne touche que lui).
 		// Plus d'effets fantômes pour un ReplacementChangeStats ultérieur.
 		revived.EFFECTS = []
+		EntityStateClass.refreshShieldExpiry(revived)
 		revived.POISON = 0
 		revived.POISON_OVER_TIME = 0
 		revived.AFTEREFFECT = 0

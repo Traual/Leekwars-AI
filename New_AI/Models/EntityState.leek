@@ -47,6 +47,12 @@ class EntityStateClass extends EntityClass {
 	SCIENCE
 	MAGIC
 	FREQUENCY // pas de base vraie : inutile pour Libération/Manumission
+	// Boucliers qui TOMBERONT pendant la fenêtre de danger, liste plate
+	// [lanceur, retrait absolu, retrait relatif] — null quand il n'y en a aucun, ce qui est
+	// le cas ultra-majoritaire. Jamais mutée en place : refreshShieldExpiry la REMPLACE, un
+	// clone peut donc en partager la référence.
+	SHIELD_EXPIRY
+	SHIELD_EXPIRY_HASH   // digest de la liste, exactement 0 quand elle est vide
 	MP
 	TOTAL_MP
 	TP
@@ -205,6 +211,48 @@ class EntityStateClass extends EntityClass {
 		}
 
 		this.CELL = getCell(id)
+		EntityStateClass.refreshShieldExpiry(this)
+	}
+
+	/*
+	 * (Re)calcule les boucliers qui tomberont pendant la fenêtre de danger.
+	 * Le moteur retire un effet au début du tour de son LANCEUR (Entity.startTurn décrémente
+	 * launchedEffects, puis retire la ligne chez la cible) : un bouclier à qui il ne reste
+	 * qu'un tour protège jusqu'à ce que son lanceur rejoue, et plus après.
+	 * Un bouclier AUTO-LANCÉ n'est jamais listé — il expire au début du tour de la cible,
+	 * donc après toute la fenêtre.
+	 * `turns == 1` suffit à qualifier : aucun bouclier castable ne dure un seul tour (minimum
+	 * deux), un bouclier posé en branche n'entre donc jamais dans la liste.
+	 * À rappeler après TOUTE réécriture d'EFFECTS qui peut retirer ou réduire un bouclier.
+	 */
+	static refreshShieldExpiry(stats) {
+		var list = null
+		var id = stats.ID
+		for (var eff in stats.EFFECTS) {
+			if (eff[3] != 1 || eff[2] == id) continue
+			var t = eff[0]
+			var abs = 0
+			var rel = 0
+			if (t == EFFECT_ABSOLUTE_SHIELD || t == EFFECT_RAW_ABSOLUTE_SHIELD) abs = eff[1]
+			else if (t == EFFECT_RELATIVE_SHIELD || t == EFFECT_RAW_RELATIVE_SHIELD) rel = eff[1]
+			else continue
+			if (list == null) list = []
+			push(list, eff[2])
+			push(list, abs)
+			push(list, rel)
+		}
+		stats.SHIELD_EXPIRY = list
+		if (list == null) {
+			// Zéro est RÉSERVÉ à la liste vide : la graine de danger reste alors bit-à-bit
+			// celle d'avant, et aucune clé de cache ne bouge sur le cas courant.
+			stats.SHIELD_EXPIRY_HASH = 0
+			return;
+		}
+		// Digest de longueur variable : chaîne à MULTIPLICATION (contrat des clés, famille 3b).
+		var h = OFFSET_BASIS
+		var n = count(list)
+		for (var i = 0; i < n; i++) h = (h ^ list[i]) * MIX_A
+		stats.SHIELD_EXPIRY_HASH = h
 	}
 
 	// (Les anciens getters getPoisons/getPoisonsOverTime/getJustPoisons* sont supprimés :
