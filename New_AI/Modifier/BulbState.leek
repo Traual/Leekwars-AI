@@ -33,6 +33,7 @@ class BulbState {
 	TLSQ_MEMO
 	PKEY_MEMO   // contribution de ce porteur a la cle de couverture antidote (ScoringClass.poisonKeyOf)
 	ANTICD_MEMO // cooldown effectif d'Antidote, 99 sans le chip (DangerComboClass.antidoteCdOf)
+	CAP_DIRTY   // un effet a touché une capability pendant l'action (même contrat qu'EntityState)
 	POISON
 	POISON_OVER_TIME
 	AFTEREFFECT

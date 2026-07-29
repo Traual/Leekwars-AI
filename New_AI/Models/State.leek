@@ -117,6 +117,7 @@ class StateClass {
 	 */
 	static cloneEntityForSim(stat, isMe) {
 		var c = clone(stat, 1)                    // scalaires copiés, containers partagés
+		c.CAP_DIRTY = false                       // marque d'action : jamais héritée du parent
 		if (isMe) {
 			c.ITEM_STATE_PARENT = stat
 			c.COOLDOWNS = [: ]
@@ -207,7 +208,14 @@ class StateClass {
 		var totalLifeChanged = parentStat.TOTAL_LIFE != childStat.TOTAL_LIFE
 		if (totalLifeChanged && childStat.TLSQ_MEMO != null) childStat.TLSQ_MEMO = null
 
-		var capChanged = parentStat.STRENGTH != childStat.STRENGTH
+		// Les dix inputs de capability ne bougent qu'avec un effet qui les touche, et tout effet
+		// de ce genre marque sa cible en passant par le ledger (CAP_DIRTY). Une entité non
+		// marquée saute les dix comparaisons — le cas ultra-majoritaire, une attaque ordinaire
+		// ne touchant aucune stat. Le marquage seul ne suffit pas : il ne dit pas si la valeur a
+		// VRAIMENT changé (un effet de valeur nulle, un débuff qui ne retire rien), d'où les
+		// comparaisons derrière.
+		var capChanged = childStat.CAP_DIRTY
+			&& (parentStat.STRENGTH != childStat.STRENGTH
 			|| parentStat.MAGIC != childStat.MAGIC
 			|| parentStat.WISDOM != childStat.WISDOM
 			|| parentStat.SCIENCE != childStat.SCIENCE
@@ -216,7 +224,7 @@ class StateClass {
 			|| parentStat.TOTAL_TP != childStat.TOTAL_TP
 			|| parentStat.TOTAL_MP != childStat.TOTAL_MP
 			|| parentStat.ABSOLUTE_SHIELD != childStat.ABSOLUTE_SHIELD
-			|| parentStat.RELATIVE_SHIELD != childStat.RELATIVE_SHIELD
+			|| parentStat.RELATIVE_SHIELD != childStat.RELATIVE_SHIELD)
 		if (capChanged && childStat.CAP_MEMO != null) childStat.CAP_MEMO = null
 
 		// Antidote : SEUL Me peut voir son cooldown bouger en simulation — les setters

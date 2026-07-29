@@ -28,6 +28,7 @@ class ResurrectionClass {
 		// Plus d'effets fantômes pour un ReplacementChangeStats ultérieur.
 		revived.EFFECTS = []
 		EntityStateClass.refreshShieldExpiry(revived)
+		revived.CAP_DIRTY = true   // les stats repartent des bases : capability à recomparer
 		revived.POISON = 0
 		revived.POISON_OVER_TIME = 0
 		revived.AFTEREFFECT = 0

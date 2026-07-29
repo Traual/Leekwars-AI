@@ -27,6 +27,11 @@ class EntityStateClass extends EntityClass {
 	TLSQ_MEMO   // W_TOTAL_LIFE * sqrt(max(0, TOTAL_LIFE)) (terme hors cache de survivalValue)
 	PKEY_MEMO   // contribution de ce porteur a la cle de couverture antidote (ScoringClass.poisonKeyOf)
 	ANTICD_MEMO // cooldown effectif d'Antidote, 99 sans le chip (DangerComboClass.antidoteCdOf)
+	// Un effet touchant l'un des dix inputs de capability est passé sur cette entité pendant
+	// l'action. Remis à faux par le clone de simulation, posé par le ledger d'effets
+	// (RecordCastedEffect / removeCastedEffect) : sans lui, diffMaskOf saute les dix
+	// comparaisons de capability.
+	CAP_DIRTY
 	// Six flux périodiques SÉPARÉS et POSITIFS (jamais de "poison négatif") :
 	POISON                  // prochain tick des lignes EFFECT_POISON seules
 	POISON_OVER_TIME        // somme valeur × tours restants de ces lignes
