@@ -890,10 +890,11 @@ class ConsequencesClass {
 	 * Bazooka au plutonium -> RESISTANCE. */
 	static applyOnDirectDamagePassive(stats, appliedDamage) {
 		if (stats.LIFE <= 0 || appliedDamage <= 0) return;
-		// Double arrondi moteur : onDirectDamage reçoit un ENTIER, puis l'effet RAW_* arrondit
-		// le proc — round((value1+jet·value2)·aoe·crit), jet=0/aoe=1/crit=false pour un passif.
-		// 12 dégâts × 4% -> 0 (pas 0.48). Le State garde sa convention flottante par ailleurs.
-		var dmg = round(appliedDamage)
+		// Double arrondi moteur : onDirectDamage reçoit un ENTIER — les appelants le passent
+		// déjà arrondi — puis l'effet RAW_* arrondit le proc lui-même :
+		// round((value1+jet·value2)·aoe·crit), jet=0/aoe=1/crit=false pour un passif.
+		// 12 dégâts × 4% -> 0, pas 0.48.
+		var dmg = appliedDamage
 		if (stats.SPECIAL_WEAPON == WEAPON_REVOKED_M_LASER) {
 			var row = PASSIVE_INFO[WEAPON_REVOKED_M_LASER][EFFECT_DAMAGE_TO_STRENGTH]
 			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_STRENGTH, round(dmg * row[1] / 100), WEAPON_REVOKED_M_LASER, row, false)
@@ -913,9 +914,9 @@ class ConsequencesClass {
 	static applyOnNovaDamagePassive(stats, appliedErosion) {
 		if (stats.LIFE <= 0 || appliedErosion <= 0) return;
 		if (stats.SPECIAL_WEAPON == WEAPON_UNBRIDLED_GAZOR) {
-			// Même double arrondi que applyOnDirectDamagePassive : érosion 3 -> 1 magie, 2 -> 0.
+			// L'érosion reçue est déjà entière, seul le proc arrondit : érosion 3 -> 1 magie, 2 -> 0.
 			var row = PASSIVE_INFO[WEAPON_UNBRIDLED_GAZOR][EFFECT_NOVA_DAMAGE_TO_MAGIC]
-			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_MAGIC, round(round(appliedErosion) * row[1] / 100), WEAPON_UNBRIDLED_GAZOR, row, false)
+			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_MAGIC, round(appliedErosion * row[1] / 100), WEAPON_UNBRIDLED_GAZOR, row, false)
 		}
 	}
 
