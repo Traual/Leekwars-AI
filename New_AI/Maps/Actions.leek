@@ -348,7 +348,15 @@ class ActionsClass {
 		// WalkKey (cellule + MP de Me) entre dans la clé : la map est RESTREINTE à mes cellules
 		// de tir, elle n'est donc valable que pour ce set — le même couple que la clé du cache
 		// d'actions au-dessus, aucune fragmentation supplémentaire en pratique.
-		var Hash = addValueToBinHash(addValueToBinHash((OFFSET_BASIS ^ BaseHash), Item), WalkKey)
+		// Une MULTIPLICATION sépare l'item de WalkKey (contrat des clés, famille 3b) : WalkKey
+		// est une entrée LARGE et addValueToBinHash est linéaire, donc rot13(Item) ^
+		// rot13(capacités) == rot13(Item ^ capacités). Les trois bits saut/téléportation de
+		// WalkKey retombaient exactement sur ceux de l'item, et la clé ne dépendait du couple
+		// que par son XOR : deux items dont les ids diffèrent de moins de 8 partageaient une
+		// entrée dès que ma capacité de déplacement changeait à cellule et MP égaux. La
+		// géométrie d'un item à portée mini 0 était alors servie à un item à portée mini 2,
+		// qui produisait un cast hors de portée refusé par le moteur.
+		var Hash = (((OFFSET_BASIS ^ BaseHash) ^ Item) * MIX_A) ^ WalkKey
 		if (Hash in HASHED_MAP_ITEM_CACHE) return HASHED_MAP_ITEM_CACHE[Hash]
 		var _final = [: ]
 		var Infos = ITEMINFO[Item]

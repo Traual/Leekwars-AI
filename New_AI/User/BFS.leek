@@ -155,7 +155,12 @@ class ActionSuite {
 		// Le filtre de cellule de tir écartait trois entrées sur quatre et ne dépend que de
 		// MyMax, donc de (empreinte de mobilité, terrain). On le paie une fois par couple, pas
 		// une fois par nœud : mesuré 8,3 réutilisations par couple.
-		var ReachableKey = addValueToBinHash(CacheKey, Parent.ME_WALK_FINGERPRINT)
+		// Une MULTIPLICATION sépare les deux moitiés (contrat des clés, famille 3b) : CacheKey
+		// finit par l'id du ressuscité, que la rotation de addValueToBinHash poserait sur les
+		// trois bits de capacité saut/téléportation portés par l'empreinte de mobilité. La clé
+		// ne dépendrait alors du couple que par son XOR, et servirait une liste filtrée sur
+		// d'autres cellules accessibles, tirée d'un autre ensemble d'actions.
+		var ReachableKey = (CacheKey * MIX_A) ^ Parent.ME_WALK_FINGERPRINT
 		var Reachable
 		if (ReachableKey in ReachableCache) {
 			Reachable = ReachableCache[ReachableKey]

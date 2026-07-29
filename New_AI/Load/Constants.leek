@@ -58,9 +58,16 @@ global MASK_HIGH = (1 << SHIFT) - 1
  *    collision possible, aucune vérification à écrire. C'est la majorité des caches.
  * 2. CHAÎNE SUR UN NOMBRE FIXE DE SCALAIRES BORNÉS : addValueToBinHash suffit — les entrées
  *    sont elles-mêmes des packings exacts, en nombre connu, et surtout ÉTROITES. La rotation
- *    de 13 bits ne sépare que ce qui tient dans le décalage : dès qu'une entrée dépasse la
- *    trentaine de bits, deux entrées se recouvrent et la chaîne collisionne — mesuré sur la
- *    clé de couple caster/cible, dont le pack de cible fait 51 bits. Entrée large -> 3b.
+ *    de 13 bits ne sépare que ce qui tient dans le décalage, ce qui se paie de deux façons :
+ *      - une entrée LARGE recouvre la précédente — mesuré sur la clé de couple caster/cible,
+ *        dont le pack de cible fait 51 bits ;
+ *      - deux entrées ÉTROITES se recouvrent quand même si la rotation pose l'une sur les bits
+ *        que l'autre occupe déjà. La rotation étant linéaire, la clé ne dépend alors du couple
+ *        que par son XOR. Mesuré sur la clé de géométrie d'item : l'item (9 bits, posé en 13-21)
+ *        retombait sur les trois bits de capacité de déplacement portés par l'empreinte de
+ *        mobilité, et deux items dont les ids diffèrent de moins de 8 partageaient une entrée.
+ *    Une empreinte n'est JAMAIS un scalaire borné : elle occupe des bits partout, y compris là
+ *    où la rotation posera le terme suivant. Entrée large ou composite -> 3b.
  * 3. DIGEST DE CONTENU DE LONGUEUR VARIABLE (fold sur une map, une liste, un ensemble
  *    d'entités) : la CHAÎNE elle-même doit être non linéaire. Mélanger seulement les TERMES ne
  *    suffit PAS : une chaîne linéaire reste confinée au span GF(2) de ce qu'elle absorbe, et
