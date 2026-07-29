@@ -19,11 +19,13 @@ class ConsequencesClass {
 		var effectTotal = 0
 		switch (EffectType) {
 			case EFFECT_ABSOLUTE_SHIELD:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.RESISTANCE) / 100)
+				// RESISTANCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.RESISTANCE / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
+					if (calculatedValue <= 0) continue   // EffectAbsoluteShield.java : if (value > 0)
 					targetStats.ABSOLUTE_SHIELD += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -39,13 +41,14 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_AFTEREFFECT:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
+				// SCIENCE non planchée : le moteur plancher le RÉSULTAT (EffectAftereffect.java:14).
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
 				var effectDuration = Effect[3]
 				var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
+					var calculatedValue = max(0, round(casterStatMultiplier * (1 - aoeDistance * 0.2)))
 					// Léthal : même cascade que les dégâts — LIFE=0 + déroulé des buffs du mort +
 					// procs on-kill. Érosion sur les dégâts réellement encaissés (cap à la vie
 					// restante), comme getEntityDamageConsequences.
@@ -124,63 +127,75 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_BUFF_AGILITY:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
+				// SCIENCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
+					if (calculatedValue <= 0) continue   // EffectBuffAgility.java : if (value > 0)
 					targetStats.AGILITY += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_MP:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
+				// SCIENCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
+					if (calculatedValue <= 0) continue   // EffectBuffMP.java : if (value > 0)
 					targetStats.MP += calculatedValue
 					targetStats.TOTAL_MP += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_RESISTANCE:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
+				// SCIENCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
+					if (calculatedValue <= 0) continue   // EffectBuffResistance.java : if (value > 0)
 					targetStats.RESISTANCE += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_STRENGTH:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
+				// SCIENCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
+					if (calculatedValue <= 0) continue   // EffectBuffStrength.java : if (value > 0)
 					targetStats.STRENGTH += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_TP:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
+				// SCIENCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
+					if (calculatedValue <= 0) continue   // EffectBuffTP.java : if (value > 0)
 					targetStats.TP += calculatedValue
 					targetStats.TOTAL_TP += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
 				break
 			case EFFECT_BUFF_WISDOM:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
+				// SCIENCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
+					if (calculatedValue <= 0) continue   // EffectBuffWisdom.java : if (value > 0)
 					targetStats.WISDOM += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -226,11 +241,13 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_RELATIVE_SHIELD:
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.RESISTANCE) / 100)
+				// RESISTANCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.RESISTANCE / 100)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
+					if (calculatedValue <= 0) continue   // EffectRelativeShield.java : if (value > 0)
 					targetStats.RELATIVE_SHIELD += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -276,7 +293,9 @@ class ConsequencesClass {
 			case EFFECT_NOVA_VITALITY:
 				// PAS de ledger : comme BOOST_MAX_LIFE, addTotalLife est irréversible côté
 				// moteur (removeEffect ne le défait pas — EffectMultiplyStats.java:39).
-				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
+				// SCIENCE non planchée, et AUCUN garde sur le résultat : le moteur passe la valeur
+				// telle quelle à addTotalLife, négative comprise (EffectNovaVitality.java:11-15).
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
 				for (var targetId: var aoeDistance in RealTargets) State[targetId].TOTAL_LIFE += round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 				break
 			case EFFECT_RAW_ABSOLUTE_SHIELD:
