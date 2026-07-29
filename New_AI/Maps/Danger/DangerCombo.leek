@@ -82,7 +82,15 @@ class DangerComboClass {
 	 * Clé de DANGER_ENTITY_CACHE, et racine des clés de combo : plus aucune seconde fonction
 	 * ne repacke les mêmes champs. L'id du caster est dedans : sa liste d'items lui est propre. */
 	static dangerPairKey(CasterId, CasterPack, TargetPack) {
-		return addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ CasterId, TargetPack), CasterPack)
+		// Chaîne à MULTIPLICATION (contrat des clés, famille 3b) et non addValueToBinHash : les
+		// deux packs sont LARGES — celui de la cible occupe 51 bits — et une chaîne linéaire les
+		// fait se recouvrir au lieu de les séparer. Mesuré collisionnant : 267 combos servis
+		// pour d'autres entrées sur un seul combat.
+		// Pas de finaliseur : la clé n'est comparée qu'entière, et le hash de contenu auquel
+		// elle est ensuite combinée est déjà avalanché.
+		var h = (OFFSET_BASIS ^ CasterId) * MIX_A
+		h = (h ^ TargetPack) * MIX_A
+		return (h ^ CasterPack) * MIX_A
 	}
 
 	/*

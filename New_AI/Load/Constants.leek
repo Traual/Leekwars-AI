@@ -57,7 +57,10 @@ global MASK_HIGH = (1 << SHIFT) - 1
  *    injective par construction (ex. (cell << 14) | (minradius << 7) | radius). Aucune
  *    collision possible, aucune vérification à écrire. C'est la majorité des caches.
  * 2. CHAÎNE SUR UN NOMBRE FIXE DE SCALAIRES BORNÉS : addValueToBinHash suffit — les entrées
- *    sont elles-mêmes des packings exacts, en nombre connu.
+ *    sont elles-mêmes des packings exacts, en nombre connu, et surtout ÉTROITES. La rotation
+ *    de 13 bits ne sépare que ce qui tient dans le décalage : dès qu'une entrée dépasse la
+ *    trentaine de bits, deux entrées se recouvrent et la chaîne collisionne — mesuré sur la
+ *    clé de couple caster/cible, dont le pack de cible fait 51 bits. Entrée large -> 3b.
  * 3. DIGEST DE CONTENU DE LONGUEUR VARIABLE (fold sur une map, une liste, un ensemble
  *    d'entités) : la CHAÎNE elle-même doit être non linéaire. Mélanger seulement les TERMES ne
  *    suffit PAS : une chaîne linéaire reste confinée au span GF(2) de ce qu'elle absorbe, et
