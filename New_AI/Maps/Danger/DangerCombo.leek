@@ -142,13 +142,21 @@ class DangerComboClass {
 							for (var eff in effs) {
 								var EffType = eff[0]
 								if (EffType == EFFECT_DEBUFF) {
-									var keep = max(0, 1 - (eff[1] * CritFactor / 100))   // clampé : un débuff crité peut dépasser 100%
-									newAbs *= keep   // ABS puis REL, même ordre qu'avant
-									newRel *= keep
+									// Le moteur TRONQUE le pourcentage à l'entier, puis réduit
+									// chaque ligne par round(|v| · r) · signe(v). Sur des shields
+									// AGRÉGÉS on applique la même règle d'arrondi à l'agrégat :
+									// même granularité que le moteur, sans son détail par ligne.
+									var keep = max(0, 1 - floor(eff[1] * CritFactor) / 100)   // clampé : un débuff crité peut dépasser 100%
+									newAbs = newAbs >= 0 ? round(newAbs * keep) : -round(-newAbs * keep)   // ABS puis REL, même ordre qu'avant
+									newRel = newRel >= 0 ? round(newRel * keep) : -round(-newRel * keep)
 								} else if (EffType == EFFECT_VULNERABILITY) {
-									newRel -= eff[1] * CritFactor
+									// Montant arrondi à l'entier et appliqué seulement s'il est
+									// strictement positif, comme EffectVulnerability.
+									var relDrop = round(eff[1] * CritFactor)
+									if (relDrop > 0) newRel -= relDrop
 								} else {   // EFFECT_ABSOLUTE_VULNERABILITY
-									newAbs -= eff[1] * CritFactor
+									var absDrop = round(eff[1] * CritFactor)
+									if (absDrop > 0) newAbs -= absDrop
 								}
 							}
 						}
