@@ -23,7 +23,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.ABSOLUTE_SHIELD += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -32,7 +32,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(baseEffectValue * (1 - aoeDistance * 0.2))
 					targetStats.ABSOLUTE_SHIELD -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 					effectTotal += calculatedValue
@@ -45,7 +45,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					// Léthal : même cascade que les dégâts — LIFE=0 + déroulé des buffs du mort +
 					// procs on-kill. Érosion sur les dégâts réellement encaissés (cap à la vie
 					// restante), comme getEntityDamageConsequences.
@@ -55,10 +55,12 @@ class ConsequencesClass {
 					} else {
 						targetStats.LIFE -= appliedDamage
 					}
-					targetStats.TOTAL_LIFE -= appliedDamage * erosionRate
-					// Érosion immédiate -> proc nova (EffectAftereffect.java:27). Les ticks
-					// FUTURS et leurs procs restent hors modèle — chantier ticks/ledger.
-					if (targetStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(targetStats, appliedDamage * erosionRate)
+					var afterErosion = round(appliedDamage * erosionRate)
+					targetStats.TOTAL_LIFE -= afterErosion
+					// Érosion immédiate -> proc nova (EffectAftereffect.java:27), qui reçoit
+					// l'entier. Les ticks FUTURS et leurs procs restent hors modèle — chantier
+					// ticks/ledger.
+					if (targetStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(targetStats, afterErosion)
 					targetStats.AFTEREFFECT += calculatedValue
 					targetStats.AFTEREFFECT_OVER_TIME += calculatedValue * effectDuration
 					// La ligne enregistre la valeur des ticks FUTURS : son retrait déroule
@@ -116,7 +118,7 @@ class ConsequencesClass {
 				var casterStatMultiplier = baseEffectValue * max(0, 1 + CastStats.WISDOM / 100)   // le moteur floor le RÉSULTAT (EffectHeal/Vitality) : WIS -50 soigne 50%, <= -100 soigne 0
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.LIFE += calculatedValue
 					targetStats.TOTAL_LIFE += calculatedValue
 				}
@@ -126,7 +128,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.AGILITY += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -136,7 +138,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.MP += calculatedValue
 					targetStats.TOTAL_MP += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
@@ -147,7 +149,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.RESISTANCE += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -157,7 +159,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.STRENGTH += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -167,7 +169,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.TP += calculatedValue
 					targetStats.TOTAL_TP += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
@@ -178,7 +180,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.WISDOM += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -188,7 +190,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.DAMAGE_RETURN += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -199,7 +201,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					if (effectDuration > 0) {
 						targetStats.HEAL += calculatedValue
 						targetStats.HEAL_OVER_TIME += calculatedValue * effectDuration
@@ -216,7 +218,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.POISON += calculatedValue
 					targetStats.POISON_OVER_TIME += calculatedValue * effectDuration
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5])
@@ -228,7 +230,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.RELATIVE_SHIELD += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -263,7 +265,7 @@ class ConsequencesClass {
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100) * (1 + CastStats.POWER / 100) // SCIENCE planchée, POWER non (EffectNovaDamage du moteur)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					var damageAmount = min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
 					targetStats.TOTAL_LIFE -= damageAmount
 					// onNovaDamage moteur : seul test isDead, PAS d'exclusion self.
@@ -275,13 +277,13 @@ class ConsequencesClass {
 				// PAS de ledger : comme BOOST_MAX_LIFE, addTotalLife est irréversible côté
 				// moteur (removeEffect ne le défait pas — EffectMultiplyStats.java:39).
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100)
-				for (var targetId: var aoeDistance in RealTargets) State[targetId].TOTAL_LIFE += casterStatMultiplier * (1 - aoeDistance * 0.2)
+				for (var targetId: var aoeDistance in RealTargets) State[targetId].TOTAL_LIFE += round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 				break
 			case EFFECT_RAW_ABSOLUTE_SHIELD:
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(baseEffectValue * (1 - aoeDistance * 0.2))
 					targetStats.ABSOLUTE_SHIELD += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -290,7 +292,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(baseEffectValue * (1 - aoeDistance * 0.2))
 					targetStats.AGILITY += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -299,7 +301,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(baseEffectValue * (1 - aoeDistance * 0.2))
 					targetStats.MAGIC += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -308,7 +310,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(baseEffectValue * (1 - aoeDistance * 0.2))
 					targetStats.MP += calculatedValue
 					targetStats.TOTAL_MP += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
@@ -318,7 +320,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(baseEffectValue * (1 - aoeDistance * 0.2))
 					targetStats.POWER += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -327,7 +329,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(baseEffectValue * (1 - aoeDistance * 0.2))
 					targetStats.RESISTANCE += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -336,7 +338,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(baseEffectValue * (1 - aoeDistance * 0.2))
 					targetStats.SCIENCE += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -345,7 +347,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(baseEffectValue * (1 - aoeDistance * 0.2))
 					targetStats.STRENGTH += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -354,7 +356,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(baseEffectValue * (1 - aoeDistance * 0.2))
 					targetStats.TP += calculatedValue
 					targetStats.TOTAL_TP += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
@@ -364,7 +366,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(baseEffectValue * (1 - aoeDistance * 0.2))
 					targetStats.WISDOM += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -372,14 +374,14 @@ class ConsequencesClass {
 			case EFFECT_RAW_HEAL:
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
-					targetStats.LIFE += min(baseEffectValue * (1 - aoeDistance * 0.2), targetStats.TOTAL_LIFE - targetStats.LIFE)
+					targetStats.LIFE += min(round(baseEffectValue * (1 - aoeDistance * 0.2)), targetStats.TOTAL_LIFE - targetStats.LIFE)
 				}
 				break
 			case EFFECT_RAW_RELATIVE_SHIELD:
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(baseEffectValue * (1 - aoeDistance * 0.2))
 					targetStats.RELATIVE_SHIELD += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -392,7 +394,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.AGILITY -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -402,7 +404,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.MAGIC -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -412,7 +414,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.MP -= calculatedValue
 					targetStats.TOTAL_MP -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
@@ -423,7 +425,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.STRENGTH -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -433,7 +435,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.TP -= calculatedValue
 					targetStats.TOTAL_TP -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
@@ -444,7 +446,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = casterStatMultiplier * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(casterStatMultiplier * (1 - aoeDistance * 0.2))
 					targetStats.WISDOM -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
@@ -474,7 +476,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = baseEffectValue * (1 - aoeDistance * 0.2)
+					var calculatedValue = round(baseEffectValue * (1 - aoeDistance * 0.2))
 					targetStats.RELATIVE_SHIELD -= calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 					effectTotal += calculatedValue
@@ -927,25 +929,26 @@ class ConsequencesClass {
 		var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
 		var DamagesWithShield = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
 		var TargetLife = TarStats.LIFE
-		var Damage = min(DamagesWithShield, TargetLife)
+		var Damage = min(round(DamagesWithShield), TargetLife)
 		if (Damage >= TargetLife && TargetLife > 0) {
 			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
 		} else {
 			TarStats.LIFE -= Damage
 		}
-		TarStats.TOTAL_LIFE -= Damage * erosionRate
+		var directErosion = round(Damage * erosionRate)
+		TarStats.TOTAL_LIFE -= directErosion
 		// Passifs de la cible (EffectDamage : onDirectDamage puis onNovaDamage APRÈS les
 		// dégâts, AVANT lifesteal et retour ; cible morte -> aucun proc).
 		if (TarStats.SPECIAL_WEAPON != null) {
 			applyOnDirectDamagePassive(TarStats, Damage)
-			applyOnNovaDamagePassive(TarStats, Damage * erosionRate)
+			applyOnNovaDamagePassive(TarStats, directErosion)
 		}
 		if (!TarIsCaster) {
-			var Damage_Return = BaseDamages * (TarStats.DAMAGE_RETURN / 100)
+			var Damage_Return = round(BaseDamages * (TarStats.DAMAGE_RETURN / 100))
 			// Ordre moteur (EffectDamage) : dégâts -> LIFESTEAL crédité au caster -> PUIS retour,
 			// plafonné à la vie restante POST-lifesteal — un gros lifesteal peut donc sauver d'un
 			// retour léthal. L'érosion suit le retour APPLIQUÉ, pas le brut.
-			var lifeAfterSteal = CastStats.LIFE + min(Damage * (max(0, CastStats.WISDOM) / 1000), CastStats.TOTAL_LIFE - CastStats.LIFE) // WIS clampée : le moteur gate lifeSteal > 0, une sagesse shacklée négative ne DRAINE pas
+			var lifeAfterSteal = CastStats.LIFE + min(round(Damage * max(0, CastStats.WISDOM) / 1000), CastStats.TOTAL_LIFE - CastStats.LIFE) // WIS clampée : le moteur gate lifeSteal > 0, une sagesse shacklée négative ne DRAINE pas
 			var appliedReturn = min(Damage_Return, lifeAfterSteal)
 			if (Damage_Return >= lifeAfterSteal && CastStats.LIFE > 0) {
 				// Retour léthal : le caster meurt VRAIMENT (cascade de ses summons + déroulé de
@@ -954,9 +957,11 @@ class ConsequencesClass {
 			} else {
 				CastStats.LIFE = lifeAfterSteal - Damage_Return
 			}
-			CastStats.TOTAL_LIFE -= appliedReturn * erosionRate
-			// Érosion du retour -> proc nova du caster SURVIVANT (EffectDamage.java:75).
-			if (CastStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(CastStats, appliedReturn * erosionRate)
+			var returnErosion = round(appliedReturn * erosionRate)
+			CastStats.TOTAL_LIFE -= returnErosion
+			// Érosion du retour -> proc nova du caster SURVIVANT (EffectDamage.java:75), qui
+			// reçoit l'entier.
+			if (CastStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(CastStats, returnErosion)
 		}
 		return Damage   // STEALS : les dégâts réellement infligés alimentent PrevEffectTotal
 	}
@@ -1018,21 +1023,22 @@ class ConsequencesClass {
 		var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
 		var InitialDamages = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
 		var TargetLife = TarStats.LIFE
-		var Damage = min(InitialDamages, TargetLife)
+		var Damage = min(round(InitialDamages), TargetLife)
 		if (Damage >= TargetLife && TargetLife > 0) {
 			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
 		} else {
 			TarStats.LIFE -= Damage
 		}
-		TarStats.TOTAL_LIFE -= Damage * erosionRate
+		var lifeErosion = round(Damage * erosionRate)
+		TarStats.TOTAL_LIFE -= lifeErosion
 		// Passifs de la cible (EffectLifeDamage : onDirectDamage puis onNovaDamage, comme
 		// les dégâts directs ; cible morte -> aucun proc).
 		if (TarStats.SPECIAL_WEAPON != null) {
 			applyOnDirectDamagePassive(TarStats, Damage)
-			applyOnNovaDamagePassive(TarStats, Damage * erosionRate)
+			applyOnNovaDamagePassive(TarStats, lifeErosion)
 		}
 		if (!TarIsCaster) {
-			var Damage_Return = BaseDamages * (TarStats.DAMAGE_RETURN / 100)
+			var Damage_Return = round(BaseDamages * (TarStats.DAMAGE_RETURN / 100))
 			var appliedReturn = min(Damage_Return, CastStats.LIFE)   // plafonné à la vie restante (érosion sur l'appliqué)
 			if (Damage_Return >= CastStats.LIFE && CastStats.LIFE > 0) {
 				// Retour léthal : voir getEntityDamageConsequences.
@@ -1040,7 +1046,7 @@ class ConsequencesClass {
 			} else {
 				CastStats.LIFE -= Damage_Return
 			}
-			CastStats.TOTAL_LIFE -= appliedReturn * erosionRate
+			CastStats.TOTAL_LIFE -= round(appliedReturn * erosionRate)
 			// PAS de proc nova ici : EffectLifeDamage.java n'appelle pas onNovaDamage sur le retour.
 		}
 		return Damage   // STEALS : les dégâts réellement infligés alimentent PrevEffectTotal
