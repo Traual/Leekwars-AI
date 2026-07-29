@@ -273,7 +273,7 @@ global HEAL_MAP_CACHE = [: ]
 global DR_PHYSRATIO_BY_SIDE = null
 
 // [POISON_KEY -> [id -> coef poison ]0,1]]] — remise de couverture antidote sur le POT
-// (ScoringClass.poisonCoefOf). La clé (ScoringClass.poisonKeyOf) encode TOUS les inputs du
+// (ScoringClass.poisonCoefOf). La clé (ScoringClass.poisonKeyFromFold) encode TOUS les inputs du
 // build : BaseHash (positions/vie des non-Me), porteurs (vivant, TOTAL_MP, cd), ancre de
 // replan de Me, Me vivant/mort — les maps d'une ancienne ancre deviennent injoignables sans
 // flush manuel. Reset au tour.
@@ -282,8 +282,14 @@ global POISON_COEF_CACHE = [: ]
 // Y a-t-il un antidote dans le combat ? (morts inclus — basé inventaire, invariant en branche)
 // Court-circuite la machinerie poison. Lazy (ScoringClass.anyAntidote), reset au tour.
 // ANTIDOTE_CARRIER_IDS : ids des porteurs (morts inclus), rempli par le même scan.
+// ANTIDOTE_CARRIER_SET : le même ensemble en map, pour tester l'appartenance d'une entité
+// clonée sans parcourir la liste (héritage du fold, ScoringClass.poisonKeyOnNode).
+// ME_HAS_ANTIDOTE : Me est-il porteur ? (posé par le même scan) — sa contribution au fold est
+// relue à chaque nœud alors que celle des autres est héritée.
 global ANY_ANTIDOTE = null
 global ANTIDOTE_CARRIER_IDS = []
+global ANTIDOTE_CARRIER_SET = [: ]
+global ME_HAS_ANTIDOTE = false
 
 // Ancre de replan de Me : sa VRAIE cellule, reposée à chaque itération de Play (VM du bulbe
 // comprise) — meilleure estimation de sa cellule de fin de tour pour la couverture antidote,

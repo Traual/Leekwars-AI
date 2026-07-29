@@ -44,7 +44,8 @@ class ActionSuite {
 		}
 		var RootContext = DeltaClass.buildContextBySide(State)
 		var RootHfp = HealClass.buildHfpBySide(State)
-		var RootPoisonKey = ScoringClass.poisonKeyOf(State, BaseHash)
+		var RootPoisonFold = ScoringClass.carrierFoldOthers(State)
+		var RootPoisonKey = ScoringClass.poisonKeyFromFold(State, BaseHash, RootPoisonFold)
 		// Empreinte de mobilité de Me à la racine : construite UNE fois par getBestAction
 		// effectif, servie au scoring racine puis portée par noPlay pour ses enfants.
 		var RootWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MyStats)
@@ -66,6 +67,7 @@ class ActionSuite {
 		noPlay.SCORE = initialScore
 		noPlay.BASE_HASH = BaseHash   // terrain de la racine des termes (comparaison parent/enfant pour Me)
 		noPlay.ME_WALK_FINGERPRINT = RootWalkFingerprint
+		noPlay.POISON_FOLD = RootPoisonFold   // moitié stable de la clé antidote, héritée par ses enfants
 		// Racine des ÉTATS : elle seule porte la map complète d'office, patch vide.
 		noPlay.STATE_PARENT = null
 		noPlay.STATE_PATCH = [: ]

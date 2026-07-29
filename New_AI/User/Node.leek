@@ -51,6 +51,8 @@ class NodeClass {
 	                  // seule fois par nœud et réutilisée par la clé externe de minDeltaForMe.
 	POISON_KEY        // clé de couverture antidote de l'état du nœud (posée par getStateScoreFromParent
 	                  // depuis le workspace encore muté, 0 sans antidote)
+	POISON_FOLD       // fold des porteurs d'antidote AUTRES que Me pour l'état du nœud : la moitié
+	                  // stable de POISON_KEY, héritée par les enfants (ScoringClass.poisonKeyOnNode)
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction
@@ -140,6 +142,10 @@ class NodeClass {
 		var bh = BaseHash
 		var ctx = clone(ParentContext, 1)    // copie : le contexte du parent n'est jamais muté
 		var hfpMap = clone(ParentHfp, 1)
+		// Quatrième hash patché : le fold des porteurs d'antidote autres que Me (moitié stable
+		// de la clé de couverture). Sans antidote en jeu il reste à 0 tout le long de l'arbre.
+		var pf = StateParent.POISON_FOLD
+		var anyAnti = ANY_ANTIDOTE == true
 		var localTermDirty = [: ]
 		// Allouée seulement si un contexte offensif bouge vraiment : une attaque ordinaire non
 		// létale clone des entités sans rien changer à leur menace, et ne doit rien payer.
@@ -171,7 +177,13 @@ class NodeClass {
 			// (Me compris — il est seulement exclu des trois hashs).
 			var mask = StateClass.diffMaskOf(parentStat, newStat, tar == Me)
 			if (mask & DIFF_LOCAL_TERM) localTermDirty[tar] = true
-			if (tar == Me) continue          // Me est exclu des trois hashs
+			if (tar == Me) continue          // Me est exclu des trois hashs (et du fold antidote)
+			if (anyAnti && (tar in ANTIDOTE_CARRIER_SET)) {
+				// Contributions LIFE-gated : un porteur tué sort du fold, un ressuscité y entre.
+				var oldC = (parentStat.LIFE > 0) ? ScoringClass.carrierContribOf(parentStat, tar) : 0
+				var newC = (newStat.LIFE > 0) ? ScoringClass.carrierContribOf(newStat, tar) : 0
+				pf ^= oldC ^ newC
+			}
 			if (mask & DIFF_BASE) bh ^= StateClass.baseContribution(parentStat, tar) ^ StateClass.baseContribution(newStat, tar)
 			if (mask & DIFF_CONTEXT) {
 				var deltaCtx = DeltaClass.contextContribution(parentStat, tar) ^ DeltaClass.contextContribution(newStat, tar)
@@ -204,6 +216,7 @@ class NodeClass {
 		result.LOCAL_TERM_DIRTY = localTermDirty
 		result.DANGER_DIRTY_CASTERS = dangerDirtyCasters
 		result.BASE_HASH = bh
+		result.POISON_FOLD = pf
 		result.ME_WALK_FINGERPRINT = meWalkFingerprint
 		result.CONTEXT_BY_SIDE = ctx
 		result.HFP_BY_SIDE = hfpMap
