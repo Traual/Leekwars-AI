@@ -213,7 +213,7 @@ class ActionsClass {
 	 * candidats laser réellement bloqués par une entité. */
 	static getActionsOnEveryone(State, Item, BaseHash, SortedWalkCells, LeekCells, WalkSet) {
 
-		var HashedMapAoe = LoadHashedMapAoe(State, Item, BaseHash, WalkSet)
+		var HashedMapAoe = LoadHashedMapAoe(State, Item, BaseHash, SortedWalkCells, WalkSet)
 		var DoneHashs = [: ]
 		var _final = []
 		var ItemInfos = ITEMINFO[Item]
@@ -344,7 +344,7 @@ class ActionsClass {
 
 	/* [from -> [to -> hash des (entité, distance d'AoE) touchées]] pour un item — la matière
 	 * du dédoublonnage de getActionsOnEveryone. */
-	static LoadHashedMapAoe(State, Item, BaseHash, WalkSet) {
+	static LoadHashedMapAoe(State, Item, BaseHash, SortedWalkCells, WalkSet) {
 		// Pas de cache : il ne pourrait pas servir. La map est RESTREINTE à mes cellules de tir,
 		// sa clé porterait donc le terrain, l'item et mon empreinte de mobilité — exactement ce
 		// que porte déjà la clé du cache d'actions au-dessus. Un appel n'arrive ici QUE sur un
@@ -354,27 +354,23 @@ class ActionsClass {
 		var Infos = ITEMINFO[Item]
 		var LaunchFct = Infos.NEEDLOS ? LaunchWithLos[Infos.LAUNCHTYPE] : LaunchWithoutLos[Infos.LAUNCHTYPE]
 		var CastState = State[Me]
+		var nWalk = count(SortedWalkCells)
 		for (var entity: var EntityState in State) {
 			if (entity == Me || !Target.Targetable(Item, EntityState, CastState) || EntityState.LIFE <= 0) continue
-			for (var from: var MapToHash in LoadMapFromAoeForAnEntity(Item, EntityState.CELL, Infos, LaunchFct)) {
-				// Cellule d'où je ne peux pas tirer : la boucle d'énumération ne la lira jamais.
-				if (!(from in WalkSet)) continue
-				var Tmp = from in _final ? _final[from] : _final[from] = [: ]
-				for (var to: var TmpHash in MapToHash) {
-					// Packing : l'ENTITÉ dans les bits hauts, la DISTANCE dans le slot 3 bits
-					// (dist <= 6 y tient, pas les ids — inverser ferait collisionner des
-					// ensembles de cibles distincts dans DoneHashs). La CHAÎNE est non linéaire :
-					// ce hash résume un ENSEMBLE de cibles de taille variable, et DoneHashs s'en
-					// sert pour écarter une action déjà vue — une collision ferait disparaître
-					// une action distincte de la recherche.
-					// Chaîne à MULTIPLICATION (contrat des clés, famille 3b), sans finaliseur :
-					// le hash n'est comparé qu'entier. Chaque pas reste une bijection, exactement
-					// comme un pas mix64 — c'est ce qui porte l'injectivité, pas l'avalanche.
-					if (to in Tmp) {
-						Tmp[to] = (Tmp[to] ^ ((entity << MAX_AOE_DIST_BINARY) | TmpHash)) * MIX_A
-					} else {
-						Tmp[to] = (OFFSET_BASIS ^ ((entity << MAX_AOE_DIST_BINARY) | TmpHash)) * MIX_A
-					}
+			// Les cellules retenues sont l'INTERSECTION de mes cellules de tir et des cellules de
+			// lancement de l'item sur cette entité : on parcourt le plus petit des deux ensembles
+			// et on teste l'appartenance à l'autre. Le résultat est identique dans les deux sens —
+			// l'ordre d'insertion des `to` d'un `from` donné ne dépend que de la boucle d'entités,
+			// et l'ordre des clés de _final lui-même n'est jamais lu.
+			var FromMap = LoadMapFromAoeForAnEntity(Item, EntityState.CELL, Infos, LaunchFct)
+			if (nWalk < mapSize(FromMap)) {
+				for (var from in SortedWalkCells) {
+					if (from in FromMap) foldAoeFrom(_final, from, FromMap[from], entity)
+				}
+			} else {
+				for (var from: var MapToHash in FromMap) {
+					// Cellule d'où je ne peux pas tirer : la boucle d'énumération ne la lira jamais.
+					if (from in WalkSet) foldAoeFrom(_final, from, MapToHash, entity)
 				}
 			}
 		}
@@ -390,6 +386,28 @@ class ActionsClass {
 			}
 		}
 		return _final
+	}
+
+	/*
+	 * Absorbe une entité dans les hashs de cibles d'une cellule de tir.
+	 * Packing : l'ENTITÉ dans les bits hauts, la DISTANCE dans le slot 3 bits (dist <= 6 y
+	 * tient, pas les ids — inverser ferait collisionner des ensembles de cibles distincts dans
+	 * DoneHashs). La CHAÎNE est non linéaire : ce hash résume un ENSEMBLE de cibles de taille
+	 * variable, et DoneHashs s'en sert pour écarter une action déjà vue — une collision ferait
+	 * disparaître une action distincte de la recherche. Chaîne à MULTIPLICATION (contrat des
+	 * clés, famille 3b), sans finaliseur : le hash n'est comparé qu'entier. Chaque pas reste une
+	 * bijection, exactement comme un pas mix64 — c'est ce qui porte l'injectivité, pas l'avalanche.
+	 */
+	static foldAoeFrom(_final, from, MapToHash, entity) {
+		var Tmp = from in _final ? _final[from] : _final[from] = [: ]
+		var packed = entity << MAX_AOE_DIST_BINARY
+		for (var to: var TmpHash in MapToHash) {
+			if (to in Tmp) {
+				Tmp[to] = (Tmp[to] ^ (packed | TmpHash)) * MIX_A
+			} else {
+				Tmp[to] = (OFFSET_BASIS ^ (packed | TmpHash)) * MIX_A
+			}
+		}
 	}
 
 	static LoadMapFromAoeForAnEntity(Item, EntityCell, Infos, LaunchFunction) {
