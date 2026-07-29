@@ -179,7 +179,7 @@ class ActionsClass {
 		// surtout l'accessibilité des couches saut/téléportation, qui dépend des TP et des
 		// cooldowns. (BaseHash, MP, cellule) ne suffit PAS — deux nœuds identiques sur ces trois
 		// champs mais aux TP différents n'ont pas les mêmes cellules de tir, donc pas la même
-		// liste d'actions. Elle entre dans la clé du cache ET dans celle des maps d'AoE.
+		// liste d'actions.
 		var WalkSetKey = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(State[Me])
 		var combined = (State[Me].MP << 20) | MyCell
 		var Hash = addValueToBinHash(addValueToBinHash((OFFSET_BASIS ^ BaseHash), combined), WalkSetKey)
@@ -196,7 +196,7 @@ class ActionsClass {
 			if (Infos.AREA == AREA_FIRST_INLINE) { //Special case where i don't want to hit caster but a cell
 				pushAll(_final, getFirstInlineActions(State, Infos, item, SortedWalkCells, BaseHash))
 			} else { //Normal case
-				pushAll(_final, getActionsOnEveryone(State, item, BaseHash, SortedWalkCells, LeekCells, WalkSet, WalkSetKey))
+				pushAll(_final, getActionsOnEveryone(State, item, BaseHash, SortedWalkCells, LeekCells, WalkSet))
 			}
 		}
 		ENTITY_ACTIONS_CACHE[Hash] = _final
@@ -211,9 +211,9 @@ class ActionsClass {
 	 * vraie), on vise la PREMIÈRE entité bloquante (endpoint valide) : le laser continue
 	 * derrière et Consequences touche toute la ligne. Fallback payé UNIQUEMENT sur les
 	 * candidats laser réellement bloqués par une entité. */
-	static getActionsOnEveryone(State, Item, BaseHash, SortedWalkCells, LeekCells, WalkSet, WalkKey) {
+	static getActionsOnEveryone(State, Item, BaseHash, SortedWalkCells, LeekCells, WalkSet) {
 
-		var HashedMapAoe = LoadHashedMapAoe(State, Item, BaseHash, WalkSet, WalkKey)
+		var HashedMapAoe = LoadHashedMapAoe(State, Item, BaseHash, WalkSet)
 		var DoneHashs = [: ]
 		var _final = []
 		var ItemInfos = ITEMINFO[Item]
@@ -344,20 +344,12 @@ class ActionsClass {
 
 	/* [from -> [to -> hash des (entité, distance d'AoE) touchées]] pour un item — la matière
 	 * du dédoublonnage de getActionsOnEveryone. */
-	static LoadHashedMapAoe(State, Item, BaseHash, WalkSet, WalkKey) {
-		// WalkKey (cellule + MP de Me) entre dans la clé : la map est RESTREINTE à mes cellules
-		// de tir, elle n'est donc valable que pour ce set — le même couple que la clé du cache
-		// d'actions au-dessus, aucune fragmentation supplémentaire en pratique.
-		// Une MULTIPLICATION sépare l'item de WalkKey (contrat des clés, famille 3b) : WalkKey
-		// est une entrée LARGE et addValueToBinHash est linéaire, donc rot13(Item) ^
-		// rot13(capacités) == rot13(Item ^ capacités). Les trois bits saut/téléportation de
-		// WalkKey retombaient exactement sur ceux de l'item, et la clé ne dépendait du couple
-		// que par son XOR : deux items dont les ids diffèrent de moins de 8 partageaient une
-		// entrée dès que ma capacité de déplacement changeait à cellule et MP égaux. La
-		// géométrie d'un item à portée mini 0 était alors servie à un item à portée mini 2,
-		// qui produisait un cast hors de portée refusé par le moteur.
-		var Hash = (((OFFSET_BASIS ^ BaseHash) ^ Item) * MIX_A) ^ WalkKey
-		if (Hash in HASHED_MAP_ITEM_CACHE) return HASHED_MAP_ITEM_CACHE[Hash]
+	static LoadHashedMapAoe(State, Item, BaseHash, WalkSet) {
+		// Pas de cache : il ne pourrait pas servir. La map est RESTREINTE à mes cellules de tir,
+		// sa clé porterait donc le terrain, l'item et mon empreinte de mobilité — exactement ce
+		// que porte déjà la clé du cache d'actions au-dessus. Un appel n'arrive ici QUE sur un
+		// miss de celui-là, où l'un de ces champs a forcément changé. Mesuré sur trois combats
+		// de 64 tours : 37 873 écritures pour ZÉRO lecture utile.
 		var _final = [: ]
 		var Infos = ITEMINFO[Item]
 		var LaunchFct = Infos.NEEDLOS ? LaunchWithLos[Infos.LAUNCHTYPE] : LaunchWithoutLos[Infos.LAUNCHTYPE]
@@ -397,7 +389,6 @@ class ActionsClass {
 				}
 			}
 		}
-		HASHED_MAP_ITEM_CACHE[Hash] = _final
 		return _final
 	}
 

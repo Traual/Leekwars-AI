@@ -207,7 +207,6 @@ global ACTIONS_ON_ME_CACHE = [: ]    // actions sur moi (même cellule ou AoE)
 global ACTIONS_SUMMON_CACHE = [: ]   // actions d'invocation (bulbes, résurrection)
 global ACTIONS_ON_VOID_CACHE = [: ]  // actions dans le vide à effet positif (glaive...)
 global COEFFED_MAP_ENTITY_CACHE = [: ]
-global HASHED_MAP_ITEM_CACHE = [: ]
 
 // Distances moyennes aux alliés/ennemis (placement des bulbes).
 global AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
