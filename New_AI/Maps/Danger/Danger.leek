@@ -17,14 +17,14 @@ class DangerClass {
 	 * ni le scoring ne le voient. */
 	static COVERAGE_STRIDE = 3
 
-	/* Décalage de la seconde moitié de la partition de sequenceFor : plus grand que tout écart
+	/* Décalage de la seconde moitié de la partition de jeu (DangerPlanClass) : plus grand que tout écart
 	 * de TURN_ORDER, il range « a déjà joué » après « joue encore ». Sert aussi de marque de
 	 * retrait consommé. */
 	static SEQ_WRAP = 1000
 
 	/*
 	 * Les boucliers expirants de la cible, convertis en RANGS dans sa séquence de jeu :
-	 * [rang du lanceur, retrait absolu, retrait relatif]. Même partition que sequenceFor.
+	 * [rang du lanceur, retrait absolu, retrait relatif]. Même partition que les séquences du plan.
 	 * Le lanceur est un allié, il n'apparaît donc jamais dans la chaîne de danger — c'est son
 	 * rang, pas sa présence, qui dit quels attaquants le bouclier ne couvre plus.
 	 * Liste NEUVE à chaque appel : le déroulé y marque les retraits consommés.

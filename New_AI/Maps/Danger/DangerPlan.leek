@@ -76,51 +76,42 @@ class DangerPlanClass {
 	}
 
 	/*
-	 * Séquence de jeu vue par une cible : les indices de ORDER de ceux qui jouent APRÈS elle
+	 * LA PARTITION, écrite deux fois ci-dessous parce qu'elle n'a que deux consommateurs et
+	 * qu'ils la filtrent tous les deux : les indices de ORDER de ceux qui jouent APRÈS la cible
 	 * (TURN_ORDER >= le sien, cible exclue), puis ceux qui ont déjà joué. C'est une PARTITION
-	 * sur les TURN_ORDER, pas une rotation d'index : le tableau trié est un cache persistant
-	 * clé par le set des vivants, il peut être désynchronisé des ordres relus au tour.
-	 * Construite UNE fois par (plan, cible) et réutilisée par toutes les cellules et tous les
-	 * nœuds qui partagent ce plan.
+	 * sur les TURN_ORDER, pas une rotation d'index : le tableau trié est un cache persistant clé
+	 * par le set des vivants, il peut être désynchronisé des ordres relus au tour.
+	 * La seconde passe n'a pas à exclure la cible : son propre ordre est ÉGAL à targetOrder,
+	 * elle est donc déjà partie avec la première.
+	 * Chaque séquence est construite UNE fois par (plan, cible) et réutilisée par toutes les
+	 * cellules et tous les nœuds qui partagent ce plan.
 	 */
-	static sequenceFor(Plan, TargetId) {
-		if (TargetId in Plan.SEQ_BY_ID) return Plan.SEQ_BY_ID[TargetId]
-		var order = Plan.ORDER
-		var ords = Plan.TURN_ORDERS
-		var targetOrder = Plan.ORDER_BY_ID[TargetId]
-		var n = count(order)
-		var seq = []
-		for (var i = 0; i < n; i++) {
-			if (ords[i] < targetOrder) continue
-			if (order[i] == TargetId) continue
-			push(seq, i)
-		}
-		for (var i = 0; i < n; i++) {
-			if (ords[i] >= targetOrder) continue
-			push(seq, i)
-		}
-		Plan.SEQ_BY_ID[TargetId] = seq
-		return seq
-	}
 
 	/*
-	 * Même séquence, RESTREINTE aux casters qui menacent réellement ce camp. Les entrées à map
+	 * Séquence RESTREINTE aux casters qui menacent réellement ce camp. Les entrées à map
 	 * offensive nulle (Me, morts, même camp, sans item menaçant) ne produisent jamais de
-	 * couverture : les écarter du parcours ne change aucun résultat, mais la boucle par cellule
-	 * froide ne balaie plus tout l'ordre de tour. Mémorisée sur le plan comme la séquence pleine.
+	 * couverture : les écarter ne change aucun résultat, mais la boucle par cellule froide ne
+	 * balaie plus tout l'ordre de tour.
 	 * NE PAS l'utiliser pour le déroulé du net : un caster sans menace peut être un soigneur.
 	 */
 	static coverageSequenceFor(Plan, TargetId) {
 		if (TargetId in Plan.COV_SEQ_BY_ID) return Plan.COV_SEQ_BY_ID[TargetId]
-		var seq = sequenceFor(Plan, TargetId)
+		var order = Plan.ORDER
+		var ords = Plan.TURN_ORDERS
 		var maps = Plan.OFFENSIVE_MAPS
-		var n = count(seq)
+		var targetOrder = Plan.ORDER_BY_ID[TargetId]
+		var n = count(order)
 		var cov = []
-		for (var k = 0; k < n; k++) {
-			var idx = seq[k]
-			var offMap = maps[idx]
-			if (offMap == null) continue   // même test que le parcours historique
-			push(cov, idx)
+		for (var i = 0; i < n; i++) {
+			if (ords[i] < targetOrder) continue
+			if (order[i] == TargetId) continue
+			if (maps[i] == null) continue
+			push(cov, i)
+		}
+		for (var i = 0; i < n; i++) {
+			if (ords[i] >= targetOrder) continue
+			if (maps[i] == null) continue
+			push(cov, i)
 		}
 		Plan.COV_SEQ_BY_ID[TargetId] = cov
 		return cov
@@ -138,18 +129,26 @@ class DangerPlanClass {
 	 */
 	static netSequenceFor(Plan, TargetId) {
 		if (TargetId in Plan.NET_SEQ_BY_ID) return Plan.NET_SEQ_BY_ID[TargetId]
-		var seq = sequenceFor(Plan, TargetId)
-		var actives = Plan.ACTIVE
 		var order = Plan.ORDER
+		var ords = Plan.TURN_ORDERS
+		var actives = Plan.ACTIVE
 		var sameSides = Plan.SAME_SIDE
-		var n = count(seq)
+		var targetOrder = Plan.ORDER_BY_ID[TargetId]
+		var n = count(order)
 		var netSeq = []
 		var allySeq = []
-		for (var k = 0; k < n; k++) {
-			var idx = seq[k]
-			if (!actives[idx]) continue
-			push(netSeq, order[idx])
-			push(allySeq, sameSides[idx])
+		for (var i = 0; i < n; i++) {
+			if (ords[i] < targetOrder) continue
+			if (order[i] == TargetId) continue
+			if (!actives[i]) continue
+			push(netSeq, order[i])
+			push(allySeq, sameSides[i])
+		}
+		for (var i = 0; i < n; i++) {
+			if (ords[i] >= targetOrder) continue
+			if (!actives[i]) continue
+			push(netSeq, order[i])
+			push(allySeq, sameSides[i])
 		}
 		Plan.NET_SEQ_BY_ID[TargetId] = netSeq
 		Plan.NET_ALLY_BY_ID[TargetId] = allySeq
@@ -235,8 +234,8 @@ class DangerTeamPlanClass {
 	ORDER           // ids du tableau trié (cache persistant, potentiellement désynchronisé)
 	ORDER_BY_ID     // [id -> son TURN_ORDER] : pivot de la partition
 	TURN_ORDERS     // [i] = TURN_ORDER de ORDER[i], aligné
-	SEQ_BY_ID       // [id cible -> indices de ORDER dans l'ordre de jeu], construit paresseusement
-	COV_SEQ_BY_ID   // idem, restreinte aux casters à map offensive non nulle
+	COV_SEQ_BY_ID   // [id cible -> indices de ORDER dans l'ordre de jeu], restreints aux casters
+	                // à map offensive non nulle — construit paresseusement
 	NET_SEQ_BY_ID   // idem, restreinte aux casters qui peuvent changer le net (menace ou soin)
 	NET_ALLY_BY_ID  // [id cible -> drapeaux « même camp », alignés sur NET_SEQ_BY_ID]
 	SAME_SIDE       // [i] = ce caster est-il du camp visé par le plan ?
@@ -249,7 +248,6 @@ class DangerTeamPlanClass {
 		this.ORDER = ThisOrder
 		this.ORDER_BY_ID = ThisOrderById
 		this.TURN_ORDERS = ThisTurnOrders
-		this.SEQ_BY_ID = [: ]
 		this.COV_SEQ_BY_ID = [: ]
 		this.NET_SEQ_BY_ID = [: ]
 		this.NET_ALLY_BY_ID = [: ]
