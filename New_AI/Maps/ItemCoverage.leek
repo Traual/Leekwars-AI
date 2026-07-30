@@ -188,8 +188,16 @@ class ItemCoverageClass {
 			if (row > hi) hi = row
 		}
 		if (hi < 0) return _final
-		// Déjà attribué : les directes elles-mêmes, qui appartiennent à l'autre couche.
-		var covered = clone(board)
+		// Cellules encore ATTRIBUABLES : libres, et pas déjà prises. Les directes en sont
+		// exclues d'emblée — elles appartiennent à l'autre couche. Un seul tableau au lieu du
+		// couple (masque des libres, déjà attribué) : la boucle chaude ne lit qu'une case par
+		// pas de ligne, et une émission le met à jour par un XOR (les bits émis en font partie).
+		// Bornée aux lignes qu'un décalage peut atteindre : |dx| ne dépasse jamais 3, toute ligne
+		// au-delà reste à zéro et n'est jamais lue.
+		var avail = clone(AOEB_ZERO)
+		var aLo = lo > 3 ? lo - 3 : 0
+		var aHi = hi + 3 < AOEB_ROWS ? hi + 3 : AOEB_ROWS - 1
+		for (var row = aLo; row <= aHi; row++) avail[row] = AOEB_FREE[row] & ~board[row]
 		var ns = count(shape)
 		for (var s = 0; s < ns; s += 3) {
 			var dx = shape[s]
@@ -204,9 +212,9 @@ class ItemCoverageClass {
 				var src = board[row - dx]
 				if (src == 0) continue
 				var moved = dy >= 0 ? src << dy : src >> (-dy)
-				var d = moved & AOEB_FREE[row] & ~covered[row]
+				var d = moved & avail[row]
 				if (d == 0) continue
-				covered[row] |= d
+				avail[row] ^= d
 				var byBit = AOEB_CELL_BY_BIT[row]
 				while (d) {
 					var lsb = d & -d
