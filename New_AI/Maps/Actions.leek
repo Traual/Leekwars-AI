@@ -364,14 +364,17 @@ class ActionsClass {
 			// l'ordre d'insertion des `to` d'un `from` donné ne dépend que de la boucle d'entités,
 			// et l'ordre des clés de _final lui-même n'est jamais lu.
 			var FromMap = LoadMapFromAoeForAnEntity(Item, EntityState.CELL, Infos, LaunchFct)
+			// L'entité est déjà décalée à sa place dans le hash : le fold est appelé une fois par
+			// cellule de tir, il n'a pas à refaire le même décalage à chacune.
+			var packed = entity << MAX_AOE_DIST_BINARY
 			if (nWalk < mapSize(FromMap)) {
 				for (var from in SortedWalkCells) {
-					if (from in FromMap) foldAoeFrom(_final, from, FromMap[from], entity)
+					if (from in FromMap) foldAoeFrom(_final, from, FromMap[from], packed)
 				}
 			} else {
 				for (var from: var MapToHash in FromMap) {
 					// Cellule d'où je ne peux pas tirer : la boucle d'énumération ne la lira jamais.
-					if (from in WalkSet) foldAoeFrom(_final, from, MapToHash, entity)
+					if (from in WalkSet) foldAoeFrom(_final, from, MapToHash, packed)
 				}
 			}
 		}
@@ -400,9 +403,8 @@ class ActionsClass {
 	 * clés, famille 3b), sans finaliseur : le hash n'est comparé qu'entier. Chaque pas reste une
 	 * bijection, exactement comme un pas mix64 — c'est ce qui porte l'injectivité, pas l'avalanche.
 	 */
-	static foldAoeFrom(_final, from, MapToHash, entity) {
+	static foldAoeFrom(_final, from, MapToHash, packed) {
 		var Tmp = from in _final ? _final[from] : _final[from] = [: ]
-		var packed = entity << MAX_AOE_DIST_BINARY
 		for (var to: var TmpHash in MapToHash) {
 			if (to in Tmp) {
 				Tmp[to] = (Tmp[to] ^ (packed | TmpHash)) * MIX_A
