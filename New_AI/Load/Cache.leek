@@ -12,6 +12,7 @@ function ReloadCacheNewTurn() {
     DANGER_ITEM_AOE_HASH_CACHE = [: ]
     DANGER_TEAM_PLAN_CACHE = [: ]
     SEQ_MEMO_BY_SIG = [: ]
+    PLAN_BY_SIG = [: ]
     CELL_DANGER_GET_CACHE = [: ]
     COMBO_FROM_ITEM_AOE_CACHE = [: ]
     ENTITY_DELTA_CACHE_FOR_ME = [: ]
@@ -213,6 +214,11 @@ global DANGER_TEAM_PLAN_CACHE = [: ]
 // neuf qui rebâtirait les mêmes séquences. Ils partagent donc ces maps par référence. Reset au
 // tour, comme les plans.
 global SEQ_MEMO_BY_SIG = [: ]
+
+// [signature -> le plan lui-même] : un plan ne dépend pas du BaseHash que porte sa clé rapide,
+// seulement du set des vivants, du contexte offensif adverse et du camp visé. Des alliés de la
+// cible qui se déplacent fabriquaient un plan neuf, identique. Consultée au MISS seulement.
+global PLAN_BY_SIG = [: ]
 
 global CELL_DANGER_GET_CACHE = [: ]
 

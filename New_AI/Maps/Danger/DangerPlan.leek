@@ -176,6 +176,17 @@ class DangerPlanClass {
 	static getTeamPlan(State, BaseHash, OffensiveContextHash, TargetSide) {
 		var key = dangerTeamPlanKeyOf(BaseHash, OffensiveContextHash, TargetSide)
 		if (key in DANGER_TEAM_PLAN_CACHE) return DANGER_TEAM_PLAN_CACHE[key]
+		// MISS de la clé rapide. Or un plan ne dépend PAS du BaseHash : des alliés de la cible qui
+		// se déplacent en fabriquent un neuf, identique. Ce dont il dépend vraiment : le set des
+		// VIVANTS (il pinne l'ordre de tour, et l'aliveness est tout ce que le plan lit du camp de
+		// la cible), le contexte offensif adverse (positions et stats des menaces) et le camp visé.
+		// La signature n'est calculée qu'ICI, sur le chemin lent.
+		var planSig = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ StateClass.getHashedEntities(State), OffensiveContextHash), TargetSide)
+		if (planSig in PLAN_BY_SIG) {
+			var shared = PLAN_BY_SIG[planSig]
+			DANGER_TEAM_PLAN_CACHE[key] = shared
+			return shared
+		}
 		var order = StateClass.getSortedEntityByTurnOrder(State)
 		var ordersById = [: ]
 		var orders = []
@@ -241,6 +252,7 @@ class DangerPlanClass {
 			SEQ_MEMO_BY_SIG[sig] = [plan.COV_SEQ_BY_ID, plan.NET_SEQ_BY_ID, plan.NET_ALLY_BY_ID]
 		}
 		DANGER_TEAM_PLAN_CACHE[key] = plan
+		PLAN_BY_SIG[planSig] = plan
 		return plan
 	}
 }
