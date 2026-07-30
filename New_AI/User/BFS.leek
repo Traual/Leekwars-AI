@@ -194,10 +194,11 @@ class ActionSuite {
 			var initialDelta = entry[1]
 			if (BestDeltaFromParent >= initialDelta) break   // borne du tri : plus rien à battre
 
-			// La cellule de tir est déjà garantie atteignable par la liste filtrée. Cellule et
-			// item sont PORTÉS PAR L'ENTRÉE : rien ici ne déréférence l'action, elle n'est lue
-			// que pour les entrées réellement simulées.
-			var from = entry[4]
+			// Cellule et item sont PORTÉS PAR L'ENTRÉE : rien ici ne déréférence l'action, elle
+			// n'est lue que pour les entrées réellement simulées.
+			// L'item d'abord, la cellule seulement après le verdict de coût : sur les entrées
+			// examinées, neuf sur dix sont écartées par un item injouable, et leur cellule de
+			// tir n'aura jamais servi.
 			var item = entry[5]
 
 			var cost = baseCosts[item]
@@ -214,6 +215,8 @@ class ActionSuite {
 				baseCosts[item] = cost
 			}
 			if (cost < 0) continue
+			// La cellule de tir est déjà garantie atteignable par la liste filtrée.
+			var from = entry[4]
 			if (!(from in MyOnlyWalk)) {
 				if (from in MyWalkCells.JUMP)                          cost += JumpCost
 				else if (from in MyWalkCells.TELEPORTATION)            cost += TeleCost
