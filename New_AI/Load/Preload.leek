@@ -250,6 +250,7 @@ class Preload {
 			if (c < cheapest) cheapest = c
 		}
 		MINIMUM_COST_ITEM = cheapest
+		I_HAVE_RESURRECTION = StateClass.hasInventoryItem(myStateOnMe, CHIP_RESURRECTION)
 		// Base des ids VIRTUELS du tour = max des ids RÉELS, capturé une fois. Id de bulbe =
 		// SUMMON_ID_BASE + offset de type : un id donné correspond à UN type de bulbe pour tout
 		// le tour, quel que soit l'ordre des summons entre branches (les caches clés par id

@@ -21,6 +21,8 @@ class ItemClass {
 	PASSIVE_EFFECTS
 	NEEDLOS
 	AREA_MAX
+	AOE_DIST_MAX    // plus grande distance d'AoE balayée par le déroulé des dégâts
+	AOE_DIST_STEP   // pas de ce balayage (2 pour les zones en X, 1 partout ailleurs)
 	IS_WEAPON
 	STACKABLE
 	IS_VULNERABILITY
@@ -55,6 +57,10 @@ class ItemClass {
 			this.PASSIVE_EFFECTS = isChip(id) ? [] : getWeaponPassiveEffects(id)
 			this.NEEDLOS = isChip(id) ? chipNeedLos(id) : weaponNeedLos(id)
 			this.AREA_MAX = AreaMax(id, this.AREA)
+			// Bornes du balayage de distance d'AoE, résolues ICI : le déroulé des dégâts par
+			// couple les relisait dans deux tables statiques à chaque construction de liste.
+			this.AOE_DIST_MAX = EntityDangerClass.MapDistPossibles[this.AREA]
+			this.AOE_DIST_STEP = EntityDangerClass.MapAdditionDist[this.AREA]
 			this.IS_WEAPON = isWeapon(id)
 			this.STACKABLE = this.EFFECTS[0][5] & EFFECT_MODIFIER_STACKABLE   // flag du premier effet
 			// PARCOURS UNIQUE d'EFFECTS : classification vulné (inchangée) + construction des

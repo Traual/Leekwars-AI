@@ -183,10 +183,12 @@ class ActionSuite {
 		// Workspace créé au PREMIER candidat réellement simulé (les filtres ci-dessous en
 		// écartent souvent tous), puis réutilisé et restauré entre chaque candidat.
 		var Workspace = null
-		// Verdicts de jouabilité par item : cooldownOf et usesOf remontent la chaîne
-		// ITEM_STATE_PARENT à chaque appel alors que MyStats est invariant sur toute la boucle.
-		// Le même item revient une fois par cellule de tir, son verdict ne change pas.
-		var playable = [: ]
+		// Coût de base par item, NÉGATIF quand l'item est injouable ou déjà hors budget :
+		// cooldownOf et usesOf remontent la chaîne ITEM_STATE_PARENT alors que MyStats est
+		// invariant sur toute la boucle, et le même item revient une fois par cellule de tir.
+		// Le verdict et le coût dans la MÊME entrée : une seule lecture de map par entrée
+		// examinée, et ITEMINFO n'est relu que pour les entrées réellement simulées.
+		var baseCosts = [: ]
 
 		for (var entry in Reachable) {
 			var initialDelta = entry[1]
@@ -198,19 +200,20 @@ class ActionSuite {
 			var from = entry[4]
 			var item = entry[5]
 
-			var itemPlayable = playable[item]
-			if (itemPlayable == null) {
-				itemPlayable = !(StateClass.cooldownOf(MyStats, item) > 0) && !(StateClass.usesOf(MyStats, item) >= ITEMINFO[item].MAX_USES)
-				playable[item] = itemPlayable
+			var cost = baseCosts[item]
+			if (cost == null) {
+				var Infos = ITEMINFO[item]
+				if (StateClass.cooldownOf(MyStats, item) > 0 || StateClass.usesOf(MyStats, item) >= Infos.MAX_USES) {
+					cost = -1
+				} else {
+					cost = (Infos.IS_WEAPON && MyWeapon != item) ? Infos.COST + 1 : Infos.COST
+					// Le supplément de couche ne fait qu'AJOUTER : un coût de base déjà hors budget
+					// le restera pour toutes ses cellules de tir, autant le marquer injouable.
+					if (cost > MyTp) cost = -1
+				}
+				baseCosts[item] = cost
 			}
-			if (!itemPlayable) continue
-			var Info = ITEMINFO[item]
-
-			var cost = (Info.IS_WEAPON && MyWeapon != item) ? Info.COST + 1 : Info.COST
-			// Le supplément de couche ne fait qu'AJOUTER : un coût de base déjà hors budget le
-			// restera. Trois quarts des entrées qui arrivent ici sont dans ce cas, autant leur
-			// épargner les recherches de couche.
-			if (cost > MyTp) continue
+			if (cost < 0) continue
 			if (!(from in MyOnlyWalk)) {
 				if (from in MyWalkCells.JUMP)                          cost += JumpCost
 				else if (from in MyWalkCells.TELEPORTATION)            cost += TeleCost
@@ -220,7 +223,7 @@ class ActionSuite {
 
 			if (Workspace == null) Workspace = clone(State, 1)
 			var act = entry[0]
-			var candidate = NodeClass.ActionToNodeInTree(act, Workspace, from, MyWalkCells, cost, Info, item, act.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE)
+			var candidate = NodeClass.ActionToNodeInTree(act, Workspace, from, MyWalkCells, cost, ITEMINFO[item], item, act.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE)
 			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, Workspace, ParentScore, Parent, Parent.HFP_BY_SIDE, MySide, Parent.POISON_KEY)
 			StateClass.restoreWorkspace(Workspace, candidate.CLONED)
 			candidate.CLONED = null
@@ -320,6 +323,9 @@ class ActionSuite {
 	 * en payload d'action, plus personne ne rappelle ScoringWichId.
 	 */
 	static resurrectIdOf(State) {
+		// Chip absente de l'inventaire : la remontée de chaîne de cooldownOf la parcourrait en
+		// entier pour rien, et cette fonction est appelée à chaque développement de nœud.
+		if (!I_HAVE_RESURRECTION) return null
 		var MyStats = State[Me]
 		var resCd = StateClass.cooldownOf(MyStats, CHIP_RESURRECTION)
 		if (resCd == null || resCd > 0) return null

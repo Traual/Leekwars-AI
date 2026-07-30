@@ -32,6 +32,9 @@ global MeanBulbs = [
 
 // Coût TP minimal de l'inventaire (court-circuite l'expansion quand il ne reste plus assez).
 global MINIMUM_COST_ITEM
+// La Résurrection est-elle dans mon inventaire ? Posé au tour (Preload.InitStateClass) : sans
+// elle, resurrectIdOf n'a plus à remonter toute la chaîne d'inventaire à chaque nœud développé.
+global I_HAVE_RESURRECTION = false
 global SUMMON_ID_BASE = 0   // max des ids RÉELS au début du tour ; id de bulbe virtuel = base + offset de type (Preload.InitStateClass)
 
 // Id sentinelle "personne" pour les fonctions à entité-à-skipper (placement des summons :

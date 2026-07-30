@@ -58,8 +58,8 @@ class EntityDangerClass {
 				var effs = isSummonTarget ? Infos.DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON : Infos.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK
 				if (effs == null) continue
 				var CostOfItem = Infos.COST
-				var MaxAoeDist = MapDistPossibles[Infos.AREA]
-				var AddingDist = MapAdditionDist[Infos.AREA]
+				var MaxAoeDist = Infos.AOE_DIST_MAX
+				var AddingDist = Infos.AOE_DIST_STEP
 				for (var aoe = 0; aoe <= MaxAoeDist; aoe += AddingDist) {
 					var distFactor = 1 - (aoe * 0.2)
 					var Damage = 0
