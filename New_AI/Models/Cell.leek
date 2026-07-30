@@ -69,29 +69,37 @@ class CellClass {
 		return _final
 	}
 
+	/*
+	 * Un anneau est une TRANSLATION : sa forme ne dépend que du rayon, seul son centre change.
+	 * Les décalages sont donc pré-additionnés une fois par rayon, sous la forme même qu'attend
+	 * la clé de XY_FREE (dx·1024 + dy), et une lecture par décalage suffit ensuite.
+	 * L'ordre d'insertion est CONSERVÉ (x croissant, y positif puis y négatif) : l'itération de
+	 * la map rendue est lue en aval, elle ne doit pas changer.
+	 */
+	static ringOffsets(radius) {
+		if (radius in RING_OFFSETS) return RING_OFFSETS[radius]
+		var offs = []
+		for (var x = -radius; x <= radius; x++) {
+			var y1 = radius - abs(x)
+			var base = x * 1024
+			push(offs, base + y1)
+			if (y1 != 0) push(offs, base - y1)   // y1 == -y1 seulement en zéro
+		}
+		RING_OFFSETS[radius] = offs
+		return offs
+	}
+
 	static getCircle(cell, radius) {
 		var TmpHash = (cell << 7) | radius
 		if (TmpHash in CIRCLE_CACHE) return CIRCLE_CACHE[TmpHash]
 		var _final = [: ]
-		var BaseX = CELL_X[cell]
-		var BaseY = CELL_Y[cell]
-		for (var x = -radius; x <= radius; x++) {
-			var y1 = radius - abs(x)
-			var y2 = -y1
-
+		var base = CELL_X[cell] * 1024 + CELL_Y[cell]
+		var offs = ringOffsets(radius)
+		var n = count(offs)
+		for (var i = 0; i < n; i++) {
 			// XY_FREE répond aux deux questions d'un coup : hors carte ET bloquée valent null.
-			var ThisCell1 = XY_FREE[(BaseX + x) * 1024 + (BaseY + y1)]
-			if (ThisCell1 != null) {
-				_final[ThisCell1] = true
-			}
-
-			// Vérifier que y1 et y2 ne sont pas égaux pour éviter les doublons
-			if (y1 != y2) {
-				var ThisCell2 = XY_FREE[(BaseX + x) * 1024 + (BaseY + y2)]
-				if (ThisCell2 != null) {
-					_final[ThisCell2] = true
-				}
-			}
+			var ThisCell = XY_FREE[base + offs[i]]
+			if (ThisCell != null) _final[ThisCell] = true
 		}
 		CIRCLE_CACHE[TmpHash] = _final
 		return _final

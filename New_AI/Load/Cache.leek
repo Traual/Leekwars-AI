@@ -123,6 +123,9 @@ global FILLED_CELLS_CACHE = [: ]
 
 global DISC_CACHE = [: ]
 global CIRCLE_CACHE = [: ]
+// [rayon -> décalages dx·1024 + dy de l'anneau, dans l'ordre d'insertion attendu] : la forme
+// d'un anneau ne dépend pas de son centre. PERSISTANT (la carte ne change jamais).
+global RING_OFFSETS = [: ]
 global CIRCLE_WITH_LOS_CACHE = [: ]
 global DISC_WITH_LOS_CACHE = [: ]
 
