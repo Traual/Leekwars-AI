@@ -175,8 +175,8 @@ class ActionSuite {
 		}
 		var MyWeapon = MyStats.WEAPON
 		var ParentScore = Parent.SCORE
-		var JumpCost = ITEMINFO[CHIP_JUMP].COST
-		var TeleCost = ITEMINFO[CHIP_TELEPORTATION].COST
+		var JumpCost = JUMP_COST
+		var TeleCost = TELE_COST
 
 		var BestDeltaFromParent = 0
 		var BestNode = null
@@ -302,9 +302,9 @@ class ActionSuite {
 			var Cost = (Info.IS_WEAPON && MyStats.WEAPON != Item) ? Info.COST + 1 : Info.COST
 
 			if (!(From in MyWalkCells.WALK)) {
-				if (From in MyWalkCells.JUMP) Cost += ITEMINFO[CHIP_JUMP].COST
-				else if (From in MyWalkCells.TELEPORTATION) Cost += ITEMINFO[CHIP_TELEPORTATION].COST
-				else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) Cost += ITEMINFO[CHIP_JUMP].COST + ITEMINFO[CHIP_TELEPORTATION].COST
+				if (From in MyWalkCells.JUMP) Cost += JUMP_COST
+				else if (From in MyWalkCells.TELEPORTATION) Cost += TELE_COST
+				else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) Cost += JUMP_TELE_COST
 				else continue
 			}
 

@@ -185,14 +185,11 @@ class ItemCoverageClass {
 		var LaunchType = ItemInfos.LAUNCHTYPE
 		var MinRange = ItemInfos.MINRANGE
 		var MaxRange = ItemInfos.MAXRANGE
-		if (ItemInfos.NEEDLOS) {
-			for (var EntityCell: var mp in WalkCellsMap) {
-				_final += ActionsClass.LaunchWithLos[LaunchType](EntityCell, MinRange, MaxRange)
-			}
-		} else {
-			for (var EntityCell: var mp in WalkCellsMap) {
-				_final += ActionsClass.LaunchWithoutLos[LaunchType](EntityCell, MinRange, MaxRange)
-			}
+		// La fonction de lancement est résolue UNE fois : la lire dans la boucle coûtait une
+		// lecture de map par cellule accessible, soit le gros des appels de ce fichier.
+		var launch = ItemInfos.NEEDLOS ? ActionsClass.LaunchWithLos[LaunchType] : ActionsClass.LaunchWithoutLos[LaunchType]
+		for (var EntityCell: var mp in WalkCellsMap) {
+			_final += launch(EntityCell, MinRange, MaxRange)
 		}
 
 		return _final

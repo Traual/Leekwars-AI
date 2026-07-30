@@ -282,13 +282,14 @@ class ActionsClass {
 		var MaxRange = Infos.MAXRANGE
 		var OccupiedCellsArray = WalkCellsClass.LoadIgnoreCells(State, Me, BaseHash)
 		var attract = isAttract(Infos)
+		var launch = LaunchWithLos[LaunchType]   // résolue une fois, pas une par entité
 
 		for (var e: var stat in State) {
 			// Morts exclus AVANT toute géométrie : cellule null dans l'état réel, ou ancienne
 			// cellule conservée dans un State simulé.
 			if (e == Me || stat.LIFE <= 0) continue
 			var EntityCell = stat.CELL
-			var HittableCellsAreaEntity = LaunchWithLos[LaunchType](EntityCell, MinRange, MaxRange)
+			var HittableCellsAreaEntity = launch(EntityCell, MinRange, MaxRange)
 			var from = getClosestSortedWalkCellsToHit(HittableCellsAreaEntity, SortedWalkCells)
 			if (from != null && CellClass.getLosWithBaseHash(from, EntityCell, State, BaseHash)) {
 				var To = attract ? getClosestCellToAttract(from, EntityCell, MinRange, MaxRange, OccupiedCellsArray)
@@ -376,8 +377,9 @@ class ActionsClass {
 		}
 		// M'ajoute au hash si je suis dans l'AoE depuis from (même packing entité-haut/dist-bas).
 		if (Target.Targetable(Item, CastState, CastState) && Infos.MINRANGE <= Infos.AREA_MAX && Infos.AREA_MAX > 0) {
+			var area = Infos.AREA   // la zone est déjà en main : pas d'aller-retour par ITEMINFO
 			for (var from: var MapToHash in _final) {
-				var MapAoeCellsOfFrom = AoeDistItem(Item, from)
+				var MapAoeCellsOfFrom = CellClass.getAreaDist(area, from)
 				for (var to: var TmpHash in MapToHash) {
 					if (to in MapAoeCellsOfFrom) {
 						MapToHash[to] = (MapToHash[to] ^ ((Me << MAX_AOE_DIST_BINARY) | MapAoeCellsOfFrom[to])) * MIX_A

@@ -126,6 +126,16 @@ global LASERS = [: ]
 
 global ITEMINFO = [: ]
 
+// Coûts et cooldowns des deux chips de DÉPLACEMENT, sortis d'ITEMINFO une fois pour toutes :
+// les tests de capacité de mobilité et l'empreinte de marche les relisaient à chaque nœud, soit
+// des centaines de milliers de lectures de map pour deux constantes du combat.
+// Posés par Preload.InitItemInfo, juste après le catalogue.
+global JUMP_COST = 0
+global TELE_COST = 0
+global JUMP_TELE_COST = 0
+global JUMP_COOLDOWN = 0
+global TELE_COOLDOWN = 0
+
 // PASSIVE_INFO[arme][type d'effet passif] = ligne complète au layout de
 // getWeaponPassiveEffects (eff[1] = value1) — PAS celui des effets runtime de getEffects.
 // Peuplé une fois dans Preload.InitItemInfo pour toute arme du catalogue portant des effets

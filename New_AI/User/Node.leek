@@ -121,12 +121,12 @@ class NodeClass {
 		StateClass.incrementUses(meStat, Item)
 		// Cooldowns des items de déplacement si la cellule d'arrivée vient d'une layer jump/télépo.
 		if (usedLayer == LAYER_JUMP) {
-			StateClass.setCooldown(meStat, CHIP_JUMP, ITEMINFO[CHIP_JUMP].COOLDOWN)
+			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
 		} else if (usedLayer == LAYER_TELEPORTATION) {
-			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, ITEMINFO[CHIP_TELEPORTATION].COOLDOWN)
+			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
 		} else if (usedLayer == LAYER_TELEPORTATION_AND_JUMP) {
-			StateClass.setCooldown(meStat, CHIP_JUMP, ITEMINFO[CHIP_JUMP].COOLDOWN)
-			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, ITEMINFO[CHIP_TELEPORTATION].COOLDOWN)
+			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
+			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
 		}
 		// Empreinte de mobilité de Me : calculée UNE fois, après TOUTES ses écritures
 		// (cellule, MP, TP, conséquences, cooldowns d'item et de déplacement). Elle sert au

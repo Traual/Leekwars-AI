@@ -13,6 +13,12 @@ class Preload {
 	 */
     static InitEverything() {
         InitItemInfo()
+		// Constantes de mobilité, une fois le catalogue prêt.
+		JUMP_COST = ITEMINFO[CHIP_JUMP].COST
+		TELE_COST = ITEMINFO[CHIP_TELEPORTATION].COST
+		JUMP_TELE_COST = JUMP_COST + TELE_COST
+		JUMP_COOLDOWN = ITEMINFO[CHIP_JUMP].COOLDOWN
+		TELE_COOLDOWN = ITEMINFO[CHIP_TELEPORTATION].COOLDOWN
 		InitCellClass()
 		InitInitialTurnOrder()
     }

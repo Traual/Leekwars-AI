@@ -38,18 +38,18 @@ class WalkCellsClass {
 	static canJump(stats) {
 		var cd = StateClass.cooldownOf(stats, CHIP_JUMP)
 		if (cd == null) return false // pas de Jump équipé
-		return (cd == 0 || (stats.ID != Me && cd <= 1)) && stats.TP >= ITEMINFO[CHIP_JUMP].COST
+		return (cd == 0 || (stats.ID != Me && cd <= 1)) && stats.TP >= JUMP_COST
 	}
 
 	static canTele(stats) {
 		var cd = StateClass.cooldownOf(stats, CHIP_TELEPORTATION)
 		if (cd == null) return false // pas de Télépo équipée
-		return (cd == 0 || (stats.ID != Me && cd <= 1)) && stats.TP >= ITEMINFO[CHIP_TELEPORTATION].COST
+		return (cd == 0 || (stats.ID != Me && cd <= 1)) && stats.TP >= TELE_COST
 	}
 
 	static canTPJ(stats) {
 		return canJump(stats) && canTele(stats)
-			&& stats.TP >= ITEMINFO[CHIP_JUMP].COST + ITEMINFO[CHIP_TELEPORTATION].COST
+			&& stats.TP >= JUMP_TELE_COST
 	}
 
 	// ============================================================================
@@ -140,7 +140,7 @@ class WalkCellsClass {
 	 * avec canJump (TP réellement restants), qui reste le filtre du BFS de Me. */
 	static canJumpNextTurn(stats) {
 		var cd = StateClass.cooldownOf(stats, CHIP_JUMP)
-		return cd != null && cd <= 1 && stats.TOTAL_TP >= ITEMINFO[CHIP_JUMP].COST
+		return cd != null && cd <= 1 && stats.TOTAL_TP >= JUMP_COST
 	}
 
 	static getMaxWalkOrJumpNoEntitiesFull(stats) {
@@ -171,7 +171,7 @@ class WalkCellsClass {
 		var stats = state[entity]
 		var cJ = canJump(stats)
 		var cT = canTele(stats)
-		var cTJ = cJ && cT && stats.TP >= ITEMINFO[CHIP_JUMP].COST + ITEMINFO[CHIP_TELEPORTATION].COST
+		var cTJ = cJ && cT && stats.TP >= JUMP_TELE_COST
 		var walk = getWalk(state, entity, base_hash)
 		var jump = cJ  ? getJump(state, entity, base_hash) : [:]
 		var tele = cT  ? getTele(state, entity, base_hash) : [:]
@@ -193,9 +193,9 @@ class WalkCellsClass {
 		var Entity = entity_state.ID
 		var Tp = entity_state.TP
 		var JumpCooldown = StateClass.cooldownOf(entity_state, CHIP_JUMP)
-		var JumpCost = ITEMINFO[CHIP_JUMP].COST
+		var JumpCost = JUMP_COST
 		var TeleportationCooldown = StateClass.cooldownOf(entity_state, CHIP_TELEPORTATION)
-		var TeleportationCost = ITEMINFO[CHIP_TELEPORTATION].COST
+		var TeleportationCost = TELE_COST
 		var CanJump = (JumpCooldown == 0 || Entity != Me && JumpCooldown <= 1) && Tp >= JumpCost
 		var CanTeleport = (TeleportationCooldown == 0 || Entity != Me && TeleportationCooldown <= 1) && Tp >= TeleportationCost
 		// 3e seuil : la layer TPJ exige le coût CUMULÉ des deux chips. Sans ce bit, deux états
