@@ -57,6 +57,126 @@ class Preload {
 		}
 	}
 
+	/*
+	 * Plateau de bits (x, y) et formes de zone, pour la dilatation d'AoE.
+	 * Les bornes sont MESURÉES sur les 613 cellules, jamais supposées : x est centré par le
+	 * moteur et y peut être négatif. Bande de garde de 4 de chaque côté — le plus grand
+	 * décalage d'une zone vaut 3 — donc aucun bit ne sort de son mot ni ne franchit le signe.
+	 */
+	static InitAoeBoard() {
+		var minX = 1000, maxX = -1000, minY = 1000, maxY = -1000
+		for (var c = 0; c < 613; c++) {
+			var x = CELL_X[c], y = CELL_Y[c]
+			if (x < minX) minX = x
+			if (x > maxX) maxX = x
+			if (y < minY) minY = y
+			if (y > maxY) maxY = y
+		}
+		AOEB_XOFF = 4 - minX
+		AOEB_YOFF = 4 - minY
+		AOEB_ROWS = maxX - minX + 9
+		// Un mot par ligne : le plus haut bit utilisé est maxY + AOEB_YOFF + 3, à garder loin
+		// du bit de signe pour que le décalage à droite (arithmétique) reste inoffensif.
+		if (maxY + AOEB_YOFF + 4 > 60) debugE("plateau d'AoE : plage de y trop large")
+		AOEB_FREE = []
+		AOEB_CELL_BY_BIT = []
+		AOEB_ZERO = []
+		for (var i = 0; i < AOEB_ROWS; i++) {
+			push(AOEB_FREE, 0)
+			push(AOEB_ZERO, 0)
+			push(AOEB_CELL_BY_BIT, [: ])
+		}
+		for (var c = 0; c < 613; c++) {
+			if (TMPOBSTACLES[c]) continue
+			var row = CELL_X[c] + AOEB_XOFF
+			var bit = 1 << (CELL_Y[c] + AOEB_YOFF)
+			AOEB_FREE[row] |= bit
+			AOEB_CELL_BY_BIT[row][bit] = c
+		}
+		InitAoeShapes()
+	}
+
+	/*
+	 * Décalages de chaque zone, TRIÉS par distance d'AoE croissante, centre exclu. La distance
+	 * est celle que produit getAreaDist : |dx| + |dy|, quelle que soit la forme.
+	 *   CIRCLE_n / PLUS_1 : boule de Manhattan de rayon n ;
+	 *   SQUARE_n          : boule de Chebyshev de rayon n (distance jusqu'à 2n) ;
+	 *   PLUS_n            : les quatre rayons d'axe jusqu'à n ;
+	 *   X_n               : les quatre diagonales, par pas de 1 en (dx, dy) donc de 2 en distance.
+	 * L'ordre croissant est ce qui rend le minimum correct sans repasse : la première fois
+	 * qu'une cellule est atteinte, c'est par sa plus petite distance.
+	 */
+	static InitAoeShapes() {
+		AOEB_SHAPE = [: ]
+		AOEB_SHAPE[AREA_CIRCLE_1] = manhattanShape(1)
+		AOEB_SHAPE[AREA_CIRCLE_2] = manhattanShape(2)
+		AOEB_SHAPE[AREA_CIRCLE_3] = manhattanShape(3)
+		AOEB_SHAPE[AREA_PLUS_1] = manhattanShape(1)   // alias moteur de CIRCLE_1, même forme
+		AOEB_SHAPE[AREA_SQUARE_1] = chebyshevShape(1)
+		AOEB_SHAPE[AREA_SQUARE_2] = chebyshevShape(2)
+		AOEB_SHAPE[AREA_PLUS_2] = crossShape(2)
+		AOEB_SHAPE[AREA_PLUS_3] = crossShape(3)
+		AOEB_SHAPE[AREA_X_1] = diagonalShape(1)
+		AOEB_SHAPE[AREA_X_2] = diagonalShape(2)
+		AOEB_SHAPE[AREA_X_3] = diagonalShape(3)
+	}
+
+	/* Boule de Manhattan de rayon r, par distance croissante, centre exclu. */
+	static manhattanShape(r) {
+		var out = []
+		for (var d = 1; d <= r; d++) {
+			for (var dx = -d; dx <= d; dx++) {
+				var dy = d - abs(dx)
+				pushOffset(out, dx, dy, d)
+				if (dy != 0) pushOffset(out, dx, -dy, d)
+			}
+		}
+		return out
+	}
+
+	/* Boule de Chebyshev de rayon r : distance |dx| + |dy| jusqu'à 2r, centre exclu. */
+	static chebyshevShape(r) {
+		var out = []
+		for (var d = 1; d <= 2 * r; d++) {
+			for (var dx = -r; dx <= r; dx++) {
+				for (var dy = -r; dy <= r; dy++) {
+					if (abs(dx) + abs(dy) == d) pushOffset(out, dx, dy, d)
+				}
+			}
+		}
+		return out
+	}
+
+	/* Les quatre rayons d'axe jusqu'à r : distance = le rayon, centre exclu. */
+	static crossShape(r) {
+		var out = []
+		for (var d = 1; d <= r; d++) {
+			pushOffset(out, d, 0, d)
+			pushOffset(out, -d, 0, d)
+			pushOffset(out, 0, d, d)
+			pushOffset(out, 0, -d, d)
+		}
+		return out
+	}
+
+	/* Les quatre diagonales jusqu'à r pas : distance = 2 fois le pas, centre exclu. */
+	static diagonalShape(r) {
+		var out = []
+		for (var i = 1; i <= r; i++) {
+			pushOffset(out, i, i, 2 * i)
+			pushOffset(out, i, -i, 2 * i)
+			pushOffset(out, -i, i, 2 * i)
+			pushOffset(out, -i, -i, 2 * i)
+		}
+		return out
+	}
+
+	static pushOffset(out, dx, dy, dist) {
+		push(out, dx)
+		push(out, dy)
+		push(out, dist)
+	}
+
 	static InitCellClass() {
 		for (var c = 0; c < 613; c++) {
 			var obs = isObstacle(c)
@@ -67,6 +187,7 @@ class Preload {
 			CELL_Y[c] = y
 			if (!obs) XY_FREE[x * 1024 + y] = c
 		}
+		InitAoeBoard()
 		// (couple, bitmask) précalculés pour chaque cellule. Layout :
 		//   couple = floor(cell / 35) ; rem = cell % 35
 		//   rem < 18  -> ligne paire,   bit = rem        (bits 0-17)

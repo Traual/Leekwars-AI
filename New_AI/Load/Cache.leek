@@ -63,6 +63,28 @@ global CELL_Y = [: ]
 
 global TMPOBSTACLES = [: ]
 
+// PLATEAU DE BITS (x, y) — pour les dilatations de zone d'AoE.
+// Layout : un ENTIER par ligne x, le bit y dans cet entier. Décalé pour que tout tienne dans
+// les bits positifs avec une bande de garde de 4 de chaque côté : un décalage de zone ne
+// dépasse jamais 3, donc aucune contamination entre lignes ni débordement de signe.
+//   ligne  = x + AOEB_XOFF, bit = y + AOEB_YOFF, et un décalage (dx, dy) devient
+//   out[i] = in[i - dx] << dy (ou >> -dy).
+// AOEB_FREE : les cellules SANS obstacle (le résultat d'une zone les exclut déjà).
+// AOEB_CELL_BY_BIT[ligne][bit isolé] -> cellule, pour décoder un mot en cellules.
+// AOEB_ZERO : gabarit de plateau vide à cloner.
+// Posés par Preload.InitCellClass, jamais vidés (la carte ne change pas).
+global AOEB_XOFF = 0
+global AOEB_YOFF = 0
+global AOEB_ROWS = 0
+global AOEB_FREE = []
+global AOEB_CELL_BY_BIT = []
+global AOEB_ZERO = []
+
+// [zone -> décalages (dx, dy, distance d'AoE) à plat, TRIÉS par distance croissante, centre
+// EXCLU] : la forme d'une zone est indépendante de son centre, seuls les obstacles et les bords
+// en retirent des cellules — et ça, le masque AOEB_FREE s'en charge à l'arrivée.
+global AOEB_SHAPE = [: ]
+
 // [x·1024 + y -> cellule LIBRE] : l'inverse de CELL_X/CELL_Y, restreinte aux cellules sans
 // obstacle, bâtie une fois au chargement (Preload.InitCellClass). Les constructeurs de géométrie
 // demandaient la cellule au moteur PUIS son obstacle à TMPOBSTACLES : ici une seule lecture

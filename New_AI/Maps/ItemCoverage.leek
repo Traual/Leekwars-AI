@@ -158,6 +158,71 @@ class ItemCoverageClass {
 	 * Appelée pour les seuls items à zone (AREA_MAX > 0).
 	 */
 	static getMapAoeForItem(ItemInfos, MapCellsBool) {
+		var shape = AOEB_SHAPE[ItemInfos.AREA]
+		if (shape != null) return dilateAoe(shape, MapCellsBool)
+		return getMapAoeForItemByCell(ItemInfos, MapCellsBool)
+	}
+
+	/*
+	 * La même chose par DILATATION de bits. Le résultat est exactement
+	 * « dilaté(directes) privé des directes, sans les obstacles », étiqueté par la plus petite
+	 * distance de zone : seule la frontière des directes contribue, et un plateau de bits rend
+	 * ce fait gratuit là où la version par cellule visitait aussi tout l'intérieur (97,5 % du
+	 * travail jeté, mesuré).
+	 *
+	 * Les décalages arrivent triés par distance croissante et `couvert` accumule tout ce qui est
+	 * déjà attribué : la première fois qu'une cellule est atteinte, c'est donc par son minimum.
+	 * Les obstacles sont masqués à L'ARRIVÉE, jamais à chaque pas — une zone les exclut de son
+	 * résultat mais ne s'y arrête pas (getDisc assemble des anneaux purement géométriques).
+	 */
+	static dilateAoe(shape, MapCellsBool) {
+		var _final = [: ]
+		// Plateau des cellules directes + bornes de lignes réellement occupées.
+		var board = clone(AOEB_ZERO)
+		var lo = AOEB_ROWS
+		var hi = -1
+		for (var cell: var bool in MapCellsBool) {
+			var row = CELL_X[cell] + AOEB_XOFF
+			board[row] |= 1 << (CELL_Y[cell] + AOEB_YOFF)
+			if (row < lo) lo = row
+			if (row > hi) hi = row
+		}
+		if (hi < 0) return _final
+		// Déjà attribué : les directes elles-mêmes, qui appartiennent à l'autre couche.
+		var covered = clone(board)
+		var ns = count(shape)
+		for (var s = 0; s < ns; s += 3) {
+			var dx = shape[s]
+			var dy = shape[s + 1]
+			var dist = shape[s + 2]
+			// Lignes d'ARRIVÉE possibles pour ce décalage, bornées par les lignes occupées.
+			var from = lo + dx
+			var to = hi + dx
+			if (from < 0) from = 0
+			if (to >= AOEB_ROWS) to = AOEB_ROWS - 1
+			for (var row = from; row <= to; row++) {
+				var src = board[row - dx]
+				if (src == 0) continue
+				var moved = dy >= 0 ? src << dy : src >> (-dy)
+				var d = moved & AOEB_FREE[row] & ~covered[row]
+				if (d == 0) continue
+				covered[row] |= d
+				var byBit = AOEB_CELL_BY_BIT[row]
+				while (d) {
+					var lsb = d & -d
+					_final[byBit[lsb]] = dist
+					d ^= lsb
+				}
+			}
+		}
+		return _final
+	}
+
+	/*
+	 * Version par CELLULE, conservée comme référence : elle définit le résultat attendu et sert
+	 * de repli pour une zone sans forme déclarée.
+	 */
+	static getMapAoeForItemByCell(ItemInfos, MapCellsBool) {
 		var _final = [: ]
 		var area = ItemInfos.AREA
 		for (var cell: var bool in MapCellsBool) {
