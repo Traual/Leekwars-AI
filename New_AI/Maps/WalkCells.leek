@@ -35,15 +35,37 @@ class WalkCellsClass {
 	// Capacity checks
 	// ============================================================================
 
+	/* Cooldown effectif de Saut, -1 sans le chip. Mémorisé sur l'objet stat, même contrat que
+	 * CAP_MEMO : copié au clone, périmé par le seul setCooldown. Un clone de Me repart avec un
+	 * patch d'inventaire VIDE, la chaîne serait donc remontée entièrement à chaque nœud. */
+	static jumpCdOf(stats) {
+		var cd = stats.JCD_MEMO
+		if (cd != null) return cd
+		var eff = StateClass.cooldownOf(stats, CHIP_JUMP)
+		cd = (eff == null) ? -1 : eff
+		stats.JCD_MEMO = cd
+		return cd
+	}
+
+	/* Idem pour la Téléportation. */
+	static teleCdOf(stats) {
+		var cd = stats.TCD_MEMO
+		if (cd != null) return cd
+		var eff = StateClass.cooldownOf(stats, CHIP_TELEPORTATION)
+		cd = (eff == null) ? -1 : eff
+		stats.TCD_MEMO = cd
+		return cd
+	}
+
 	static canJump(stats) {
-		var cd = StateClass.cooldownOf(stats, CHIP_JUMP)
-		if (cd == null) return false // pas de Jump équipé
+		var cd = jumpCdOf(stats)
+		if (cd < 0) return false // pas de Jump équipé
 		return (cd == 0 || (stats.ID != Me && cd <= 1)) && stats.TP >= JUMP_COST
 	}
 
 	static canTele(stats) {
-		var cd = StateClass.cooldownOf(stats, CHIP_TELEPORTATION)
-		if (cd == null) return false // pas de Télépo équipée
+		var cd = teleCdOf(stats)
+		if (cd < 0) return false // pas de Télépo équipée
 		return (cd == 0 || (stats.ID != Me && cd <= 1)) && stats.TP >= TELE_COST
 	}
 
@@ -129,8 +151,8 @@ class WalkCellsClass {
 	 * seront rechargés -> TOTAL_TP, cooldown <= 1 (il aura tourné d'ici là). Ne pas confondre
 	 * avec canJump (TP réellement restants), qui reste le filtre du BFS de Me. */
 	static canJumpNextTurn(stats) {
-		var cd = StateClass.cooldownOf(stats, CHIP_JUMP)
-		return cd != null && cd <= 1 && stats.TOTAL_TP >= JUMP_COST
+		var cd = jumpCdOf(stats)
+		return cd >= 0 && cd <= 1 && stats.TOTAL_TP >= JUMP_COST
 	}
 
 	static getMaxWalkOrJumpNoEntitiesFull(stats) {
@@ -189,9 +211,14 @@ class WalkCellsClass {
 	static HashWalkCellsWithItemsWithoutBaseHash(entity_state) {
 		var Entity = entity_state.ID
 		var Tp = entity_state.TP
-		var JumpCooldown = StateClass.cooldownOf(entity_state, CHIP_JUMP)
+		// Cooldowns pris au mémo, puis RENDUS à leur forme d'origine : -1 y code « chip absent »,
+		// que cette empreinte a toujours vu sous la forme null. Les deux comparaisons qui suivent
+		// restent donc mot pour mot celles qui ont produit toutes les clés existantes.
+		var JumpCooldown = jumpCdOf(entity_state)
+		if (JumpCooldown < 0) JumpCooldown = null
 		var JumpCost = JUMP_COST
-		var TeleportationCooldown = StateClass.cooldownOf(entity_state, CHIP_TELEPORTATION)
+		var TeleportationCooldown = teleCdOf(entity_state)
+		if (TeleportationCooldown < 0) TeleportationCooldown = null
 		var TeleportationCost = TELE_COST
 		var CanJump = (JumpCooldown == 0 || Entity != Me && JumpCooldown <= 1) && Tp >= JumpCost
 		var CanTeleport = (TeleportationCooldown == 0 || Entity != Me && TeleportationCooldown <= 1) && Tp >= TeleportationCost

@@ -27,6 +27,11 @@ class EntityStateClass extends EntityClass {
 	TLSQ_MEMO   // W_TOTAL_LIFE * sqrt(max(0, TOTAL_LIFE)) (terme hors cache de survivalValue)
 	PKEY_MEMO   // contribution de ce porteur a la cle de couverture antidote (ScoringClass.poisonKeyOf)
 	ANTICD_MEMO // cooldown effectif d'Antidote, 99 sans le chip (DangerComboClass.antidoteCdOf)
+	// Cooldowns effectifs des deux chips de DÉPLACEMENT, -1 quand le chip n'est pas équipé.
+	// Seul StateClass.setCooldown peut les périmer, et il les remet à null en passant : la
+	// chaîne d'inventaire n'est donc remontée qu'après un vrai saut ou une vraie télépo.
+	JCD_MEMO
+	TCD_MEMO
 	// Un effet touchant l'un des dix inputs de capability est passé sur cette entité pendant
 	// l'action. Remis à faux par le clone de simulation, posé par le ledger d'effets
 	// (RecordCastedEffect / removeCastedEffect) : sans lui, diffMaskOf saute les dix
