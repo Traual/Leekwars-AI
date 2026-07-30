@@ -186,6 +186,8 @@ class DangerPlanClass {
 		var actives = []
 		var sameSides = []
 		var n = count(order)
+		var activeMask = 0
+		var mapsMask = 0
 		for (var i = 0; i < n; i++) {
 			var id = order[i]
 			ordersById[id] = State[id] == null ? 0 : State[id].TURN_ORDER
@@ -213,13 +215,31 @@ class DangerPlanClass {
 			push(crits, crit)
 			// Peut-il changer le net d'une cible de ce camp ? Menace, ou soigneur éligible à la
 			// heal map (mêmes conditions que healerContributionOf).
-			push(actives, offMap != null || (id != Me && stat.LIFE > 0 && HealClass.hasHealItem(stat)))
+			var active = offMap != null || (id != Me && stat.LIFE > 0 && HealClass.hasHealItem(stat))
+			push(actives, active)
+			// Signature des séquences : ce dont elles dépendent RÉELLEMENT, et rien d'autre.
+			if (active) activeMask |= 1 << i
+			if (offMap != null) mapsMask |= 1 << i
 			// Le plan est TOUJOURS construit avec le camp de sa propre cible : « du même camp
 			// que la cible » est donc une constante du plan, pas une question à reposer à
 			// chaque cellule et à chaque nœud dans le déroulé du net.
 			push(sameSides, stat != null && stat.SIDE == TargetSide)
 		}
 		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, packs, crits, actives, sameSides)
+		// Les séquences de jeu ne dépendent QUE de l'ordre de tour (donc du set des vivants, qui
+		// pinne le tri), du camp visé, de qui menace et de qui peut changer un net. La clé du plan,
+		// elle, porte le BaseHash : un ennemi poussé fabrique un plan neuf dont les séquences
+		// seraient pourtant identiques. Deux plans de même signature partagent donc leurs trois
+		// mémos PAR RÉFÉRENCE — ce qu'un plan construit sert immédiatement à l'autre.
+		var sig = mix64(mix64((StateClass.getHashedEntities(State) << 8) | TargetSide) ^ (activeMask * MIX_A)) ^ mix64(mapsMask)
+		if (sig in SEQ_MEMO_BY_SIG) {
+			var shared = SEQ_MEMO_BY_SIG[sig]
+			plan.COV_SEQ_BY_ID = shared[0]
+			plan.NET_SEQ_BY_ID = shared[1]
+			plan.NET_ALLY_BY_ID = shared[2]
+		} else {
+			SEQ_MEMO_BY_SIG[sig] = [plan.COV_SEQ_BY_ID, plan.NET_SEQ_BY_ID, plan.NET_ALLY_BY_ID]
+		}
 		DANGER_TEAM_PLAN_CACHE[key] = plan
 		return plan
 	}

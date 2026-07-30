@@ -11,6 +11,7 @@ function ReloadCacheNewTurn() {
     MAP_CELL_ITEM_AOE_CACHE = [: ]
     DANGER_ITEM_AOE_HASH_CACHE = [: ]
     DANGER_TEAM_PLAN_CACHE = [: ]
+    SEQ_MEMO_BY_SIG = [: ]
     CELL_DANGER_GET_CACHE = [: ]
     COMBO_FROM_ITEM_AOE_CACHE = [: ]
     ENTITY_DELTA_CACHE_FOR_ME = [: ]
@@ -205,6 +206,13 @@ global DANGER_ITEM_AOE_HASH_CACHE = [: ]
 // quelle géométrie, quel pack de stats et quel facteur critique. Ne contient que des ids,
 // des nombres et des maps de caches — jamais un EntityState ni le workspace.
 global DANGER_TEAM_PLAN_CACHE = [: ]
+
+// [signature -> les trois mémos de séquences] : deux plans dont l'ordre de tour, le camp visé et
+// les ensembles « menace » / « peut changer un net » coïncident ont EXACTEMENT les mêmes
+// séquences de jeu. Leur clé de plan, elle, porte le BaseHash : un ennemi poussé fabrique un plan
+// neuf qui rebâtirait les mêmes séquences. Ils partagent donc ces maps par référence. Reset au
+// tour, comme les plans.
+global SEQ_MEMO_BY_SIG = [: ]
 
 global CELL_DANGER_GET_CACHE = [: ]
 
