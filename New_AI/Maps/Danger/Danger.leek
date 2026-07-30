@@ -64,7 +64,18 @@ class DangerClass {
 	 * aval ne lit son numéro (ni les combos, ni leurs clés, ni le glouton, ni EntityDanger,
 	 * ni les vulnés).
 	 */
-	static coverageOfCell(Cell, Plan, CovSeq) {
+	static coverageOfCell(Cell, Plan, CovSeq, TargetId) {
+		// La couverture ne dépend PAS des boucliers de la cible — seulement de la cellule, du plan
+		// et de la séquence de couverture, elle-même fonction de (plan, cible). Or la clé de
+		// CELL_DANGER_GET_CACHE, elle, porte les boucliers : un simple auto-buff rendait FROID tout
+		// le domaine de fuite et refaisait cette couverture à l'identique. Elle est donc mémorisée
+		// SUR LE PLAN, que les graines se partagent.
+		var covKey = (TargetId << 10) | Cell
+		if (covKey in Plan.COV_BY_CELL) {
+			var hit = Plan.COV_BY_CELL[covKey]
+			LAST_COVERAGE_HASH = hit[1]
+			return hit[0]
+		}
 		var maps = Plan.OFFENSIVE_MAPS
 		var mapKeys = Plan.MAP_KEYS
 		var n = count(CovSeq)
@@ -89,6 +100,7 @@ class DangerClass {
 			hash = (hash ^ (contentHash ^ (idx << 56))) * MIX_A
 		}
 		LAST_COVERAGE_HASH = hash
+		Plan.COV_BY_CELL[covKey] = [cov, hash]
 		return cov
 	}
 
@@ -153,7 +165,7 @@ class DangerClass {
 	 * @return [casterId -> dégâts], partagée en LECTURE SEULE
 	 */
 	static dangerOfCellCold(Cell, CellDangerKey, Plan, CovSeq, State, TargetStats, AntidoteCd, Buckets) {
-		var coverage = coverageOfCell(Cell, Plan, CovSeq)
+		var coverage = coverageOfCell(Cell, Plan, CovSeq, TargetStats.ID)
 		var danger
 		if (Buckets == null) {
 			danger = evalChainFromCoverage(coverage, Plan, State, TargetStats, AntidoteCd)

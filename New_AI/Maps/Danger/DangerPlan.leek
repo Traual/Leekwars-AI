@@ -266,6 +266,8 @@ class DangerTeamPlanClass {
 	ORDER           // ids du tableau trié (cache persistant, potentiellement désynchronisé)
 	ORDER_BY_ID     // [id -> son TURN_ORDER] : pivot de la partition
 	TURN_ORDERS     // [i] = TURN_ORDER de ORDER[i], aligné
+	COV_BY_CELL     // [(id cible << 10) | cellule -> [couverture, son hash]] : la couverture ne
+	                // dépend pas des boucliers, elle se partage donc entre toutes les graines
 	COV_SEQ_BY_ID   // [id cible -> indices de ORDER dans l'ordre de jeu], restreints aux casters
 	                // à map offensive non nulle — construit paresseusement
 	NET_SEQ_BY_ID   // idem, restreinte aux casters qui peuvent changer le net (menace ou soin)
@@ -280,6 +282,7 @@ class DangerTeamPlanClass {
 		this.ORDER = ThisOrder
 		this.ORDER_BY_ID = ThisOrderById
 		this.TURN_ORDERS = ThisTurnOrders
+		this.COV_BY_CELL = [: ]
 		this.COV_SEQ_BY_ID = [: ]
 		this.NET_SEQ_BY_ID = [: ]
 		this.NET_ALLY_BY_ID = [: ]
