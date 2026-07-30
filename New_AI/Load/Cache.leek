@@ -63,6 +63,16 @@ global CELL_Y = [: ]
 
 global TMPOBSTACLES = [: ]
 
+// [x·1024 + y -> cellule LIBRE] : l'inverse de CELL_X/CELL_Y, restreinte aux cellules sans
+// obstacle, bâtie une fois au chargement (Preload.InitCellClass). Les constructeurs de géométrie
+// demandaient la cellule au moteur PUIS son obstacle à TMPOBSTACLES : ici une seule lecture
+// répond aux deux questions, une clé absente valant « hors carte ou bloquée ».
+// x et y sont SIGNÉS (le moteur centre x sur la carte, y peut être négatif) : la clé reste
+// injective tant que |y| < 512, une collision exigeant |y1 - y2| >= 1024. Les lectures les plus
+// débordantes valent un rayon d'AoE hors carte, très loin de cette borne.
+// ATTENTION : la cellule 0 existe — tout lecteur teste `!= null`, jamais la vérité de la valeur.
+global XY_FREE = [: ]
+
 // [(areaType << 10) | centerCell -> [cellule -> distance d'AoE]] : les zones d'items,
 // construites paresseusement par couple réellement demandé (CellClass.getAreaDist).
 // PERSISTANT tout le combat (la carte ne change jamais) — jamais vidé au tour.

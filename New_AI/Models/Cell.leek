@@ -79,15 +79,16 @@ class CellClass {
 			var y1 = radius - abs(x)
 			var y2 = -y1
 
-			var ThisCell1 = getCellFromXY(BaseX + x, BaseY + y1)
-			if (ThisCell1!=null && !TMPOBSTACLES[ThisCell1]) {
+			// XY_FREE répond aux deux questions d'un coup : hors carte ET bloquée valent null.
+			var ThisCell1 = XY_FREE[(BaseX + x) * 1024 + (BaseY + y1)]
+			if (ThisCell1 != null) {
 				_final[ThisCell1] = true
 			}
 
 			// Vérifier que y1 et y2 ne sont pas égaux pour éviter les doublons
 			if (y1 != y2) {
-				var ThisCell2 = getCellFromXY(BaseX + x, BaseY + y2)
-				if (ThisCell2!=null && !TMPOBSTACLES[ThisCell2]) {
+				var ThisCell2 = XY_FREE[(BaseX + x) * 1024 + (BaseY + y2)]
+				if (ThisCell2 != null) {
 					_final[ThisCell2] = true
 				}
 			}
@@ -138,14 +139,14 @@ class CellClass {
 		var TmpHash = (cell << 7) | radius
 		if (TmpHash in POINTS_LINE_CACHE) return POINTS_LINE_CACHE[TmpHash]
 		var _final = [: ]
-		var Cell1 = getCellFromXY(BaseX + radius, BaseY)
-		var Cell2 = getCellFromXY(BaseX - radius, BaseY)
-		var Cell3 = getCellFromXY(BaseX, BaseY + radius)
-		var Cell4 = getCellFromXY(BaseX, BaseY - radius)
-		if (Cell1!=null && !TMPOBSTACLES[Cell1]) _final[Cell1] = true
-		if (Cell2!=null && !TMPOBSTACLES[Cell2]) _final[Cell2] = true
-		if (Cell3!=null && !TMPOBSTACLES[Cell3]) _final[Cell3] = true
-		if (Cell4!=null && !TMPOBSTACLES[Cell4]) _final[Cell4] = true
+		var Cell1 = XY_FREE[(BaseX + radius) * 1024 + BaseY]
+		var Cell2 = XY_FREE[(BaseX - radius) * 1024 + BaseY]
+		var Cell3 = XY_FREE[BaseX * 1024 + (BaseY + radius)]
+		var Cell4 = XY_FREE[BaseX * 1024 + (BaseY - radius)]
+		if (Cell1 != null) _final[Cell1] = true
+		if (Cell2 != null) _final[Cell2] = true
+		if (Cell3 != null) _final[Cell3] = true
+		if (Cell4 != null) _final[Cell4] = true
 		POINTS_LINE_CACHE[TmpHash] = _final
 		return _final
 	}
@@ -353,8 +354,8 @@ class CellClass {
 		var stepY = CELL_Y[to] > FromY ? 1 : (CELL_Y[to] < FromY ? -1 : 0)
 		if ((stepX == 0) != (stepY == 0)) {   // aligné sur exactement UN axe (from == to et diagonales -> vide, comme avant)
 			for (var d = minrange; d <= maxrange; d++) {
-				var Cell = getCellFromXY(FromX + d * stepX, FromY + d * stepY)
-				if (Cell == null || TMPOBSTACLES[Cell]) break
+				var Cell = XY_FREE[(FromX + d * stepX) * 1024 + (FromY + d * stepY)]
+				if (Cell == null) break   // hors carte ou obstacle : le laser s'arrête
 				_final[Cell] = true
 			}
 		}
@@ -372,8 +373,8 @@ class CellClass {
 		var stepY = CELL_Y[to] > FromY ? 1 : (CELL_Y[to] < FromY ? -1 : 0)
 		if ((stepX == 0) != (stepY == 0)) {
 			for (var d = minrange; d <= maxrange; d++) {
-				var Cell = getCellFromXY(FromX + d * stepX, FromY + d * stepY)
-				if (Cell == null || TMPOBSTACLES[Cell]) break
+				var Cell = XY_FREE[(FromX + d * stepX) * 1024 + (FromY + d * stepY)]
+				if (Cell == null) break   // hors carte ou obstacle
 				if (EntityMap[Cell]) {
 					_final[Cell] = true
 					break
@@ -391,8 +392,8 @@ class CellClass {
 		var BaseY = CELL_Y[cell]
 		for (var dx = -radius; dx <= radius; dx++) {
 			for (var dy = -radius; dy <= radius; dy++) {
-				var c = getCellFromXY(BaseX + dx, BaseY + dy)
-				if (c != null && !TMPOBSTACLES[c]) _final[c] = true
+				var c = XY_FREE[(BaseX + dx) * 1024 + (BaseY + dy)]
+				if (c != null) _final[c] = true
 			}
 		}
 		return _final
@@ -439,8 +440,8 @@ class CellClass {
 		while (current != aimCell) {
 			cx += dx
 			cy += dy
-			var next = getCellFromXY(cx, cy)
-			if (next == null || TMPOBSTACLES[next] || occupied[next]) return current
+			var next = XY_FREE[cx * 1024 + cy]
+			if (next == null || occupied[next]) return current   // null = hors carte ou obstacle
 			current = next
 		}
 		return current

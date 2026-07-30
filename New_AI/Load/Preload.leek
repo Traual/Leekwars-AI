@@ -53,9 +53,13 @@ class Preload {
 
 	static InitCellClass() {
 		for (var c = 0; c < 613; c++) {
-			TMPOBSTACLES[c] = isObstacle(c)
-			CELL_Y[c] = getCellY(c)
-			CELL_X[c] = getCellX(c)
+			var obs = isObstacle(c)
+			var x = getCellX(c)
+			var y = getCellY(c)
+			TMPOBSTACLES[c] = obs
+			CELL_X[c] = x
+			CELL_Y[c] = y
+			if (!obs) XY_FREE[x * 1024 + y] = c
 		}
 		// (couple, bitmask) précalculés pour chaque cellule. Layout :
 		//   couple = floor(cell / 35) ; rem = cell % 35
