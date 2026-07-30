@@ -160,58 +160,41 @@ class DeltaClass {
             }
         }
 
-        // Un SEUL parcours des cellules, dans l'ordre historique : chaque cellule est servie par
-        // le cache interne ou évaluée sur place. Le minimum est commutatif, l'ordre d'évaluation
-        // ne change donc aucune valeur. TOUT reste paresseux — le plan et les buckets ne
-        // naissent qu'au premier VRAI miss de CELL_DANGER_GET_CACHE. Le danger est partagé entre
-        // couvertures identiques, mais le net et le heal restent PAR CELLULE : même minimum,
-        // mêmes additions dans netDamage.
+        // Le minimum est commutatif : l'ordre d'évaluation ne change AUCUNE valeur, et un zéro
+        // est imbattable donc il coupe le balayage. Réordonner est donc exact — et c'est tout
+        // l'intérêt de la première passe ci-dessous.
         var minDelta = MAX_VALUE
         var dangerCellSeed = DangerClass.cellCacheSeed(targetSeed, MeStats.ID)
         var mySide = MeStats.SIDE
-        var plan = null
-        var myNetSeq = null   // séquence restreinte aux casters qui peuvent changer mon net
-        var myNetAlly = null  // drapeaux « mon camp » alignés dessus
-        var myCovSeq = null   // séquence restreinte aux menaces, pour les couvertures de cellule
-        var buckets = null
-        for (var cell: var mp in myWalkCells) {
-            var innerKey = seed ^ cell
-            var delta
-            if (innerKey in CELL_NETDAMAGE_FOR_ME_CACHE) {
-                delta = CELL_NETDAMAGE_FOR_ME_CACHE[innerKey]
-            } else {
-                var dangerKey = dangerCellSeed ^ cell
-                var dangerAtCell
-                if (dangerKey in CELL_DANGER_GET_CACHE) {
-                    // Hit : ni plan, ni couverture, ni hash de contenu, ni bucket.
-                    dangerAtCell = CELL_DANGER_GET_CACHE[dangerKey]
-                } else {
-                    if (plan == null) {
-                        plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
-                        buckets = [: ]   // couvertures rencontrées, locales à cette recherche de fuite
-                    }
-                    // Le plan a pu naître dans le bloc du net : la séquence de couverture se
-                    // résout donc ici, indépendamment de qui a créé le plan.
-                    if (myCovSeq == null) myCovSeq = DangerPlanClass.coverageSequenceFor(plan, Me)
-                    dangerAtCell = DangerClass.dangerOfCellCold(cell, dangerKey, plan, myCovSeq, State, MeStats, antidoteCd, buckets)
-                }
-                // Danger vide -> delta 0 direct, sans même l'ordre de tour (déclenche l'early
-                // exit "imbattable" dessous).
-                delta = 0
-                if (!mapIsEmpty(dangerAtCell)) {
-                    if (plan == null) plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
-                    if (myNetSeq == null) {
-                        myNetSeq = DangerPlanClass.netSequenceFor(plan, Me)
-                        myNetAlly = DangerPlanClass.netAllySeqFor(plan, Me)
-                    }
-                    delta = netDamage(MeStats, dangerAtCell, healMap, State, myNetSeq, myNetAlly, cell)
-                }
-                CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
+        // Objets partagés par tout le balayage (plan, buckets, trois séquences), créés au
+        // PREMIER vrai miss et pas avant. Dans un tableau parce que le balayage se fait en deux
+        // passes : des locales ne pourraient pas les partager entre les deux.
+        var lazy = [null, null, null, null, null]
+
+        // PREMIÈRE PASSE — les cellules qui ont rendu 0 sous une AUTRE graine de ce tour. Ce ne
+        // sont que des CANDIDATS : ils sont évalués normalement, rien n'est présumé. Elles
+        // appartiennent de toute façon au balayage qui suit (qui les retrouvera dans le cache
+        // interne), donc la passe ne coûte que ses tests d'accessibilité — et quand elle trouve
+        // un zéro, elle épargne toutes les cellules FROIDES du balayage restant.
+        var nAny = count(SAFE_ANY_CELLS)
+        for (var ai = nAny - 1; ai >= 0; ai--) {
+            var hc = SAFE_ANY_CELLS[ai]
+            if (!(hc in myWalkCells)) continue
+            var hd = netAtFleeCell(hc, seed, dangerCellSeed, MeStats, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy)
+            if (hd == 0) {
+                rememberSafeCell(seed, hc)
+                ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0
+                return 0
             }
+            if (hd < minDelta) minDelta = hd
+        }
+
+        for (var cell: var mp in myWalkCells) {
+            var delta = netAtFleeCell(cell, seed, dangerCellSeed, MeStats, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy)
             if (delta < minDelta) {
                 if (delta == 0) {   // imbattable
-                    var hints = seed in SAFE_CELL_FOR_ME_CACHE ? SAFE_CELL_FOR_ME_CACHE[seed] : (SAFE_CELL_FOR_ME_CACHE[seed] = [])
-                    push(hints, cell)
+                    rememberSafeCell(seed, cell)
+                    rememberSafeAnyCell(cell)
                     ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0
                     return 0
                 }
@@ -220,6 +203,57 @@ class DeltaClass {
         }
         ENTITY_DELTA_CACHE_FOR_ME[outerKey] = minDelta
         return minDelta
+    }
+
+    /*
+     * Net de Me à UNE cellule de fuite : servi par le cache interne, sinon évalué à froid.
+     * `lazy` porte les objets communs à tout le balayage — [plan, buckets, séquence de
+     * couverture, séquence de net, drapeaux de camp] — matérialisés au premier vrai besoin.
+     */
+    static netAtFleeCell(cell, seed, dangerCellSeed, MeStats, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy) {
+        var innerKey = seed ^ cell
+        if (innerKey in CELL_NETDAMAGE_FOR_ME_CACHE) return CELL_NETDAMAGE_FOR_ME_CACHE[innerKey]
+        var dangerKey = dangerCellSeed ^ cell
+        var dangerAtCell
+        if (dangerKey in CELL_DANGER_GET_CACHE) {
+            // Hit : ni plan, ni couverture, ni hash de contenu, ni bucket.
+            dangerAtCell = CELL_DANGER_GET_CACHE[dangerKey]
+        } else {
+            if (lazy[0] == null) lazy[0] = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
+            // Buckets créés INDÉPENDAMMENT du plan : si le plan naît par le chemin du net, les
+            // couvertures suivantes se partageaient sans bucket, donc pas du tout.
+            if (lazy[1] == null) lazy[1] = [: ]
+            if (lazy[2] == null) lazy[2] = DangerPlanClass.coverageSequenceFor(lazy[0], Me)
+            dangerAtCell = DangerClass.dangerOfCellCold(cell, dangerKey, lazy[0], lazy[2], State, MeStats, antidoteCd, lazy[1])
+        }
+        // Danger vide -> delta 0 direct, sans même dérouler l'ordre de tour.
+        var delta = 0
+        if (!mapIsEmpty(dangerAtCell)) {
+            if (lazy[0] == null) lazy[0] = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
+            if (lazy[3] == null) {
+                lazy[3] = DangerPlanClass.netSequenceFor(lazy[0], Me)
+                lazy[4] = DangerPlanClass.netAllySeqFor(lazy[0], Me)
+            }
+            delta = netDamage(MeStats, dangerAtCell, healMap, State, lazy[3], lazy[4], cell)
+        }
+        CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
+        return delta
+    }
+
+    /* Indice EXACT : cette cellule rend 0 pour CETTE graine, donc le minimum y est imbattable. */
+    static rememberSafeCell(seed, cell) {
+        var hints = seed in SAFE_CELL_FOR_ME_CACHE ? SAFE_CELL_FOR_ME_CACHE[seed] : (SAFE_CELL_FOR_ME_CACHE[seed] = [])
+        push(hints, cell)
+    }
+
+    /* Indice HEURISTIQUE, toutes graines : une cellule sûre sous une graine l'est souvent sous
+     * les autres (elle est simplement loin des menaces). Borné, sinon la première passe finirait
+     * par coûter plus que ce qu'elle épargne. */
+    static rememberSafeAnyCell(cell) {
+        if (cell in SAFE_ANY_SET) return;
+        if (count(SAFE_ANY_CELLS) >= SAFE_ANY_MAX) return;
+        SAFE_ANY_SET[cell] = true
+        push(SAFE_ANY_CELLS, cell)
     }
 
     /*

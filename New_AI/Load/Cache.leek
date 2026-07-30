@@ -16,6 +16,8 @@ function ReloadCacheNewTurn() {
     ENTITY_DELTA_CACHE_FOR_ME = [: ]
     CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
     SAFE_CELL_FOR_ME_CACHE = [: ]
+    SAFE_ANY_CELLS = []
+    SAFE_ANY_SET = [: ]
     AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
     SURVIVAL_CACHE = [: ]
@@ -227,6 +229,16 @@ global ENTITY_DELTA_CACHE_FOR_ME = [: ]
 // et de la cellule ; seule l'ACCESSIBILITÉ change d'un nœud à l'autre, d'où plusieurs
 // candidats — aucun doublon possible, le test d'entrée les aurait déjà servis.
 global SAFE_CELL_FOR_ME_CACHE = [: ]
+
+// Cellules qui ont rendu un net nul sous N'IMPORTE QUELLE graine du tour, et l'ensemble qui les
+// dédoublonne. Contrairement au cache ci-dessus, ce n'est PAS un raccourci exact : c'est une
+// liste de candidats que la recherche de fuite évalue normalement, en PREMIER. Une cellule sûre
+// sous une graine l'est souvent sous les autres — elle est simplement loin des menaces — et un
+// zéro trouvé tôt épargne toutes les cellules froides du balayage restant. Borné : au-delà, les
+// tests d'accessibilité de la première passe coûteraient plus qu'ils n'épargnent. Reset au tour.
+global SAFE_ANY_CELLS = []
+global SAFE_ANY_SET = [: ]
+global SAFE_ANY_MAX = 8
 
 // WALKCELLS (par layer)
 
