@@ -3,7 +3,7 @@
  * (marche / +jump / +télépo / +les deux), calculées par un BFS bitmap.
  *
  *   - getWalk / getJump / getTele / getTPJ : fetchers par layer (cache ou calcul)
- *   - canJump / canTele / canTPJ           : checks de capacité
+ *   - canJump / canTele                    : checks de capacité
  *   - getMaxLayer(state, e, bh)            : la map d'accessibilité maximale
  *   - getAllLayers(state, e, bh)           : les quatre layers + .MAX (LayersClass)
  */
@@ -47,21 +47,17 @@ class WalkCellsClass {
 		return (cd == 0 || (stats.ID != Me && cd <= 1)) && stats.TP >= TELE_COST
 	}
 
-	static canTPJ(stats) {
-		return canJump(stats) && canTele(stats)
-			&& stats.TP >= JUMP_TELE_COST
-	}
-
 	// ============================================================================
 	// Per-layer fetchers : cache lookup, compute on miss, store and return.
+	// L'entité et sa clé (cellule, mp) sous BaseHash sont résolues UNE fois par les
+	// composeurs et transmises telles quelles : quatre layers demandées d'affilée les
+	// recalculaient à l'identique quatre fois.
 	// BenchOps wraps the MISS compute ONLY (key + hit stay outside the window):
 	// hits pay zero instrumentation, the "WalkCells" bucket = real pathfinding.
 	// The wrappers below (getMaxLayer & co) are pair-free for the same reason.
 	// ============================================================================
 
-	static getWalk(state, entity, base_hash) {
-		var stats = state[entity]
-		var hashWalk = HashWalkCells(stats.CELL, stats.MP, base_hash)
+	static getWalk(state, entity, base_hash, stats, hashWalk) {
 		if (hashWalk in WALKABLE_CACHE) return WALKABLE_CACHE[hashWalk]
 		BenchOps.Start("WalkCells")
 		var r = WalkableCells(stats.CELL, LoadIgnoreCells(state, entity, base_hash), stats.MP)
@@ -70,9 +66,7 @@ class WalkCellsClass {
 		return r
 	}
 
-	static getJump(state, entity, base_hash) {
-		var stats = state[entity]
-		var hashWalk = HashWalkCells(stats.CELL, stats.MP, base_hash)
+	static getJump(state, entity, base_hash, stats, hashWalk) {
 		if (hashWalk in JUMP_CACHE) return JUMP_CACHE[hashWalk]
 		BenchOps.Start("WalkCells")
 		var r = WalkableCellsWithJump(stats.CELL, LoadIgnoreCells(state, entity, base_hash), stats.MP)
@@ -81,9 +75,7 @@ class WalkCellsClass {
 		return r
 	}
 
-	static getTele(state, entity, base_hash) {
-		var stats = state[entity]
-		var hashWalk = HashWalkCells(stats.CELL, stats.MP, base_hash)
+	static getTele(state, entity, base_hash, stats, hashWalk) {
 		if (hashWalk in TELEPORTATION_CACHE) return TELEPORTATION_CACHE[hashWalk]
 		BenchOps.Start("WalkCells")
 		var r = WalkableCellsWithTeleportation(stats.CELL, LoadIgnoreCells(state, entity, base_hash), stats.MP)
@@ -92,9 +84,7 @@ class WalkCellsClass {
 		return r
 	}
 
-	static getTPJ(state, entity, base_hash) {
-		var stats = state[entity]
-		var hashWalk = HashWalkCells(stats.CELL, stats.MP, base_hash)
+	static getTPJ(state, entity, base_hash, stats, hashWalk) {
 		if (hashWalk in TELEPORTATION_AND_JUMP_CACHE) return TELEPORTATION_AND_JUMP_CACHE[hashWalk]
 		BenchOps.Start("WalkCells")
 		var r = WalkableCellsWithTeleportationAndJump(stats.CELL, LoadIgnoreCells(state, entity, base_hash), stats.MP)
@@ -157,10 +147,16 @@ class WalkCellsClass {
 	 */
 	static getMaxLayer(state, entity, base_hash) {
 		var stats = state[entity]
-		if (canTPJ(stats))  return getTPJ(state, entity, base_hash)
-		if (canTele(stats)) return getTele(state, entity, base_hash)
-		if (canJump(stats)) return getJump(state, entity, base_hash)
-		return getWalk(state, entity, base_hash)
+		// Les deux checks de capacité sont résolus UNE fois : la cascade d'origine relisait le
+		// cooldown de Saut et de Télépo jusqu'à trois fois chacun, en remontant à chaque fois la
+		// chaîne d'inventaire.
+		var cJ = canJump(stats)
+		var cT = canTele(stats)
+		var hashWalk = HashWalkCells(stats.CELL, stats.MP, base_hash)
+		if (cJ && cT && stats.TP >= JUMP_TELE_COST) return getTPJ(state, entity, base_hash, stats, hashWalk)
+		if (cT) return getTele(state, entity, base_hash, stats, hashWalk)
+		if (cJ) return getJump(state, entity, base_hash, stats, hashWalk)
+		return getWalk(state, entity, base_hash, stats, hashWalk)
 	}
 
 	/*
@@ -172,10 +168,11 @@ class WalkCellsClass {
 		var cJ = canJump(stats)
 		var cT = canTele(stats)
 		var cTJ = cJ && cT && stats.TP >= JUMP_TELE_COST
-		var walk = getWalk(state, entity, base_hash)
-		var jump = cJ  ? getJump(state, entity, base_hash) : [:]
-		var tele = cT  ? getTele(state, entity, base_hash) : [:]
-		var tpj  = cTJ ? getTPJ(state, entity, base_hash)  : [:]
+		var hashWalk = HashWalkCells(stats.CELL, stats.MP, base_hash)
+		var walk = getWalk(state, entity, base_hash, stats, hashWalk)
+		var jump = cJ  ? getJump(state, entity, base_hash, stats, hashWalk) : [:]
+		var tele = cT  ? getTele(state, entity, base_hash, stats, hashWalk) : [:]
+		var tpj  = cTJ ? getTPJ(state, entity, base_hash, stats, hashWalk)  : [:]
 		var max  = cTJ ? tpj : (cT ? tele : (cJ ? jump : walk))
 		return new LayersClass(walk, jump, tele, tpj, max)
 	}
