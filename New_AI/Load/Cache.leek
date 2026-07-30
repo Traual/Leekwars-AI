@@ -83,6 +83,11 @@ global AOEB_ROWS = 0
 global AOEB_FREE = []
 global AOEB_CELL_BY_BIT = []
 global AOEB_ZERO = []
+// Ligne et bit d'une cellule LIBRE, pré-additionnés : poser une cellule sur un plateau
+// relisait CELL_X et CELL_Y puis refaisait l'offset et le décalage, une fois par cellule et
+// par dilatation. Une cellule bloquée y est absente (elle n'est jamais posée).
+global AOEB_ROW_OF = [: ]
+global AOEB_BIT_OF = [: ]
 
 // [zone -> décalages (dx, dy, distance d'AoE) à plat, TRIÉS par distance croissante, centre
 // EXCLU] : la forme d'une zone est indépendante de son centre, seuls les obstacles et les bords

@@ -92,6 +92,8 @@ class Preload {
 			var bit = 1 << (CELL_Y[c] + AOEB_YOFF)
 			AOEB_FREE[row] |= bit
 			AOEB_CELL_BY_BIT[row][bit] = c
+			AOEB_ROW_OF[c] = row
+			AOEB_BIT_OF[c] = bit
 		}
 		InitAoeShapes()
 	}

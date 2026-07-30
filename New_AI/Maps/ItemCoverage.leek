@@ -182,8 +182,8 @@ class ItemCoverageClass {
 		var lo = AOEB_ROWS
 		var hi = -1
 		for (var cell: var bool in MapCellsBool) {
-			var row = CELL_X[cell] + AOEB_XOFF
-			board[row] |= 1 << (CELL_Y[cell] + AOEB_YOFF)
+			var row = AOEB_ROW_OF[cell]
+			board[row] |= AOEB_BIT_OF[cell]
 			if (row < lo) lo = row
 			if (row > hi) hi = row
 		}
