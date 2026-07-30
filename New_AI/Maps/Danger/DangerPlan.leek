@@ -65,6 +65,24 @@ class DangerPlanClass {
 		return getMapCellItemAoe(CasterStats, WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(CasterStats), MapKey)
 	}
 
+	/*
+	 * SOURCE UNIQUE des deux clés de plan : un digest de (domaine, contexte offensif, camp).
+	 *
+	 * Chaîne à MULTIPLICATION (contrat des clés, famille 3b) et non addValueToBinHash : les deux
+	 * premiers termes sont des EMPREINTES LARGES, et addValueToBinHash n'est qu'une rotation
+	 * suivie d'un XOR — donc LINÉAIRE. Enchaînée sur deux digests, elle les fait se recouvrir au
+	 * lieu de les séparer : une différence de domaine peut être annulée par une différence de
+	 * contexte, et deux états distincts partagent alors le même plan offensif. Le même défaut
+	 * avait été mesuré collisionnant sur dangerPairKey (267 combos servis pour d'autres entrées
+	 * en un seul combat). Le camp, lui, est un scalaire étroit, mais il passe par le même pas
+	 * pour n'avoir qu'une seule forme à raisonner.
+	 */
+	static planDigestOf(DomainHash, OffensiveContextHash, TargetSide) {
+		var h = (OFFSET_BASIS ^ DomainHash) * MIX_A
+		h = (h ^ OffensiveContextHash) * MIX_A
+		return (h ^ TargetSide) * MIX_A
+	}
+
 	/* Clé du plan d'équipe : terrain + contexte offensif du camp visé + ce camp. Volontairement
 	 * CONSERVATRICE — elle peut fragmenter sur une stat offensive sans effet géométrique, mais
 	 * elle est exacte et ne coûte aucun nouveau scan : BaseHash et le contexte viennent des
@@ -72,7 +90,7 @@ class DangerPlanClass {
 	 * Elle ne contient NI les shields, NI l'antidote, NI la LIFE, NI l'id de la cible : deux
 	 * cibles du même camp partagent leur plan, seul leur point de départ dans l'ordre diffère. */
 	static dangerTeamPlanKeyOf(BaseHash, OffensiveContextHash, TargetSide) {
-		return addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ BaseHash, OffensiveContextHash), TargetSide)
+		return planDigestOf(BaseHash, OffensiveContextHash, TargetSide)
 	}
 
 	/*
@@ -180,8 +198,9 @@ class DangerPlanClass {
 		// se déplacent en fabriquent un neuf, identique. Ce dont il dépend vraiment : le set des
 		// VIVANTS (il pinne l'ordre de tour, et l'aliveness est tout ce que le plan lit du camp de
 		// la cible), le contexte offensif adverse (positions et stats des menaces) et le camp visé.
-		// La signature n'est calculée qu'ICI, sur le chemin lent.
-		var planSig = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ StateClass.getHashedEntities(State), OffensiveContextHash), TargetSide)
+		// La signature n'est calculée qu'ICI, sur le chemin lent. Même digest que la clé rapide,
+		// seul le DOMAINE change : le set des vivants au lieu du terrain complet.
+		var planSig = planDigestOf(StateClass.getHashedEntities(State), OffensiveContextHash, TargetSide)
 		if (planSig in PLAN_BY_SIG) {
 			var shared = PLAN_BY_SIG[planSig]
 			DANGER_TEAM_PLAN_CACHE[key] = shared
