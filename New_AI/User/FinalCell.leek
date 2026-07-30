@@ -77,7 +77,7 @@ class FinalCell {
                     myNetSeq = DangerPlanClass.netSequenceFor(plan, myId)
                     myNetAlly = DangerPlanClass.netAllySeqFor(plan, myId)
                 }
-                net = DeltaClass.netDamage(MyState, dangerMap, healMap, State, myNetSeq, myNetAlly, cell)
+                net = DeltaClass.netDamage(MyState, dangerMap, healMap, myNetSeq, myNetAlly, cell)
             }
             if (net == 0) { bestCell = cell ; bestNet = 0 ; break }   // meilleure gravité ET sûre -> fini
             if (net < bestNet) { bestNet = net ; bestCell = cell }

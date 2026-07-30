@@ -115,7 +115,7 @@ class DeltaClass {
         // Les casters frappent dans l'ordre où ils jouent APRÈS la cible ce round : la
         // séquence du plan est construite une fois par cible, puis partagée.
         if (plan == null) plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, targetSide)
-        var nd = netDamage(stat, dangerToT, healMap, State, DangerPlanClass.netSequenceFor(plan, e), DangerPlanClass.netAllySeqFor(plan, e), cell)
+        var nd = netDamage(stat, dangerToT, healMap, DangerPlanClass.netSequenceFor(plan, e), DangerPlanClass.netAllySeqFor(plan, e), cell)
         NETDAMAGE_CACHE[ndKey] = nd
         return nd
     }
@@ -234,7 +234,7 @@ class DeltaClass {
                 lazy[3] = DangerPlanClass.netSequenceFor(lazy[0], Me)
                 lazy[4] = DangerPlanClass.netAllySeqFor(lazy[0], Me)
             }
-            delta = netDamage(MeStats, dangerAtCell, healMap, State, lazy[3], lazy[4], cell)
+            delta = netDamage(MeStats, dangerAtCell, healMap, lazy[3], lazy[4], cell)
         }
         CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
         return delta
@@ -266,7 +266,7 @@ class DeltaClass {
      * exclue), construite une seule fois par cible et partagée par toutes les cellules. Elle
      * porte les identifiants des casters, pas leurs index dans l'ordre de tour.
      */
-    static netDamage(stat, dangerToT, healMap, State, Seq, AllySeq, cell) {
+    static netDamage(stat, dangerToT, healMap, Seq, AllySeq, cell) {
         // CONTRAT : la map de danger n'est jamais vide ici, les trois appelants le testent
         // avant d'appeler (un danger vide vaut net 0 sans dérouler l'ordre de tour).
         var life = stat.LIFE
