@@ -156,11 +156,16 @@ class NodeClass {
 		var pf = StateParent.POISON_FOLD
 		var anyAnti = ANY_ANTIDOTE == true
 		var localTermDirty = [: ]
+		// Le patch se remplit DANS la boucle ci-dessous : elle parcourt déjà clonedIds et lit
+		// déjà la référence produite dans le workspace. Le repasser ensuite refaisait le même
+		// parcours et la même lecture pour chaque entité touchée.
+		var patch = [: ]
 		// Allouée seulement si un contexte offensif bouge vraiment : une attaque ordinaire non
 		// létale clone des entités sans rien changer à leur menace, et ne doit rien payer.
 		var dangerDirtyCasters = null
 		for (var tar: var parentStat in clonedIds) {
 			var newStat = ThisActionStats[tar]
+			patch[tar] = newStat
 			// Entité NÉE dans l'action (summon) : aucune contribution ancienne à retirer, on
 			// AJOUTE simplement les siennes. clonedIds est enregistré à la source par
 			// Consequences, donc Node n'a plus à deviner la nature de l'action.
@@ -248,21 +253,10 @@ class NodeClass {
 		result.CONTEXT_BY_SIDE = ctx
 		result.HFP_BY_SIDE = hfpMap
 		result.HFP_OWNED = hfpOwned
-		capturePatch(result, ThisActionStats, clonedIds)
+		result.STATE_PATCH = patch
 
 		BenchOps.Stop("Node")
 		return result
 	}
 
-	/*
-	 * Fige les entités modifiées par l'action : STATE_PATCH prend, pour chaque id touché, la
-	 * référence PRODUITE dans le workspace (un id né dans l'action y figure aussi — sa valeur
-	 * dans clonedIds est null, mais le workspace porte bien la nouvelle entité). Appelé sur
-	 * les DEUX sorties d'ActionToNodeInTree, avant que l'appelant ne restaure le workspace.
-	 */
-	static capturePatch(node, Workspace, clonedIds) {
-		var patch = [: ]
-		for (var id: var oldStat in clonedIds) patch[id] = Workspace[id]
-		node.STATE_PATCH = patch
-	}
 }
