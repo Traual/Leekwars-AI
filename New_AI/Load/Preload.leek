@@ -86,14 +86,21 @@ class Preload {
 			push(AOEB_ZERO, 0)
 			push(AOEB_CELL_BY_BIT, [: ])
 		}
+		AOEB_ROW_OF = []
+		AOEB_BIT_OF = []
 		for (var c = 0; c < 613; c++) {
-			if (TMPOBSTACLES[c]) continue
+			// Une cellule bloquée prend (0, 0) : jamais lue, mais l'indexation reste directe.
+			if (TMPOBSTACLES[c]) {
+				push(AOEB_ROW_OF, 0)
+				push(AOEB_BIT_OF, 0)
+				continue
+			}
 			var row = CELL_X[c] + AOEB_XOFF
 			var bit = 1 << (CELL_Y[c] + AOEB_YOFF)
 			AOEB_FREE[row] |= bit
 			AOEB_CELL_BY_BIT[row][bit] = c
-			AOEB_ROW_OF[c] = row
-			AOEB_BIT_OF[c] = bit
+			push(AOEB_ROW_OF, row)
+			push(AOEB_BIT_OF, bit)
 		}
 		InitAoeShapes()
 	}
@@ -184,9 +191,9 @@ class Preload {
 			var obs = isObstacle(c)
 			var x = getCellX(c)
 			var y = getCellY(c)
-			TMPOBSTACLES[c] = obs
-			CELL_X[c] = x
-			CELL_Y[c] = y
+			push(TMPOBSTACLES, obs)
+			push(CELL_X, x)
+			push(CELL_Y, y)
 			if (!obs) XY_FREE[x * 1024 + y] = c
 		}
 		InitAoeBoard()

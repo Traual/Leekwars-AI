@@ -63,10 +63,13 @@ global INITIAL_TURN_ORDER = [: ]
 
 // CELL
 
-global CELL_X = [: ]
-global CELL_Y = [: ]
+// TABLEAUX et non maps : leur clé est la cellule, un domaine DENSE de 0 à 612. Une lecture
+// de tableau coûte la moitié d'une lecture de map, et ces trois-là sont lus dans les
+// géométries les plus chaudes.
+global CELL_X = []
+global CELL_Y = []
 
-global TMPOBSTACLES = [: ]
+global TMPOBSTACLES = []
 
 // [pack borné -> mix64(pack)] : les contributions de hash prennent un pack (id, cellule) qui
 // ne compte qu'environ 7 000 valeurs distinctes sur une carte. PERSISTANT (mix64 est pure).
@@ -90,9 +93,10 @@ global AOEB_CELL_BY_BIT = []
 global AOEB_ZERO = []
 // Ligne et bit d'une cellule LIBRE, pré-additionnés : poser une cellule sur un plateau
 // relisait CELL_X et CELL_Y puis refaisait l'offset et le décalage, une fois par cellule et
-// par dilatation. Une cellule bloquée y est absente (elle n'est jamais posée).
-global AOEB_ROW_OF = [: ]
-global AOEB_BIT_OF = [: ]
+// par dilatation. TABLEAUX denses : une cellule bloquée y porte (0, 0), valeur jamais lue
+// puisqu'elle n'est jamais posée sur un plateau, mais qui garde l'indexation directe.
+global AOEB_ROW_OF = []
+global AOEB_BIT_OF = []
 
 // [zone -> décalages (dx, dy, distance d'AoE) à plat, TRIÉS par distance croissante, centre
 // EXCLU] : la forme d'une zone est indépendante de son centre, seuls les obstacles et les bords
