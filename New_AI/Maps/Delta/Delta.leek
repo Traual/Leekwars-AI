@@ -115,7 +115,7 @@ class DeltaClass {
         // Les casters frappent dans l'ordre où ils jouent APRÈS la cible ce round : la
         // séquence du plan est construite une fois par cible, puis partagée.
         if (plan == null) plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, targetSide)
-        var nd = netDamage(stat, dangerToT, healMap, DangerPlanClass.netSequenceFor(plan, e), DangerPlanClass.netAllySeqFor(plan, e), cell)
+        var nd = netDamage(stat, dangerToT, healMap, DangerPlanClass.netSequenceFor(plan, e), cell)
         NETDAMAGE_CACHE[ndKey] = nd
         return nd
     }
@@ -169,7 +169,7 @@ class DeltaClass {
         // Objets partagés par tout le balayage (plan, buckets, trois séquences), créés au
         // PREMIER vrai miss et pas avant. Dans un tableau parce que le balayage se fait en deux
         // passes : des locales ne pourraient pas les partager entre les deux.
-        var lazy = [null, null, null, null, null]
+        var lazy = [null, null, null, null]
 
         // PREMIÈRE PASSE — les cellules qui ont rendu 0 sous une AUTRE graine de ce tour. Ce ne
         // sont que des CANDIDATS : ils sont évalués normalement, rien n'est présumé. Elles
@@ -208,7 +208,7 @@ class DeltaClass {
     /*
      * Net de Me à UNE cellule de fuite : servi par le cache interne, sinon évalué à froid.
      * `lazy` porte les objets communs à tout le balayage — [plan, buckets, séquence de
-     * couverture, séquence de net, drapeaux de camp] — matérialisés au premier vrai besoin.
+     * couverture, séquence de net] — matérialisés au premier vrai besoin.
      */
     static netAtFleeCell(cell, seed, dangerCellSeed, MeStats, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy) {
         var innerKey = seed ^ cell
@@ -230,11 +230,8 @@ class DeltaClass {
         var delta = 0
         if (!mapIsEmpty(dangerAtCell)) {
             if (lazy[0] == null) lazy[0] = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
-            if (lazy[3] == null) {
-                lazy[3] = DangerPlanClass.netSequenceFor(lazy[0], Me)
-                lazy[4] = DangerPlanClass.netAllySeqFor(lazy[0], Me)
-            }
-            delta = netDamage(MeStats, dangerAtCell, healMap, lazy[3], lazy[4], cell)
+            if (lazy[3] == null) lazy[3] = DangerPlanClass.netSequenceFor(lazy[0], Me)
+            delta = netDamage(MeStats, dangerAtCell, healMap, lazy[3], cell)
         }
         CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
         return delta
@@ -266,7 +263,7 @@ class DeltaClass {
      * exclue), construite une seule fois par cible et partagée par toutes les cellules. Elle
      * porte les identifiants des casters, pas leurs index dans l'ordre de tour.
      */
-    static netDamage(stat, dangerToT, healMap, Seq, AllySeq, cell) {
+    static netDamage(stat, dangerToT, healMap, Seq, cell) {
         // CONTRAT : la map de danger n'est jamais vide ici, les trois appelants le testent
         // avant d'appeler (un danger vide vaut net 0 sans dérouler l'ordre de tour).
         var life = stat.LIFE
@@ -276,22 +273,20 @@ class DeltaClass {
         var totalLife = stat.TOTAL_LIFE
         // La séquence exclut la cible -> jamais de self-heal ici, profil par type.
         var allyProfile = stat.IS_SUMMON ? HEAL_PROFILE_ALLY_SUMMON : HEAL_PROFILE_ALLY_LEEK
-        // Parcours par CLÉ:VALEUR et non par index : la forme indexée relit le tableau et
-        // repaie son incrément à chaque pas, pour deux fois le prix. La clé sert encore, les
-        // drapeaux de camp étant alignés sur la séquence.
-        for (var k: var caster in Seq) {
-            if (caster in dangerToT) {
-                life -= DANGER_COEF * dangerToT[caster]
-            }
-            // CONTRAT : un caster du même camp présent dans la séquence de net y est
-            // forcément par la clause de soin — il ne peut pas menacer son propre camp, donc
-            // sa map offensive est nulle. Or cette clause est mot pour mot la qualification
-            // de healerContributionOf, qui décide l'appartenance à la heal map. Un allié de
-            // la séquence est donc toujours dans healMap.
-            // Le camp est un drapeau du plan, aligné sur la séquence : le déroulé n'a plus à
-            // rouvrir l'état pour chaque caster, à chaque cellule et à chaque nœud.
-            if (life > 0 && AllySeq[k]) {
-                var parts = HealClass.partsAt(healMap[caster], allyProfile, cell)
+        // Le camp est encodé DANS la séquence : un allié y figure sous -id-1 (DangerPlan). Un
+        // allié ne peut pas menacer son propre camp, sa map offensive est donc nulle et il
+        // n'est jamais dans la map de danger — le signe tranche seul entre les deux
+        // traitements, là où chaque caster payait les DEUX tests à chaque cellule.
+        // CONTRAT : la clause qui met un allié dans la séquence est mot pour mot la
+        // qualification de healerContributionOf, qui décide l'appartenance à la heal map.
+        // Un allié de la séquence est donc toujours dans healMap.
+        for (var signed in Seq) {
+            if (signed >= 0) {
+                if (signed in dangerToT) {
+                    life -= DANGER_COEF * dangerToT[signed]
+                }
+            } else if (life > 0) {
+                var parts = HealClass.partsAt(healMap[-signed - 1], allyProfile, cell)
                 if (parts != null) {
                     var projectedVitality = HEAL_COEF * parts[1]
                     totalLife += projectedVitality
