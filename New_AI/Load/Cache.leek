@@ -292,6 +292,10 @@ global JUMP_CACHE = [: ]
 global TELEPORTATION_CACHE = [: ]
 global TELEPORTATION_AND_JUMP_CACHE = [: ]
 global IGNORE_CELLS_CACHE = [: ]
+// Plateau d'obstacles dérivé des mêmes cellules ignorées, sous la MÊME clé : les quatre
+// BFS le reconstruisaient chacun à chaque appel. PERSISTANT comme lui — la clé porte le
+// terrain, qui pinne les positions vivantes. Rendu en LECTURE SEULE.
+global OBSTACLE_BOARD_CACHE = [: ]
 
 // Variante "NoEntities" : ignore les entités comme obstacles, seuls les obstacles de la carte
 // comptent. Utilisée par le danger — l'approximation s'échange contre un cache PERSISTANT tout

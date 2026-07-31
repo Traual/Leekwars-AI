@@ -82,7 +82,7 @@ class WalkCellsClass {
 	static getWalk(state, entity, base_hash, stats, hashWalk) {
 		if (hashWalk in WALKABLE_CACHE) return WALKABLE_CACHE[hashWalk]
 		BenchOps.Start("WalkCells")
-		var r = WalkableCells(stats.CELL, LoadIgnoreCells(state, entity, base_hash), stats.MP)
+		var r = WalkableCells(stats.CELL, LoadObstacleBoard(state, entity, base_hash), stats.MP)
 		WALKABLE_CACHE[hashWalk] = r
 		BenchOps.Stop("WalkCells")
 		return r
@@ -91,7 +91,7 @@ class WalkCellsClass {
 	static getJump(state, entity, base_hash, stats, hashWalk) {
 		if (hashWalk in JUMP_CACHE) return JUMP_CACHE[hashWalk]
 		BenchOps.Start("WalkCells")
-		var r = WalkableCellsWithJump(stats.CELL, LoadIgnoreCells(state, entity, base_hash), stats.MP)
+		var r = WalkableCellsWithJump(stats.CELL, LoadObstacleBoard(state, entity, base_hash), stats.MP)
 		JUMP_CACHE[hashWalk] = r
 		BenchOps.Stop("WalkCells")
 		return r
@@ -100,7 +100,7 @@ class WalkCellsClass {
 	static getTele(state, entity, base_hash, stats, hashWalk) {
 		if (hashWalk in TELEPORTATION_CACHE) return TELEPORTATION_CACHE[hashWalk]
 		BenchOps.Start("WalkCells")
-		var r = WalkableCellsWithTeleportation(stats.CELL, LoadIgnoreCells(state, entity, base_hash), stats.MP)
+		var r = WalkableCellsWithTeleportation(stats.CELL, LoadObstacleBoard(state, entity, base_hash), stats.MP)
 		TELEPORTATION_CACHE[hashWalk] = r
 		BenchOps.Stop("WalkCells")
 		return r
@@ -109,7 +109,7 @@ class WalkCellsClass {
 	static getTPJ(state, entity, base_hash, stats, hashWalk) {
 		if (hashWalk in TELEPORTATION_AND_JUMP_CACHE) return TELEPORTATION_AND_JUMP_CACHE[hashWalk]
 		BenchOps.Start("WalkCells")
-		var r = WalkableCellsWithTeleportationAndJump(stats.CELL, LoadIgnoreCells(state, entity, base_hash), stats.MP)
+		var r = WalkableCellsWithTeleportationAndJump(stats.CELL, LoadObstacleBoard(state, entity, base_hash), stats.MP)
 		TELEPORTATION_AND_JUMP_CACHE[hashWalk] = r
 		BenchOps.Stop("WalkCells")
 		return r
@@ -130,7 +130,7 @@ class WalkCellsClass {
 		var key = (stats.CELL << 32) | mp
 		if (key in WALKABLE_CACHE_NOENT) return WALKABLE_CACHE_NOENT[key]
 		BenchOps.Start("WalkCells")
-		var r = WalkableCells(stats.CELL, [], mp)
+		var r = WalkableCells(stats.CELL, MAP_OBSTACLES_CACHE, mp)
 		WALKABLE_CACHE_NOENT[key] = r
 		BenchOps.Stop("WalkCells")
 		return r
@@ -141,7 +141,7 @@ class WalkCellsClass {
 		var key = (stats.CELL << 32) | mp
 		if (key in JUMP_CACHE_NOENT) return JUMP_CACHE_NOENT[key]
 		BenchOps.Start("WalkCells")
-		var r = WalkableCellsWithJump(stats.CELL, [], mp)
+		var r = WalkableCellsWithJump(stats.CELL, MAP_OBSTACLES_CACHE, mp)
 		JUMP_CACHE_NOENT[key] = r
 		BenchOps.Stop("WalkCells")
 		return r
@@ -390,17 +390,16 @@ class WalkCellsClass {
 	// ============================================================================
 	// Layout par couple : bits 0-17 = ligne paire, bits 24-40 = ligne impaire ; le trou
 	// 18-23 bloque la contamination inter-lignes (shift max utilisé : 6).
-	// Chaque fonction clone MAP_OBSTACLES_CACHE et y soustrait `leekcells` localement.
+	// Le plateau d'obstacles arrive PRÊT (LoadObstacleBoard) et se lit sans jamais s'écrire ;
+	// sans entité à retirer, c'est MAP_OBSTACLES_CACHE lui-même, sans copie.
 	// Les ACC* sont des tableaux locaux de 19 ints (18 couples + sentinelle pour lire
 	// ACC[c+1] sans garde), clonés d'ACC_TEMPLATE.
 	// Retour : map { cellule => mp requis }, cellule de départ incluse à 0.
 
 	/* Cellules accessibles en N pas de marche. */
-	static WalkableCells(from, leekcells, mp) {
+	static WalkableCells(from, OBS, mp) {
 		var _final = [from : 0]
 		if (mp == 0) return _final
-		var OBS = clone(MAP_OBSTACLES_CACHE, 1)
-		for (var x in leekcells) OBS[MAP_CELL_TO_COUPLE[x]] -= MAP_CELL_TO_BITMASK[x]
 
 		var acc = clone(ACC_TEMPLATE)
 		var startCouple = MAP_CELL_TO_COUPLE[from]
@@ -437,10 +436,8 @@ class WalkCellsClass {
 	}
 
 	/* Cellules accessibles en N pas + au plus 1 jump (chebyshev <= 3) n'importe où sur le chemin. */
-	static WalkableCellsWithJump(from, leekcells, mp) {
+	static WalkableCellsWithJump(from, OBS, mp) {
 		var _final = [from : 0]
-		var OBS = clone(MAP_OBSTACLES_CACHE, 1)
-		for (var x in leekcells) OBS[MAP_CELL_TO_COUPLE[x]] -= MAP_CELL_TO_BITMASK[x]
 
 		var acc  = clone(ACC_TEMPLATE)
 		var accj = clone(ACC_TEMPLATE)
@@ -602,10 +599,8 @@ class WalkCellsClass {
 	}
 
 	/* Cellules accessibles en N pas + au plus 1 télépo (chebyshev <= 12). */
-	static WalkableCellsWithTeleportation(from, leekcells, mp) {
+	static WalkableCellsWithTeleportation(from, OBS, mp) {
 		var _final = [from : 0]
-		var OBS = clone(MAP_OBSTACLES_CACHE, 1)
-		for (var x in leekcells) OBS[MAP_CELL_TO_COUPLE[x]] -= MAP_CELL_TO_BITMASK[x]
 
 		var acc  = clone(ACC_TEMPLATE)
 		var acct = clone(ACC_TEMPLATE)
@@ -755,10 +750,8 @@ class WalkCellsClass {
 	/* Cellules accessibles en N pas + au plus 1 jump + au plus 1 télépo, dans n'importe quel
 	 * ordre. Suit 4 ensembles (acc, acct, accj, acctj) ; seul acctj émet dans _final
 	 * (les 3 autres y sont inclus). */
-	static WalkableCellsWithTeleportationAndJump(from, leekcells, mp) {
+	static WalkableCellsWithTeleportationAndJump(from, OBS, mp) {
 		var _final = [from : 0]
-		var OBS = clone(MAP_OBSTACLES_CACHE, 1)
-		for (var x in leekcells) OBS[MAP_CELL_TO_COUPLE[x]] -= MAP_CELL_TO_BITMASK[x]
 
 		var acc   = clone(ACC_TEMPLATE)
 		var accj  = clone(ACC_TEMPLATE)
@@ -1097,6 +1090,24 @@ class WalkCellsClass {
 			}
 		}
 		return _final
+	}
+
+	/*
+	 * Plateau d'obstacles pour ce terrain et cette entité ignorée : la carte, moins les cellules
+	 * occupées. Les quatre BFS le reconstruisaient chacun à CHAQUE appel — un clone de dix-huit
+	 * mots plus une soustraction par entité vivante — alors qu'il ne dépend que de ce que
+	 * LoadIgnoreCells mutualise déjà. Même clé, donc même taux de partage : acquis, pas espéré.
+	 * Rendu en LECTURE SEULE : aucun BFS n'y écrit, ils ne font que des `& OBS[c]`.
+	 */
+	static LoadObstacleBoard(EveryStats, EntityToBeIgnored, BaseHash) {
+		var Hash = addValueToBinHash(OFFSET_BASIS ^ BaseHash, EntityToBeIgnored)
+		if (Hash in OBSTACLE_BOARD_CACHE) return OBSTACLE_BOARD_CACHE[Hash]
+		var OBS = clone(MAP_OBSTACLES_CACHE, 1)
+		for (var x in LoadIgnoreCells(EveryStats, EntityToBeIgnored, BaseHash)) {
+			OBS[MAP_CELL_TO_COUPLE[x]] -= MAP_CELL_TO_BITMASK[x]
+		}
+		OBSTACLE_BOARD_CACHE[Hash] = OBS
+		return OBS
 	}
 
 	static LoadIgnoreCells(EveryStats, EntityToBeIgnored, BaseHash) {
