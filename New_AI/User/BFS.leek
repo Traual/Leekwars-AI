@@ -195,6 +195,9 @@ class ActionSuite {
 		// Le verdict et le coût dans la MÊME entrée : une seule lecture de map par entrée
 		// examinée, et ITEMINFO n'est relu que pour les entrées réellement simulées.
 		var baseCosts = [: ]
+		// Compte d'usages du même item, résolu en même temps que son coût et pour le même
+		// prix : le nœud n'a plus à remonter la chaîne d'inventaire pour l'incrémenter.
+		var baseUses = [: ]
 
 		for (var entry in Reachable) {
 			var initialDelta = entry[1]
@@ -210,13 +213,21 @@ class ActionSuite {
 			var cost = baseCosts[item]
 			if (cost == null) {
 				var Infos = ITEMINFO[item]
-				if (StateClass.cooldownOf(MyStats, item) > 0 || StateClass.usesOf(MyStats, item) >= Infos.MAX_USES) {
+				// Même ordre de court-circuit qu'avant : le cooldown d'abord, les usages ensuite,
+				// et le compte n'est résolu qu'une fois.
+				if (StateClass.cooldownOf(MyStats, item) > 0) {
 					cost = -1
 				} else {
-					cost = (Infos.IS_WEAPON && MyWeapon != item) ? Infos.COST + 1 : Infos.COST
-					// Le supplément de couche ne fait qu'AJOUTER : un coût de base déjà hors budget
-					// le restera pour toutes ses cellules de tir, autant le marquer injouable.
-					if (cost > MyTp) cost = -1
+					var itemUsed = StateClass.usesOf(MyStats, item)
+					if (itemUsed >= Infos.MAX_USES) {
+						cost = -1
+					} else {
+						baseUses[item] = itemUsed
+						cost = (Infos.IS_WEAPON && MyWeapon != item) ? Infos.COST + 1 : Infos.COST
+						// Le supplément de couche ne fait qu'AJOUTER : un coût de base déjà hors budget
+						// le restera pour toutes ses cellules de tir, autant le marquer injouable.
+						if (cost > MyTp) cost = -1
+					}
 				}
 				baseCosts[item] = cost
 			}
@@ -232,7 +243,7 @@ class ActionSuite {
 
 			if (Workspace == null) Workspace = clone(State, 1)
 			var act = entry[0]
-			var candidate = NodeClass.ActionToNodeInTree(act, Workspace, from, MyWalkCells, cost, ITEMINFO[item], item, act.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE)
+			var candidate = NodeClass.ActionToNodeInTree(act, Workspace, from, MyWalkCells, cost, ITEMINFO[item], item, act.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, baseUses[item])
 			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, Workspace, ParentScore, Parent, Parent.HFP_BY_SIDE, MySide, Parent.POISON_KEY)
 			StateClass.restoreWorkspace(Workspace, candidate.CLONED)
 			candidate.CLONED = null
@@ -270,7 +281,7 @@ class ActionSuite {
 			var act = pair[0]
 			var Item = act.Item
 			if (Workspace == null) Workspace = clone(State, 1)
-			var node = NodeClass.ActionToNodeInTree(act, Workspace, act.From, MyWalkCells, pair[1], ITEMINFO[Item], Item, act.To, BaseHash, null, ParentTermNode, ParentContext, ParentHfp)
+			var node = NodeClass.ActionToNodeInTree(act, Workspace, act.From, MyWalkCells, pair[1], ITEMINFO[Item], Item, act.To, BaseHash, null, ParentTermNode, ParentContext, ParentHfp, pair[2])
 			var nodeScore = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, ParentTermNode, ParentHfp, MySide, ParentPoisonKey)
 			// Scoring fait : le workspace redevient le State parent pour le candidat suivant,
 			// et CLONED est libéré (STATE_PATCH porte désormais les entités modifiées).
@@ -298,7 +309,11 @@ class ActionSuite {
 
 		for (var Action in Acts) {
 			var Item = Action.Item
-			if (StateClass.cooldownOf(MyStats, Item) > 0 || StateClass.usesOf(MyStats, Item) >= ITEMINFO[Item].MAX_USES) continue
+			if (StateClass.cooldownOf(MyStats, Item) > 0) continue
+			// Le compte d'usages est résolu ici pour le filtre : il voyage ensuite jusqu'au nœud,
+			// qui n'a plus à remonter la chaîne d'inventaire pour l'incrémenter.
+			var ItemUses = StateClass.usesOf(MyStats, Item)
+			if (ItemUses >= ITEMINFO[Item].MAX_USES) continue
 			// Résurrection : l'action cachée est géométrique (RESURRECT_ID null, objet partagé
 			// entre states de même BaseHash). Sans candidat -> exclue ; sinon un objet NEUF
 			// porte l'id choisi pour cette évaluation (l'objet caché n'est jamais muté).
@@ -320,7 +335,7 @@ class ActionSuite {
 				else continue
 			}
 
-			if (Cost <= MyStats.TP) push(_final, [Action, Cost])
+			if (Cost <= MyStats.TP) push(_final, [Action, Cost, ItemUses])
 		}
 		return _final
 	}

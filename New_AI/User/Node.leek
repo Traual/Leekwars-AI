@@ -90,7 +90,7 @@ class NodeClass {
 	 *
 	 * @return le nouveau nœud, hashs et patch remplis
 	 */
-	static ActionToNodeInTree(Act, Workspace, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, StateParent, ParentContext, ParentHfp) {
+	static ActionToNodeInTree(Act, Workspace, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, StateParent, ParentContext, ParentHfp, ItemUses) {
 		BenchOps.Start("Node")
 		// clonedIds = l'ensemble exact des entités effectivement mutables : Me pré-cloné ici ;
 		// cibles réellement touchées, victimes des cascades de kill et ressuscité (payload
@@ -125,7 +125,9 @@ class NodeClass {
 		// Écritures d'inventaire via les setters différentiels : elles ne touchent que le
 		// patch local du clone de Me, jamais un ancêtre.
 		StateClass.setCooldown(meStat, Item, Info.COOLDOWN)
-		StateClass.incrementUses(meStat, Item)
+		// Le compte d'usages vient de l'appelant, qui l'a résolu pour son filtre de jouabilité :
+		// l'incrémenter ici rouvrait la chaîne d'inventaire, un niveau par nœud du chemin.
+		StateClass.setUses(meStat, Item, ItemUses + 1)
 		// Cooldowns des items de déplacement si la cellule d'arrivée vient d'une layer jump/télépo.
 		if (usedLayer == LAYER_JUMP) {
 			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
