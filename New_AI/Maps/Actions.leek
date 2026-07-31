@@ -181,7 +181,11 @@ class ActionsClass {
 		// champs mais aux TP différents n'ont pas les mêmes cellules de tir, donc pas la même
 		// liste d'actions.
 		var WalkSetKey = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(State[Me])
-		var combined = (State[Me].MP << 20) | MyCell
+		// mp CLAMPÉ : une entrave le rend négatif, et un négatif étend son signe sur les bits
+		// hauts — il écrase alors le champ cellule (même défaut que les clés de marche,
+		// mesuré ici deux fois par combat). Le clamp est exact : un mp <= 0 ne donne accès
+		// qu'à la cellule courante, comme mp = 0.
+		var combined = (max(0, State[Me].MP) << 20) | MyCell
 		var Hash = addValueToBinHash(addValueToBinHash((OFFSET_BASIS ^ BaseHash), combined), WalkSetKey)
 		if (Hash in ENTITY_ACTIONS_CACHE) return ENTITY_ACTIONS_CACHE[Hash]
 		var SortedWalkCells = WalkCellsClass.LoadSortedWalkCells(WalkCells)
