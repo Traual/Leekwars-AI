@@ -147,17 +147,13 @@ global POINTS_LINE_WITH_LOS_CACHE = [: ]
 global DIAGONAL_CACHE = [: ]
 global POINTS_DIAGONAL_CACHE = [: ]
 global DIAGONAL_WITH_LOS_CACHE = [: ]
-global POINTS_DIAGONAL_WITH_LOS_CACHE = [: ]
 
 global STAR_CACHE = [: ]
 global POINTS_STAR_CACHE = [: ]
 global STAR_WITH_LOS_CACHE = [: ]
-global POINTS_STAR_WITH_LOS_CACHE = [: ]
 
 global INVERTED_STAR_CACHE = [: ]
-global POINTS_INVERTED_STAR_CACHE = [: ]
 global INVERTED_STAR_WITH_LOS_CACHE = [: ]
-global POINTS_INVERTED_STAR_WITH_LOS_CACHE = [: ]
 
 global LASERS = [: ]
 

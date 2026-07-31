@@ -229,15 +229,17 @@ class CellClass {
 
 	
 	static getDiagonalPointsWithLos(cell, radius, BaseX, BaseY) {
-		var TmpHash = (cell << 7) | radius
-		if (TmpHash in POINTS_DIAGONAL_WITH_LOS_CACHE) return POINTS_DIAGONAL_WITH_LOS_CACHE[TmpHash]
+		// Pas de cache : il ne peut pas servir. Cette fonction n'est appelée que par la
+		// boucle de son enveloppe, qui ne tourne QU'AU MISS du cache de celle-ci — clefée
+		// (cellule, portée mini, portée maxi). Une seule paire de portées étant en jeu pour
+		// cette forme, chaque (cellule, rayon) n'est demandé qu'une fois. Mesuré : 23 331
+		// consultations, ZERO hit. Sa clé, son test et son écriture étaient du coût pur.
 		var _final = [: ]
 		for (var testingCell:var bool in getDiagonalPoints(cell, radius, BaseX, BaseY)) {
 			if (getLos(testingCell, cell)) {
 				_final[testingCell] = true
 			}
 		}
-		POINTS_DIAGONAL_WITH_LOS_CACHE[TmpHash] = _final
 		return _final
 	}
 
@@ -281,15 +283,17 @@ class CellClass {
 	}
 
 	static getStarPointsWithLos(cell, radius, BaseX, BaseY) {
-		var TmpHash = (cell << 7) | radius
-		if (TmpHash in POINTS_STAR_WITH_LOS_CACHE) return POINTS_STAR_WITH_LOS_CACHE[TmpHash]
+		// Pas de cache : il ne peut pas servir. Cette fonction n'est appelée que par la
+		// boucle de son enveloppe, qui ne tourne QU'AU MISS du cache de celle-ci — clefée
+		// (cellule, portée mini, portée maxi). Une seule paire de portées étant en jeu pour
+		// cette forme, chaque (cellule, rayon) n'est demandé qu'une fois. Mesuré : 34 735
+		// consultations, ZERO hit. Sa clé, son test et son écriture étaient du coût pur.
 		var _final = [: ]
 		for (var testingCell:var bool in getStarPoints(cell, radius, BaseX, BaseY)) {
 			if (getLos(testingCell, cell)) {
 				_final[testingCell] = true
 			}
 		}
-		POINTS_STAR_WITH_LOS_CACHE[TmpHash] = _final
 		return _final
 	}
 
@@ -310,15 +314,17 @@ class CellClass {
 	}
 
 	static getInvertedStarPoints(cell, radius, BaseX, BaseY) {
-		var TmpHash = (cell << 7) | radius
-		if (TmpHash in POINTS_INVERTED_STAR_CACHE) return POINTS_INVERTED_STAR_CACHE[TmpHash]
+		// Pas de cache : il ne peut pas servir. Cette fonction n'est appelée que par la
+		// boucle de son enveloppe, qui ne tourne QU'AU MISS du cache de celle-ci — clefée
+		// (cellule, portée mini, portée maxi). Une seule paire de portées étant en jeu pour
+		// cette forme, chaque (cellule, rayon) n'est demandé qu'une fois. Mesuré : 637
+		// consultations, ZERO hit. Sa clé, son test et son écriture étaient du coût pur.
 		var _final = [: ]
 		var CircleForThisRadius = getCircle(cell, radius)
 		var StarForThisRadius = getStarPoints(cell, radius, BaseX, BaseY)
 		for (var cellTest:var bool in CircleForThisRadius) {
 			if (!(cellTest in StarForThisRadius)) _final[cellTest] = true
 		}
-		POINTS_INVERTED_STAR_CACHE[TmpHash] = _final
 		return _final
 	}
 
@@ -337,15 +343,17 @@ class CellClass {
 
 	
 	static getInvertedStarPointsWithLos(cell, radius, BaseX, BaseY) {
-		var TmpHash = (cell << 7) | radius
-		if (TmpHash in POINTS_INVERTED_STAR_WITH_LOS_CACHE) return POINTS_INVERTED_STAR_WITH_LOS_CACHE[TmpHash]
+		// Pas de cache : il ne peut pas servir. Cette fonction n'est appelée que par la
+		// boucle de son enveloppe, qui ne tourne QU'AU MISS du cache de celle-ci — clefée
+		// (cellule, portée mini, portée maxi). Une seule paire de portées étant en jeu pour
+		// cette forme, chaque (cellule, rayon) n'est demandé qu'une fois. Mesuré : 637
+		// consultations, ZERO hit. Sa clé, son test et son écriture étaient du coût pur.
 		var _final = [: ]
 		for (var testingCell:var bool in getInvertedStarPoints(cell, radius, BaseX, BaseY)) {
 			if (getLos(testingCell, cell)) {
 				_final[testingCell] = true
 			}
 		}
-		POINTS_INVERTED_STAR_WITH_LOS_CACHE[TmpHash] = _final
 		return _final
 	}
 
