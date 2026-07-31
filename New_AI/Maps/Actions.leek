@@ -42,7 +42,7 @@ class ActionsClass {
 	static getInventoryOnMe(Inventory, EntityState) {
 		var _final = []
 		for (var item in Inventory) {
-			if (!ToSkipItems[item] && Target.Targetable(item, EntityState, EntityState)) {
+			if (!(item in ToSkipItems) && Target.Targetable(item, EntityState, EntityState)) {
 				push(_final, item)
 			}
 		}
@@ -73,7 +73,7 @@ class ActionsClass {
 		if (NeedLos) {
 			var Circle = LaunchWithLos[LaunchType](MyCell, MinRange, MaxRange)
 			for (var to: var dist in AoeDistItem(item, MyCell)) {
-				if (Circle[to] && CellClass.getLosWithBaseHash(MyCell, to, State, BaseHash) && dist < MinDist) {
+				if (Circle[to] && dist < MinDist && CellClass.getLosWithBaseHash(MyCell, to, State, BaseHash)) {
 					MinDist = dist
 					MinDistCell = to
 				}
@@ -95,7 +95,7 @@ class ActionsClass {
 	static getInventorySummon(Inventory) {
 		var _final = []
 		for (var item in Inventory) {
-			if (SpecialItems[item]) {
+			if (item in SpecialItems) {
 				push(_final, item)
 			}
 		}
@@ -166,7 +166,7 @@ class ActionsClass {
 	static getInventoryOnEveryOne(Inventory) {
 		var _final = []
 		for (var item in Inventory) {
-			if (!ToSkipItems[item]) {
+			if (!(item in ToSkipItems)) {
 				push(_final, item)
 			}
 		}
@@ -456,7 +456,7 @@ class ActionsClass {
 		var _final = []
 		for (var item in Inventory) {
 			var Infos = ITEMINFO[item]
-			if (!ToSkipItems[item] && Target.ImTargetable(Infos.EFFECTS)) {
+			if (!(item in ToSkipItems) && Target.ImTargetable(Infos.EFFECTS)) {
 				push(_final, item)
 			}
 		}
@@ -483,7 +483,7 @@ class ActionsClass {
 			var GoodCell = true
 			if (CellClass.getLosWithBaseHash(basefrom, c, State, BaseHash)) {
 				for (var aoe: var dist in AoeDistItem(Item, c)) {
-					if (LeekCells[aoe]) {
+					if (aoe in LeekCells) {
 						GoodCell = false
 						break
 					}

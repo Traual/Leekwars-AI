@@ -623,7 +623,7 @@ class ConsequencesClass {
 	}
 
 	static removeCastedEffect(EffectType, StatsTarget, ValueOfEffect, DurationOfEffect) {
-		if (CAP_EFFECT_TYPES[EffectType]) StatsTarget.CAP_DIRTY = true
+		if (EffectType in CAP_EFFECT_TYPES) StatsTarget.CAP_DIRTY = true
 		switch (EffectType) {
 			case EFFECT_BUFF_TP:
 			case EFFECT_RAW_BUFF_TP:
@@ -732,7 +732,7 @@ class ConsequencesClass {
 	static RecordCastedEffect(TarStats, EffectType, AppliedValue, CasterId, Duration, Critical, Item, Modifiers) {
 		// AVANT les portes du ledger : l'écriture de capability a déjà eu lieu chez l'appelant,
 		// même si la ligne d'effet, elle, n'est pas enregistrable.
-		if (CAP_EFFECT_TYPES[EffectType]) TarStats.CAP_DIRTY = true
+		if (EffectType in CAP_EFFECT_TYPES) TarStats.CAP_DIRTY = true
 		if (Duration == 0 || AppliedValue <= 0) return;
 		var effects = TarStats.EFFECTS
 		var mergeIdx = -1
