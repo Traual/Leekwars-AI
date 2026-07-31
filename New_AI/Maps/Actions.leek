@@ -408,13 +408,24 @@ class ActionsClass {
 	 * bijection, exactement comme un pas mix64 — c'est ce qui porte l'injectivité, pas l'avalanche.
 	 */
 	static foldAoeFrom(_final, from, MapToHash, packed) {
-		var Tmp = from in _final ? _final[from] : _final[from] = [: ]
-		for (var to: var TmpHash in MapToHash) {
-			if (to in Tmp) {
-				Tmp[to] = (Tmp[to] ^ (packed | TmpHash)) * MIX_A
-			} else {
+		if (from in _final) {
+			var Tmp = _final[from]
+			for (var to: var TmpHash in MapToHash) {
+				if (to in Tmp) {
+					Tmp[to] = (Tmp[to] ^ (packed | TmpHash)) * MIX_A
+				} else {
+					Tmp[to] = (OFFSET_BASIS ^ (packed | TmpHash)) * MIX_A
+				}
+			}
+		} else {
+			// Cellule de tir vue pour la PREMIÈRE fois : sa map est neuve, aucune cible ne peut
+			// déjà y figurer — le test d'appartenance ne rendrait jamais vrai. Elle est remplie
+			// avant d'être posée, pour n'être traversée qu'une fois.
+			var Tmp = [: ]
+			for (var to: var TmpHash in MapToHash) {
 				Tmp[to] = (OFFSET_BASIS ^ (packed | TmpHash)) * MIX_A
 			}
+			_final[from] = Tmp
 		}
 	}
 
