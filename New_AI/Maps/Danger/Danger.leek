@@ -15,7 +15,6 @@ class DangerClass {
 	 * L'INDEX plutôt que l'id : il donne aussi le pack offensif et le facteur critique du
 	 * caster par simple lecture alignée. Layout strictement interne — ni Delta, ni FinalCell,
 	 * ni le scoring ne le voient. */
-	static COVERAGE_STRIDE = 3
 
 	/* Décalage de la seconde moitié de la partition de jeu (DangerPlanClass) : plus grand que tout écart
 	 * de TURN_ORDER, il range « a déjà joué » après « joue encore ». Sert aussi de marque de
@@ -78,7 +77,13 @@ class DangerClass {
 		}
 		var maps = Plan.OFFENSIVE_MAPS
 		var mapKeys = Plan.MAP_KEYS
-		var cov = []
+		// TROIS tableaux parallèles et non un tableau plat à pas de 3 : le déroulé lisait
+		// l'élément i, puis i+1 et i+2 en repayant l'addition d'indice à chaque caster. Un
+		// parcours par clé:valeur donne l'indice gratuitement et les deux autres lectures
+		// tombent à une opération. Les trois restent alignés par construction.
+		var covIdx = []
+		var covMap = []
+		var covHash = []
 		var hash = 0
 		for (var idx in CovSeq) {
 			// CONTRAT : CovSeq ne retient que les casters à map offensive non nulle.
@@ -88,9 +93,9 @@ class DangerClass {
 			var itemMap = offMap[Cell]
 			// Hash de contenu mémorisé par (map, cellule) et transporté jusqu'au combo.
 			var contentHash = DangerPlanClass.itemAoeHashOf(mapKeys[idx], Cell, itemMap)
-			push(cov, idx)
-			push(cov, itemMap)
-			push(cov, contentHash)
+			push(covIdx, idx)
+			push(covMap, itemMap)
+			push(covHash, contentHash)
 			// Même fold que le regroupement par bucket, mais sur les valeurs déjà en main.
 			// Digest de longueur variable : chaîne à MULTIPLICATION (contrat des clés, famille
 			// 3b). Pas de finaliseur — il n'existe qu'une consommation, une égalité pleine de
@@ -98,6 +103,7 @@ class DangerClass {
 			hash = (hash ^ (contentHash ^ (idx << 56))) * MIX_A
 		}
 		LAST_COVERAGE_HASH = hash
+		var cov = [covIdx, covMap, covHash]
 		Plan.COV_BY_CELL[covKey] = [cov, hash]
 		return cov
 	}
@@ -119,7 +125,9 @@ class DangerClass {
 		var crits = Plan.CRIT_FACTORS
 		// Type de la cible et cooldown d'antidote : fixes pour toute la chaîne, packs une fois.
 		var targetFixed = DangerComboClass.targetFixedPack(TargetStats.IS_SUMMON, AntidoteCd)
-		var n = count(Coverage)
+		var covIdx = Coverage[0]
+		var covMap = Coverage[1]
+		var covHash = Coverage[2]
 		// Boucliers alliés qui tombent pendant la fenêtre. Presque toujours null : le déroulé
 		// est alors exactement celui d'avant, à un test près.
 		var drops = expiryDropsByRank(Plan, TargetStats)
@@ -138,8 +146,7 @@ class DangerClass {
 		// au bit près, la valeur consommée est identique. La garde reste sur la valeur BRUTE :
 		// elle dit si le caster fait des dégâts, pas si sa contribution pondérée est positive.
 		if (dn > 0) {
-			for (var i = 0; i < n; i += COVERAGE_STRIDE) {
-				var idx = Coverage[i]
+			for (var i: var idx in covIdx) {
 				// Ce caster joue-t-il après le lanceur du bouclier ? Si oui, il ne le voit plus.
 				// Balayage plutôt que tri : la liste tient en un ou deux retraits.
 				var o = ords[idx]
@@ -151,7 +158,7 @@ class DangerClass {
 					drops[k] = SEQ_WRAP * 2   // consommé : ne repassera sous aucun rang
 				}
 				var casterId = order[idx]
-				var combo = DangerComboClass.comboOfCaster(Coverage[i + 1], Coverage[i + 2], seeds[idx], packs[idx], crits[idx], State[casterId], TargetStats, chainAbs, chainRel, AntidoteCd, targetFixed)
+				var combo = DangerComboClass.comboOfCaster(covMap[i], covHash[i], seeds[idx], packs[idx], crits[idx], State[casterId], TargetStats, chainAbs, chainRel, AntidoteCd, targetFixed)
 				if (combo[0] > 0) {
 					_final[casterId] = combo[0] * DANGER_COEF
 					chainAbs = combo[1]   // le caster suivant voit les shields post-vulné/debuff
@@ -159,10 +166,9 @@ class DangerClass {
 				}
 			}
 		} else {
-			for (var i = 0; i < n; i += COVERAGE_STRIDE) {
-				var idx = Coverage[i]
+			for (var i: var idx in covIdx) {
 				var casterId = order[idx]
-				var combo = DangerComboClass.comboOfCaster(Coverage[i + 1], Coverage[i + 2], seeds[idx], packs[idx], crits[idx], State[casterId], TargetStats, chainAbs, chainRel, AntidoteCd, targetFixed)
+				var combo = DangerComboClass.comboOfCaster(covMap[i], covHash[i], seeds[idx], packs[idx], crits[idx], State[casterId], TargetStats, chainAbs, chainRel, AntidoteCd, targetFixed)
 				if (combo[0] > 0) {
 					_final[casterId] = combo[0] * DANGER_COEF
 					chainAbs = combo[1]   // le caster suivant voit les shields post-vulné/debuff
