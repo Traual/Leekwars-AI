@@ -205,6 +205,7 @@ class DangerPlanClass {
 		var maps = []
 		var mapKeys = []
 		var packs = []
+		var seeds = []
 		var crits = []
 		var actives = []
 		var sameSides = []
@@ -233,6 +234,7 @@ class DangerPlanClass {
 			push(maps, offMap)
 			push(mapKeys, mapKey)
 			push(packs, pack)
+			push(seeds, DangerComboClass.casterSeedOf(id))
 			push(crits, crit)
 			// Peut-il changer le net d'une cible de ce camp ? Menace, ou soigneur éligible à la
 			// heal map (mêmes conditions que healerContributionOf).
@@ -246,7 +248,7 @@ class DangerPlanClass {
 			// chaque cellule et à chaque nœud dans le déroulé du net.
 			push(sameSides, stat != null && stat.SIDE == TargetSide)
 		}
-		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, packs, crits, actives, sameSides)
+		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, packs, seeds, crits, actives, sameSides)
 		// Les séquences de jeu ne dépendent QUE de l'ordre de tour (donc du set des vivants, qui
 		// pinne le tri), du camp visé, de qui menace et de qui peut changer un net. La clé du plan,
 		// elle, porte le BaseHash : un ennemi poussé fabrique un plan neuf dont les séquences
@@ -286,8 +288,9 @@ class DangerTeamPlanClass {
 	OFFENSIVE_MAPS  // [i] = [cellule -> ItemAoeMap] du caster, ou null s'il ne menace pas
 	MAP_KEYS        // [i] = clé de cette map (préfixe des hashs de contenu), ou null
 	CASTER_PACKS    // [i] = pack offensif canonique du caster, ou null
+	CASTER_SEEDS    // [i] = premier pas de la chaîne de clé, fonction du seul identifiant
 	CRIT_FACTORS    // [i] = facteur critique déjà résolu, 1 par défaut
-	constructor(ThisOrder, ThisOrderById, ThisTurnOrders, ThisMaps, ThisMapKeys, ThisPacks, ThisCrits, ThisActives, ThisSameSides) {
+	constructor(ThisOrder, ThisOrderById, ThisTurnOrders, ThisMaps, ThisMapKeys, ThisPacks, ThisSeeds, ThisCrits, ThisActives, ThisSameSides) {
 		this.ORDER = ThisOrder
 		this.ORDER_BY_ID = ThisOrderById
 		this.TURN_ORDERS = ThisTurnOrders
@@ -299,6 +302,7 @@ class DangerTeamPlanClass {
 		this.OFFENSIVE_MAPS = ThisMaps
 		this.MAP_KEYS = ThisMapKeys
 		this.CASTER_PACKS = ThisPacks
+		this.CASTER_SEEDS = ThisSeeds
 		this.CRIT_FACTORS = ThisCrits
 	}
 }

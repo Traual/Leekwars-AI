@@ -32,12 +32,22 @@ class DangerComboClass {
 	}
 
 	/*
-	 * Pack du couple : le pack défensif ÉTENDU d'un seul bit de type. Les vues d'effets
-	 * filtrent réellement par masque poireau/summon, donc deux types ne doivent jamais
-	 * partager une liste de dégâts ni un combo. Aucun champ n'est repacké ici.
+	 * Part INVARIANTE du pack de couple : le type de la cible et son cooldown d'antidote. Ni
+	 * l'un ni l'autre ne bouge le long d'une chaîne de vulnés ni d'un caster à l'autre — le
+	 * déroulé les repackait pourtant à chaque combo.
 	 */
-	static targetPairPack(IsSummon, DefensePack) {
-		return DefensePack | ((IsSummon ? 1 : 0) << TARGET_TYPE_SHIFT)
+	static targetFixedPack(IsSummon, AntidoteCd) {
+		return ((IsSummon ? 1 : 0) << TARGET_TYPE_SHIFT) | AntidoteCd
+	}
+
+	/*
+	 * Pack du couple : les boucliers COURANTS de la chaîne, étendus de la part invariante.
+	 * Les vues d'effets filtrent réellement par masque poireau/summon, donc deux types ne
+	 * doivent jamais partager une liste de dégâts ni un combo. Mêmes champs, mêmes slots et
+	 * mêmes masques que targetDefensePack : le `|` étant associatif, la valeur est identique.
+	 */
+	static targetPairPackWith(CurAbs, CurRel, Fixed) {
+		return ((CurAbs & ABS_MASK) << ABS_SHIFT) | ((CurRel & REL_MASK) << REL_SHIFT) | Fixed
 	}
 
 	/* Cooldown effectif d'Antidote, 99 quand l'item n'est pas dans l'inventaire. Calculé UNE
@@ -81,15 +91,20 @@ class DangerComboClass {
 	/* Clé CANONIQUE du couple (caster, cible-avec-ses-shields-courants) — SOURCE UNIQUE.
 	 * Clé de DANGER_ENTITY_CACHE, et racine des clés de combo : plus aucune seconde fonction
 	 * ne repacke les mêmes champs. L'id du caster est dedans : sa liste d'items lui est propre. */
-	static dangerPairKey(CasterId, CasterPack, TargetPack) {
+	/* Premier pas de la chaîne, fonction du SEUL identifiant du caster : le plan le précalcule
+	 * une fois par caster au lieu de le refaire à chaque combo et à chaque cellule. */
+	static casterSeedOf(CasterId) {
+		return (OFFSET_BASIS ^ CasterId) * MIX_A
+	}
+
+	static dangerPairKey(CasterSeed, CasterPack, TargetPack) {
 		// Chaîne à MULTIPLICATION (contrat des clés, famille 3b) et non addValueToBinHash : les
 		// deux packs sont LARGES — celui de la cible occupe 51 bits — et une chaîne linéaire les
 		// fait se recouvrir au lieu de les séparer. Mesuré collisionnant : 267 combos servis
 		// pour d'autres entrées sur un seul combat.
 		// Pas de finaliseur : la clé n'est comparée qu'entière, et le hash de contenu auquel
 		// elle est ensuite combinée est déjà avalanché.
-		var h = (OFFSET_BASIS ^ CasterId) * MIX_A
-		h = (h ^ TargetPack) * MIX_A
+		var h = (CasterSeed ^ TargetPack) * MIX_A
 		return (h ^ CasterPack) * MIX_A
 	}
 
@@ -102,11 +117,11 @@ class DangerComboClass {
 	 * @param curAbs/curRel shields COURANTS de la cible (scalaires portés par la chaîne)
 	 * @return [dégâts, absFinal, relFinal] — que des scalaires, aucune référence retenue
 	 */
-	static comboOfCaster(ItemAoeMap, ContentHash, CasterId, CasterPack, CritFactor, CasterStats, TargetStats, curAbs, curRel, AntidoteCd) {
+	static comboOfCaster(ItemAoeMap, ContentHash, CasterSeed, CasterPack, CritFactor, CasterStats, TargetStats, curAbs, curRel, AntidoteCd, TargetFixed) {
 		// CONTRAT : la map d'items n'est jamais vide — elle vient d'une couverture, et
 		// buildMapCellItemAoe ne crée l'entrée d'une cellule qu'en y écrivant un item.
 		var isSummon = TargetStats.IS_SUMMON
-		var pairKey = dangerPairKey(CasterId, CasterPack, targetPairPack(isSummon, targetDefensePack(curAbs, curRel, AntidoteCd)))
+		var pairKey = dangerPairKey(CasterSeed, CasterPack, targetPairPackWith(curAbs, curRel, TargetFixed))
 		var comboKey = addValueToBinHash(pairKey, ContentHash)
 		if (comboKey in COMBO_FROM_ITEM_AOE_CACHE) return COMBO_FROM_ITEM_AOE_CACHE[comboKey]
 
@@ -115,7 +130,7 @@ class DangerComboClass {
 		// Clé du gabarit : la clé du couple à BOUCLIERS NULS. Invariante sur toute la chaîne
 		// de vulnés (seuls les boucliers y varient), donc calculée une seule fois, après le
 		// cache de combo pour qu'un hit ne la paie jamais.
-		var templateKey = dangerPairKey(CasterId, CasterPack, targetPairPack(isSummon, targetDefensePack(0, 0, AntidoteCd)))
+		var templateKey = dangerPairKey(CasterSeed, CasterPack, targetPairPackWith(0, 0, TargetFixed))
 		var baseTp = CasterStats.TOTAL_TP
 		// Uses : racine TOUJOURS zéro (caster jamais Me, EntityState initialise à 0 et le
 		// danger est son prochain tour) — playedUses est l'overlay SPARSE des seuls items
@@ -175,7 +190,7 @@ class DangerComboClass {
 					}
 					var thisTp = baseTp - Infos.COST
 					var thisUses = used + 1
-					var newPairKey = dangerPairKey(CasterId, CasterPack, targetPairPack(isSummon, targetDefensePack(newAbs, newRel, AntidoteCd)))
+					var newPairKey = dangerPairKey(CasterSeed, CasterPack, targetPairPackWith(newAbs, newRel, TargetFixed))
 					var damages = greedyDamage(ItemAoeMap, newPairKey, templateKey, CasterStats, TargetStats, CritFactor, AntidoteCd, newAbs, newRel, thisTp, playedUses, item, thisUses)
 					if (bestDamage < damages) {   // strict : à égalité, le PREMIER item gagne
 						bestDamage = damages

@@ -115,7 +115,10 @@ class DangerClass {
 		var chainRel = TargetStats.RELATIVE_SHIELD
 		var order = Plan.ORDER
 		var packs = Plan.CASTER_PACKS
+		var seeds = Plan.CASTER_SEEDS
 		var crits = Plan.CRIT_FACTORS
+		// Type de la cible et cooldown d'antidote : fixes pour toute la chaîne, packs une fois.
+		var targetFixed = DangerComboClass.targetFixedPack(TargetStats.IS_SUMMON, AntidoteCd)
 		var n = count(Coverage)
 		// Boucliers alliés qui tombent pendant la fenêtre. Presque toujours null : le déroulé
 		// est alors exactement celui d'avant, à un test près.
@@ -138,7 +141,7 @@ class DangerClass {
 				}
 			}
 			var casterId = order[idx]
-			var combo = DangerComboClass.comboOfCaster(Coverage[i + 1], Coverage[i + 2], casterId, packs[idx], crits[idx], State[casterId], TargetStats, chainAbs, chainRel, AntidoteCd)
+			var combo = DangerComboClass.comboOfCaster(Coverage[i + 1], Coverage[i + 2], seeds[idx], packs[idx], crits[idx], State[casterId], TargetStats, chainAbs, chainRel, AntidoteCd, targetFixed)
 			if (combo[0] > 0) {
 				// Le crit est appliqué EN PROFONDEUR (formules d'EntityDanger avant les shields
 				// + vulnés de chaîne critées), pas ici : (d − ABS)·1.3 ≠ d·1.3 − ABS.
