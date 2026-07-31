@@ -88,9 +88,9 @@ class DeltaClass {
 
         // Les autres ne bougent pas -> net à leur cellule courante. Une entité intouchée
         // garde la même clé d'un nœud à l'autre -> hit, tout le déroulé est sauté.
-        // Salée par (id, IS_SUMMON) : le PROFIL de couverture heal (poireau/summon) est un
-        // input du net depuis la vitalité.
-        var ndKey = addValueToBinHash(addValueToBinHash(targetSeed ^ hfp, (stat.CELL << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE), (e << 1) | (stat.IS_SUMMON ? 1 : 0))
+        // Salée par TYPE_TAG = (id, IS_SUMMON) : le PROFIL de couverture heal (poireau/summon)
+        // est un input du net depuis la vitalité. Le tag est posé à la construction et immuable.
+        var ndKey = addValueToBinHash(addValueToBinHash(targetSeed ^ hfp, (stat.CELL << 32) | (stat.LIFE << 16) | stat.TOTAL_LIFE), stat.TYPE_TAG)
         if (ndKey in NETDAMAGE_CACHE) return NETDAMAGE_CACHE[ndKey]
 
         var cell = stat.CELL

@@ -15,6 +15,10 @@ class EntityClass {
     TURN_ORDER
     NAME
     STATIC
+    // (id << 1) | est-ce un summon : le profil de couverture de soin d'une entite, terme de la
+    // cle du net. IMMUABLE — le type d'une entite ne change jamais — donc pose une fois ici au
+    // lieu d'etre repacke a chaque evaluation de terme.
+    TYPE_TAG
     constructor(id) {
 		  this.ID = id
 		  // Le moteur insère un summon dans l'ordre en cours de tour : l'ordre est relu.
@@ -43,5 +47,6 @@ class EntityClass {
 			this.STATIC = isStatic(id)
 			ENTITY_CONST_BY_ID[id] = [this.SUMMONER, this.IS_SUMMON, this.INVENTORY, this.SPECIAL_WEAPON, this.SIDE, this.NAME, this.STATIC]
 		  }
+		  this.TYPE_TAG = (id << 1) | (this.IS_SUMMON ? 1 : 0)
     }
 }
