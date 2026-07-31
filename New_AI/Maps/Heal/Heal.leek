@@ -182,8 +182,8 @@ class HealClass {
     }
 
     /*
-     * [heal, vitalité] que ce caster pose sur une cellule pour un profil de cible, ou null
-     * s'il n'y pose rien. Assemblage, hash de contenu et combo sont résolus à la demande puis
+     * [heal, vitalité] que ce caster pose sur une cellule pour un profil de cible, DÉJÀ pondéré
+     * par HEAL_COEF, ou null s'il n'y pose rien. Assemblage, hash de contenu et combo sont résolus à la demande puis
      * mémorisés par profil, absences comprises — le combo lui-même reste porté par
      * HEAL_COMBO_CACHE, clé par contenu, donc partagé entre casters et entre couvertures.
      */
@@ -198,7 +198,10 @@ class HealClass {
             var combo = comboAtCell(itemAoeMap, Coverage.STATS, Profile, pack, contentHash)
             if (combo[0] > 0 || combo[1] > 0) {
                 var critFactor = Coverage.CRIT
-                parts = [combo[0] * critFactor, combo[1] * critFactor]
+                // HEAL_COEF replie ICI : le déroulé du net le remultipliait à chaque usage alors
+                // que la valeur est mémoïsée par cellule. La multiplication flottante étant
+                // commutative au bit près, la valeur rendue est identique.
+                parts = [combo[0] * critFactor * HEAL_COEF, combo[1] * critFactor * HEAL_COEF]
             }
         }
         memo[Cell] = parts

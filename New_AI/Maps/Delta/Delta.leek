@@ -9,7 +9,7 @@
  *     seulement si life > 0 (un mort n'est pas soigné), plafonné au NOUVEAU total — une
  *     vitalité reçue à pleine vie absorbe donc les dégâts suivants ; profil de cible par
  *     TYPE de la cible (summon/poireau — jamais SELF : la rotation exclut la cible), le tout
- *     × HEAL_COEF
+ *     pondéré par HEAL_COEF à la source (HealClass.partsAt)
  * net = max(0, LIFE − life). Le poison reste dans la formule de survie, pas ici.
  *
  * Les autres encaissent à leur cellule courante (ils ne bougent pas pendant mon tour).
@@ -288,10 +288,12 @@ class DeltaClass {
             } else if (life > 0) {
                 var parts = HealClass.partsAt(healMap[-signed - 1], allyProfile, cell)
                 if (parts != null) {
-                    var projectedVitality = HEAL_COEF * parts[1]
+                    // Valeurs déjà pondérées par HEAL_COEF à la source (HealClass.partsAt), où le
+                    // produit est mémoïsé par cellule au lieu d'être refait à chaque caster.
+                    var projectedVitality = parts[1]
                     totalLife += projectedVitality
                     life += projectedVitality
-                    life += HEAL_COEF * parts[0]
+                    life += parts[0]
                     if (life > totalLife) life = totalLife
                 }
             }
