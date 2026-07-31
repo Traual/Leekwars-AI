@@ -260,8 +260,7 @@ class EntityStateClass extends EntityClass {
 		}
 		// Digest de longueur variable : chaîne à MULTIPLICATION (contrat des clés, famille 3b).
 		var h = OFFSET_BASIS
-		var n = count(list)
-		for (var i = 0; i < n; i++) h = (h ^ list[i]) * MIX_A
+		for (var v in list) h = (h ^ v) * MIX_A
 		stats.SHIELD_EXPIRY_HASH = h
 	}
 

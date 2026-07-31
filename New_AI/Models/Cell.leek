@@ -95,10 +95,9 @@ class CellClass {
 		var _final = [: ]
 		var base = CELL_X[cell] * 1024 + CELL_Y[cell]
 		var offs = ringOffsets(radius)
-		var n = count(offs)
-		for (var i = 0; i < n; i++) {
+		for (var o in offs) {
 			// XY_FREE répond aux deux questions d'un coup : hors carte ET bloquée valent null.
-			var ThisCell = XY_FREE[base + offs[i]]
+			var ThisCell = XY_FREE[base + o]
 			if (ThisCell != null) _final[ThisCell] = true
 		}
 		CIRCLE_CACHE[TmpHash] = _final

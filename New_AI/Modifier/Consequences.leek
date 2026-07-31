@@ -736,8 +736,7 @@ class ConsequencesClass {
 		if (Duration == 0 || AppliedValue <= 0) return;
 		var effects = TarStats.EFFECTS
 		var mergeIdx = -1
-		for (var i = 0; i < count(effects); i++) {
-			var eff = effects[i]
+		for (var i: var eff in effects) {
 			if (eff[0] == EffectType && eff[5] == Item && eff[3] == Duration && eff[2] == CasterId) { mergeIdx = i; break }
 		}
 		// Pas de refreshShieldExpiry ici ni plus bas : aucun bouclier castable ne dure un
@@ -748,12 +747,11 @@ class ConsequencesClass {
 			return;
 		}
 		var newEffects = []
-		for (var i = 0; i < count(effects); i++) {
+		for (var i: var old in effects) {
 			if (i == mergeIdx) {
-				var old = effects[i]
 				push(newEffects, [old[0], old[1] + AppliedValue, old[2], old[3], old[4], old[5], old[6], old[7]])
 			} else {
-				push(newEffects, effects[i])
+				push(newEffects, old)
 			}
 		}
 		TarStats.EFFECTS = newEffects

@@ -78,11 +78,9 @@ class DangerClass {
 		}
 		var maps = Plan.OFFENSIVE_MAPS
 		var mapKeys = Plan.MAP_KEYS
-		var n = count(CovSeq)
 		var cov = []
 		var hash = 0
-		for (var k = 0; k < n; k++) {
-			var idx = CovSeq[k]
+		for (var idx in CovSeq) {
 			// CONTRAT : CovSeq ne retient que les casters à map offensive non nulle.
 			var offMap = maps[idx]
 			// Caster incapable d'atteindre cette cellule : aucun triplet, aucun combo.

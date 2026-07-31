@@ -123,9 +123,8 @@ class ItemCoverageClass {
 		var items = Coverage.ITEMS
 		var directs = Coverage.DIRECTS
 		var aoes = Coverage.AOES
-		var n = count(items)
 		var _final = null
-		for (var k = 0; k < n; k++) {
+		for (var k: var item in items) {
 			var dist
 			if (Cell in directs[k]) {
 				dist = 0
@@ -135,7 +134,7 @@ class ItemCoverageClass {
 				dist = aoe[Cell]
 			}
 			if (_final == null) _final = [: ]
-			_final[items[k]] = dist
+			_final[item] = dist
 		}
 		memo[Cell] = _final
 		return _final
