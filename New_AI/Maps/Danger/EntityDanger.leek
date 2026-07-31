@@ -23,70 +23,145 @@ class EntityDangerClass {
 		this.DamagesPerTp = DamagesPerTpOfItem
 	}
 
+	// Nature d'une ligne du gabarit : ce qui reste à lui appliquer une fois les boucliers connus.
+	static TPL_DAMAGE = 0    // · shieldFactor − curAbs
+	static TPL_POISON = 1    // rien, la valeur est entière
+	static TPL_LIFE = 2      // · lifeFactor · critFactor · shieldFactor − curAbs
+	static TPL_MULTI = 3     // plusieurs effets, chacun avec sa propre nature
+
 	/*
 	 * Liste triée (dégâts/TP décroissant) des (item, aoeDist, dégâts) du caster sur la cible.
 	 * Clé = la clé canonique du couple, calculée UNE fois par l'appelant (DangerComboClass) :
 	 * le lookup précède tout facteur froid, un hit ne recalcule aucune formule.
-	 * Les facteurs invariants du couple sont hoistés HORS des boucles item/distance —
-	 * sous-expressions IDENTIQUES, mêmes chaînes de multiplication, mêmes additions
-	 * successives et soustraction d'ABS par effet (parité flottante stricte).
+	 *
+	 * Au miss, l'énumération et tout ce qui ne dépend PAS des boucliers viennent du gabarit
+	 * (templateFor) : il ne reste ici que le facteur de bouclier et la soustraction d'ABS.
+	 * Les chaînes de multiplication sont coupées à l'endroit EXACT où la dépendance aux
+	 * boucliers commence, donc l'associativité gauche-à-droite est préservée terme à terme et
+	 * les flottants sont identiques au bit près. La vie du caster reste lue ICI : LIFE n'est
+	 * pas dans la clé, la sortir du gabarit lui interdit de figer une vie périmée.
 	 */
-	static getByPairKey(PairKey, CasterStats, TargetStats, CritFactor, AntidoteCd, curAbs, curRel) {
+	static getByPairKey(PairKey, TemplateKey, CasterStats, TargetStats, CritFactor, AntidoteCd, curAbs, curRel) {
 		if (PairKey in DANGER_ENTITY_CACHE) return DANGER_ENTITY_CACHE[PairKey]
 		var Tmp = []
 		// Garde cible morte : liste vide — l'ancienne garde de getItemDanger rendait 0 à
 		// chaque distance, donc aucun EntityDanger n'était créé.
 		if (TargetStats.LIFE > 0) {
-			var powerFactor = 1 + CasterStats.POWER / 100
-			var strengthFactor = 1 + max(0, CasterStats.STRENGTH) / 100 // plancher à l'usage, comme le moteur
-			var magicFactor = 1 + max(0, CasterStats.MAGIC) / 100
-			// Crit binaire asymétrique, appliqué AVANT les shields comme le moteur :
-			// (d·1.3 − ABS) ≠ (d − ABS)·1.3. Résolu une fois par le plan.
-			var critFactor = CritFactor
 			// Shields de la cible en SCALAIRES (la chaîne de vulnés ne mute jamais l'objet).
 			var shieldFactor = 1 - curRel / 100
 			var lifeFactor = CasterStats.LIFE / 100
-			// 99 = pas d'antidote dans l'inventaire (jamais de cure -> le poison compte sa
-			// durée PLEINE), distinct d'un antidote prêt (0). Résolu une fois par cible.
-			var antidoteCd = AntidoteCd
-			var isSummonTarget = TargetStats.IS_SUMMON
-			for (var i in getItemsList(CasterStats)) {
-				// Plasma évalué à multiplicateur 1 (compromis, voir README) : aucun facteur ne
-				// figure donc dans la chaîne de dégâts, multiplier par 1 rend le même flottant.
-				var Infos = ITEMINFO[i]
-				// Vue préfiltrée (ENEMIES + type de cible, ON_CASTER exclu) sélectionnée UNE
-				// fois par item ; null = aucun effet de dégâts applicable.
-				var effs = isSummonTarget ? Infos.DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON : Infos.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK
-				if (effs == null) continue
-				var CostOfItem = Infos.COST
-				var MaxAoeDist = Infos.AOE_DIST_MAX
-				var AddingDist = Infos.AOE_DIST_STEP
-				for (var aoe = 0; aoe <= MaxAoeDist; aoe += AddingDist) {
-					var distFactor = 1 - (aoe * 0.2)
-					var Damage = 0
-					for (var eff in effs) {
-						switch (eff[0]) {
-							case EFFECT_DAMAGE:
-								Damage += (eff[2] * distFactor * powerFactor * strengthFactor * critFactor * shieldFactor - curAbs)
-								break
-							case EFFECT_LIFE_DAMAGE:
-								Damage += (eff[2] * powerFactor * lifeFactor * critFactor * shieldFactor - curAbs)
-								break
-							case EFFECT_POISON:
-								Damage += eff[2] * powerFactor * distFactor * magicFactor * critFactor * min(eff[3], antidoteCd + 1)
-								break
-						}
+			for (var row in templateFor(TemplateKey, CasterStats, TargetStats.IS_SUMMON, CritFactor, AntidoteCd)) {
+				var Damage = 0
+				var kind = row[3]
+				if (kind == TPL_DAMAGE) {
+					Damage += (row[4] * shieldFactor - curAbs)
+				} else if (kind == TPL_MULTI) {
+					// Natures et valeurs alternées à la queue de la ligne, dans l'ordre de la vue
+					// d'effets : les additions successives se suivent exactement comme avant.
+					var n = count(row)
+					for (var j = 4; j < n; j += 2) {
+						var k = row[j]
+						var v = row[j + 1]
+						if (k == TPL_DAMAGE) Damage += (v * shieldFactor - curAbs)
+						else if (k == TPL_POISON) Damage += v
+						else Damage += (v * lifeFactor * CritFactor * shieldFactor - curAbs)
 					}
-					if (Damage <= 0) continue
-					var DamagesPerTpOfItem = Damage / CostOfItem
-					var DangerMap = new EntityDangerClass(i, aoe, Damage, CostOfItem, DamagesPerTpOfItem)
-					push(Tmp, DangerMap)
+				} else if (kind == TPL_POISON) {
+					Damage += row[4]
+				} else {
+					Damage += (row[4] * lifeFactor * CritFactor * shieldFactor - curAbs)
 				}
+				if (Damage <= 0) continue
+				var CostOfItem = row[2]
+				var DamagesPerTpOfItem = Damage / CostOfItem
+				var DangerMap = new EntityDangerClass(row[0], row[1], Damage, CostOfItem, DamagesPerTpOfItem)
+				push(Tmp, DangerMap)
 			}
 		}
 		var _final = SortTmp(Tmp)
 		DANGER_ENTITY_CACHE[PairKey] = _final
 		return _final
+	}
+
+	/*
+	 * Gabarit du couple SANS ses boucliers : une ligne [item, aoeDist, coût, nature, valeur]
+	 * par (item, distance d'AoE) atteignable, dans l'ordre d'énumération d'origine — l'ordre
+	 * décide des égalités du tri, il ne bouge pas.
+	 *
+	 * Sa clé est la clé du couple à boucliers nuls : seuls curAbs et curRel en sont retirés,
+	 * aucun champ n'est ajouté ni relâché. C'est ce qui le rend chaud — la chaîne de vulnés
+	 * fait varier les boucliers et RIEN d'autre, soit ~9 listes de dégâts par gabarit.
+	 *
+	 * Une ligne à effet unique porte sa valeur directement ; au-delà, elle porte la liste de
+	 * ses effets, chacun avec sa nature. Les items sans vue d'effets applicable et les
+	 * distances sans le moindre effet de dégâts ne produisent aucune ligne, comme la boucle
+	 * d'origine ne produisait aucun EntityDanger pour eux.
+	 */
+	static templateFor(TemplateKey, CasterStats, IsSummonTarget, CritFactor, AntidoteCd) {
+		if (TemplateKey in DANGER_TEMPLATE_CACHE) return DANGER_TEMPLATE_CACHE[TemplateKey]
+		var powerFactor = 1 + CasterStats.POWER / 100
+		var strengthFactor = 1 + max(0, CasterStats.STRENGTH) / 100 // plancher à l'usage, comme le moteur
+		var magicFactor = 1 + max(0, CasterStats.MAGIC) / 100
+		// Crit binaire asymétrique, appliqué AVANT les shields comme le moteur :
+		// (d·1.3 − ABS) ≠ (d − ABS)·1.3. Résolu une fois par le plan.
+		// 99 en cooldown d'antidote = pas d'antidote dans l'inventaire (jamais de cure -> le
+		// poison compte sa durée PLEINE), distinct d'un antidote prêt (0).
+		var rows = []
+		for (var i in getItemsList(CasterStats)) {
+			// Plasma évalué à multiplicateur 1 (compromis, voir README) : aucun facteur ne
+			// figure donc dans la chaîne de dégâts, multiplier par 1 rend le même flottant.
+			var Infos = ITEMINFO[i]
+			// Vue préfiltrée (ENEMIES + type de cible, ON_CASTER exclu) sélectionnée UNE
+			// fois par item ; null = aucun effet de dégâts applicable.
+			var effs = IsSummonTarget ? Infos.DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON : Infos.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK
+			if (effs == null) continue
+			var CostOfItem = Infos.COST
+			var MaxAoeDist = Infos.AOE_DIST_MAX
+			var AddingDist = Infos.AOE_DIST_STEP
+			for (var aoe = 0; aoe <= MaxAoeDist; aoe += AddingDist) {
+				var distFactor = 1 - (aoe * 0.2)
+				// UNE seule allocation par ligne : le premier effet la crée à sa forme courte, un
+				// second la bascule en forme longue sur place. Rien d'intermédiaire — la
+				// construction est payée bien plus souvent qu'elle n'est amortie sur un combat
+				// dont la cible porte peu de boucliers.
+				var row = null
+				for (var eff in effs) {
+					var effType = eff[0]
+					var kind = TPL_DAMAGE
+					var value = 0
+					if (effType == EFFECT_DAMAGE) {
+						value = eff[2] * distFactor * powerFactor * strengthFactor * CritFactor
+					} else if (effType == EFFECT_POISON) {
+						kind = TPL_POISON
+						value = eff[2] * powerFactor * distFactor * magicFactor * CritFactor * min(eff[3], AntidoteCd + 1)
+					} else if (effType == EFFECT_LIFE_DAMAGE) {
+						kind = TPL_LIFE
+						// Coupée AVANT lifeFactor : la vie du caster n'est pas dans la clé.
+						value = eff[2] * powerFactor
+					} else {
+						continue
+					}
+					if (row == null) {
+						row = [i, aoe, CostOfItem, kind, value]
+					} else {
+						// Bascule : la nature du premier effet, jusque-là dans le slot 3, descend
+						// derrière le marqueur et sa valeur repart en queue.
+						if (row[3] != TPL_MULTI) {
+							var firstKind = row[3]
+							var firstValue = row[4]
+							row[3] = TPL_MULTI
+							row[4] = firstKind
+							push(row, firstValue)
+						}
+						push(row, kind)
+						push(row, value)
+					}
+				}
+				if (row != null) push(rows, row)
+			}
+		}
+		DANGER_TEMPLATE_CACHE[TemplateKey] = rows
+		return rows
 	}
 
 	/* Items menaçants castables de l'entité (cooldown <= 1), cachés par id pour le tour.

@@ -112,12 +112,16 @@ class DangerComboClass {
 
 		// TOTAL_TP : le danger représente le potentiel max du prochain tour, pas les TP
 		// restants de ce tour — stable d'un step de BFS à l'autre.
+		// Clé du gabarit : la clé du couple à BOUCLIERS NULS. Invariante sur toute la chaîne
+		// de vulnés (seuls les boucliers y varient), donc calculée une seule fois, après le
+		// cache de combo pour qu'un hit ne la paie jamais.
+		var templateKey = dangerPairKey(CasterId, CasterPack, targetPairPack(isSummon, targetDefensePack(0, 0, AntidoteCd)))
 		var baseTp = CasterStats.TOTAL_TP
 		// Uses : racine TOUJOURS zéro (caster jamais Me, EntityState initialise à 0 et le
 		// danger est son prochain tour) — playedUses est l'overlay SPARSE des seuls items
 		// consommés par la chaîne, null tant qu'aucun ne l'est.
 		var playedUses = null
-		var best = greedyDamage(ItemAoeMap, pairKey, CasterStats, TargetStats, CritFactor, AntidoteCd, curAbs, curRel, baseTp, playedUses, -1, 0)
+		var best = greedyDamage(ItemAoeMap, pairKey, templateKey, CasterStats, TargetStats, CritFactor, AntidoteCd, curAbs, curRel, baseTp, playedUses, -1, 0)
 
 		// Les vulnés jouées d'abord peuvent améliorer le combat : on retient la meilleure tant
 		// qu'elle bat STRICTEMENT le total courant. Aucun candidat REJETÉ n'alloue quoi que ce
@@ -172,7 +176,7 @@ class DangerComboClass {
 					var thisTp = baseTp - Infos.COST
 					var thisUses = used + 1
 					var newPairKey = dangerPairKey(CasterId, CasterPack, targetPairPack(isSummon, targetDefensePack(newAbs, newRel, AntidoteCd)))
-					var damages = greedyDamage(ItemAoeMap, newPairKey, CasterStats, TargetStats, CritFactor, AntidoteCd, newAbs, newRel, thisTp, playedUses, item, thisUses)
+					var damages = greedyDamage(ItemAoeMap, newPairKey, templateKey, CasterStats, TargetStats, CritFactor, AntidoteCd, newAbs, newRel, thisTp, playedUses, item, thisUses)
 					if (bestDamage < damages) {   // strict : à égalité, le PREMIER item gagne
 						bestDamage = damages
 						bestItem = item
@@ -210,8 +214,8 @@ class DangerComboClass {
 	 *
 	 * @return dégâts totaux du combo
 	 */
-	static greedyDamage(ItemAoeMap, PairKey, CasterStats, TargetStats, CritFactor, AntidoteCd, curAbs, curRel, CasterTP, PlayedUses, CandidateItem, CandidateUses) {
-		var EntityDangerArray = EntityDangerClass.getByPairKey(PairKey, CasterStats, TargetStats, CritFactor, AntidoteCd, curAbs, curRel)
+	static greedyDamage(ItemAoeMap, PairKey, TemplateKey, CasterStats, TargetStats, CritFactor, AntidoteCd, curAbs, curRel, CasterTP, PlayedUses, CandidateItem, CandidateUses) {
+		var EntityDangerArray = EntityDangerClass.getByPairKey(PairKey, TemplateKey, CasterStats, TargetStats, CritFactor, AntidoteCd, curAbs, curRel)
 		var _final = 0
 		var tp = CasterTP
 		for (var EntityDanger in EntityDangerArray) {

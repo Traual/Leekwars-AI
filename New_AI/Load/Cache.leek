@@ -43,6 +43,7 @@ function ReloadCacheNewTurn() {
     // et leur clé ne porte pas les cooldowns : les deux se rafraîchissent ensemble.
     DANGER_ENTITY_INVENTORY = [: ]
     DANGER_ENTITY_CACHE = [: ]
+    DANGER_TEMPLATE_CACHE = [: ]
 
     DR_PHYSRATIO_BY_SIDE = null
     POISON_COEF_CACHE = [: ]
@@ -241,6 +242,11 @@ global CELL_DANGER_GET_CACHE = [: ]
 global COMBO_FROM_ITEM_AOE_CACHE = [: ]
 
 global DANGER_ENTITY_CACHE = [: ]
+
+// Gabarits du danger, sans les boucliers de la cible : mêmes entrées que DANGER_ENTITY_CACHE
+// moins curAbs/curRel. Même reset obligatoire, la liste d'items dont il dérive étant
+// filtrée par cooldown au moment du calcul.
+global DANGER_TEMPLATE_CACHE = [: ]
 global DANGER_ENTITY_INVENTORY = [: ]
 
 // Recherche de fuite de Me (net minimal), deux niveaux : CELL_NETDAMAGE_FOR_ME_CACHE = le net
