@@ -140,8 +140,13 @@ class NodeClass {
 		// entité préexistante, ajout pur pour une entité née dans l'action (valeur null). Un
 		// ressuscité était mort dans le parent -> ses contributions old valent 0 (LIFE-gated).
 		var bh = BaseHash
-		var ctx = clone(ParentContext, 1)    // copie : le contexte du parent n'est jamais muté
-		var hfpMap = clone(ParentHfp, 1)
+		// Les deux maps par side sont PARTAGées avec le parent tant que rien ne les écrit, et
+		// copiées à la première écriture seulement : une attaque ordinaire clone des entités
+		// sans toucher à leur menace ni à leur soin, et ne doit rien payer. Le parent n'est
+		// jamais muté, la copie précède toute écriture.
+		var ctx = ParentContext
+		var hfpMap = ParentHfp
+		var hfpOwned = false
 		// Quatrième hash patché : le fold des porteurs d'antidote autres que Me (moitié stable
 		// de la clé de couverture). Sans antidote en jeu il reste à 0 tout le long de l'arbre.
 		var pf = StateParent.POISON_FOLD
@@ -161,7 +166,12 @@ class NodeClass {
 				bh ^= StateClass.baseContribution(newStat, tar)
 				var addCtx = DeltaClass.contextContribution(newStat, tar)
 				if (addCtx != 0) {
-					if (dangerDirtyCasters == null) dangerDirtyCasters = [: ]
+					// dangerDirtyCasters null vaut exactement « contexte pas encore copié » : les deux
+					// sites d'écriture du contexte sont les deux sites qui le remplissent.
+					if (dangerDirtyCasters == null) {
+						dangerDirtyCasters = [: ]
+						ctx = clone(ParentContext, 1)
+					}
 					dangerDirtyCasters[tar] = true
 					// Itération directe : seules les VALEURS bougent, jamais les clés — pas
 					// besoin de matérialiser la liste des sides.
@@ -169,7 +179,13 @@ class NodeClass {
 					for (var s: var _h in ctx) if (s != bornSide) ctx[s] ^= addCtx
 				}
 				var addHfp = HealClass.healerContributionOf(newStat, tar)
-				if (addHfp != 0) hfpMap[newStat.SIDE] = ((newStat.SIDE in hfpMap) ? hfpMap[newStat.SIDE] : 0) ^ addHfp
+				if (addHfp != 0) {
+					if (!hfpOwned) {
+						hfpMap = clone(ParentHfp, 1)
+						hfpOwned = true
+					}
+					hfpMap[newStat.SIDE] = ((newStat.SIDE in hfpMap) ? hfpMap[newStat.SIDE] : 0) ^ addHfp
+				}
 				continue
 			}
 			// Masque différentiel UNIQUE : une seule comparaison parent/clone pilote les
@@ -188,7 +204,10 @@ class NodeClass {
 			if (mask & DIFF_CONTEXT) {
 				var deltaCtx = DeltaClass.contextContribution(parentStat, tar) ^ DeltaClass.contextContribution(newStat, tar)
 				if (deltaCtx != 0) {
-					if (dangerDirtyCasters == null) dangerDirtyCasters = [: ]
+					if (dangerDirtyCasters == null) {
+						dangerDirtyCasters = [: ]
+						ctx = clone(ParentContext, 1)
+					}
 					dangerDirtyCasters[tar] = true
 					var side = newStat.SIDE
 					for (var s: var _h in ctx) if (s != side) ctx[s] ^= deltaCtx   // contextes des sides ADVERSES
@@ -197,6 +216,10 @@ class NodeClass {
 			if (mask & DIFF_HFP) {
 				var deltaHfp = HealClass.healerContributionOf(parentStat, tar) ^ HealClass.healerContributionOf(newStat, tar)
 				if (deltaHfp != 0) {             // fingerprint du side de l'entité elle-même
+					if (!hfpOwned) {
+						hfpMap = clone(ParentHfp, 1)
+						hfpOwned = true
+					}
 					var hfpSide = newStat.SIDE
 					hfpMap[hfpSide] = ((hfpSide in hfpMap) ? hfpMap[hfpSide] : 0) ^ deltaHfp
 				}
