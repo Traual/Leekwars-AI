@@ -449,8 +449,18 @@ class WalkCellsClass {
 		// === Initial jump (chebyshev ≤ 3 from start) — emitted at mp=0 ===
 		var srcE = startBit & 262143
 		var srcO = startBit >> 24
-		var lo_j = startCouple > 2 ? startCouple - 2 : 0
-		var hi_j = startCouple < 15 ? startCouple + 2 : 17
+		// Bornes en LIGNES et non en couples. Un couple porte DEUX lignes, or le saut initial
+		// ne franchit que trois lignes et un pas de marche une seule : borner en couples fait
+		// grandir la fenêtre deux fois trop vite. Ligne de départ = couple x 2, plus un si le
+		// bit tombe dans la moitié impaire.
+		// La borne retirée est exactement celle dont le masque est nul : sur une ligne PAIRE,
+		// srcO vaut zéro donc le couple le plus haut ne produit rien ; sur une ligne IMPAIRE,
+		// c'est srcE qui est nul et le couple le plus bas qui ne produit rien.
+		var rowBase = (startCouple << 1) | (startBit > 262143 ? 1 : 0)
+		var loRow = rowBase - 3
+		var lo_j = loRow > 0 ? loRow >> 1 : 0
+		var hiRow = rowBase + 3
+		var hi_j = hiRow < 35 ? hiRow >> 1 : 17
 		var srcE_3 = srcE | (srcE << 1) | (srcE >> 1)
 		var srcO_3 = srcO | (srcO << 1) | (srcO >> 1)
 		var srcO_4 = srcO_3 | (srcO << 2)
@@ -503,8 +513,14 @@ class WalkCellsClass {
 			}
 
 			// Step 2: walk accj + emit
-			if (lo_j) lo_j--
-			if (hi_j != 17) hi_j++
+			// Le front de saut avance d'une LIGNE par point de mouvement, donc d'un couple
+			// toutes les deux rondes : accj tient dans les lignes [départ-3-m, départ+3+m],
+			// le saut depuis DELTA compris (DELTA est à m lignes au plus, son saut à trois de
+			// plus). Les couples retirés sont entièrement nuls, la boucle n'y écrivait rien.
+			var loRow_j = rowBase - 3 - m
+			lo_j = loRow_j > 0 ? loRow_j >> 1 : 0
+			var hiRow_j = rowBase + 3 + m
+			hi_j = hiRow_j < 35 ? hiRow_j >> 1 : 17
 			var iterEnd_j = hi_j
 			var cur_j = accj[lo_j]
 			var oSources_j = (lo_j > 0 ? accj[lo_j - 1] | cur_j : cur_j) >> 24
