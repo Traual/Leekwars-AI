@@ -73,6 +73,11 @@ global CELL_Y = []
 // simple addition — (x±r)·1024 + y vaut base ± r·1024, et x·1024 + (y±r) vaut base ± r.
 global CELL_BASE = []
 
+// Décroissance de zone : AOE_FALLOFF[d] vaut 1 - d · 0,2. Les formules de conséquences la
+// recalculaient à chaque effet et à chaque cible. La table est remplie par CETTE même
+// expression, donc chaque entrée est le flottant exact qu'elles produisaient.
+global AOE_FALLOFF = []
+
 global TMPOBSTACLES = []
 
 // [pack borné -> mix64(pack)] : les contributions de hash prennent un pack (id, cellule) qui

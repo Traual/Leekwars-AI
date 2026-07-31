@@ -198,6 +198,9 @@ class Preload {
 			push(CELL_BASE, idx)
 			if (!obs) XY_FREE[idx] = c
 		}
+		// Bien au-delà de la plus grande distance de zone du jeu (6, pour AREA_X_3).
+		AOE_FALLOFF = []
+		for (var d = 0; d <= 31; d++) push(AOE_FALLOFF, 1 - d * 0.2)
 		InitAoeBoard()
 		// (couple, bitmask) précalculés pour chaque cellule. Layout :
 		//   couple = floor(cell / 35) ; rem = cell % 35
