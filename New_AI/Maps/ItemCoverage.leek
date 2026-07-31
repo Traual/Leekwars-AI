@@ -38,8 +38,30 @@ class ItemCoverageClass {
 	 */
 	static buildMapCellItemAoe(items, walkCellsMap, movementKey) {
 		var _final = [: ]
+		// Le PREMIER item écrit dans une map vide : aucune de ses cellules ne peut déjà y
+		// figurer, et ses deux couches sont disjointes entre elles. Son passage n'a donc aucun
+		// test d'appartenance à payer — l'ordre d'insertion, dont dépend le hash de contenu,
+		// est rigoureusement le même.
+		var fresh = true
 		for (var Item in items) {
 			var geom = geometryOfItem(Item, walkCellsMap, movementKey)
+			var aoeOnly = geom[1]
+			if (fresh) {
+				fresh = false
+				for (var Cell: var Direct in geom[0]) {
+					var m = [: ]
+					m[Item] = 0
+					_final[Cell] = m
+				}
+				if (aoeOnly != null) {
+					for (var Cell: var MinAoeDist in aoeOnly) {
+						var m = [: ]
+						m[Item] = MinAoeDist
+						_final[Cell] = m
+					}
+				}
+				continue
+			}
 			// Couche directe : distance nulle, aucune valeur à relire.
 			// La map de la cellule est REMPLIE avant d'être posée : l'écrire puis la relire
 			// pour y insérer l'item coûtait une lecture de map par cellule créée.
@@ -52,7 +74,6 @@ class ItemCoverageClass {
 					_final[Cell] = m
 				}
 			}
-			var aoeOnly = geom[1]
 			if (aoeOnly == null) continue
 			// Couche de zone : disjointe de la précédente par construction.
 			for (var Cell: var MinAoeDist in aoeOnly) {
