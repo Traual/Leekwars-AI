@@ -93,7 +93,7 @@ class CellClass {
 		var TmpHash = (cell << 7) | radius
 		if (TmpHash in CIRCLE_CACHE) return CIRCLE_CACHE[TmpHash]
 		var _final = [: ]
-		var base = CELL_X[cell] * 1024 + CELL_Y[cell]
+		var base = CELL_BASE[cell]
 		var offs = ringOffsets(radius)
 		for (var o in offs) {
 			// XY_FREE répond aux deux questions d'un coup : hors carte ET bloquée valent null.
@@ -133,23 +133,24 @@ class CellClass {
 		var TmpHash = (cell << 14) | (minradius << 7) | radius
 		if (TmpHash in LINE_CACHE) return LINE_CACHE[TmpHash]
 		var _final = [: ]
-		var BaseX = CELL_X[cell]
-		var BaseY = CELL_Y[cell]
 		for (var i = minradius; i <= radius; i++) {
-			_final += getPointsLine(cell, i, BaseX, BaseY)
+			_final += getPointsLine(cell, i)
 		}
 		LINE_CACHE[TmpHash] = _final
 		return _final
 	}
 
-	static getPointsLine(cell, radius, BaseX, BaseY) {
+	static getPointsLine(cell, radius) {
 		var TmpHash = (cell << 7) | radius
 		if (TmpHash in POINTS_LINE_CACHE) return POINTS_LINE_CACHE[TmpHash]
 		var _final = [: ]
-		var Cell1 = XY_FREE[(BaseX + radius) * 1024 + BaseY]
-		var Cell2 = XY_FREE[(BaseX - radius) * 1024 + BaseY]
-		var Cell3 = XY_FREE[BaseX * 1024 + (BaseY + radius)]
-		var Cell4 = XY_FREE[BaseX * 1024 + (BaseY - radius)]
+		// Les quatre voisins cardinaux s'obtiennent par addition sur l'index de base.
+		var base = CELL_BASE[cell]
+		var dxr = radius * 1024
+		var Cell1 = XY_FREE[base + dxr]
+		var Cell2 = XY_FREE[base - dxr]
+		var Cell3 = XY_FREE[base + radius]
+		var Cell4 = XY_FREE[base - radius]
 		if (Cell1 != null) _final[Cell1] = true
 		if (Cell2 != null) _final[Cell2] = true
 		if (Cell3 != null) _final[Cell3] = true
@@ -162,21 +163,19 @@ class CellClass {
 		var TmpHash = (cell << 14) | (minradius << 7) | radius
 		if (TmpHash in LINE_WITH_LOS_CACHE) return LINE_WITH_LOS_CACHE[TmpHash]
 		var _final = [: ]
-		var BaseX = CELL_X[cell]
-		var BaseY = CELL_Y[cell]
 		for (var d = minradius; d <= radius; d++) {
-			_final += getPointsLineWithLos(cell, d, BaseX, BaseY)
+			_final += getPointsLineWithLos(cell, d)
 		}
 		LINE_WITH_LOS_CACHE[TmpHash] = _final
 		return _final
 	}
 
 	
-	static getPointsLineWithLos(cell, radius, BaseX, BaseY) {
+	static getPointsLineWithLos(cell, radius) {
 		var TmpHash = (cell << 7) | radius
 		if (TmpHash in POINTS_LINE_WITH_LOS_CACHE) return POINTS_LINE_WITH_LOS_CACHE[TmpHash]
 		var _final = [: ]
-		for (var testingCell:var bool in getPointsLine(cell, radius, BaseX, BaseY)) {
+		for (var testingCell:var bool in getPointsLine(cell, radius)) {
 			if (getLos(testingCell, cell)) {
 				_final[testingCell] = true
 			}
@@ -261,9 +260,9 @@ class CellClass {
 		if (TmpHash in POINTS_STAR_CACHE) return POINTS_STAR_CACHE[TmpHash]
 		var _final = [: ]
 		if (!(radius % 2)) {
-			_final = mapMerge(getDiagonalPoints(cell, radius/2, BaseX, BaseY), getPointsLine(cell, radius, BaseX, BaseY))
+			_final = mapMerge(getDiagonalPoints(cell, radius/2, BaseX, BaseY), getPointsLine(cell, radius))
 		} else {
-			_final = getPointsLine(cell, radius, BaseX, BaseY)
+			_final = getPointsLine(cell, radius)
 		}
 		POINTS_STAR_CACHE[TmpHash] = _final
 		return _final
@@ -368,8 +367,11 @@ class CellClass {
 		var stepX = CELL_X[to] > FromX ? 1 : (CELL_X[to] < FromX ? -1 : 0)
 		var stepY = CELL_Y[to] > FromY ? 1 : (CELL_Y[to] < FromY ? -1 : 0)
 		if ((stepX == 0) != (stepY == 0)) {   // aligné sur exactement UN axe (from == to et diagonales -> vide, comme avant)
+			// Un pas de rayon est une translation constante : un seul index à avancer.
+			var base = CELL_BASE[from]
+			var step = stepX * 1024 + stepY
 			for (var d = minrange; d <= maxrange; d++) {
-				var Cell = XY_FREE[(FromX + d * stepX) * 1024 + (FromY + d * stepY)]
+				var Cell = XY_FREE[base + d * step]
 				if (Cell == null) break   // hors carte ou obstacle : le laser s'arrête
 				_final[Cell] = true
 			}
@@ -387,8 +389,10 @@ class CellClass {
 		var stepX = CELL_X[to] > FromX ? 1 : (CELL_X[to] < FromX ? -1 : 0)
 		var stepY = CELL_Y[to] > FromY ? 1 : (CELL_Y[to] < FromY ? -1 : 0)
 		if ((stepX == 0) != (stepY == 0)) {
+			var base = CELL_BASE[from]
+			var step = stepX * 1024 + stepY
 			for (var d = minrange; d <= maxrange; d++) {
-				var Cell = XY_FREE[(FromX + d * stepX) * 1024 + (FromY + d * stepY)]
+				var Cell = XY_FREE[base + d * step]
 				if (Cell == null) break   // hors carte ou obstacle
 				if (EntityMap[Cell]) {
 					_final[Cell] = true
@@ -403,11 +407,12 @@ class CellClass {
 	 * centre inclus — les formes AREA_SQUARE_*. */
 	static getSquare(cell, radius) {
 		var _final = [: ]
-		var BaseX = CELL_X[cell]
-		var BaseY = CELL_Y[cell]
+		var base = CELL_BASE[cell]
 		for (var dx = -radius; dx <= radius; dx++) {
+			// Index de la ligne calculé une fois : la boucle interne n'ajoute plus que dy.
+			var rowBase = base + dx * 1024
 			for (var dy = -radius; dy <= radius; dy++) {
-				var c = XY_FREE[(BaseX + dx) * 1024 + (BaseY + dy)]
+				var c = XY_FREE[rowBase + dy]
 				if (c != null) _final[c] = true
 			}
 		}

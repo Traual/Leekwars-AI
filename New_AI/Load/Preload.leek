@@ -194,7 +194,9 @@ class Preload {
 			push(TMPOBSTACLES, obs)
 			push(CELL_X, x)
 			push(CELL_Y, y)
-			if (!obs) XY_FREE[x * 1024 + y] = c
+			var idx = x * 1024 + y
+			push(CELL_BASE, idx)
+			if (!obs) XY_FREE[idx] = c
 		}
 		InitAoeBoard()
 		// (couple, bitmask) précalculés pour chaque cellule. Layout :

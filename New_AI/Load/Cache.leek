@@ -68,6 +68,10 @@ global INITIAL_TURN_ORDER = [: ]
 // géométries les plus chaudes.
 global CELL_X = []
 global CELL_Y = []
+// Index de la cellule dans XY_FREE, pré-additionné : x · 1024 + y. Les géométries le
+// recalculaient à chaque appel à partir des deux coordonnées, et un voisin s'obtient par
+// simple addition — (x±r)·1024 + y vaut base ± r·1024, et x·1024 + (y±r) vaut base ± r.
+global CELL_BASE = []
 
 global TMPOBSTACLES = []
 
