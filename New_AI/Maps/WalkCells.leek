@@ -204,7 +204,12 @@ class WalkCellsClass {
 	// ============================================================================
 
 	static HashWalkCells(Cell, Mp, BaseHash) {
-		return addValueToBinHash((OFFSET_BASIS ^ BaseHash), (Cell << 32) | Mp) // clé (cellule, mp) sous BaseHash
+		// mp CLAMPÉ à 0, comme dans les fetchers sans entités : une entrave peut le rendre
+		// négatif, et un négatif non clampé étend son signe sur tous les bits hauts — il
+		// ÉCRASE alors le champ cellule, et deux cellules différentes partagent une entrée.
+		// Mesuré : 54 hits servant le domaine de marche d'une AUTRE cellule sur un combat.
+		// Clamper ne perd rien : le BFS traite tout mp <= 0 comme mp = 0.
+		return addValueToBinHash((OFFSET_BASIS ^ BaseHash), (Cell << 32) | max(0, Mp)) // clé (cellule, mp) sous BaseHash
 	}
 
 	/* Fingerprint (cellule, mp, capacités jump/télépo) d'une entité — SANS BaseHash. */
@@ -227,7 +232,8 @@ class WalkCellsClass {
 		// fuite servait un min sur des cellules inaccessibles.
 		var CanBoth = CanJump && CanTeleport && Tp >= JumpCost + TeleportationCost
 		var BaseValue = (CanJump ? 1 : 0) | (CanTeleport ? 2 : 0) | (CanBoth ? 4 : 0)
-		return addValueToBinHash((OFFSET_BASIS ^ BaseValue), (entity_state.CELL << 32) | entity_state.MP)
+		// mp clampé : même écrasement du champ cellule qu'en clé de marche sur un mp négatif.
+		return addValueToBinHash((OFFSET_BASIS ^ BaseValue), (entity_state.CELL << 32) | max(0, entity_state.MP))
 	}
 
 	// ============================================================================
