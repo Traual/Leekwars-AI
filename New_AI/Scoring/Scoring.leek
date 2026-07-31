@@ -109,6 +109,14 @@ class ScoringClass {
         // pas : seuls les porteurs de POT > 0 sont relus quand la clé bouge.
         node.POISON_KEY = poisonKeyOnNode(node, State)
         var coefChanged = node.POISON_KEY != ParentPoisonKey
+        // Les cinq champs que le calcul d'un terme lit sur le nœud sont invariants pour tout
+        // le nœud : lus une fois ici plutôt qu'à chacun des termes recalculés. Les passer ne
+        // coûte rien, un appel valant 1 quel que soit son nombre d'arguments.
+        var nBase = node.BASE_HASH
+        var nCtx = node.CONTEXT_BY_SIDE
+        var nHfp = node.HFP_BY_SIDE
+        var nWalk = node.ME_WALK_FINGERPRINT
+        var nPoison = node.POISON_KEY
 
         var delta = 0
         var termsPatch = [: ]
@@ -117,7 +125,7 @@ class ScoringClass {
         if (!hasDirtyCasters && healChanged == null && !coefChanged) {
             // Cas courant : le masque du Node a déjà déterminé les termes locaux sales.
             for (var e: var _d in node.LOCAL_TERM_DIRTY) {
-                delta += termDelta(e, State[e], State, node, termsPatch, ParentTermNode, healMap, MySide)
+                delta += termDelta(e, State[e], State, termsPatch, ParentTermNode, healMap, MySide, nBase, nCtx, nHfp, nWalk, nPoison)
             }
         } else {
             for (var e: var stat in State) {
@@ -126,7 +134,7 @@ class ScoringClass {
                 if (stat.LIFE <= 0 && !(e in cloned)) continue
                 // Terme local déjà sale : aucun test de dépendance à payer.
                 if (e in node.LOCAL_TERM_DIRTY) {
-                    delta += termDelta(e, stat, State, node, termsPatch, ParentTermNode, healMap, MySide)
+                    delta += termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, nBase, nCtx, nHfp, nWalk, nPoison)
                     continue
                 }
                 var globalDirty = (healChanged != null && stat.SIDE in healChanged)
@@ -144,7 +152,7 @@ class ScoringClass {
                     }
                 }
                 if (!globalDirty) continue
-                delta += termDelta(e, stat, State, node, termsPatch, ParentTermNode, healMap, MySide)
+                delta += termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, nBase, nCtx, nHfp, nWalk, nPoison)
             }
         }
         // La map n'est utile qu'à CE scoring : les hits du ScoredCache refabriquent un
@@ -234,12 +242,12 @@ class ScoringClass {
 
     /* newTerm(e) − oldTerm(e) ; l'ancien terme est résolu dans la chaîne de snapshots
      * (termOf), le nouveau n'est écrit QUE dans le patch local du nœud. */
-    static termDelta(e, stat, State, node, termsPatch, ParentTermNode, healMap, MySide) {
+    static termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, NodeBaseHash, NodeContext, NodeHfp, NodeWalkFp, NodePoisonKey) {
         var newTerm = 0
         if (stat.LIFE > 0) {
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            var net = DeltaClass.netOf(e, stat, State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, healMap, node.ME_WALK_FINGERPRINT)
-            newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, net, State, node.POISON_KEY) + ImportanceClass.capability(stat)
+            var net = DeltaClass.netOf(e, stat, State, NodeBaseHash, NodeContext, NodeHfp, healMap, NodeWalkFp)
+            newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, net, State, NodePoisonKey) + ImportanceClass.capability(stat)
                 + (stat.DAMAGE_RETURN > 0 ? drDeterrence(stat, net, State) : 0))
         }
         var oldTerm = termOf(ParentTermNode, e)
