@@ -41,12 +41,15 @@ class ItemCoverageClass {
 		for (var Item in items) {
 			var geom = geometryOfItem(Item, walkCellsMap, movementKey)
 			// Couche directe : distance nulle, aucune valeur à relire.
+			// La map de la cellule est REMPLIE avant d'être posée : l'écrire puis la relire
+			// pour y insérer l'item coûtait une lecture de map par cellule créée.
 			for (var Cell: var Direct in geom[0]) {
 				if (Cell in _final) {
 					_final[Cell][Item] = 0
 				} else {
-					_final[Cell] = [: ]
-					_final[Cell][Item] = 0
+					var m = [: ]
+					m[Item] = 0
+					_final[Cell] = m
 				}
 			}
 			var aoeOnly = geom[1]
@@ -56,8 +59,9 @@ class ItemCoverageClass {
 				if (Cell in _final) {
 					_final[Cell][Item] = MinAoeDist
 				} else {
-					_final[Cell] = [: ]
-					_final[Cell][Item] = MinAoeDist
+					var m = [: ]
+					m[Item] = MinAoeDist
+					_final[Cell] = m
 				}
 			}
 		}

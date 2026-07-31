@@ -422,8 +422,10 @@ class ActionsClass {
 		var _final = [: ]
 		for (var to: var dist in AoeDistItem(Item, EntityCell)) {
 			for (var from: var bool in LaunchFunction(to, MinRange, MaxRange)) {
-				if (!(from in _final)) _final[from] = [: ]
-				_final[from][to] = dist
+				// La map de la cellule est prise UNE fois : la créer puis la relire pour y
+				// insérer coûtait une lecture de map par couple (cellule de tir, cible).
+				var Tmp = from in _final ? _final[from] : _final[from] = [: ]
+				Tmp[to] = dist
 			}
 		}
 		COEFFED_MAP_ENTITY_CACHE[Hash] = _final
