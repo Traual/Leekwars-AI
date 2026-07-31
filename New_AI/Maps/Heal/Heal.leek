@@ -88,9 +88,15 @@ class HealClass {
      */
     static buildHfpBySide(State) {
         var _final = [: ]
+        // Map TOTALE : chaque camp présent y figure, à 0 s'il n'a aucun soigneur. Les lecteurs
+        // n'ont plus à tester l'appartenance pour retomber sur 0 — or le net la lit une fois
+        // par terme. Semée sur les camps des MORTS aussi : la totalité ne doit pas dépendre de
+        // qui est vivant à la racine. Ajouter des zéros ne change aucun fold (0 est neutre pour
+        // le XOR) ni aucune comparaison parent/enfant.
+        for (var e: var stat in State) _final[stat.SIDE] = 0
         for (var e: var stat in State) {
             var c = healerContributionOf(stat, e)
-            if (c != 0) _final[stat.SIDE] = ((stat.SIDE in _final) ? _final[stat.SIDE] : 0) ^ c
+            if (c != 0) _final[stat.SIDE] ^= c
         }
         return _final
     }

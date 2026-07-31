@@ -79,7 +79,8 @@ class DeltaClass {
         var offensiveContextHash = contextBySide[targetSide]
         var antidoteCd = DangerComboClass.antidoteCdOf(stat)
         var targetSeed = targetDangerSeedOf(stat, offensiveContextHash, antidoteCd)
-        var hfp = (targetSide in healersFingerprintBySide) ? healersFingerprintBySide[targetSide] : 0
+        // Map totale (HealClass.buildHfpBySide) : lecture directe, le 0-défaut y est écrit.
+        var hfp = healersFingerprintBySide[targetSide]
 
         if (e == Me) {
             // Me BOUGE ce tour : min du net sur mes cellules accessibles.
