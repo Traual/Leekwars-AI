@@ -52,6 +52,10 @@ global OFFSET_BASIS = 1469598103934665603
 global SHIFT = 13
 global HIGH_SHIFT = 64 - SHIFT
 global MASK_HIGH = (1 << SHIFT) - 1
+// Deux pas enchaînés : voir addTwoValuesToBinHash. Dérivés de SHIFT pour le suivre.
+global SHIFT2 = SHIFT * 2
+global HIGH_SHIFT2 = 64 - SHIFT2
+global MASK_HIGH2 = (1 << SHIFT2) - 1
 
 /*
  * CONTRAT DES CLÉS DE CACHE — trois familles, une règle par famille.
@@ -105,6 +109,24 @@ global MASK_HIGH = (1 << SHIFT) - 1
  * famille 2 ; pour un digest de contenu variable, passer par mix64 ci-dessous. */
 function addValueToBinHash(BaseHashValue, AddedValue) {
     return ((BaseHashValue << SHIFT) | ((BaseHashValue >> HIGH_SHIFT) & MASK_HIGH)) ^ AddedValue
+}
+
+/*
+ * DEUX valeurs chaînées d'un coup — rend EXACTEMENT
+ * addValueToBinHash(addValueToBinHash(base, Premiere), Seconde), et non une variante.
+ *
+ * Pourquoi c'est la même valeur : le pas est rotl(base) ^ v, et une rotation est une
+ * PERMUTATION DE POSITIONS de bits, donc elle distribue sur le XOR bit à bit :
+ *   rotl(rotl(b) ^ P) ^ S  =  rotl²(b) ^ rotl(P) ^ S
+ * Deux rotations de SHIFT valent une rotation de 2·SHIFT, d'où la forme ci-dessous.
+ *
+ * PRÉCONDITION : Premiere doit tenir sous 2^HIGH_SHIFT, sans quoi rotl(Premiere) ne se
+ * réduit pas à un simple décalage et le résultat diffère. Un pack de champs bornés la
+ * satisfait largement ; une empreinte pleine 64 bits, NON — enchaîner addValueToBinHash
+ * reste la forme correcte pour celles-là.
+ */
+function addTwoValuesToBinHash(BaseHashValue, FirstValue, SecondValue) {
+    return ((BaseHashValue << SHIFT2) | ((BaseHashValue >> HIGH_SHIFT2) & MASK_HIGH2)) ^ (FirstValue << SHIFT) ^ SecondValue
 }
 
 // mix64 : mixeur 64 bits non linéaire (finaliseur type splitmix64) pour les folds XOR
