@@ -71,19 +71,28 @@ class ScoringClass {
         var cloned = node.CLONED
         var hfpMap = node.HFP_BY_SIDE
 
-        // UN seul parcours des fingerprints par side, qui produit les deux informations qu'on en
-        // tire : le fold combiné (clé de la heal map, hit sauf healer modifié) et les sides dont
-        // les inputs heal ont changé. Comparaison 0-défaut : le patch ne fait qu'AJOUTER des
-        // clés, donc la map enfant ⊇ la map parent -> itérer l'enfant suffit.
-        var combinedHfp = 0
+        // Map d'empreintes PARTAGÉE avec le parent (copie-sur-écriture du Nœud) : aucune
+        // empreinte n'a pu changer, et le fold est exactement celui du parent. Le cas courant
+        // — une attaque ordinaire ne touche ni la qualification ni les stats d'un soigneur.
+        // Sinon seulement, un parcours produit les deux informations qu'on en tire : le fold
+        // combiné (clé de la heal map) et les sides dont les inputs heal ont changé.
+        // Comparaison 0-défaut : le patch ne fait qu'AJOUTER des clés, donc la map enfant ⊇
+        // la map parent -> itérer l'enfant suffit.
+        var combinedHfp
         var healChanged = null
-        for (var s: var h in hfpMap) {
-            combinedHfp ^= h
-            if (((s in ParentHfp) ? ParentHfp[s] : 0) != h) {
-                if (healChanged == null) healChanged = [: ]
-                healChanged[s] = true
+        if (node.HFP_OWNED) {
+            combinedHfp = 0
+            for (var s: var h in hfpMap) {
+                combinedHfp ^= h
+                if (((s in ParentHfp) ? ParentHfp[s] : 0) != h) {
+                    if (healChanged == null) healChanged = [: ]
+                    healChanged[s] = true
+                }
             }
+        } else {
+            combinedHfp = ParentTermNode.COMBINED_HFP
         }
+        node.COMBINED_HFP = combinedHfp
         var healMap = HealClass.getHealMapByFp(State, combinedHfp)
 
         // Casters offensifs réellement modifiés par l'action (posés par le Node depuis les

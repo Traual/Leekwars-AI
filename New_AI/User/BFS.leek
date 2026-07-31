@@ -68,6 +68,12 @@ class ActionSuite {
 		noPlay.BASE_HASH = BaseHash   // terrain de la racine des termes (comparaison parent/enfant pour Me)
 		noPlay.ME_WALK_FINGERPRINT = RootWalkFingerprint
 		noPlay.POISON_FOLD = RootPoisonFold   // moitié stable de la clé antidote, héritée par ses enfants
+		// Fold des empreintes de soigneurs de la racine : ses enfants l'héritent tant qu'aucun
+		// n'a sa propre map (copie-sur-écriture du Nœud).
+		var rootCombinedHfp = 0
+		for (var s: var h in RootHfp) rootCombinedHfp ^= h
+		noPlay.COMBINED_HFP = rootCombinedHfp
+		noPlay.HFP_OWNED = true
 		// Racine des ÉTATS : elle seule porte la map complète d'office, patch vide.
 		noPlay.STATE_PARENT = null
 		noPlay.STATE_PATCH = [: ]

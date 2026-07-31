@@ -45,6 +45,10 @@ class NodeClass {
 	                  // (la racine noPlay porte la map complète). Résolution via ScoringClass.termOf.
 	TERMS_PARENT      // nœud portant le snapshot de termes précédent — chaîne IMMUABLE, indépendante
 	                  // de PARENT (que le déroulé du BFS réassigne) ; null = racine des termes
+	HFP_OWNED         // ce nœud a-t-il sa PROPRE map d'empreintes de soigneurs ? Faux = elle est
+	                  // celle du parent, donc aucune empreinte n'a changé (copie-sur-écriture)
+	COMBINED_HFP      // fold XOR des empreintes par camp : la clé de la heal map. Hérité tel quel
+	                  // du parent quand la map est partagée, recalculé sinon
 	ME_WALK_FINGERPRINT // empreinte de mobilité de Me pour l'état du nœud
 	                  // (HashWalkCellsWithItemsWithoutBaseHash). Suit STATE_PARENT, jamais
 	                  // PARENT : le déroulé et le ScoredCache réassignent PARENT. Calculée une
@@ -243,6 +247,7 @@ class NodeClass {
 		result.ME_WALK_FINGERPRINT = meWalkFingerprint
 		result.CONTEXT_BY_SIDE = ctx
 		result.HFP_BY_SIDE = hfpMap
+		result.HFP_OWNED = hfpOwned
 		capturePatch(result, ThisActionStats, clonedIds)
 
 		BenchOps.Stop("Node")
