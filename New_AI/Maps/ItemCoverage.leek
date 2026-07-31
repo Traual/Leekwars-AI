@@ -239,7 +239,9 @@ class ItemCoverageClass {
 			for (var row = from; row <= to; row++) {
 				var src = board[row - dx]
 				if (src == 0) continue
-				var moved = dy >= 0 ? src << dy : src >> (-dy)
+				// Les deux côtés du miroir d'un coup (voir Preload.foldMirrors) : un décalage
+				// d'axe a dy nul et rend la source des deux côtés, donc le cas est absorbé.
+				var moved = (src << dy) | (src >> dy)
 				var d = moved & avail[row]
 				if (d == 0) continue
 				avail[row] ^= d

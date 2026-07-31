@@ -118,17 +118,17 @@ class Preload {
 	 */
 	static InitAoeShapes() {
 		AOEB_SHAPE = [: ]
-		AOEB_SHAPE[AREA_CIRCLE_1] = manhattanShape(1)
-		AOEB_SHAPE[AREA_CIRCLE_2] = manhattanShape(2)
-		AOEB_SHAPE[AREA_CIRCLE_3] = manhattanShape(3)
-		AOEB_SHAPE[AREA_PLUS_1] = manhattanShape(1)   // alias moteur de CIRCLE_1, même forme
-		AOEB_SHAPE[AREA_SQUARE_1] = chebyshevShape(1)
-		AOEB_SHAPE[AREA_SQUARE_2] = chebyshevShape(2)
-		AOEB_SHAPE[AREA_PLUS_2] = crossShape(2)
-		AOEB_SHAPE[AREA_PLUS_3] = crossShape(3)
-		AOEB_SHAPE[AREA_X_1] = diagonalShape(1)
-		AOEB_SHAPE[AREA_X_2] = diagonalShape(2)
-		AOEB_SHAPE[AREA_X_3] = diagonalShape(3)
+		AOEB_SHAPE[AREA_CIRCLE_1] = foldMirrors(manhattanShape(1))
+		AOEB_SHAPE[AREA_CIRCLE_2] = foldMirrors(manhattanShape(2))
+		AOEB_SHAPE[AREA_CIRCLE_3] = foldMirrors(manhattanShape(3))
+		AOEB_SHAPE[AREA_PLUS_1] = foldMirrors(manhattanShape(1))   // alias moteur de CIRCLE_1, même forme
+		AOEB_SHAPE[AREA_SQUARE_1] = foldMirrors(chebyshevShape(1))
+		AOEB_SHAPE[AREA_SQUARE_2] = foldMirrors(chebyshevShape(2))
+		AOEB_SHAPE[AREA_PLUS_2] = foldMirrors(crossShape(2))
+		AOEB_SHAPE[AREA_PLUS_3] = foldMirrors(crossShape(3))
+		AOEB_SHAPE[AREA_X_1] = foldMirrors(diagonalShape(1))
+		AOEB_SHAPE[AREA_X_2] = foldMirrors(diagonalShape(2))
+		AOEB_SHAPE[AREA_X_3] = foldMirrors(diagonalShape(3))
 	}
 
 	/* Boule de Manhattan de rayon r, par distance croissante, centre exclu. */
@@ -177,6 +177,37 @@ class Preload {
 			pushOffset(out, i, -i, 2 * i)
 			pushOffset(out, -i, i, 2 * i)
 			pushOffset(out, -i, -i, 2 * i)
+		}
+		return out
+	}
+
+	/*
+	 * Replie les décalages MIROIRS : (dx, +k, dist) et (dx, -k, dist) partagent la même ligne
+	 * source et la même distance, donc une seule passe suffit — la dilatation émet les deux
+	 * côtés d'un coup par (src << k) | (src >> k). Un décalage d'axe (dy nul) traverse ce moule
+	 * sans rien changer : décaler de zéro des deux côtés rend la source.
+	 * Les quatre constructeurs sont symétriques en dy à (dx, distance) fixés ; la vérification
+	 * ci-dessous le CONTRÔLE plutôt que de le supposer, une forme asymétrique perdrait un côté.
+	 * L'ordre des entrées retenues est préservé, donc les distances restent croissantes et la
+	 * règle du premier arrivé est intacte — les deux moitiés portaient déjà la même distance.
+	 */
+	static foldMirrors(shape) {
+		var n = count(shape)
+		var out = []
+		for (var i = 0; i < n; i += 3) {
+			var dy = shape[i + 1]
+			if (dy < 0) continue
+			if (dy > 0) {
+				var found = false
+				for (var j = 0; j < n; j += 3) {
+					if (shape[j] == shape[i] && shape[j + 1] == -dy && shape[j + 2] == shape[i + 2]) {
+						found = true
+						break
+					}
+				}
+				if (!found) debugE("forme de zone non symétrique en dy : le repli des miroirs perdrait un côté")
+			}
+			pushOffset(out, shape[i], dy, shape[i + 2])
 		}
 		return out
 	}
