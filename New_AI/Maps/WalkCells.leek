@@ -724,8 +724,7 @@ class WalkCellsClass {
 					for (var tc = tlo_s; tc <= thi_s; tc++) TGT[tc] |= shift_combo
 				}
 			}
-			for (var c = 0; c <= 17; c++) {
-				var sum = TGT[c]
+			for (var c: var sum in TGT) {
 				if (sum == 0) continue
 				TGT[c] = 0
 				var cur = acct[c]
@@ -855,8 +854,7 @@ class WalkCellsClass {
 		}
 
 		// Sweep TGT_INIT → acctj (emit at mp=0, dense chunk decode)
-		for (var c = 0; c <= 17; c++) {
-			var sum = TGT_INIT[c]
+		for (var c: var sum in TGT_INIT) {
 			if (sum == 0) continue
 			var d = sum & OBS[c] & ~acctj[c]
 			if (d) {
@@ -1019,8 +1017,7 @@ class WalkCellsClass {
 				if (sc + 2 > hi_aj_w) hi_aj_w = sc + 2 > 17 ? 17 : sc + 2
 			}
 			// sweep TGT → acct (no emit)
-			for (var c = 0; c <= 17; c++) {
-				var sum = TGT[c]
+			for (var c: var sum in TGT) {
 				if (sum == 0) continue
 				TGT[c] = 0
 				var d = sum & OBS[c] & ~acct[c]
@@ -1075,8 +1072,7 @@ class WalkCellsClass {
 					TGT[17] |= o_2 | ke_4
 				}
 			}
-			for (var c = 0; c <= 17; c++) {
-				var sum = TGT[c]
+			for (var c: var sum in TGT) {
 				if (sum == 0) continue
 				TGT[c] = 0
 				var d = sum & OBS[c] & ~acctj[c]
