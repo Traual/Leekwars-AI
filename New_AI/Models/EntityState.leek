@@ -137,46 +137,30 @@ class EntityStateClass extends EntityClass {
 		for (var eff in this.EFFECTS) {
 			switch (eff[0]) {
 				// --- AGILITY ---
-				case EFFECT_BUFF_AGILITY:
-				case EFFECT_RAW_BUFF_AGILITY:
-					this.BASE_STATS[STAT_AGILITY] -= eff[1]
-					break
-				case EFFECT_SHACKLE_AGILITY:
-					this.BASE_STATS[STAT_AGILITY] += eff[1]
-					break
-
-					// --- STRENGTH ---
 				case EFFECT_BUFF_STRENGTH:
 				case EFFECT_RAW_BUFF_STRENGTH:
 					this.BASE_STATS[STAT_STRENGTH] -= eff[1]
 					break
-				case EFFECT_SHACKLE_STRENGTH:
-					this.BASE_STATS[STAT_STRENGTH] += eff[1]
+				case EFFECT_HEAL:
+					// Persistant seulement — un heal instantané (durée 0) n'entre jamais au
+					// ledger moteur, garde par sécurité.
+					if (eff[3] > 0) {
+						this.HEAL += eff[1]
+						this.HEAL_OVER_TIME += eff[1] * eff[3]
+					}
 					break
-
-					// --- WISDOM ---
+				case EFFECT_BUFF_TP:
+				case EFFECT_RAW_BUFF_TP:
+					this.BASE_STATS[STAT_TP] -= eff[1]
+					break
 				case EFFECT_BUFF_WISDOM:
 				case EFFECT_RAW_BUFF_WISDOM:
 					this.BASE_STATS[STAT_WISDOM] -= eff[1]
 					break
-				case EFFECT_SHACKLE_WISDOM:
-					this.BASE_STATS[STAT_WISDOM] += eff[1]
+				case EFFECT_BUFF_AGILITY:
+				case EFFECT_RAW_BUFF_AGILITY:
+					this.BASE_STATS[STAT_AGILITY] -= eff[1]
 					break
-
-					// --- MAGIC ---
-				case EFFECT_RAW_BUFF_MAGIC:
-					this.BASE_STATS[STAT_MAGIC] -= eff[1]
-					break
-				case EFFECT_SHACKLE_MAGIC:
-					this.BASE_STATS[STAT_MAGIC] += eff[1]
-					break
-
-					// --- SCIENCE ---
-				case EFFECT_RAW_BUFF_SCIENCE:
-					this.BASE_STATS[STAT_SCIENCE] -= eff[1]
-					break
-
-					// --- RESISTANCE ---
 				case EFFECT_BUFF_RESISTANCE:
 				case EFFECT_RAW_BUFF_RESISTANCE:
 					this.BASE_STATS[STAT_RESISTANCE] -= eff[1]
@@ -187,14 +171,17 @@ class EntityStateClass extends EntityClass {
 				case EFFECT_RAW_BUFF_MP:
 					this.BASE_STATS[STAT_MP] -= eff[1]
 					break
-				case EFFECT_SHACKLE_MP:
-					this.BASE_STATS[STAT_MP] += eff[1]
+				case EFFECT_RAW_BUFF_MAGIC:
+					this.BASE_STATS[STAT_MAGIC] -= eff[1]
+					break
+				case EFFECT_RAW_BUFF_SCIENCE:
+					this.BASE_STATS[STAT_SCIENCE] -= eff[1]
 					break
 
-					// --- TP ---
-				case EFFECT_BUFF_TP:
-				case EFFECT_RAW_BUFF_TP:
-					this.BASE_STATS[STAT_TP] -= eff[1]
+					// --- RESISTANCE ---
+				case EFFECT_AFTEREFFECT:
+					this.AFTEREFFECT += eff[1]
+					this.AFTEREFFECT_OVER_TIME += eff[1] * eff[3]
 					break
 				case EFFECT_SHACKLE_TP:
 					this.BASE_STATS[STAT_TP] += eff[1]
@@ -205,18 +192,31 @@ class EntityStateClass extends EntityClass {
 					this.POISON += eff[1]
 					this.POISON_OVER_TIME += eff[1] * eff[3]
 					break
-				case EFFECT_AFTEREFFECT:
-					this.AFTEREFFECT += eff[1]
-					this.AFTEREFFECT_OVER_TIME += eff[1] * eff[3]
+				case EFFECT_SHACKLE_MP:
+					this.BASE_STATS[STAT_MP] += eff[1]
 					break
-				case EFFECT_HEAL:
-					// Persistant seulement — un heal instantané (durée 0) n'entre jamais au
-					// ledger moteur, garde par sécurité.
-					if (eff[3] > 0) {
-						this.HEAL += eff[1]
-						this.HEAL_OVER_TIME += eff[1] * eff[3]
-					}
+
+					// --- TP ---
+				case EFFECT_SHACKLE_AGILITY:
+					this.BASE_STATS[STAT_AGILITY] += eff[1]
 					break
+
+					// --- STRENGTH ---
+				case EFFECT_SHACKLE_STRENGTH:
+					this.BASE_STATS[STAT_STRENGTH] += eff[1]
+					break
+
+					// --- WISDOM ---
+				case EFFECT_SHACKLE_WISDOM:
+					this.BASE_STATS[STAT_WISDOM] += eff[1]
+					break
+
+					// --- MAGIC ---
+				case EFFECT_SHACKLE_MAGIC:
+					this.BASE_STATS[STAT_MAGIC] += eff[1]
+					break
+
+					// --- SCIENCE ---
 			}
 		}
 
