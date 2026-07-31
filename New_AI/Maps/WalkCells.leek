@@ -213,24 +213,29 @@ class WalkCellsClass {
 	}
 
 	/* Fingerprint (cellule, mp, capacités jump/télépo) d'une entité — SANS BaseHash. */
+	/*
+	 * CONTRAT : l'état reçu est TOUJOURS celui de Me — ses trois appelants passent State[Me] ou
+	 * son clone, dont l'identifiant est copié. La disjonction « et si ce n'était pas moi » qui
+	 * tolérait un cooldown de 1 est donc constamment fausse, et « A ou (faux et B) » vaut A, B
+	 * étant une comparaison pure. Les empreintes sortent bit pour bit identiques — condition
+	 * pour que le cache de scores, la clé d'accessibilité et celle de la fuite servent les
+	 * mêmes entrées.
+	 */
 	static HashWalkCellsWithItemsWithoutBaseHash(entity_state) {
-		var Entity = entity_state.ID
 		var Tp = entity_state.TP
 		// Cooldowns pris au mémo, puis RENDUS à leur forme d'origine : -1 y code « chip absent »,
 		// que cette empreinte a toujours vu sous la forme null. Les deux comparaisons qui suivent
 		// restent donc mot pour mot celles qui ont produit toutes les clés existantes.
 		var JumpCooldown = jumpCdOf(entity_state)
 		if (JumpCooldown < 0) JumpCooldown = null
-		var JumpCost = JUMP_COST
 		var TeleportationCooldown = teleCdOf(entity_state)
 		if (TeleportationCooldown < 0) TeleportationCooldown = null
-		var TeleportationCost = TELE_COST
-		var CanJump = (JumpCooldown == 0 || Entity != Me && JumpCooldown <= 1) && Tp >= JumpCost
-		var CanTeleport = (TeleportationCooldown == 0 || Entity != Me && TeleportationCooldown <= 1) && Tp >= TeleportationCost
+		var CanJump = JumpCooldown == 0 && Tp >= JUMP_COST
+		var CanTeleport = TeleportationCooldown == 0 && Tp >= TELE_COST
 		// 3e seuil : la layer TPJ exige le coût CUMULÉ des deux chips. Sans ce bit, deux états
 		// aux DOMAINES accessibles différents (TPJ vs TELE) partageaient une clé -> le cache de
 		// fuite servait un min sur des cellules inaccessibles.
-		var CanBoth = CanJump && CanTeleport && Tp >= JumpCost + TeleportationCost
+		var CanBoth = CanJump && CanTeleport && Tp >= JUMP_TELE_COST
 		var BaseValue = (CanJump ? 1 : 0) | (CanTeleport ? 2 : 0) | (CanBoth ? 4 : 0)
 		// mp clampé : même écrasement du champ cellule qu'en clé de marche sur un mp négatif.
 		return addValueToBinHash((OFFSET_BASIS ^ BaseValue), (entity_state.CELL << 32) | max(0, entity_state.MP))
