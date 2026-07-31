@@ -361,7 +361,10 @@ class ActionsClass {
 		var CastState = State[Me]
 		var nWalk = count(SortedWalkCells)
 		for (var entity: var EntityState in State) {
-			if (entity == Me || !Target.Targetable(Item, EntityState, CastState) || EntityState.LIFE <= 0) continue
+			// Prédicats rangés par coût : la vie est une lecture de champ, la ciblabilité est
+			// une construction de clé à cinq champs et quatre ternaires même sur un hit de son
+			// cache. Un cadavre ne la paie plus.
+			if (entity == Me || EntityState.LIFE <= 0 || !Target.Targetable(Item, EntityState, CastState)) continue
 			// Les cellules retenues sont l'INTERSECTION de mes cellules de tir et des cellules de
 			// lancement de l'item sur cette entité : on parcourt le plus petit des deux ensembles
 			// et on teste l'appartenance à l'autre. Le résultat est identique dans les deux sens —
@@ -383,7 +386,9 @@ class ActionsClass {
 			}
 		}
 		// M'ajoute au hash si je suis dans l'AoE depuis from (même packing entité-haut/dist-bas).
-		if (Target.Targetable(Item, CastState, CastState) && Infos.MINRANGE <= Infos.AREA_MAX && Infos.AREA_MAX > 0) {
+		// Même rangement : deux lectures de champ d'abord, la ciblabilité ensuite. La plupart
+		// des items n'ont aucune zone et sortent sur le premier test.
+		if (Infos.AREA_MAX > 0 && Infos.MINRANGE <= Infos.AREA_MAX && Target.Targetable(Item, CastState, CastState)) {
 			var area = Infos.AREA   // la zone est déjà en main : pas d'aller-retour par ITEMINFO
 			for (var from: var MapToHash in _final) {
 				var MapAoeCellsOfFrom = CellClass.getAreaDist(area, from)
