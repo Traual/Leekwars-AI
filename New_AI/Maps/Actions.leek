@@ -360,6 +360,11 @@ class ActionsClass {
 		var LaunchFct = Infos.NEEDLOS ? LaunchWithLos[Infos.LAUNCHTYPE] : LaunchWithoutLos[Infos.LAUNCHTYPE]
 		var CastState = State[Me]
 		var nWalk = count(SortedWalkCells)
+		// Zone PONCTUELLE : même disjonction que CellClass.getAreaDist, qui rend alors
+		// littéralement [cellule du centre : 0]. La map de cibles d'une cellule de tir est donc
+		// un SINGLETON, et son fold se déroule à un tour — par construction, pas par hypothèse.
+		var area = Infos.AREA
+		var pointArea = area == AREA_POINT || area == AREA_FIRST_INLINE || area == AREA_LASER_LINE
 		for (var entity: var EntityState in State) {
 			// Prédicats rangés par coût : la vie est une lecture de champ, la ciblabilité est
 			// une construction de clé à cinq champs et quatre ternaires même sur un hit de son
@@ -374,6 +379,23 @@ class ActionsClass {
 			// L'entité est déjà décalée à sa place dans le hash : le fold est appelé une fois par
 			// cellule de tir, il n'a pas à refaire le même décalage à chacune.
 			var packed = entity << MAX_AOE_DIST_BINARY
+			if (pointArea) {
+				// Une seule cible, de distance nulle : « packed | 0 » vaut packed, et l'empreinte
+				// d'une cellule de tir NEUVE ne dépend que de l'entité — calculée une fois ici au
+				// lieu d'une fois par cellule.
+				var eCell = EntityState.CELL
+				var freshHash = (OFFSET_BASIS ^ packed) * MIX_A
+				if (nWalk < mapSize(FromMap)) {
+					for (var from in SortedWalkCells) {
+						if (from in FromMap) foldAoePoint(_final, from, eCell, freshHash, packed)
+					}
+				} else {
+					for (var from: var MapToHash in FromMap) {
+						if (from in WalkSet) foldAoePoint(_final, from, eCell, freshHash, packed)
+					}
+				}
+				continue
+			}
 			if (nWalk < mapSize(FromMap)) {
 				for (var from in SortedWalkCells) {
 					if (from in FromMap) foldAoeFrom(_final, from, FromMap[from], packed)
@@ -389,7 +411,6 @@ class ActionsClass {
 		// Même rangement : deux lectures de champ d'abord, la ciblabilité ensuite. La plupart
 		// des items n'ont aucune zone et sortent sur le premier test.
 		if (Infos.AREA_MAX > 0 && Infos.MINRANGE <= Infos.AREA_MAX && Target.Targetable(Item, CastState, CastState)) {
-			var area = Infos.AREA   // la zone est déjà en main : pas d'aller-retour par ITEMINFO
 			for (var from: var MapToHash in _final) {
 				var MapAoeCellsOfFrom = CellClass.getAreaDist(area, from)
 				for (var to: var TmpHash in MapToHash) {
@@ -412,6 +433,26 @@ class ActionsClass {
 	 * clés, famille 3b), sans finaliseur : le hash n'est comparé qu'entier. Chaque pas reste une
 	 * bijection, exactement comme un pas mix64 — c'est ce qui porte l'injectivité, pas l'avalanche.
 	 */
+	/*
+	 * Variante du fold pour une zone PONCTUELLE : une seule cible, sa distance nulle. Le
+	 * déroulé à un tour supprime la boucle, la lecture de la map de cibles et le « ou » avec
+	 * une distance toujours nulle. Mêmes valeurs, même ordre d'insertion.
+	 */
+	static foldAoePoint(_final, from, to, freshHash, packed) {
+		if (from in _final) {
+			var Tmp = _final[from]
+			if (to in Tmp) {
+				Tmp[to] = (Tmp[to] ^ packed) * MIX_A
+			} else {
+				Tmp[to] = freshHash
+			}
+		} else {
+			var Tmp = [: ]
+			Tmp[to] = freshHash
+			_final[from] = Tmp
+		}
+	}
+
 	static foldAoeFrom(_final, from, MapToHash, packed) {
 		if (from in _final) {
 			var Tmp = _final[from]
