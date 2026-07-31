@@ -67,6 +67,10 @@ global CELL_Y = [: ]
 
 global TMPOBSTACLES = [: ]
 
+// [pack borné -> mix64(pack)] : les contributions de hash prennent un pack (id, cellule) qui
+// ne compte qu'environ 7 000 valeurs distinctes sur une carte. PERSISTANT (mix64 est pure).
+global MIX64_MEMO = [: ]
+
 // PLATEAU DE BITS (x, y) — pour les dilatations de zone d'AoE.
 // Layout : un ENTIER par ligne x, le bit y dans cet entier. Décalé pour que tout tienne dans
 // les bits positifs avec une bande de garde de 4 de chaque côté : un décalage de zone ne

@@ -54,7 +54,7 @@ class HealClass {
         // soigneurs qui echangent leurs stats rendent le meme fingerprint, et HEAL_MAP_CACHE
         // sert alors la map d'une AUTRE configuration. Mesure avant correctif : 2 245 hits
         // faux sur 59 812 (3,75 %). Meme forme que contextContribution ; (id + 1) car mix64(0) = 0.
-        return mix64(mix64(id + 1) ^ ((max(0, stat.WISDOM + 100) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | (critClass << 10) | stat.CELL))
+        return mix64(mix64Memo(id + 1) ^ ((max(0, stat.WISDOM + 100) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | (critClass << 10) | stat.CELL))
     }
 
     /*

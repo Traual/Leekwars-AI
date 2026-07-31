@@ -128,6 +128,22 @@ function mix64(x) {
     return x ^ ((x >> 31) & MIX_M33)
 }
 
+/*
+ * mix64 mémorisé, pour les seules entrées à domaine BORNÉ — un pack (id, cellule) ne prend
+ * qu'environ 7 000 valeurs sur une carte, réutilisées des centaines de milliers de fois.
+ * Le mélange coûte trois décalages, trois masques, trois XOR et deux multiplications ; une
+ * lecture de map en coûte deux. Table PERSISTANTE : la fonction est pure, sa valeur ne périme
+ * jamais.
+ * NE PAS l'utiliser sur une entrée large (digest de contenu, fold de contexte) : elle ne
+ * ferait que remplir la table sans jamais servir.
+ */
+function mix64Memo(x) {
+    if (x in MIX64_MEMO) return MIX64_MEMO[x]
+    var v = mix64(x)
+    MIX64_MEMO[x] = v
+    return v
+}
+
 
 // CONSEQUENCES
 global EROSION_NO_POISON = 0.05

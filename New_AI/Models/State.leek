@@ -74,7 +74,7 @@ class StateClass {
 	 * l'entité 0 sur la cellule 0 contribuerait 0 = la sentinelle "morte".
 	 */
 	static baseContribution(stat, id) {
-		return stat.LIFE > 0 ? mix64(((id + 1) << 32) | stat.CELL) : 0
+		return stat.LIFE > 0 ? mix64Memo(((id + 1) << 32) | stat.CELL) : 0
 	}
 
 	/* [cellule -> true] des vivants hors Me (obstacles dynamiques). */
