@@ -235,20 +235,24 @@ class DangerComboClass {
 		var tp = CasterTP
 		for (var EntityDanger in EntityDangerArray) {
 			var ItemEntityDanger = EntityDanger.Item
-			if (ItemAoeMap[ItemEntityDanger] == EntityDanger.Aoe) {
-				var CostEntityDanger = EntityDanger.Cost
-				var MaxUsesOfItem = ITEMINFO[ItemEntityDanger].MAX_USES
-				var itemUses
-				if (ItemEntityDanger == CandidateItem) {
-					itemUses = CandidateUses
-				} else {
-					itemUses = (PlayedUses == null) ? 0 : ((ItemEntityDanger in PlayedUses) ? PlayedUses[ItemEntityDanger] : 0)
-				}
-				while (tp >= CostEntityDanger && itemUses < MaxUsesOfItem) {
-					_final += EntityDanger.Damages
-					tp -= CostEntityDanger
-					itemUses++
-				}
+			if (ItemAoeMap[ItemEntityDanger] != EntityDanger.Aoe) continue
+			var CostEntityDanger = EntityDanger.Cost
+			// Hors budget : la boucle ci-dessous ne tournerait pas une seule fois. Le compte
+			// d'usages restants et le plafond de l'item ne servent alors à rien — or les
+			// dernières lignes d'une liste triée par dégâts par TP sont justement celles que
+			// le budget épuisé refuse.
+			if (tp < CostEntityDanger) continue
+			var MaxUsesOfItem = ITEMINFO[ItemEntityDanger].MAX_USES
+			var itemUses
+			if (ItemEntityDanger == CandidateItem) {
+				itemUses = CandidateUses
+			} else {
+				itemUses = (PlayedUses == null) ? 0 : ((ItemEntityDanger in PlayedUses) ? PlayedUses[ItemEntityDanger] : 0)
+			}
+			while (tp >= CostEntityDanger && itemUses < MaxUsesOfItem) {
+				_final += EntityDanger.Damages
+				tp -= CostEntityDanger
+				itemUses++
 			}
 		}
 		return _final
