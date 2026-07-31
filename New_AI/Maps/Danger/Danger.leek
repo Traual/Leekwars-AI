@@ -142,7 +142,13 @@ class DangerClass {
 			if (combo[0] > 0) {
 				// Le crit est appliqué EN PROFONDEUR (formules d'EntityDanger avant les shields
 				// + vulnés de chaîne critées), pas ici : (d − ABS)·1.3 ≠ d·1.3 − ABS.
-				_final[casterId] = combo[0]
+				// DANGER_COEF est en revanche replié ICI : le déroulé du net le remultipliait à
+				// chaque caster, à chaque cellule et à chaque nœud, alors que cette map est
+				// mémoïsée par cellule et partagée par tout un bucket. La multiplication
+				// flottante étant commutative au bit près, la valeur consommée est identique.
+				// La garde reste sur la valeur BRUTE : elle dit si le caster fait des dégâts,
+				// pas si sa contribution pondérée est positive.
+				_final[casterId] = combo[0] * DANGER_COEF
 				chainAbs = combo[1]   // le caster suivant voit les shields post-vulné/debuff
 				chainRel = combo[2]
 			}

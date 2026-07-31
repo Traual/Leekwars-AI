@@ -3,7 +3,7 @@
  * séquencés par ordre de tour. C'est le `danger` que consomme la formule de survie.
  *
  * Par entité, on déroule les casters dans l'ordre de jeu sur une vie courante :
- *   - caster adverse   -> life -= DANGER_COEF · danger   (PAS de plancher : l'overkill compte,
+ *   - caster adverse   -> life -= danger (pondéré par DANGER_COEF à la source)   (PAS de plancher : l'overkill compte,
  *     le gradient de danger reste visible même sur une entité condamnée)
  *   - caster allié     -> vitalité D'ABORD (monte le cap ET la vie), puis heal ordinaire,
  *     seulement si life > 0 (un mort n'est pas soigné), plafonné au NOUVEAU total — une
@@ -283,7 +283,8 @@ class DeltaClass {
         for (var signed in Seq) {
             if (signed >= 0) {
                 if (signed in dangerToT) {
-                    life -= DANGER_COEF * dangerToT[signed]
+                    // Déjà pondéré par DANGER_COEF à la source (DangerClass.evalChainFromCoverage).
+                    life -= dangerToT[signed]
                 }
             } else if (life > 0) {
                 var parts = HealClass.partsAt(healMap[-signed - 1], allyProfile, cell)
