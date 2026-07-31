@@ -51,7 +51,8 @@ class EntityDangerClass {
 			var antidoteCd = AntidoteCd
 			var isSummonTarget = TargetStats.IS_SUMMON
 			for (var i in getItemsList(CasterStats)) {
-				var Multiplier = 1 // Plasma évalué à multiplicateur 1 (compromis, voir README)
+				// Plasma évalué à multiplicateur 1 (compromis, voir README) : aucun facteur ne
+				// figure donc dans la chaîne de dégâts, multiplier par 1 rend le même flottant.
 				var Infos = ITEMINFO[i]
 				// Vue préfiltrée (ENEMIES + type de cible, ON_CASTER exclu) sélectionnée UNE
 				// fois par item ; null = aucun effet de dégâts applicable.
@@ -66,7 +67,7 @@ class EntityDangerClass {
 					for (var eff in effs) {
 						switch (eff[0]) {
 							case EFFECT_DAMAGE:
-								Damage += (eff[2] * distFactor * Multiplier * powerFactor * strengthFactor * critFactor * shieldFactor - curAbs)
+								Damage += (eff[2] * distFactor * powerFactor * strengthFactor * critFactor * shieldFactor - curAbs)
 								break
 							case EFFECT_LIFE_DAMAGE:
 								Damage += (eff[2] * powerFactor * lifeFactor * critFactor * shieldFactor - curAbs)
