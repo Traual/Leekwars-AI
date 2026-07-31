@@ -33,7 +33,10 @@ class NodeClass {
 	                  // (null pour un summon né en branche). Sert au clone-on-write, à la capture du
 	                  // patch et à la restauration du workspace, puis est libéré (null) par le BFS —
 	                  // STATE_PATCH reste la seule représentation persistante
-	LOCAL_TERM_DIRTY  // [id -> true] : entités dont un input LOCAL du terme a réellement changé
+	LOCAL_TERM_DIRTY  // [id -> son EntityState d'APRÈS l'action] : entités dont un input LOCAL du
+	                  // terme a réellement changé. La valeur évite au scoring de rouvrir l'état
+	                  // pour chaque terme — une écriture de clé coûte le même prix qu'on y mette
+	                  // un booléen ou une référence
 	                  // (masque diffMaskOf + checks Me BaseHash/fingerprint) — le recompute-set
 	                  // du scoring l'itère directement
 	DANGER_DIRTY_CASTERS // [id -> true] : les non-Me dont la contribution au contexte danger a
@@ -170,7 +173,7 @@ class NodeClass {
 			// AJOUTE simplement les siennes. clonedIds est enregistré à la source par
 			// Consequences, donc Node n'a plus à deviner la nature de l'action.
 			if (parentStat == null) {
-				localTermDirty[tar] = true
+				localTermDirty[tar] = newStat
 				if (tar == Me) continue      // impossible en pratique : Me préexiste toujours
 				bh ^= StateClass.baseContribution(newStat, tar)
 				var addCtx = DeltaClass.contextContribution(newStat, tar)
@@ -201,7 +204,7 @@ class NodeClass {
 			// trois patchs de hash ET le terme local, et invalide les mémos dérivés
 			// (Me compris — il est seulement exclu des trois hashs).
 			var mask = StateClass.diffMaskOf(parentStat, newStat, tar == Me)
-			if (mask & DIFF_LOCAL_TERM) localTermDirty[tar] = true
+			if (mask & DIFF_LOCAL_TERM) localTermDirty[tar] = newStat
 			if (tar == Me) continue          // Me est exclu des trois hashs (et du fold antidote)
 			if (anyAnti && (tar in ANTIDOTE_CARRIER_SET)) {
 				// Contributions LIFE-gated : un porteur tué sort du fold, un ressuscité y entre.
@@ -241,7 +244,7 @@ class NodeClass {
 		// L'empreinte du parent est déjà portée par StateParent : plus rien à reconstruire.
 		if (!(Me in localTermDirty)
 			&& (bh != BaseHash || meWalkFingerprint != StateParent.ME_WALK_FINGERPRINT)) {
-			localTermDirty[Me] = true
+			localTermDirty[Me] = meStat
 		}
 
 		result.CLONED = clonedIds

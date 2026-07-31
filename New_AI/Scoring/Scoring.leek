@@ -124,8 +124,9 @@ class ScoringClass {
 
         if (!hasDirtyCasters && healChanged == null && !coefChanged) {
             // Cas courant : le masque du Node a déjà déterminé les termes locaux sales.
-            for (var e: var _d in node.LOCAL_TERM_DIRTY) {
-                delta += termDelta(e, State[e], State, termsPatch, ParentTermNode, healMap, MySide, nBase, nCtx, nHfp, nWalk, nPoison)
+            // La valeur PORTE l'état d'après l'action : plus besoin de rouvrir l'état.
+            for (var e: var stat in node.LOCAL_TERM_DIRTY) {
+                delta += termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, nBase, nCtx, nHfp, nWalk, nPoison)
             }
         } else {
             for (var e: var stat in State) {
