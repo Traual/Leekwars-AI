@@ -75,6 +75,7 @@ class Preload {
 		AOEB_XOFF = 4 - minX
 		AOEB_YOFF = 4 - minY
 		AOEB_ROWS = maxX - minX + 9
+		AOEB_LAST_ROW = AOEB_ROWS - 5
 		// Un mot par ligne : le plus haut bit utilisé est maxY + AOEB_YOFF + 3, à garder loin
 		// du bit de signe pour que le décalage à droite (arithmétique) reste inoffensif.
 		if (maxY + AOEB_YOFF + 4 > 60) debugE("plateau d'AoE : plage de y trop large")

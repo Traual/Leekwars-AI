@@ -97,6 +97,10 @@ global MIX64_MEMO = [: ]
 global AOEB_XOFF = 0
 global AOEB_YOFF = 0
 global AOEB_ROWS = 0
+// Première et dernière ligne pouvant porter une cellule : les bandes de garde de 4 de
+// chaque côté sont vides par construction.
+global AOEB_FIRST_ROW = 4
+global AOEB_LAST_ROW = 0
 global AOEB_FREE = []
 global AOEB_CELL_BY_BIT = []
 global AOEB_ZERO = []

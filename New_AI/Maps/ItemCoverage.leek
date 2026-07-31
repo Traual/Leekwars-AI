@@ -203,15 +203,19 @@ class ItemCoverageClass {
 		var _final = [: ]
 		// Plateau des cellules directes + bornes de lignes réellement occupées.
 		var board = clone(AOEB_ZERO)
-		var lo = AOEB_ROWS
-		var hi = -1
 		for (var cell: var bool in MapCellsBool) {
-			var row = AOEB_ROW_OF[cell]
-			board[row] |= AOEB_BIT_OF[cell]
-			if (row < lo) lo = row
-			if (row > hi) hi = row
+			board[AOEB_ROW_OF[cell]] |= AOEB_BIT_OF[cell]
 		}
-		if (hi < 0) return _final
+		// Bornes retrouvées par BALAYAGE du plateau, et non suivies à chaque cellule directe :
+		// le balayage parcourt le COMPLÉMENT de l'étendue occupée, donc il est d'autant plus
+		// court que la pose a été longue. Mêmes bornes, donc mêmes lignes d'arrivée balayées —
+		// et une ligne qu'un bornage plus serré exclurait est exactement une ligne dont la
+		// source est nulle, que la boucle interne saute déjà.
+		var lo = AOEB_FIRST_ROW
+		while (lo <= AOEB_LAST_ROW && board[lo] == 0) lo++
+		if (lo > AOEB_LAST_ROW) return _final
+		var hi = AOEB_LAST_ROW
+		while (board[hi] == 0) hi--
 		// Cellules encore ATTRIBUABLES : libres, et pas déjà prises. Les directes en sont
 		// exclues d'emblée — elles appartiennent à l'autre couche. Un seul tableau au lieu du
 		// couple (masque des libres, déjà attribué) : la boucle chaude ne lit qu'une case par
