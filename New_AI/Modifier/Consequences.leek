@@ -765,8 +765,15 @@ class ConsequencesClass {
 	 * rebindé — jamais de mutation du tableau partagé avec les états parents. La ligne
 	 * disparue ne sera pas re-déroulée à la mort de son ancien caster.
 	 */
+	/*
+	 * CONTRAT D'ENTRÉE : l'effet n'est PAS empilable. Les 33 sites d'appel le garantissent, par
+	 * deux gardes distinctes — 32 par `if (!isEffectStackable)` dans applyEffect, où
+	 * isEffectStackable est le même bit du même objet Effect, et le 33e par
+	 * `!(passiveRow[5] & EFFECT_MODIFIER_STACKABLE)`, où passiveRow[5] devient Effect[5].
+	 * Reposer la question ici coûtait une lecture, un ET et un branchement à chaque
+	 * remplacement. Tout NOUVEAU site d'appel doit honorer ce contrat.
+	 */
 	static ReplacementChangeStats(Item, Effect, TarStats) {
-		if (Effect[5] & EFFECT_MODIFIER_STACKABLE) return;
 		if (Effect[3] == 0) return;
 		// Pré-scan : pas de match -> aucune allocation (chemin ultra-majoritaire).
 		var found = false
