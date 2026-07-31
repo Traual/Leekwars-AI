@@ -247,7 +247,10 @@ class ScoringClass {
         if (stat.LIFE > 0) {
             var sign = (stat.SIDE == MySide) ? 1 : -1
             var net = DeltaClass.netOf(e, stat, State, NodeBaseHash, NodeContext, NodeHfp, healMap, NodeWalkFp)
-            newTerm = sign * (ImportanceClass.get(stat) * survivalValue(stat, net, State, NodePoisonKey) + ImportanceClass.capability(stat)
+            // L'importance est figée par replan et vit dans une map par id : la lire ici, avec
+            // la clé déjà en main, évite l'appel et la relecture de l'id. L'appel reste le repli
+            // au tout premier calcul d'un id, et demeure le SEUL écrivain de la map.
+            newTerm = sign * (((e in IMPORTANCE_BY_ID) ? IMPORTANCE_BY_ID[e] : ImportanceClass.get(stat)) * survivalValue(stat, net, State, NodePoisonKey) + ImportanceClass.capability(stat)
                 + (stat.DAMAGE_RETURN > 0 ? drDeterrence(stat, net, State) : 0))
         }
         var oldTerm = termOf(ParentTermNode, e)
