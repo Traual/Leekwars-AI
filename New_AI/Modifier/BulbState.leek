@@ -20,11 +20,6 @@ class BulbState {
 	USES
 	ITEM_STATE_PARENT   // null = racine (même contrat qu'EntityState) — un bulbe n'est jamais patché
 	SIDE
-	EVERYONE
-	IS_ALLY
-	IS_ENEMY
-	IS_STRENGTH_ALLIES
-	IS_STRENGTH_ENEMIES
 	SPECIAL_WEAPON
 	EFFECTS
 	SHIELD_EXPIRY        // même contrat qu'EntityState : null tant qu'aucun bouclier n'expire
@@ -53,7 +48,6 @@ class BulbState {
 	RESISTANCE
 	SCIENCE
 	MAGIC
-	FREQUENCY
 	MP
 	TOTAL_MP
 	TP
@@ -111,7 +105,6 @@ class BulbState {
 		this.RESISTANCE = stats[STAT_RESISTANCE][0] + (stats[STAT_RESISTANCE][1] - stats[STAT_RESISTANCE][0]) * SummonerLevelTimes
 		this.SCIENCE = stats[STAT_SCIENCE][0] + (stats[STAT_SCIENCE][1] - stats[STAT_SCIENCE][0]) * SummonerLevelTimes
 		this.MAGIC = stats[STAT_MAGIC][0] + (stats[STAT_MAGIC][1] - stats[STAT_MAGIC][0]) * SummonerLevelTimes
-		this.FREQUENCY = 0
 		this.MP = stats[STAT_MP][0] + (stats[STAT_MP][1] - stats[STAT_MP][0]) * SummonerLevelTimes
 		this.TOTAL_MP = this.MP
 		this.TP = stats[STAT_TP][0] + (stats[STAT_TP][1] - stats[STAT_TP][0]) * SummonerLevelTimes

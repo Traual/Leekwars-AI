@@ -56,7 +56,6 @@ class EntityStateClass extends EntityClass {
 	RESISTANCE
 	SCIENCE
 	MAGIC
-	FREQUENCY // pas de base vraie : inutile pour Libération/Manumission
 	// Boucliers qui TOMBERONT pendant la fenêtre de danger, liste plate
 	// [lanceur, retrait absolu, retrait relatif] — null quand il n'y en a aucun, ce qui est
 	// le cas ultra-majoritaire. Jamais mutée en place : refreshShieldExpiry la REMPLACE, un
@@ -112,7 +111,6 @@ class EntityStateClass extends EntityClass {
 		this.RESISTANCE = getResistance(id)
 		this.SCIENCE = getScience(id)
 		this.MAGIC = getMagic(id)
-		this.FREQUENCY = getFrequency(id)
 		this.MP = getMP(id)
 		this.TOTAL_MP = getTotalMP(id)
 		this.TP = getTP(id)
