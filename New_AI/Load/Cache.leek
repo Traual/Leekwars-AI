@@ -44,18 +44,20 @@ function ReloadCacheNewTurn() {
     DR_PHYSRATIO_BY_SIDE = null
     POISON_COEF_CACHE = [: ]
     ANY_ANTIDOTE = null
-    GRAV_COVID_VALUE = null
     ReloadPlacementCacheNewPlan()
 }
 
 /*
  * Coût de placement spatial : sa clé est le terrain (BaseHash), mais sa valeur dépend AUSSI
- * de l'importance des entités, refigée à chaque planification réelle. Vidé au même rythme
- * qu'IMPORTANCE_BY_ID, donc à chaque replan et pas seulement au tour.
+ * de l'importance des entités et de la valeur de spread de mon covid. Les deux sont relues
+ * sur l'état RÉEL à chaque planification — l'importance par Play, le covid par getEffects,
+ * qu'une Libération réellement jouée peut vider. Vidés au même rythme qu'IMPORTANCE_BY_ID,
+ * donc à chaque replan et pas seulement au tour.
  */
 function ReloadPlacementCacheNewPlan() {
     PLACEMENT_COST_CACHE = [: ]
     GRAV_ENTS_CACHE = [: ]
+    GRAV_COVID_VALUE = null
 }
 
 // STATE
