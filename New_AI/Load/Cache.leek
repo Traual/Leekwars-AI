@@ -44,20 +44,48 @@ function ReloadCacheNewTurn() {
     DR_PHYSRATIO_BY_SIDE = null
     POISON_COEF_CACHE = [: ]
     ANY_ANTIDOTE = null
-    ReloadPlacementCacheNewPlan()
+    // Frontière de tour : les nets qu'ils portent dérivent de listes d'items filtrées par
+    // cooldown (DANGER_ENTITY_CACHE), que leurs clés n'encodent pas. Vidage inconditionnel.
+    GRAV_COVID_VALUE = null
+    PLACEMENT_PLAN_IMP = null
+    PLACEMENT_PLAN_COVID = null
+    PLACEMENT_COST_CACHE = [: ]
+    GRAV_ENTS_CACHE = [: ]
+    FINAL_PLACEMENT_CACHE = [: ]
 }
 
 /*
- * Coût de placement spatial : sa clé est le terrain (BaseHash), mais sa valeur dépend AUSSI
- * de l'importance des entités et de la valeur de spread de mon covid. Les deux sont relues
- * sur l'état RÉEL à chaque planification — l'importance par Play, le covid par getEffects,
- * qu'une Libération réellement jouée peut vider. Vidés au même rythme qu'IMPORTANCE_BY_ID,
- * donc à chaque replan et pas seulement au tour.
+ * Les caches de placement portent deux entrées que leurs clés n'encodent pas : l'importance
+ * des entités et ma valeur de spread de covid, toutes deux relues sur l'état RÉEL à chaque
+ * planification. Les vider à chaque replan les rendait froids après chaque action jouée,
+ * alors que ces deux entrées ne bougent qu'à un buff, un shackle ou une Libération
+ * RÉELLEMENT joués — ce qui est rare.
+ *
+ * On les compare donc à l'identique, en égalité flottante EXACTE et sans la moindre
+ * tolérance, et on ne vide qu'en cas de changement. La comparaison passe par la formule PURE
+ * d'importance : elle n'écrit pas le mémo, dont l'amorçage paresseux décide quel état fige la
+ * valeur du replan et doit rester intact.
  */
-function ReloadPlacementCacheNewPlan() {
+function ReloadPlacementCacheNewPlan(State) {
+    GRAV_COVID_VALUE = null
+    var covid = GravityClass.covidValue()
+    var imps = [: ]
+    for (var e: var stat in State) imps[e] = ImportanceClass.rawImportanceOf(stat)
+    var same = PLACEMENT_PLAN_IMP != null && covid == PLACEMENT_PLAN_COVID
+        && mapSize(imps) == mapSize(PLACEMENT_PLAN_IMP)
+    if (same) {
+        for (var e: var v in imps) {
+            if (!(e in PLACEMENT_PLAN_IMP) || PLACEMENT_PLAN_IMP[e] != v) {
+                same = false
+                break
+            }
+        }
+    }
+    PLACEMENT_PLAN_IMP = imps
+    PLACEMENT_PLAN_COVID = covid
+    if (same) return;
     PLACEMENT_COST_CACHE = [: ]
     GRAV_ENTS_CACHE = [: ]
-    GRAV_COVID_VALUE = null
     FINAL_PLACEMENT_CACHE = [: ]
 }
 
@@ -285,8 +313,13 @@ global FINAL_PLACEMENT_CACHE = [: ]
 global PLACEMENT_COST_CACHE = [: ]
 global GRAV_ENTS_CACHE = [: ]
 
-// Valeur de spread de mon covid : lue sur l'état RÉEL du moteur, donc constante sur le tour.
+// Valeur de spread de mon covid : lue sur l'état RÉEL du moteur, relue à chaque planification.
 global GRAV_COVID_VALUE = null
+
+// Les deux entrées des caches de placement que leurs clés n'encodent pas, telles qu'elles
+// étaient à la planification précédente : elles décident si ces caches survivent au replan.
+global PLACEMENT_PLAN_IMP = null
+global PLACEMENT_PLAN_COVID = null
 
 // Net de Me à UNE cellule où il pourrait finir le tour. Graine (statsHash ^ healersFP + vie
 // + (id, IS_SUMMON) de Me — le profil de couverture heal est un input du net) foldée avec la

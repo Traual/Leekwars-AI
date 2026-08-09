@@ -104,6 +104,17 @@ class ImportanceClass {
     static get(stat) {
         var id = stat.ID
         if (id in IMPORTANCE_BY_ID) return IMPORTANCE_BY_ID[id]
+        var imp = rawImportanceOf(stat)
+        IMPORTANCE_BY_ID[id] = imp
+        return imp
+    }
+
+    /*
+     * La formule seule, SANS mémo. Sert à comparer l'importance d'une planification à l'autre
+     * sans amorcer la map : l'amorçage paresseux décide quel état fige la valeur du replan,
+     * une lecture de contrôle ne doit pas le devancer.
+     */
+    static rawImportanceOf(stat) {
         var raw = IMP_W_STRENGTH   * stat.STRENGTH   * (1 + IMP_CONVEX * stat.STRENGTH)
                 + IMP_W_MAGIC      * stat.MAGIC      * (1 + IMP_CONVEX * stat.MAGIC)
                 + IMP_W_WISDOM     * stat.WISDOM     * (1 + IMP_CONVEX * stat.WISDOM)
@@ -112,9 +123,7 @@ class ImportanceClass {
                 + IMP_W_RESISTANCE * stat.RESISTANCE * (1 + IMP_CONVEX * stat.RESISTANCE)
                 + IMP_W_TOTAL_TP   * stat.TOTAL_TP   * (1 + IMP_CONVEX * stat.TOTAL_TP)
                 + IMP_W_TOTAL_MP   * stat.TOTAL_MP   * (1 + IMP_CONVEX * stat.TOTAL_MP)
-        var imp = max(0, min(1, raw / IMP_SCALE))   // borné [0,1] : ultra-shacklée (stats négatives) = 0, jamais négatif
-        IMPORTANCE_BY_ID[id] = imp
-        return imp
+        return max(0, min(1, raw / IMP_SCALE))   // borné [0,1] : ultra-shacklée (stats négatives) = 0, jamais négatif
     }
 
     /*
