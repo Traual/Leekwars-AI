@@ -3,9 +3,9 @@
  *
  * 1. EXPANSION, sur les scores BRUTS (aucun danger positionnel de Me) :
  *  - Profondeur 1 : chaque action jouable est clonée + appliquée + scorée, puis triée
- *    par Δscore décroissant.
- *  - Chaque action de base est déroulée récursivement (unroll) : on descend la meilleure
- *    action suivante, avec early-exit quand la borne du tri ne peut plus battre le best.
+ *    par PRIORITÉ décroissante (BFS_SCORE_PER_ACTION_COST : rendement par TP, ou Δscore).
+ *  - Chaque action de base est déroulée récursivement (unroll) : on descend l'action suivante
+ *    de plus haute priorité, avec early-exit quand la borne du tri ne peut plus la battre.
  *  - Les listes triées sont CACHÉES par BaseHash sur tout l'appel : un step qui reste sur
  *    le même BaseHash (self-buff) réutilise la liste, un step qui le change (move, summon,
  *    Inversion...) énumère à neuf pour ce nouveau board.
@@ -23,6 +23,17 @@ include("../includes.leek")
 
 // Nombre de steps d'expansion déroulés par le getBestAction courant (affiché dans "Best:").
 global BFS_CHAIN_STEPS = 0
+
+/*
+ * Politique de choix du successeur à dérouler.
+ *   true  : par RENDEMENT, priority = Δscore / coût RÉEL de l'action dans cet état — coût de
+ *           l'item, changement d'arme, Saut, Téléportation, Saut + Téléportation compris.
+ *           Un budget de TP est fini : ce qui compte n'est pas ce qu'une action rapporte,
+ *           c'est ce qu'elle rapporte par TP dépensé.
+ *   false : par Δscore absolu (comportement historique).
+ * Le score d'un nœud reste ABSOLU dans les deux cas — le rendement ne sert qu'à classer.
+ */
+global BFS_SCORE_PER_ACTION_COST = true
 
 class ActionSuite {
 
@@ -175,13 +186,17 @@ class ActionSuite {
 	}
 
 	/*
-	 * Depuis un nœud parent, trouve le meilleur nœud suivant.
+	 * Depuis un nœud parent, trouve le meilleur nœud suivant — celui de plus haute PRIORITÉ
+	 * (rendement par TP, ou Δscore absolu selon BFS_SCORE_PER_ACTION_COST).
 	 * Liste triée via ScoredCache (clé BaseHash). Deux chemins :
-	 *  - FRAIS (miss) : la liste vient d'être énumérée et scorée pour CET état exact ->
-	 *    la première entrée EST le meilleur suivant, aucune re-simulation.
+	 *  - FRAIS (miss) : la liste vient d'être énumérée et scorée pour CET état exact, avec le
+	 *    coût de CET état -> la première entrée EST le meilleur suivant, aucune re-simulation.
 	 *  - RÉUTILISÉ (hit, même BaseHash atteint depuis un AUTRE état) : re-filtre
-	 *    (cooldown/uses/coût) et re-score chaque candidat dans les stats réelles du parent,
-	 *    avec break dès que la borne triée ne peut plus battre le meilleur delta.
+	 *    (cooldown/uses/coût) et re-score chaque candidat dans les stats réelles du parent.
+	 *    Sa priorité est recalculée avec le coût COURANT, jamais reprise de la liste — celle-ci
+	 *    a été produite sous une autre arme, une autre couche de mouvement, d'autres TP.
+	 *    Le break sur la priorité STOCKÉE garde exactement le statut de l'ancien break sur le
+	 *    delta stocké : une borne du tri, valable tant que la liste décrit cet état.
 	 */
 	static findBestNextNode(Parent, ScoredCache, ReachableCache, MySide) {
 		// Le nœud est réellement développé : c'est ICI (et seulement ici) que son état complet
@@ -244,7 +259,7 @@ class ActionSuite {
 		var JumpCost = JUMP_COST
 		var TeleCost = TELE_COST
 
-		var BestDeltaFromParent = 0
+		var BestPriority = 0
 		var BestNode = null
 		// Workspace créé au PREMIER candidat réellement simulé (les filtres ci-dessous en
 		// écartent souvent tous), puis réutilisé et restauré entre chaque candidat.
@@ -260,8 +275,7 @@ class ActionSuite {
 		var baseUses = [: ]
 
 		for (var entry in Reachable) {
-			var initialDelta = entry[1]
-			if (BestDeltaFromParent >= initialDelta) break   // borne du tri : plus rien à battre
+			if (BestPriority >= entry[1]) break   // borne du tri : plus rien à battre
 
 			// Cellule et item sont PORTÉS PAR L'ENTRÉE : rien ici ne déréférence l'action, elle
 			// n'est lue que pour les entrées réellement simulées.
@@ -307,10 +321,12 @@ class ActionSuite {
 			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, Workspace, ParentScore, Parent, Parent.HFP_BY_SIDE, MySide, Parent.POISON_KEY)
 			StateClass.restoreWorkspace(Workspace, candidate.CLONED)
 			candidate.CLONED = null
-			var deltaFromParent = candidateScore - ParentScore
+			// Rendement sur le coût COURANT, celui que ce candidat paie vraiment dans cet état
+			// parent : arme équipée, couche de mouvement empruntée, TP restants.
+			var priority = priorityOf(candidateScore - ParentScore, cost)
 
-			if (deltaFromParent > BestDeltaFromParent) {
-				BestDeltaFromParent = deltaFromParent
+			if (priority > BestPriority) {
+				BestPriority = priority
 				BestNode = candidate
 				BestNode.SCORE = candidateScore
 			}
@@ -322,12 +338,15 @@ class ActionSuite {
 	/*
 	 * Applique + score chaque action JOUABLE reçue (basePairs = sortie de getBaseActions,
 	 * produite une seule fois par l'appelant avec MyWalkCells), trie par delta décroissant.
-	 * Renvoie des entrées [act, delta, node, nodeScore], node avec PARENT=null mais
-	 * TERMS_PARENT = ParentTermNode (la chaîne de termes est posée ici et jamais réassignée,
-	 * contrairement à PARENT que le déroulé reconstruit).
+	 * Renvoie des entrées [act, priorité, node, nodeScore, cellule de tir, item], triées par
+	 * priorité décroissante ; node avec PARENT=null mais TERMS_PARENT = ParentTermNode (la
+	 * chaîne de termes est posée ici et jamais réassignée, contrairement à PARENT que le
+	 * déroulé reconstruit).
 	 * INVARIANT : toute entrée renvoyée a delta > BFS_DELTA_EPSILON — jouable (basePairs)
 	 * n'implique donc pas retenu ; les sub-epsilon sont injouables partout en aval
 	 * (plancher, chemin frais, borne du tri), les dropper ici libère leur nœud immédiatement.
+	 * Le seuil porte sur le Δscore, pas sur la priorité : c'est la question « cette action
+	 * apporte-t-elle quoi que ce soit ? », indépendante de ce qu'elle coûte.
 	 */
 	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTermNode, ParentPoisonKey, MyWalkCells, basePairs) {
 		var Entries = []
@@ -349,12 +368,25 @@ class ActionSuite {
 			node.CLONED = null
 			var delta = nodeScore - ReferenceScore
 			if (delta <= BFS_DELTA_EPSILON) continue
-			push(Entries, [act, delta, node, nodeScore, act.From, Item])
+			// pair[1] est le coût TP COMPLET de cette action dans CET état (item + swap d'arme
+			// + saut/télépo), déjà résolu par getBaseActions pour son filtre de jouabilité.
+			push(Entries, [act, priorityOf(delta, pair[1]), node, nodeScore, act.From, Item])
 		}
 		// arraySort RENVOIE le tableau trié (doc LS) : il faut capturer le retour.
 		return arraySort(Entries, function(a, b) {
 			return b[1] - a[1]
 		})
+	}
+
+	/*
+	 * Priorité d'un candidat : ce que son Δscore vaut PAR TP réellement dépensé, ou le Δscore
+	 * brut si la politique de rendement est désactivée.
+	 * Garde de coût nul : aucun item n'en produit aujourd'hui, mais un coût 0 rendrait la
+	 * division infinie — il est alors traité comme un TP, donc classé sur son Δscore plein.
+	 */
+	static priorityOf(delta, cost) {
+		if (!BFS_SCORE_PER_ACTION_COST) return delta
+		return delta / max(1, cost)
 	}
 
 	/*
