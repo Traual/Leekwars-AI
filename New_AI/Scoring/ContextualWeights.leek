@@ -1,0 +1,213 @@
+/*
+ * Réseau contextuel de poids : il regarde TOUT le combat, puis module les coefficients de
+ * scoring d'une planification.
+ *
+ *   encodeur partagé   : chaque entité -> un plongement
+ *   agrégation         : somme des plongements alliés, somme des plongements ennemis —
+ *                        une somme ne dépend pas de l'ordre des entités
+ *   tête globale       : (traits de combat, résumé allié, résumé ennemi) -> plongement global
+ *   tête d'entité      : (plongement d'entité, plongement global, relation à Me) -> 5 facteurs
+ *   tête de placement  : (plongement global, plongement de Me) -> 3 facteurs
+ *
+ * Le réseau ne REMPLACE pas les coefficients historiques : il les MULTIPLIE par un facteur
+ * borné. Un modèle neutre (paramètres tous nuls) rend le facteur 1 exactement, et multiplier
+ * un flottant par 1 ne déplace aucun bit — poids historiques retrouvés au bit près.
+ *
+ * Les paramètres vivent dans des tableaux numériques à plat, jamais dans un objet par neurone
+ * ou par connexion. Une seule fonction de couche dense les consomme.
+ *
+ * Tout tourne UNE fois par planification, à la construction du contexte de poids. Le scoring
+ * chaud ne voit que des objets de poids déjà calculés.
+ */
+
+include("../includes.leek")
+
+// Le commutateur. Faux = fabrique historique, vrai = réseau. C'est le SEUL endroit où le
+// choix se fait : aucune condition n'est dispersée dans le scoring ni dans FinalCell.
+global CONTEXTUAL_WEIGHTS_ENABLED = false
+
+// Bornes du facteur multiplicatif. Un modèle ne peut ni annuler ni faire exploser un
+// coefficient historique : il l'infléchit.
+global NN_MULT_MIN = 0.25
+global NN_MULT_MAX = 4.0
+
+// Tailles. Modifier une taille impose de refournir des paramètres de la bonne longueur :
+// les trois NN_*_IN sont des sommes des autres, tenues à jour à la main.
+global NN_ENT_FEATURES = 12
+global NN_EMBED = 8
+global NN_BATTLE_FEATURES = 6
+global NN_GLOBAL_IN = 22    // NN_BATTLE_FEATURES + 2 · NN_EMBED
+global NN_RELATION = 3
+global NN_ENT_HEAD_IN = 19  // NN_EMBED + NN_EMBED + NN_RELATION
+global NN_ENT_HEAD_OUT = 5  // SURVIVAL, CAPABILITY, DR, FINAL_DISTANCE, FINAL_COVID
+global NN_FIN_HEAD_IN = 16  // NN_EMBED + NN_EMBED
+global NN_FIN_HEAD_OUT = 3  // DANGER, CENTER, CROWDING
+
+// Paramètres appris, à plat. null = modèle NEUTRE : toutes les sorties valent 0, donc tous
+// les facteurs valent 1, donc les poids historiques sortent inchangés.
+global NN_W_ENC = null
+global NN_B_ENC = null
+global NN_W_GLOBAL = null
+global NN_B_GLOBAL = null
+global NN_W_ENT = null
+global NN_B_ENT = null
+global NN_W_FIN = null
+global NN_B_FIN = null
+
+class ContextualWeightNetworkClass {
+
+	/*
+	 * Contexte de poids d'une planification, produit par le réseau.
+	 *
+	 * Part TOUJOURS des poids historiques et les module : un modèle absent ou neutre rend donc
+	 * exactement le contexte historique.
+	 */
+	static build(State, mySide) {
+		var historical = HistoricalWeightsFactory.build(State, mySide)
+		if (NN_W_ENC == null) return historical   // modèle neutre : rien à moduler
+
+		// Un plongement par entité, encodeur PARTAGÉ. Les résumés par camp sont des sommes :
+		// elles ne dépendent pas de l'ordre du parcours.
+		var meStat = State[Me]
+		var embeddings = [: ]
+		var allySummary = zeros(NN_EMBED)
+		var enemySummary = zeros(NN_EMBED)
+		for (var e: var stat in State) {
+			var emb = dense(entityFeatures(stat, meStat, mySide), NN_W_ENC, NN_B_ENC, NN_ENT_FEATURES, NN_EMBED, true)
+			embeddings[e] = emb
+			var into = (stat.SIDE == mySide) ? allySummary : enemySummary
+			for (var i = 0; i < NN_EMBED; i++) into[i] += emb[i]
+		}
+
+		var globalIn = battleFeatures(State, meStat, mySide)
+		for (var i = 0; i < NN_EMBED; i++) push(globalIn, allySummary[i])
+		for (var i = 0; i < NN_EMBED; i++) push(globalIn, enemySummary[i])
+		var globalEmbedding = dense(globalIn, NN_W_GLOBAL, NN_B_GLOBAL, NN_GLOBAL_IN, NN_EMBED, true)
+		historical.GLOBAL_EMBEDDING = globalEmbedding
+
+		// Tête d'entité : un passage par entité, ici et nulle part ailleurs.
+		for (var e: var stat in State) {
+			var headIn = []
+			var emb = embeddings[e]
+			for (var i = 0; i < NN_EMBED; i++) push(headIn, emb[i])
+			for (var i = 0; i < NN_EMBED; i++) push(headIn, globalEmbedding[i])
+			push(headIn, (e == Me) ? 1 : 0)
+			push(headIn, (stat.SIDE == mySide) ? 1 : 0)
+			push(headIn, stat.IS_SUMMON ? 1 : 0)
+			var out = dense(headIn, NN_W_ENT, NN_B_ENT, NN_ENT_HEAD_IN, NN_ENT_HEAD_OUT, false)
+			var h = historical.ENTITY_WEIGHTS_BY_ID[e]
+			historical.ENTITY_WEIGHTS_BY_ID[e] = new EntityWeightsClass(
+				h.SURVIVAL * bounded(out[0]),
+				h.CAPABILITY * bounded(out[1]),
+				h.DR * bounded(out[2]),
+				h.FINAL_DISTANCE * bounded(out[3]),
+				h.FINAL_COVID * bounded(out[4]))
+		}
+
+		// Tête de placement : plongement global et plongement de Me.
+		var finIn = []
+		for (var i = 0; i < NN_EMBED; i++) push(finIn, globalEmbedding[i])
+		var meEmb = embeddings[Me]
+		for (var i = 0; i < NN_EMBED; i++) push(finIn, meEmb[i])
+		var fout = dense(finIn, NN_W_FIN, NN_B_FIN, NN_FIN_HEAD_IN, NN_FIN_HEAD_OUT, false)
+		var f = historical.FINAL_CELL_WEIGHTS
+		historical.FINAL_CELL_WEIGHTS = new FinalCellWeightsClass(
+			f.DANGER * bounded(fout[0]),
+			f.CENTER * bounded(fout[1]),
+			f.CROWDING * bounded(fout[2]))
+		return historical
+	}
+
+	/*
+	 * Facteur multiplicatif borné. Sortie nulle -> 1 EXACTEMENT : c'est ce qui rend un modèle
+	 * neutre indiscernable de la formule historique, au bit près.
+	 * Toujours strictement positif, donc aucun poids ne change de signe et la pénalité de
+	 * placement reste >= 0 — la coupure terminale sans epsilon reste exacte.
+	 */
+	static bounded(raw) {
+		return min(NN_MULT_MAX, max(NN_MULT_MIN, 1 + raw))
+	}
+
+	/*
+	 * Couche dense : out[o] = activation(bias[o] + Σ_i matrice[o · inSize + i] · in[i]).
+	 * Matrice à plat, ligne par ligne. `relu` faux = sortie linéaire.
+	 */
+	static dense(input, matrix, bias, inSize, outSize, relu) {
+		var out = []
+		for (var o = 0; o < outSize; o++) {
+			var acc = bias[o]
+			var base = o * inSize
+			for (var i = 0; i < inSize; i++) acc += matrix[base + i] * input[i]
+			push(out, relu ? max(0, acc) : acc)
+		}
+		return out
+	}
+
+	/*
+	 * Traits d'une entité, tous normalisés dans des ordres de grandeur comparables : un réseau
+	 * n'apprend rien de propre sur des entrées dont les échelles diffèrent d'un facteur mille.
+	 */
+	static entityFeatures(stat, meStat, mySide) {
+		var total = max(1, stat.TOTAL_LIFE)
+		return [
+			stat.LIFE / total,
+			total / 5000,
+			ImportanceClass.get(stat),
+			ImportanceClass.capability(stat) / 1000,
+			(stat.SIDE == mySide) ? 1 : 0,
+			stat.IS_SUMMON ? 1 : 0,
+			(stat.ID == Me) ? 1 : 0,
+			CellClass.getDist(stat.CELL, meStat.CELL) / GRAV_MAXDIST,
+			max(0, stat.DAMAGE_RETURN) / 100,
+			max(0, stat.TOTAL_TP) / 30,
+			max(0, stat.TOTAL_MP) / 10,
+			(stat.POISON + stat.AFTEREFFECT - stat.HEAL) / total
+		]
+	}
+
+	/* Traits du combat lui-même : de quoi distinguer une ouverture d'une fin de partie. */
+	static battleFeatures(State, meStat, mySide) {
+		var allies = 0, enemies = 0, allyLife = 0, enemyLife = 0
+		for (var e: var stat in State) {
+			if (stat.LIFE <= 0) continue
+			if (stat.SIDE == mySide) {
+				allies++
+				allyLife += stat.LIFE
+			} else {
+				enemies++
+				enemyLife += stat.LIFE
+			}
+		}
+		return [
+			getTurn() / 32,
+			allies / 6,
+			enemies / 6,
+			allyLife / 20000,
+			enemyLife / 20000,
+			meStat.LIFE / max(1, meStat.TOTAL_LIFE)
+		]
+	}
+
+	static zeros(n) {
+		var a = []
+		for (var i = 0; i < n; i++) push(a, 0)
+		return a
+	}
+
+	/*
+	 * Modèle NEUTRE : tous les paramètres nuls. Chaque tête sort 0, donc chaque facteur vaut 1,
+	 * donc les poids historiques ressortent au bit près — le réseau tourne pour de vrai mais ne
+	 * décide rien. C'est le modèle de départ d'un entraînement, et le seul moyen de prouver que
+	 * le chemin réseau est bien neutre plutôt que simplement contourné.
+	 */
+	static loadNeutral() {
+		NN_W_ENC = zeros(NN_EMBED * NN_ENT_FEATURES)
+		NN_B_ENC = zeros(NN_EMBED)
+		NN_W_GLOBAL = zeros(NN_EMBED * NN_GLOBAL_IN)
+		NN_B_GLOBAL = zeros(NN_EMBED)
+		NN_W_ENT = zeros(NN_ENT_HEAD_OUT * NN_ENT_HEAD_IN)
+		NN_B_ENT = zeros(NN_ENT_HEAD_OUT)
+		NN_W_FIN = zeros(NN_FIN_HEAD_OUT * NN_FIN_HEAD_IN)
+		NN_B_FIN = zeros(NN_FIN_HEAD_OUT)
+	}
+}
