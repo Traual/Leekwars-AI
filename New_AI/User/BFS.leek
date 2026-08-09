@@ -143,7 +143,29 @@ class ActionSuite {
 	 */
 	static pickTerminal(candidates, initialScore, nBases) {
 		BenchOps.Start("Terminal")
-		var sorted = arraySort(candidates, function(a, b) { return b.SCORE - a.SCORE })
+		// Le meilleur score BRUT est le seul candidat qu'on soit CERTAIN d'évaluer : il ouvre
+		// forcément le parcours. Le trouver d'abord en un balayage donne donc la borne de
+		// coupure avant tout tri, pour le prix d'une comparaison par candidat.
+		var seed = candidates[0]
+		var bestRaw = seed.SCORE
+		for (var c in candidates) {
+			if (c.SCORE > bestRaw) {
+				bestRaw = c.SCORE
+				seed = c
+			}
+		}
+		var bound = bestRaw - penaltyOf(seed)
+		// Un candidat dont le score BRUT n'atteint pas déjà cette borne ne peut plus gagner : son
+		// score final lui est inférieur ou égal. Les écarter AVANT le tri est ce qui compte —
+		// le parcours n'en ouvre qu'une poignée, et trier des milliers de nœuds pour cela coûtait
+		// plus cher que toutes les évaluations réunies. Le seuil est LARGE (>=) : la graine y
+		// reste même si sa pénalité est nulle, et la liste triée reste un sur-ensemble exact de
+		// ce que le parcours aurait ouvert.
+		var live = []
+		for (var c in candidates) {
+			if (c.SCORE >= bound) push(live, c)
+		}
+		var sorted = arraySort(live, function(a, b) { return b.SCORE - a.SCORE })
 		var n = count(sorted)
 		var best = null
 		var bestFinal = 0
@@ -151,11 +173,7 @@ class ActionSuite {
 			var node = sorted[i]
 			var raw = node.SCORE
 			if (best != null && raw <= bestFinal) break
-			// Matérialisation PARESSEUSE : seuls les candidats réellement évalués reconstruisent
-			// leur état complet depuis leur chaîne de patches.
-			var NodeState = StateClass.materializeNodeState(node)
-			var res = FinalCell.evaluate(NodeState, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, node.COMBINED_HFP, node.POISON_KEY)
-			var finalScore = raw - res[1]
+			var finalScore = raw - penaltyOf(node)
 			if (best == null || finalScore > bestFinal) {
 				best = node
 				bestFinal = finalScore
@@ -168,6 +186,16 @@ class ActionSuite {
 		while (ancestor.PARENT != null) ancestor = ancestor.PARENT
 		debug("Best: " + ITEMINFO[ancestor.ACTION.Item].NAME + " | From: " + ancestor.ACTION.From + " | To: " + ancestor.ACTION.To + " | Delta: " + (bestFinal - initialScore) + " | " + nBases + " bases, " + BFS_CHAIN_STEPS + " steps")
 		return ancestor.ACTION
+	}
+
+	/*
+	 * Pénalité de placement d'un candidat : son état complet n'est reconstruit depuis sa chaîne
+	 * de patches que s'il est réellement évalué (matérialisation paresseuse, puis cachée sur le
+	 * nœud — la graine repasse ici sans rien recalculer).
+	 */
+	static penaltyOf(node) {
+		var NodeState = StateClass.materializeNodeState(node)
+		return FinalCell.evaluate(NodeState, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, node.COMBINED_HFP, node.POISON_KEY)[1]
 	}
 
 	/*
