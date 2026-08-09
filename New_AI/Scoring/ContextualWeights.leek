@@ -64,7 +64,11 @@ class ContextualWeightNetworkClass {
 	 */
 	static build(State, mySide) {
 		var historical = HistoricalWeightsFactory.build(State, mySide)
-		if (NN_W_ENC == null) return historical   // modèle neutre : rien à moduler
+		if (NN_W_ENC == null) {
+			// Aucun modèle appris : les facteurs vaudraient tous 1, autant ne rien dérouler.
+			if (NN_MODEL == null) return historical
+			loadVector(NN_MODEL)
+		}
 
 		// Un plongement par entité, encodeur PARTAGÉ. Les résumés par camp sont des sommes :
 		// elles ne dépendent pas de l'ordre du parcours.
@@ -191,6 +195,39 @@ class ContextualWeightNetworkClass {
 	static zeros(n) {
 		var a = []
 		for (var i = 0; i < n; i++) push(a, 0)
+		return a
+	}
+
+	/*
+	 * Charge un vecteur de paramètres PLAT dans les huit tableaux, dans l'ordre où ils sont
+	 * déclarés. C'est la seule porte d'entrée d'un modèle appris : l'entraînement n'a qu'un
+	 * vecteur à produire, et sa longueur est vérifiée ici.
+	 */
+	static loadVector(v) {
+		var expected = NN_EMBED * NN_ENT_FEATURES + NN_EMBED
+			+ NN_EMBED * NN_GLOBAL_IN + NN_EMBED
+			+ NN_ENT_HEAD_OUT * NN_ENT_HEAD_IN + NN_ENT_HEAD_OUT
+			+ NN_FIN_HEAD_OUT * NN_FIN_HEAD_IN + NN_FIN_HEAD_OUT
+		if (count(v) != expected) {
+			debugE("modèle de longueur " + count(v) + ", attendu " + expected + " : modèle ignoré")
+			loadNeutral()
+			return;
+		}
+		var at = 0
+		NN_W_ENC = take(v, at, NN_EMBED * NN_ENT_FEATURES)      at += NN_EMBED * NN_ENT_FEATURES
+		NN_B_ENC = take(v, at, NN_EMBED)                        at += NN_EMBED
+		NN_W_GLOBAL = take(v, at, NN_EMBED * NN_GLOBAL_IN)      at += NN_EMBED * NN_GLOBAL_IN
+		NN_B_GLOBAL = take(v, at, NN_EMBED)                     at += NN_EMBED
+		NN_W_ENT = take(v, at, NN_ENT_HEAD_OUT * NN_ENT_HEAD_IN) at += NN_ENT_HEAD_OUT * NN_ENT_HEAD_IN
+		NN_B_ENT = take(v, at, NN_ENT_HEAD_OUT)                 at += NN_ENT_HEAD_OUT
+		NN_W_FIN = take(v, at, NN_FIN_HEAD_OUT * NN_FIN_HEAD_IN) at += NN_FIN_HEAD_OUT * NN_FIN_HEAD_IN
+		NN_B_FIN = take(v, at, NN_FIN_HEAD_OUT)
+	}
+
+	/* n valeurs du vecteur à partir de `at`. */
+	static take(v, at, n) {
+		var a = []
+		for (var i = 0; i < n; i++) push(a, v[at + i])
 		return a
 	}
 

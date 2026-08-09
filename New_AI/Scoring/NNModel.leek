@@ -1,0 +1,10 @@
+/*
+ * Le modèle appris, sous forme d'un vecteur de paramètres PLAT.
+ *
+ * null = aucun modèle : le réseau, même activé, laisse passer les poids historiques.
+ * L'entraînement ne réécrit QUE la ligne ci-dessous — le reste de l'IA n'en sait rien.
+ */
+
+include("../includes.leek")
+
+global NN_MODEL = null
