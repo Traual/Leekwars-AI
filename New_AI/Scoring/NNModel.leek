@@ -9,11 +9,17 @@
  * donc 1 + 1 = 2 : la securite de fin de tour pese le double de ce que la formule historique
  * lui donne.
  *
- * Trouve par balayage de ce seul biais, contre l'IA historique, en combats miroirs apparies :
+ * Trouve par balayage de ce seul biais, contre l'IA historique, en combats miroirs apparies,
+ * sur le scenario 4v4 du banc :
  *   facteur 0,5 -> -0,199   facteur 1,0 -> 0 (reference)   facteur 1,5 -> +0,135
  *   facteur 2,0 -> +0,438   facteur 3,0 -> +0,234          facteur 4,0 -> +0,280
- * Le pic a 2 tient hors echantillon : +0,234 sur seize paires de graines jamais utilisees
- * pour le choisir.
+ *
+ * PORTEE : ce reglage NE GENERALISE PAS en l'etat.
+ *   meme scenario, graines neuves : +0,234 (erreur-type 0,155)
+ *   scenario 6v6, builds et graines neufs : -0,016 (erreur-type 0,182), soit RIEN
+ * Il vaut donc pour cette configuration-la, pas comme reglage general. C'est pour cela que
+ * le commutateur reste faux : le vecteur est un point de controle reproductible, pas un
+ * reglage valide de l'IA.
  */
 
 include("../includes.leek")
