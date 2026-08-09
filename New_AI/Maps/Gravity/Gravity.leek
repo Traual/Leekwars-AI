@@ -43,6 +43,13 @@ global GRAV_MAXDIST     = 34      // distance max sur la carte, pour normaliser
 // Cellule centrale, résolue une fois par combat.
 global GRAV_CENTER_CELL = null
 
+// Amortissement de cohésion par distance ENTIÈRE : pow(d / GRAV_MAXDIST, GRAV_ALLY_POWER)
+// tabulé pour chaque distance atteignable. Même appel, mêmes arguments, donc le même flottant
+// au bit près — la table ne fait qu'éviter de le recalculer une fois par allié ET par cellule.
+// Au-delà de la table, la formule reprend la main : aucune distance ne peut sortir du domaine.
+global GRAV_ALLY_FALLOFF = null
+global GRAV_FALLOFF_MAX = 63
+
 class GravityClass {
 
     /*
@@ -54,21 +61,19 @@ class GravityClass {
     static costAt(State, BaseHash, cell) {
         var key = addValueToBinHash(BaseHash, cell)
         if (key in PLACEMENT_COST_CACHE) return PLACEMENT_COST_CACHE[key]
-        if (GRAV_CENTER_CELL == null) GRAV_CENTER_CELL = getCellFromXY(0, 0)
         var ents = entsOf(State, BaseHash)
-        var covid = covidValue()
         var cost = GRAV_W_CENTER * CellClass.getDist(cell, GRAV_CENTER_CELL) / GRAV_MAXDIST
         var n = count(ents)
-        for (var i = 0; i < n; i += 3) {
+        for (var i = 0; i < n; i += 4) {
             var d = CellClass.getDist(cell, ents[i])
-            var imp = ents[i + 1]
-            if (ents[i + 2]) {                                                              // ALLIÉ
-                cost += GRAV_W_ALLY * imp * pow(d / GRAV_MAXDIST, GRAV_ALLY_POWER)          // éloignement convexe
-                if (d < GRAV_AOE_RADIUS) cost += GRAV_AOE_PENALTY                           // anti-cluster
-                if (covid > 0 && d <= COVID_RANGE) cost += GRAV_COVID_W_PER_HP * covid * imp // épargner l'allié (mes bulbes inclus)
-            } else {                                                                         // ENNEMI
-                cost += GRAV_W_ENEMY * imp * d / GRAV_MAXDIST                               // éloignement linéaire
-                if (covid > 0 && d > COVID_RANGE) cost += GRAV_COVID_W_PER_HP * covid * imp  // occasion manquée de contaminer
+            var coef = ents[i + 1]                                                  // poids · importance, déjà multipliés
+            if (ents[i + 2]) {                                                      // ALLIÉ
+                cost += coef * (d <= GRAV_FALLOFF_MAX ? GRAV_ALLY_FALLOFF[d] : pow(d / GRAV_MAXDIST, GRAV_ALLY_POWER))
+                if (d < GRAV_AOE_RADIUS) cost += GRAV_AOE_PENALTY                   // anti-cluster
+                if (d <= COVID_RANGE) cost += ents[i + 3]                           // épargner l'allié (mes bulbes inclus)
+            } else {                                                                 // ENNEMI
+                cost += coef * d / GRAV_MAXDIST                                     // éloignement linéaire
+                if (d > COVID_RANGE) cost += ents[i + 3]                            // occasion manquée de contaminer
             }
         }
         PLACEMENT_COST_CACHE[key] = cost
@@ -76,18 +81,34 @@ class GravityClass {
     }
 
     /*
-     * Entités qui pèsent sur le placement, À PLAT : [cellule, importance, allié ?, ...].
-     * Un triplet par vivant hors Me, dans l'ordre du State.
+     * Entités qui pèsent sur le placement, À PLAT : [cellule, coefficient, allié ?, coût covid].
+     * Un quadruplet par vivant hors Me, dans l'ordre du State.
+     *
+     * Le coefficient est le produit poids · importance, et le coût covid le produit complet —
+     * tous deux invariants par cellule, alors qu'ils étaient refaits une fois par cellule ET par
+     * entité. Les chaînes de multiplication sont coupées à l'endroit exact où la distance entre
+     * en jeu : l'ordre gauche-à-droite est préservé, les flottants sont identiques au bit près.
+     * Un coût covid nul quand je ne suis pas contagieux annule la composante sans la tester.
      */
     static entsOf(State, BaseHash) {
         if (BaseHash in GRAV_ENTS_CACHE) return GRAV_ENTS_CACHE[BaseHash]
+        if (GRAV_CENTER_CELL == null) {
+            GRAV_CENTER_CELL = getCellFromXY(0, 0)
+            GRAV_ALLY_FALLOFF = []
+            for (var d = 0; d <= GRAV_FALLOFF_MAX; d++) push(GRAV_ALLY_FALLOFF, pow(d / GRAV_MAXDIST, GRAV_ALLY_POWER))
+        }
         var mySide = State[Me].SIDE
+        var covid = covidValue()
+        var covidWeight = GRAV_COVID_W_PER_HP * covid
         var ents = []
         for (var e: var stat in State) {
             if (stat.LIFE <= 0 || e == Me) continue
+            var imp = ImportanceClass.get(stat)
+            var ally = stat.SIDE == mySide
             push(ents, stat.CELL)
-            push(ents, ImportanceClass.get(stat))
-            push(ents, stat.SIDE == mySide)
+            push(ents, (ally ? GRAV_W_ALLY : GRAV_W_ENEMY) * imp)
+            push(ents, ally)
+            push(ents, covid > 0 ? covidWeight * imp : 0)
         }
         GRAV_ENTS_CACHE[BaseHash] = ents
         return ents
