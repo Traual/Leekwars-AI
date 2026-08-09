@@ -34,7 +34,8 @@ class FinalCell {
         // que poisonKeyOnNode : sans antidote en jeu la clé vaut 0.
         var fold = ScoringClass.carrierFoldOthers(State)
         var poisonKey = (ANY_ANTIDOTE == true) ? ScoringClass.poisonKeyFromFold(State, BaseHash, fold) : 0
-        var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey)
+        var meWalkFp = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(State[Me])
+        var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey, meWalkFp)
         debug("Best final cell: " + res[0] + " (pénalité: " + res[1] + ", net: " + res[2] + ")")
         return res[0]
     }
@@ -51,16 +52,14 @@ class FinalCell {
      * @param hfpBySide [side -> fingerprint des soigneurs] (node.HFP_BY_SIDE)
      * @param combinedHfp fold XOR des empreintes, clé de la heal map (node.COMBINED_HFP)
      * @param poisonKey clé de couverture antidote (node.POISON_KEY)
+     * @param meWalkFp empreinte de mobilité de Me (node.ME_WALK_FINGERPRINT) : avec BaseHash,
+     *        elle fixe exactement mes cellules accessibles
      * @return [meilleure cellule, pénalité (>= 0), net à cette cellule]
      */
-    static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey) {
+    static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey, meWalkFp) {
         BenchOps.Start("FinalCell")
         var MyState = State[Me]
         var mySide = MyState.SIDE
-
-        // Cellules accessibles avec mes MP restants.
-        var possibleCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
-        var healMap = HealClass.getHealMapByFp(State, combinedHfp)
 
         // MÊMES primitives, MÊMES clés, MÊMES caches que le reste de l'IA : le placement
         // hérite des caches chauffés par la recherche au lieu d'entretenir un quatrième
@@ -70,6 +69,27 @@ class FinalCell {
         var targetSeed           = DeltaClass.targetDangerSeedOf(MyState, offensiveContextHash, antidoteCd)
         var dangerCellSeed       = DangerClass.cellCacheSeed(targetSeed, MyState.ID)
         var seed                 = DeltaClass.fleeSeedOf(MyState, targetSeed, hfpBySide[mySide])
+
+        // Le reclassement terminal rouvre deux fois sur trois un état déjà évalué : le memo
+        // épargne alors le balayage entier. Sa clé est la signature COMPLÈTE des entrées —
+        // le terrain et ma mobilité (donc mes cellules accessibles), la graine de fuite (qui
+        // porte déjà menace adverse, mes boucliers, mon antidote, mes soigneurs, ma vie et ma
+        // vie max), les soigneurs des deux camps, la couverture antidote, et mes flux
+        // périodiques, seuls restants à décider ce qu'un net me coûte en survie.
+        var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp ^ poisonKey))
+        memoKey = mix64(memoKey ^ combinedHfp
+            ^ ((MyState.POISON & 0xFFFFF) << 44) ^ ((MyState.AFTEREFFECT & 0x7FF) << 33)
+            ^ ((MyState.HEAL & 0x7FF) << 22) ^ ((MyState.DAMAGE_RETURN & 0x7FF) << 11))
+        memoKey = mix64(memoKey ^ ((MyState.POISON_OVER_TIME & 0xFFFFF) << 40)
+            ^ ((MyState.AFTEREFFECT_OVER_TIME & 0xFFFFF) << 20) ^ (MyState.HEAL_OVER_TIME & 0xFFFFF))
+        if (memoKey in FINAL_PLACEMENT_CACHE) {
+            BenchOps.Stop("FinalCell")
+            return FINAL_PLACEMENT_CACHE[memoKey]
+        }
+
+        // Cellules accessibles avec mes MP restants.
+        var possibleCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
+        var healMap = HealClass.getHealMapByFp(State, combinedHfp)
 
         // Valeur de survie SANS danger : la borne haute, invariante sur toutes les cellules.
         // C'est la valeur que le terme statique de Me a déjà comptée dans le score — la
@@ -112,7 +132,10 @@ class FinalCell {
             }
         }
 
+        // Renvoyé PAR RÉFÉRENCE, read-only en aval comme les autres maps cachées de l'IA.
+        var res = [bestCell, bestPenalty, bestNet]
+        FINAL_PLACEMENT_CACHE[memoKey] = res
         BenchOps.Stop("FinalCell")
-        return [bestCell, bestPenalty, bestNet]
+        return res
     }
 }

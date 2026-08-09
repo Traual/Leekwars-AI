@@ -195,7 +195,7 @@ class ActionSuite {
 	 */
 	static penaltyOf(node) {
 		var NodeState = StateClass.materializeNodeState(node)
-		return FinalCell.evaluate(NodeState, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, node.COMBINED_HFP, node.POISON_KEY)[1]
+		return FinalCell.evaluate(NodeState, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, node.COMBINED_HFP, node.POISON_KEY, node.ME_WALK_FINGERPRINT)[1]
 	}
 
 	/*

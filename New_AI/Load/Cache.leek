@@ -58,6 +58,7 @@ function ReloadPlacementCacheNewPlan() {
     PLACEMENT_COST_CACHE = [: ]
     GRAV_ENTS_CACHE = [: ]
     GRAV_COVID_VALUE = null
+    FINAL_PLACEMENT_CACHE = [: ]
 }
 
 // STATE
@@ -271,6 +272,12 @@ global DANGER_ENTITY_CACHE = [: ]
 // filtrée par cooldown au moment du calcul.
 global DANGER_TEMPLATE_CACHE = [: ]
 global DANGER_ENTITY_INVENTORY = [: ]
+
+// Résultat ENTIER de l'évaluation terminale [cellule, pénalité, net], clé = la signature
+// complète des entrées de FinalCell.evaluate. Le reclassement rouvre deux fois sur trois un
+// état déjà évalué (branches sœurs qui n'ont touché ni ma mobilité, ni mes boucliers, ni la
+// menace adverse) : le memo épargne alors tout le balayage de cellules d'un coup.
+global FINAL_PLACEMENT_CACHE = [: ]
 
 // Coût de placement SPATIAL d'une cellule, clé (BaseHash, cellule), et la liste à plat des
 // entités qui pèsent dessus, clé BaseHash. Vidés au replan (ReloadPlacementCacheNewPlan) :
