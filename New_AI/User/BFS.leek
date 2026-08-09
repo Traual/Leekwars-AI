@@ -32,8 +32,14 @@ global BFS_CHAIN_STEPS = 0
  *           c'est ce qu'elle rapporte par TP dépensé.
  *   false : par Δscore absolu (comportement historique).
  * Le score d'un nœud reste ABSOLU dans les deux cas — le rendement ne sert qu'à classer.
+ *
+ * ARBITRÉ À false. Le rendement privilégie les actions bon marché, donc allonge les chaînes :
+ * mesuré +8 à +18 % d'opérations par tour sur les scénarios à durée fixe, et le pire tour
+ * d'une entité passe de 40,9 M à 85,4 M — sur un plafond moteur de 14 M, c'est rédhibitoire.
+ * En face, 14 victoires contre 14 sur 28 parties décisives en duel direct : aucune qualité
+ * de décision à acheter avec ça. La constante reste pour que le verdict se rejoue.
  */
-global BFS_SCORE_PER_ACTION_COST = true
+global BFS_SCORE_PER_ACTION_COST = false
 
 class ActionSuite {
 
@@ -141,9 +147,6 @@ class ActionSuite {
 		var n = count(sorted)
 		var best = null
 		var bestFinal = 0
-		var bestPenalty = 0
-		var bestCell = 0
-		var evaluated = 0
 		for (var i = 0; i < n; i++) {
 			var node = sorted[i]
 			var raw = node.SCORE
@@ -152,19 +155,13 @@ class ActionSuite {
 			// leur état complet depuis leur chaîne de patches.
 			var NodeState = StateClass.materializeNodeState(node)
 			var res = FinalCell.evaluate(NodeState, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, node.COMBINED_HFP, node.POISON_KEY)
-			evaluated++
 			var finalScore = raw - res[1]
 			if (best == null || finalScore > bestFinal) {
 				best = node
 				bestFinal = finalScore
-				bestPenalty = res[1]
-				bestCell = res[0]
 			}
 		}
 		BenchOps.Stop("Terminal")
-
-		debug("TerminalPlacement candidates=" + n + " evaluated=" + evaluated + " pruned=" + (n - evaluated)
-			+ " raw=" + best.SCORE + " penalty=" + bestPenalty + " final=" + bestFinal + " cell=" + bestCell)
 
 		if (best.ACTION == null) return null
 		var ancestor = best
