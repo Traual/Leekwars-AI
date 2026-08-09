@@ -1,6 +1,7 @@
 /*
- * Sélecteur d'action par recherche arborescente gloutonne.
+ * Sélecteur d'action par recherche arborescente gloutonne, en DEUX temps.
  *
+ * 1. EXPANSION, sur les scores BRUTS (aucun danger positionnel de Me) :
  *  - Profondeur 1 : chaque action jouable est clonée + appliquée + scorée, puis triée
  *    par Δscore décroissant.
  *  - Chaque action de base est déroulée récursivement (unroll) : on descend la meilleure
@@ -9,7 +10,13 @@
  *    le même BaseHash (self-buff) réutilise la liste, un step qui le change (move, summon,
  *    Inversion...) énumère à neuf pour ce nouveau board.
  *  - Un nœud "ne rien jouer" (score initial) sert de plancher.
- *  - Le meilleur nœud gagne ; on renvoie l'action de son premier ancêtre.
+ *
+ * 2. RECLASSEMENT TERMINAL : tout nœud visité est une suite où l'on PEUT s'arrêter. Chacun
+ *    est reclassé par finalScore = rawScore − placementPenalty, où la pénalité vient de
+ *    FinalCell — la même fonction que le placement réellement joué en fin de tour. node.SCORE
+ *    reste le score brut de la recherche, il n'est jamais réécrit.
+ *
+ * Le meilleur nœud FINAL gagne ; on renvoie l'action de son premier ancêtre.
  */
 
 include("../includes.leek")
@@ -75,6 +82,11 @@ class ActionSuite {
 		for (var s: var h in RootHfp) rootCombinedHfp ^= h
 		noPlay.COMBINED_HFP = rootCombinedHfp
 		noPlay.HFP_OWNED = true
+		// Métadonnées que la racine ne portait pas : le reclassement terminal les lit sur
+		// TOUT candidat, plancher compris, comme sur n'importe quel nœud.
+		noPlay.CONTEXT_BY_SIDE = RootContext
+		noPlay.HFP_BY_SIDE = RootHfp
+		noPlay.POISON_KEY = RootPoisonKey
 		// Racine des ÉTATS : elle seule porte la map complète d'office, patch vide.
 		noPlay.STATE_PARENT = null
 		noPlay.STATE_PATCH = [: ]
@@ -84,35 +96,82 @@ class ActionSuite {
 		BFS_CHAIN_STEPS = 0
 		debugC("--- " + count(rootEntries) + " base actions ---", COLOR_BLUE)
 
-		// Déroulé de chaque action de base. La marge BFS_DELTA_EPSILON empêche les résidus
-		// float de battre le plancher.
-		var best = noPlay
+		// Déroulé de chaque action de base. TOUT nœud visité est une suite où l'on peut
+		// s'arrêter : le plancher, chaque action racine retenue, et chaque nœud intermédiaire
+		// du déroulé — pas seulement le dernier de chaque chaîne.
+		var candidates = [noPlay]
 
 		for (var entry in rootEntries) {
 			var baseNode = entry[2]
 			baseNode.SCORE = entry[3]
-			if (baseNode.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = baseNode
-			best = unroll(baseNode, ScoredCache, ReachableCache, MySide, 1, best)
+			push(candidates, baseNode)
+			unroll(baseNode, ScoredCache, ReachableCache, MySide, candidates)
 		}
 		BenchOps.Stop("BFS")
+
+		return pickTerminal(candidates, initialScore, count(rootEntries))
+	}
+
+	/*
+	 * Reclassement terminal : chaque candidat est clos par FinalCell, qui rend la pénalité de
+	 * son meilleur placement, et vaut finalScore = rawScore − placementPenalty.
+	 *
+	 * COUPURE EXACTE, sans epsilon : la pénalité est >= 0 par construction, donc
+	 * finalScore <= rawScore. Les candidats étant parcourus par score BRUT décroissant, dès
+	 * qu'un score brut ne bat plus le meilleur score final, aucun de ceux qui restent ne le
+	 * pourra non plus. Une égalité parfaite de scores finaux garde le premier trouvé, donc le
+	 * meilleur score brut — le départage historique.
+	 *
+	 * @return l'action du premier ancêtre du meilleur candidat, null si le plancher gagne
+	 */
+	static pickTerminal(candidates, initialScore, nBases) {
+		BenchOps.Start("Terminal")
+		var sorted = arraySort(candidates, function(a, b) { return b.SCORE - a.SCORE })
+		var n = count(sorted)
+		var best = null
+		var bestFinal = 0
+		var bestPenalty = 0
+		var bestCell = 0
+		var evaluated = 0
+		for (var i = 0; i < n; i++) {
+			var node = sorted[i]
+			var raw = node.SCORE
+			if (best != null && raw <= bestFinal) break
+			// Matérialisation PARESSEUSE : seuls les candidats réellement évalués reconstruisent
+			// leur état complet depuis leur chaîne de patches.
+			var NodeState = StateClass.materializeNodeState(node)
+			var res = FinalCell.evaluate(NodeState, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, node.COMBINED_HFP, node.POISON_KEY)
+			evaluated++
+			var finalScore = raw - res[1]
+			if (best == null || finalScore > bestFinal) {
+				best = node
+				bestFinal = finalScore
+				bestPenalty = res[1]
+				bestCell = res[0]
+			}
+		}
+		BenchOps.Stop("Terminal")
+
+		debug("TerminalPlacement candidates=" + n + " evaluated=" + evaluated + " pruned=" + (n - evaluated)
+			+ " raw=" + best.SCORE + " penalty=" + bestPenalty + " final=" + bestFinal + " cell=" + bestCell)
 
 		if (best.ACTION == null) return null
 		var ancestor = best
 		while (ancestor.PARENT != null) ancestor = ancestor.PARENT
-		debug("Best: " + ITEMINFO[ancestor.ACTION.Item].NAME + " | From: " + ancestor.ACTION.From + " | To: " + ancestor.ACTION.To + " | Delta: " + (best.SCORE - initialScore) + " | " + count(rootEntries) + " bases, " + BFS_CHAIN_STEPS + " steps")
+		debug("Best: " + ITEMINFO[ancestor.ACTION.Item].NAME + " | From: " + ancestor.ACTION.From + " | To: " + ancestor.ACTION.To + " | Delta: " + (bestFinal - initialScore) + " | " + nBases + " bases, " + BFS_CHAIN_STEPS + " steps")
 		return ancestor.ACTION
 	}
 
 	/*
 	 * Déroulé glouton récursif d'une branche : descend la meilleure action suivante tant
-	 * qu'il y en a une, en suivant le meilleur nœud rencontré.
+	 * qu'il y en a une, en collectant chaque nœud traversé comme candidat terminal.
 	 */
-	static unroll(node, ScoredCache, ReachableCache, MySide, depth, best) {
+	static unroll(node, ScoredCache, ReachableCache, MySide, candidates) {
 		var next = findBestNextNode(node, ScoredCache, ReachableCache, MySide)
-		if (next == null) return best
-		if (next.SCORE > best.SCORE + BFS_DELTA_EPSILON) best = next
+		if (next == null) return;
+		push(candidates, next)
 		BFS_CHAIN_STEPS++
-		return unroll(next, ScoredCache, ReachableCache, MySide, depth + 1, best)
+		unroll(next, ScoredCache, ReachableCache, MySide, candidates)
 	}
 
 	/*
