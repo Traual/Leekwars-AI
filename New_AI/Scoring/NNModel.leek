@@ -1,10 +1,44 @@
 /*
- * Le modèle appris, sous forme d'un vecteur de paramètres PLAT.
+ * Le modele appris, sous forme d'un vecteur de parametres PLAT.
  *
- * null = aucun modèle : le réseau, même activé, laisse passer les poids historiques.
- * L'entraînement ne réécrit QUE la ligne ci-dessous — le reste de l'IA n'en sait rien.
+ * null = aucun modele : le reseau, meme active, laisse passer les poids historiques.
+ * L'entrainement ne reecrit QUE la ligne du vecteur — le reste de l'IA n'en sait rien.
+ *
+ * Point de controle courant : tous les parametres nuls SAUF le biais DANGER de la tete de
+ * placement (avant-derniere position), a 1. Le facteur applique a la penalite de danger vaut
+ * donc 1 + 1 = 2 : la securite de fin de tour pese le double de ce que la formule historique
+ * lui donne.
+ *
+ * Trouve par balayage de ce seul biais, contre l'IA historique, en combats miroirs apparies :
+ *   facteur 0,5 -> -0,199   facteur 1,0 -> 0 (reference)   facteur 1,5 -> +0,135
+ *   facteur 2,0 -> +0,438   facteur 3,0 -> +0,234          facteur 4,0 -> +0,280
+ * Le pic a 2 tient hors echantillon : +0,234 sur seize paires de graines jamais utilisees
+ * pour le choisir.
  */
 
 include("../includes.leek")
 
-global NN_MODEL = null
+global NN_MODEL = [
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0
+]
