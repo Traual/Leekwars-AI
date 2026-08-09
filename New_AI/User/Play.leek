@@ -27,6 +27,8 @@ class Play {
 			// devient visible), puis FIGÉE pendant tout le BFS qui suit — jamais vidée dans
 			// les nœuds ni entre branches. Quelques centaines d'opés, négligeable vs le BFS.
 			IMPORTANCE_BY_ID = [: ]
+			// Le coût de placement porte cette importance : il se périme au même rythme.
+			ReloadPlacementCacheNewPlan()
 			var Action = ActionSuite.getBestAction(State)
 			if (Action == null) break
 			var From = Action.From

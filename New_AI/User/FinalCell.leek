@@ -1,82 +1,118 @@
 /*
- * FinalCell : la cellule de fin de tour. Le score de l'arbre ne dit rien d'où je me tiens —
- * le terme de Me y est statique — donc c'est ICI que se décide toute ma sécurité, en deux
- * couches :
- *   1. GRAVITY classe chaque cellule accessible (cohésion alliés, approche ennemis,
- *      anti-AoE, covid...).
- *   2. SÉCURITÉ filtre par le NET que j'y prendrais (danger amorti par les heals, séquencé
- *      par ordre de tour) — la même primitive que le reste de l'IA, DeltaClass.netAtFleeCell.
- * On parcourt les cellules par gravité décroissante et on prend la PREMIÈRE totalement sûre
- * (net == 0) ; sinon, celle du net minimal (départagée par l'ordre de gravité).
+ * FinalCell : l'évaluateur TERMINAL. Le score de l'arbre ne dit rien d'où je me tiens — le
+ * terme de Me y est statique — donc toute ma sécurité et tout mon positionnement se décident
+ * ici, sous forme d'une PÉNALITÉ à retrancher au score.
+ *
+ *   placementPenalty = coût spatial (GravityClass) + coût du danger à la cellule
+ *
+ * Les deux composantes sont des COÛTS : plus bas = mieux, jamais négatives. C'est ce qui
+ * rend la coupure du reclassement terminal exacte — finalScore <= rawScore, toujours.
+ *
+ * SOURCE UNIQUE : la même fonction sert au reclassement des branches (BFS) et au placement
+ * réellement joué en fin de tour (Play). Un état identique évalué deux fois rend le même
+ * résultat, aux caches près.
  */
 
 include("../includes.leek")
 
 class FinalCell {
+
     /*
-     * Meilleure cellule de fin de tour : la plus haute gravité totalement sûre, sinon le
-     * moindre net.
+     * Cellule de fin de tour réellement jouée. Reconstruit le contexte depuis l'état — appelée
+     * UNE fois par tour, quand toutes les actions ont été jouées.
      *
      * @param State [id -> stats]
      * @param BaseHash hash (id, cellule) des vivants
      * @return id de cellule
      */
     static get(State, BaseHash) {
+        var contextBySide = DeltaClass.buildContextBySide(State)
+        var hfpBySide = HealClass.buildHfpBySide(State)
+        var combinedHfp = 0
+        for (var s: var h in hfpBySide) combinedHfp ^= h
+        // carrierFoldOthers résout anyAntidote, dont poisonKeyFromFold dépend. Même convention
+        // que poisonKeyOnNode : sans antidote en jeu la clé vaut 0.
+        var fold = ScoringClass.carrierFoldOthers(State)
+        var poisonKey = (ANY_ANTIDOTE == true) ? ScoringClass.poisonKeyFromFold(State, BaseHash, fold) : 0
+        var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey)
+        debug("Best final cell: " + res[0] + " (pénalité: " + res[1] + ", net: " + res[2] + ")")
+        return res[0]
+    }
+
+    /*
+     * Meilleur placement terminal d'un état : la cellule accessible de pénalité MINIMALE.
+     *
+     * Les métadonnées viennent de l'appelant — un nœud du BFS les porte déjà toutes, rien
+     * n'est reconstruit par feuille.
+     *
+     * @param State [id -> stats] de l'état à clore
+     * @param BaseHash hash (id, cellule) des vivants
+     * @param contextBySide [side -> hash de l'équipe adverse] (node.CONTEXT_BY_SIDE)
+     * @param hfpBySide [side -> fingerprint des soigneurs] (node.HFP_BY_SIDE)
+     * @param combinedHfp fold XOR des empreintes, clé de la heal map (node.COMBINED_HFP)
+     * @param poisonKey clé de couverture antidote (node.POISON_KEY)
+     * @return [meilleure cellule, pénalité (>= 0), net à cette cellule]
+     */
+    static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey) {
         BenchOps.Start("FinalCell")
         var MyState = State[Me]
-        var myId = MyState.ID
         var mySide = MyState.SIDE
 
         // Cellules accessibles avec mes MP restants.
         var possibleCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
+        var healMap = HealClass.getHealMapByFp(State, combinedHfp)
 
-        // Positionnement (gravity).
-        var gravityMap = GravityClass.loadGravityMap(State, possibleCells)
-
-        // UN seul parcours pour les deux informations que le net réclame : le fold combiné qui
-        // sert de clé à la heal map, et l'empreinte des soigneurs de MON camp, qui entre dans
-        // la graine de fuite.
-        var combinedFp = 0
-        var myHfp = 0
-        var casters = []
-        for (var e: var stat in State) {
-            var c = HealClass.healerContributionOf(stat, e)
-            if (c != 0) {
-                combinedFp ^= c
-                push(casters, e)
-                if (stat.SIDE == mySide) myHfp ^= c
-            }
-        }
-        var healMap = HealClass.getHealMapPrecomputed(State, combinedFp, casters)
-
-        // Meilleur placement d'abord.
-        var cells = arraySort(mapKeys(possibleCells), function(a, b) { return gravityMap[b] - gravityMap[a] })
-
-        // MÊME pipeline que le BFS : même graine de cible, même plan offensif, même primitive
-        // froide, même groupement local progressif. FinalCell hérite donc des caches chauffés
-        // par la recherche au lieu d'entretenir un quatrième chemin divergent.
-        var offensiveContextHash = DeltaClass.buildContextBySide(State)[mySide]
+        // MÊMES primitives, MÊMES clés, MÊMES caches que le reste de l'IA : le placement
+        // hérite des caches chauffés par la recherche au lieu d'entretenir un quatrième
+        // chemin divergent.
+        var offensiveContextHash = contextBySide[mySide]
         var antidoteCd           = DangerComboClass.antidoteCdOf(MyState)
         var targetSeed           = DeltaClass.targetDangerSeedOf(MyState, offensiveContextHash, antidoteCd)
-        var dangerCellSeed       = DangerClass.cellCacheSeed(targetSeed, myId)
-        var seed                 = DeltaClass.fleeSeedOf(MyState, targetSeed, myHfp)
+        var dangerCellSeed       = DangerClass.cellCacheSeed(targetSeed, MyState.ID)
+        var seed                 = DeltaClass.fleeSeedOf(MyState, targetSeed, hfpBySide[mySide])
 
-        var bestCell = MyState.CELL
-        var bestNet  = MAX_VALUE
+        // Valeur de survie SANS danger : la borne haute, invariante sur toutes les cellules.
+        // C'est la valeur que le terme statique de Me a déjà comptée dans le score — la
+        // pénalité ne facture donc QUE l'écart, jamais deux fois la survie.
+        var safeSurvival = ScoringClass.survivalValue(MyState, 0, State, poisonKey)
+        var myImportance = (Me in IMPORTANCE_BY_ID) ? IMPORTANCE_BY_ID[Me] : ImportanceClass.get(MyState)
+
+        var bestCell    = MyState.CELL
+        var bestPenalty = MAX_VALUE
+        var bestNet     = 0
 
         // Objets communs à tout le balayage (plan, buckets, deux séquences), matérialisés au
         // PREMIER vrai miss et pas avant : une cellule déjà en cache n'en construit aucun.
         var lazy = [null, null, null, null]
 
-        debugC("--- Finding Best Final Cell (gravity-sorted, heal-aware net) ---", COLOR_BLUE)
-        for (var cell in cells) {
+        for (var cell: var mp in possibleCells) {
+            // Le coût spatial est un PLANCHER de la pénalité de cette cellule : le coût du
+            // danger ne peut que s'y ajouter. Une cellule dont le seul spatial dépasse déjà le
+            // meilleur total ne peut pas gagner — coupure EXACTE, et elle épargne le net,
+            // de loin le calcul le plus cher des deux.
+            var spatial = GravityClass.costAt(State, BaseHash, cell)
+            if (spatial >= bestPenalty) continue
+
             var net = DeltaClass.netAtFleeCell(cell, seed, dangerCellSeed, MyState, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy)
-            if (net == 0) { bestCell = cell ; bestNet = 0 ; break }   // meilleure gravité ET sûre -> fini
-            if (net < bestNet) { bestNet = net ; bestCell = cell }
+            var penalty = spatial
+            if (net > 0) {
+                // Perte de valeur de SURVIE, alignée sur le scoring statique : exactement ce
+                // que le terme de Me vaudrait en moins s'il encaissait ce net. Le damage
+                // return s'en retranche — un porteur monnaie les coups qu'il prend — mais ne
+                // peut pas retourner le danger en bonus : le coût est planché à zéro.
+                var loss = myImportance * (safeSurvival - ScoringClass.survivalValue(MyState, net, State, poisonKey))
+                         - ScoringClass.drDeterrence(MyState, net, State)
+                if (loss > 0) penalty += loss
+            }
+            if (penalty < bestPenalty) {
+                bestPenalty = penalty
+                bestCell = cell
+                bestNet = net
+                if (penalty == 0) break   // borne parfaite : rien ne peut faire mieux
+            }
         }
 
-        debug("Best final cell: " + bestCell + " (net: " + bestNet + ")")
         BenchOps.Stop("FinalCell")
-        return bestCell
+        return [bestCell, bestPenalty, bestNet]
     }
 }

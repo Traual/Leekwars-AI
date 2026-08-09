@@ -44,6 +44,18 @@ function ReloadCacheNewTurn() {
     DR_PHYSRATIO_BY_SIDE = null
     POISON_COEF_CACHE = [: ]
     ANY_ANTIDOTE = null
+    GRAV_COVID_VALUE = null
+    ReloadPlacementCacheNewPlan()
+}
+
+/*
+ * Coût de placement spatial : sa clé est le terrain (BaseHash), mais sa valeur dépend AUSSI
+ * de l'importance des entités, refigée à chaque planification réelle. Vidé au même rythme
+ * qu'IMPORTANCE_BY_ID, donc à chaque replan et pas seulement au tour.
+ */
+function ReloadPlacementCacheNewPlan() {
+    PLACEMENT_COST_CACHE = [: ]
+    GRAV_ENTS_CACHE = [: ]
 }
 
 // STATE
@@ -257,6 +269,15 @@ global DANGER_ENTITY_CACHE = [: ]
 // filtrée par cooldown au moment du calcul.
 global DANGER_TEMPLATE_CACHE = [: ]
 global DANGER_ENTITY_INVENTORY = [: ]
+
+// Coût de placement SPATIAL d'une cellule, clé (BaseHash, cellule), et la liste à plat des
+// entités qui pèsent dessus, clé BaseHash. Vidés au replan (ReloadPlacementCacheNewPlan) :
+// l'importance qu'ils portent est refigée à chaque planification réelle.
+global PLACEMENT_COST_CACHE = [: ]
+global GRAV_ENTS_CACHE = [: ]
+
+// Valeur de spread de mon covid : lue sur l'état RÉEL du moteur, donc constante sur le tour.
+global GRAV_COVID_VALUE = null
 
 // Net de Me à UNE cellule où il pourrait finir le tour. Graine (statsHash ^ healersFP + vie
 // + (id, IS_SUMMON) de Me — le profil de couverture heal est un input du net) foldée avec la

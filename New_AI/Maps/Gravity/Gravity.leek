@@ -1,16 +1,23 @@
 /*
- * Gravity map : score de placement par cellule, pour FinalCell (plus haut = mieux placé).
- * PAS un trade avec le danger (la sécurité est filtrée à part).
+ * Coût de placement SPATIAL d'une cellule : ce que coûte d'y finir le tour, hors danger.
  *
- * Par cellule, somme sur chaque entité vivante hors Me (pondérée par l'importance) :
- *   - ennemis : attraction d'approche linéaire (plus près = plus haut)
- *   - alliés  : cohésion convexe 1 - (d/maxDist)^x — plate de près (liberté de chasser),
- *               pentue de loin (urgence de regrouper) ; plus une pénalité anti-cluster AoE
- *   - centre  : petite attraction vers le centre de la carte
- *   - COVID (gate myCovidValue > 0) : dans le rayon réel de contagion, récompense la
- *     proximité des ennemis (contaminer) et pénalise celle des alliés, à la vraie valeur de
- *     spread (engine-exact, voir myCovidValue). Le spread part au endTurn -> FinalCell est
- *     exactement le point de décision.
+ * Somme de coûts NON NÉGATIFS — plus bas = mieux placé, zéro = borne parfaite. Aucune
+ * récompense n'est produite ici : une composante ne peut qu'ALOURDIR une cellule, jamais
+ * l'alléger. C'est cet invariant qui rend la coupure du reclassement terminal exacte.
+ *
+ * Par cellule, somme sur chaque entité vivante hors Me (pondérée par son importance) :
+ *   - alliés  : éloignement convexe (d/maxDist)^x — plat de près (liberté de chasser),
+ *               pentu de loin (urgence de regrouper) ; plus une pénalité anti-cluster AoE
+ *   - ennemis : éloignement linéaire (plus loin = plus cher)
+ *   - centre  : petit coût d'éloignement au centre de la carte
+ *   - COVID (gate myCovidValue > 0) : dans le rayon réel de contagion, coûte la proximité
+ *     d'un allié (le contaminer) et coûte l'ÉLOIGNEMENT d'un ennemi (l'occasion manquée de
+ *     le contaminer), à la vraie valeur de spread (engine-exact, voir covidValue). Le spread
+ *     part au endTurn -> la cellule finale est exactement le point de décision.
+ *
+ * Les composantes de distance sont les anciennes récompenses de gravité retournées : à un
+ * décalage CONSTANT près (indépendant de la cellule), le classement des cellules est le même
+ * qu'avant. Seul le signe change, et avec lui la possibilité de sommer ce coût au score.
  */
 
 include("../../includes.leek")
@@ -24,7 +31,7 @@ global GRAV_AOE_RADIUS  = 2       // anti-cluster (rayon)
 global GRAV_AOE_PENALTY = 0.3
 global GRAV_COVID_W_PER_HP = 0.007 // covid : poids PAR HP de valeur de spread (≈ l'ancien 2.0 binaire pour un covid ~300)
 
-// Constantes du chip COVID, lues une fois depuis ITEMINFO (lazy, dans myCovidValue). Moteur vérifié
+// Constantes du chip COVID, lues une fois depuis ITEMINFO (lazy, dans covidValue). Moteur vérifié
 // (Attack.java) : le rayon = value1 de l'effet TYPE_PROPAGATION, stampé sur le poison au cast ;
 // la base = value1 du poison (roll MIN, pessimiste — même convention que la Heal Map).
 global COVID_RANGE = null
@@ -33,41 +40,57 @@ global COVID_BASE  = null
 // Map constant (NOT a tunable score)
 global GRAV_MAXDIST     = 34      // distance max sur la carte, pour normaliser
 
+// Cellule centrale, résolue une fois par combat.
+global GRAV_CENTER_CELL = null
+
 class GravityClass {
 
-    /* [cell -> gravity score] over the given cells. */
-    static loadGravityMap(State, walkCells) {
-        BenchOps.Start("Gravity")
-        var mySide = getSide(Me)
-        var centerCell = getCellFromXY(0, 0)
-        var covid = myCovidValue()                        // GATE : > 0 = j'ai covid
+    /*
+     * Coût spatial d'UNE cellule, mémoïsé par (terrain, cellule).
+     * BaseHash est EXACTEMENT le fold des (id, cellule) des vivants hors Me : c'est tout ce
+     * dont la somme dépend, l'importance étant figée par replan et la valeur de covid par
+     * tour. Les deux caches sont donc vidés au replan, en même temps qu'IMPORTANCE_BY_ID.
+     */
+    static costAt(State, BaseHash, cell) {
+        var key = addValueToBinHash(BaseHash, cell)
+        if (key in PLACEMENT_COST_CACHE) return PLACEMENT_COST_CACHE[key]
+        if (GRAV_CENTER_CELL == null) GRAV_CENTER_CELL = getCellFromXY(0, 0)
+        var ents = entsOf(State, BaseHash)
+        var covid = covidValue()
+        var cost = GRAV_W_CENTER * CellClass.getDist(cell, GRAV_CENTER_CELL) / GRAV_MAXDIST
+        var n = count(ents)
+        for (var i = 0; i < n; i += 3) {
+            var d = CellClass.getDist(cell, ents[i])
+            var imp = ents[i + 1]
+            if (ents[i + 2]) {                                                              // ALLIÉ
+                cost += GRAV_W_ALLY * imp * pow(d / GRAV_MAXDIST, GRAV_ALLY_POWER)          // éloignement convexe
+                if (d < GRAV_AOE_RADIUS) cost += GRAV_AOE_PENALTY                           // anti-cluster
+                if (covid > 0 && d <= COVID_RANGE) cost += GRAV_COVID_W_PER_HP * covid * imp // épargner l'allié (mes bulbes inclus)
+            } else {                                                                         // ENNEMI
+                cost += GRAV_W_ENEMY * imp * d / GRAV_MAXDIST                               // éloignement linéaire
+                if (covid > 0 && d > COVID_RANGE) cost += GRAV_COVID_W_PER_HP * covid * imp  // occasion manquée de contaminer
+            }
+        }
+        PLACEMENT_COST_CACHE[key] = cost
+        return cost
+    }
 
-        // Toutes les entités une fois : [cell, importance, isAlly].
+    /*
+     * Entités qui pèsent sur le placement, À PLAT : [cellule, importance, allié ?, ...].
+     * Un triplet par vivant hors Me, dans l'ordre du State.
+     */
+    static entsOf(State, BaseHash) {
+        if (BaseHash in GRAV_ENTS_CACHE) return GRAV_ENTS_CACHE[BaseHash]
+        var mySide = State[Me].SIDE
         var ents = []
         for (var e: var stat in State) {
             if (stat.LIFE <= 0 || e == Me) continue
-            push(ents, [stat.CELL, ImportanceClass.get(stat), stat.SIDE == mySide])
+            push(ents, stat.CELL)
+            push(ents, ImportanceClass.get(stat))
+            push(ents, stat.SIDE == mySide)
         }
-
-        var _final = [: ]
-        for (var cell: var _ in walkCells) {
-            var g = GRAV_W_CENTER * (1 - CellClass.getDist(cell, centerCell) / GRAV_MAXDIST)
-            for (var en in ents) {
-                var d = CellClass.getDist(cell, en[0])
-                var imp = en[1]
-                if (en[2]) {                                                                  // ALLIÉ
-                    g += GRAV_W_ALLY * imp * (1 - pow(d / GRAV_MAXDIST, GRAV_ALLY_POWER))      // cohésion convexe sommée
-                    if (d < GRAV_AOE_RADIUS) g -= GRAV_AOE_PENALTY                             // anti-cluster
-                    if (covid > 0 && d <= COVID_RANGE) g -= GRAV_COVID_W_PER_HP * covid * imp  // épargner l'allié (mes bulbes inclus)
-                } else {                                                                       // ENNEMI
-                    g += GRAV_W_ENEMY * imp * (1 - d / GRAV_MAXDIST)                          // approche linéaire sommée
-                    if (covid > 0 && d <= COVID_RANGE) g += GRAV_COVID_W_PER_HP * covid * imp  // contaminer l'ennemi
-                }
-            }
-            _final[cell] = g
-        }
-        BenchOps.Stop("Gravity")
-        return _final
+        GRAV_ENTS_CACHE[BaseHash] = ents
+        return ents
     }
 
     /* REAL spread value of my covid (0 = not infected -> the covid block stays dormant).
@@ -76,23 +99,26 @@ class GravityClass {
      * · crit, recomputed at EVERY spread with the ORIGINAL caster's CURRENT stats (aoe = 1 in
      * propagation, the crit flag of my effect is carried). Deliberately NOT my local effect value:
      * a Liberation that shrinks MY value changes NOTHING to the spreads — and if the effect is
-     * fully removed, getEffects stops returning it -> 0 here (gate closes). */
-    static myCovidValue() {
+     * fully removed, getEffects stops returning it -> 0 here (gate closes).
+     * Lit l'état RÉEL du moteur, donc invariant sur tout le tour : mémoïsé au tour. */
+    static covidValue() {
+        if (GRAV_COVID_VALUE != null) return GRAV_COVID_VALUE
         if (COVID_RANGE == null) {   // lazy chip constants (once per fight)
             for (var ceff in ITEMINFO[CHIP_COVID].EFFECTS) {
                 if (ceff[0] == EFFECT_PROPAGATION) COVID_RANGE = ceff[1]
                 if (ceff[0] == EFFECT_POISON) COVID_BASE = ceff[1]   // roll MIN (pessimiste)
             }
         }
+        GRAV_COVID_VALUE = 0
         // getEffects layout: [0]=type, [1]=value, [2]=caster, [3]=turns, [4]=critical, [5]=item.
         for (var eff in getEffects(Me)) {
             if (eff[5] != CHIP_COVID || eff[0] != EFFECT_POISON) continue
             var m = getMagic(eff[2])   // caster D'ORIGINE, stats ACTUELLES (mort -> null -> 0)
             var p = getPower(eff[2])
-            var value = COVID_BASE * (1 + max(0, m == null ? 0 : m) / 100) * (1 + max(0, p == null ? 0 : p) / 100) * (eff[4] ? CRITICAL_FACTOR : 1)
-            return value
+            GRAV_COVID_VALUE = COVID_BASE * (1 + max(0, m == null ? 0 : m) / 100) * (1 + max(0, p == null ? 0 : p) / 100) * (eff[4] ? CRITICAL_FACTOR : 1)
+            break
         }
-        return 0
+        return GRAV_COVID_VALUE
     }
 
 }
