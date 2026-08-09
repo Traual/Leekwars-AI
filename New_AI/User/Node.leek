@@ -53,9 +53,8 @@ class NodeClass {
 	COMBINED_HFP      // fold XOR des empreintes par camp : la clé de la heal map. Hérité tel quel
 	                  // du parent quand la map est partagée, recalculé sinon
 	ME_WALK_FINGERPRINT // empreinte de mobilité de Me pour l'état du nœud
-	                  // (HashWalkCellsWithItemsWithoutBaseHash). Suit STATE_PARENT, jamais
-	                  // PARENT : le déroulé et le ScoredCache réassignent PARENT. Calculée une
-	                  // seule fois par nœud et réutilisée par la clé externe de minDeltaForMe.
+	                  // (HashWalkCellsWithItemsWithoutBaseHash). Sale la clé du filtre de
+	                  // cellules de tir du ScoredCache — aucun terme de scoring n'en dépend.
 	POISON_KEY        // clé de couverture antidote de l'état du nœud (posée par getStateScoreFromParent
 	                  // depuis le workspace encore muté, 0 sans antidote)
 	POISON_FOLD       // fold des porteurs d'antidote AUTRES que Me pour l'état du nœud : la moitié
@@ -138,8 +137,8 @@ class NodeClass {
 			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
 		}
 		// Empreinte de mobilité de Me : calculée UNE fois, après TOUTES ses écritures
-		// (cellule, MP, TP, conséquences, cooldowns d'item et de déplacement). Elle sert au
-		// test de saleté ci-dessous ET à la clé externe de minDeltaForMe.
+		// (cellule, MP, TP, conséquences, cooldowns d'item et de déplacement). Elle sale le
+		// filtre de cellules de tir du ScoredCache (BFS.findBestNextNode).
 		var meWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(meStat)
 		// END_STATS reste NULL : le nœud ne portera que son patch (matérialisation paresseuse).
 		var result = new NodeClass(Act, null, Parent)
@@ -240,14 +239,9 @@ class NodeClass {
 			}
 		}
 
-		// Me : exclu des trois hashs, mais son terme dépend du domaine de fuite — BaseHash
-		// FINAL différent -> dirty ; sinon UNE comparaison des fingerprints WalkCells
-		// old/new (une dépense de TP sans franchir de seuil de mobilité ne salit rien).
-		// L'empreinte du parent est déjà portée par StateParent : plus rien à reconstruire.
-		if (!(Me in localTermDirty)
-			&& (bh != BaseHash || meWalkFingerprint != StateParent.ME_WALK_FINGERPRINT)) {
-			localTermDirty[Me] = meStat
-		}
+		// Me : exclu des trois hashs, et son terme est désormais STATIQUE — ni le terrain
+		// (BaseHash) ni son domaine de mobilité n'y entrent. Seul le masque différentiel de
+		// ses propres champs peut le salir, et il est déjà passé dans la boucle ci-dessus.
 
 		result.CLONED = clonedIds
 		result.LOCAL_TERM_DIRTY = localTermDirty

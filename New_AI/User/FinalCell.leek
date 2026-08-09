@@ -1,10 +1,11 @@
 /*
- * FinalCell : la cellule de fin de tour. Le score (Σ survie) ne dépend pas d'où je me tiens,
- * le placement est donc un choix pur POSITIONNEMENT + SÉCURITÉ, en deux couches :
+ * FinalCell : la cellule de fin de tour. Le score de l'arbre ne dit rien d'où je me tiens —
+ * le terme de Me y est statique — donc c'est ICI que se décide toute ma sécurité, en deux
+ * couches :
  *   1. GRAVITY classe chaque cellule accessible (cohésion alliés, approche ennemis,
  *      anti-AoE, covid...).
  *   2. SÉCURITÉ filtre par le NET que j'y prendrais (danger amorti par les heals, séquencé
- *      par ordre de tour) — le même net que le scoring.
+ *      par ordre de tour) — la même primitive que le reste de l'IA, DeltaClass.netAtFleeCell.
  * On parcourt les cellules par gravité décroissante et on prend la PREMIÈRE totalement sûre
  * (net == 0) ; sinon, celle du net minimal (départagée par l'ordre de gravité).
  */
@@ -24,13 +25,29 @@ class FinalCell {
         BenchOps.Start("FinalCell")
         var MyState = State[Me]
         var myId = MyState.ID
+        var mySide = MyState.SIDE
 
         // Cellules accessibles avec mes MP restants.
         var possibleCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
 
-        // Positionnement (gravity) + heal map (pour le net heal-aware).
+        // Positionnement (gravity).
         var gravityMap = GravityClass.loadGravityMap(State, possibleCells)
-        var healMap    = HealClass.getHealMap(State)
+
+        // UN seul parcours pour les deux informations que le net réclame : le fold combiné qui
+        // sert de clé à la heal map, et l'empreinte des soigneurs de MON camp, qui entre dans
+        // la graine de fuite.
+        var combinedFp = 0
+        var myHfp = 0
+        var casters = []
+        for (var e: var stat in State) {
+            var c = HealClass.healerContributionOf(stat, e)
+            if (c != 0) {
+                combinedFp ^= c
+                push(casters, e)
+                if (stat.SIDE == mySide) myHfp ^= c
+            }
+        }
+        var healMap = HealClass.getHealMapPrecomputed(State, combinedFp, casters)
 
         // Meilleur placement d'abord.
         var cells = arraySort(mapKeys(possibleCells), function(a, b) { return gravityMap[b] - gravityMap[a] })
@@ -38,43 +55,22 @@ class FinalCell {
         // MÊME pipeline que le BFS : même graine de cible, même plan offensif, même primitive
         // froide, même groupement local progressif. FinalCell hérite donc des caches chauffés
         // par la recherche au lieu d'entretenir un quatrième chemin divergent.
-        var mySide                 = MyState.SIDE
-        var offensiveContextHash   = DeltaClass.buildContextBySide(State)[mySide]
-        var antidoteCd             = DangerComboClass.antidoteCdOf(MyState)
-        var targetSeed             = DeltaClass.targetDangerSeedOf(MyState, offensiveContextHash, antidoteCd)
-        var dangerCellSeed         = DangerClass.cellCacheSeed(targetSeed, myId)
+        var offensiveContextHash = DeltaClass.buildContextBySide(State)[mySide]
+        var antidoteCd           = DangerComboClass.antidoteCdOf(MyState)
+        var targetSeed           = DeltaClass.targetDangerSeedOf(MyState, offensiveContextHash, antidoteCd)
+        var dangerCellSeed       = DangerClass.cellCacheSeed(targetSeed, myId)
+        var seed                 = DeltaClass.fleeSeedOf(MyState, targetSeed, myHfp)
 
         var bestCell = MyState.CELL
         var bestNet  = MAX_VALUE
 
-        // Plan et buckets PARESSEUX : une cellule déjà en cache n'en construit aucun.
-        var plan = null
-        var myNetSeq = null   // séquence restreinte aux casters qui peuvent changer mon net
-        var myCovSeq = null   // séquence restreinte aux menaces, pour les couvertures de cellule
-        var buckets = null
+        // Objets communs à tout le balayage (plan, buckets, deux séquences), matérialisés au
+        // PREMIER vrai miss et pas avant : une cellule déjà en cache n'en construit aucun.
+        var lazy = [null, null, null, null]
 
         debugC("--- Finding Best Final Cell (gravity-sorted, heal-aware net) ---", COLOR_BLUE)
         for (var cell in cells) {
-            var dangerKey = dangerCellSeed ^ cell
-            var dangerMap
-            if (dangerKey in CELL_DANGER_GET_CACHE) {
-                dangerMap = CELL_DANGER_GET_CACHE[dangerKey]
-            } else {
-                if (plan == null) {
-                    plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
-                    buckets = [: ]
-                }
-                // Le plan a pu naître dans le bloc du net : la séquence de couverture se résout
-                // donc ici, indépendamment de qui a créé le plan.
-                if (myCovSeq == null) myCovSeq = DangerPlanClass.coverageSequenceFor(plan, myId)
-                dangerMap = DangerClass.dangerOfCellCold(cell, dangerKey, plan, myCovSeq, State, MyState, antidoteCd, buckets)
-            }
-            var net = 0
-            if (!mapIsEmpty(dangerMap)) {
-                if (plan == null) plan = DangerPlanClass.getTeamPlan(State, BaseHash, offensiveContextHash, mySide)
-                if (myNetSeq == null) myNetSeq = DangerPlanClass.netSequenceFor(plan, myId)
-                net = DeltaClass.netDamage(MyState, dangerMap, healMap, myNetSeq, cell)
-            }
+            var net = DeltaClass.netAtFleeCell(cell, seed, dangerCellSeed, MyState, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy)
             if (net == 0) { bestCell = cell ; bestNet = 0 ; break }   // meilleure gravité ET sûre -> fini
             if (net < bestNet) { bestNet = net ; bestCell = cell }
         }

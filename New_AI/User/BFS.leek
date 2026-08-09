@@ -47,9 +47,10 @@ class ActionSuite {
 		var RootPoisonFold = ScoringClass.carrierFoldOthers(State)
 		var RootPoisonKey = ScoringClass.poisonKeyFromFold(State, BaseHash, RootPoisonFold)
 		// Empreinte de mobilité de Me à la racine : construite UNE fois par getBestAction
-		// effectif, servie au scoring racine puis portée par noPlay pour ses enfants.
+		// effectif, portée par noPlay et héritée par ses enfants. Elle sale le filtre de
+		// cellules de tir du ScoredCache — plus aucun terme de scoring n'en dépend.
 		var RootWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MyStats)
-		var RootTerms = ScoringClass.buildTermsMap(State, MySide, BaseHash, RootContext, RootHfp, RootPoisonKey, RootWalkFingerprint)
+		var RootTerms = ScoringClass.buildTermsMap(State, MySide, BaseHash, RootContext, RootHfp, RootPoisonKey)
 		var initialScore = ScoringClass.sumTerms(RootTerms)
 
 		// Cache par appel : scoredKeyOf(BaseHash, candidat résu) -> liste triée

@@ -12,9 +12,11 @@
  *     pondéré par HEAL_COEF à la source (HealClass.partsAt)
  * net = max(0, LIFE − life). Le poison reste dans la formule de survie, pas ici.
  *
- * Les autres encaissent à leur cellule courante (ils ne bougent pas pendant mon tour).
- * Me cherche parmi ses cellules accessibles celle qui MINIMISE le net (danger et heal
- * évalués à la même cellule de fuite).
+ * Chacun encaisse à sa cellule courante : personne ne bouge pendant mon tour.
+ *
+ * Me n'a PAS de net dans l'arbre : son danger dépend d'où il finit le tour, ce que la
+ * recherche ne sait pas encore. Sa sécurité est arbitrée après coup par FinalCell, cellule
+ * par cellule, via netAtFleeCell.
  */
 
 include("../../includes.leek")
@@ -22,17 +24,16 @@ include("../../includes.leek")
 class DeltaClass {
 
     /*
-     * Map des dégâts nets [id -> net] sur 1 round.
+     * Map des dégâts nets [id -> net] sur 1 round. Me en est ABSENT : son terme de scoring
+     * ne consomme plus de danger projeté.
      *
      * @param State [id -> stats]
      * @param BaseHash hash (id, cellule) des vivants
      * @param contextBySide [side -> hash de l'équipe adverse], patché sur les nœuds
      * @param hfpBySide [side -> fingerprint des healers], construit par l'appelant
-     * @param meWalkFp empreinte de mobilité de Me pour CET état — consommée par le seul
-     *        minDeltaForMe, ignorée des autres entités
      * @return [id -> net]
      */
-    static getNetDamageMap(State, BaseHash, contextBySide, hfpBySide, meWalkFp) {
+    static getNetDamageMap(State, BaseHash, contextBySide, hfpBySide) {
         BenchOps.Start("Delta")
 
         // Fingerprint combiné = fold XOR des fps par side reçus (même source unique
@@ -45,8 +46,8 @@ class DeltaClass {
 
         var _final = [: ]
         for (var e: var stat in State) {
-            if (stat.LIFE <= 0) continue
-            _final[e] = netOf(e, stat, State, BaseHash, contextBySide, hfpBySide, healMap, meWalkFp)
+            if (stat.LIFE <= 0 || e == Me) continue
+            _final[e] = netOf(e, stat, State, BaseHash, contextBySide, hfpBySide, healMap)
         }
 
         BenchOps.Stop("Delta")
@@ -69,10 +70,12 @@ class DeltaClass {
 
     /*
      * Dégâts nets d'UNE entité — le corps par-entité de getNetDamageMap, extrait pour que le
-     * scoring incrémental recalcule un seul terme par la même machinerie.
-     * Caché : NETDAMAGE_CACHE pour les autres, les deux caches de fuite pour Me.
+     * scoring incrémental recalcule un seul terme par la même machinerie. Caché par
+     * NETDAMAGE_CACHE.
+     * CONTRAT : jamais appelée pour Me — il n'est pas encore posé quand l'arbre le score, et
+     * son terme est statique (ScoringClass.termDelta).
      */
-    static netOf(e, stat, State, BaseHash, contextBySide, healersFingerprintBySide, healMap, meWalkFp) {
+    static netOf(e, stat, State, BaseHash, contextBySide, healersFingerprintBySide, healMap) {
         // Contexte offensif et antidote lus UNE fois, puis transportés en scalaires : aucun
         // lecteur profond ne relit contextBySide ni ne recalcule le cooldown.
         var targetSide = stat.SIDE
@@ -82,12 +85,7 @@ class DeltaClass {
         // Map totale (HealClass.buildHfpBySide) : lecture directe, le 0-défaut y est écrit.
         var hfp = healersFingerprintBySide[targetSide]
 
-        if (e == Me) {
-            // Me BOUGE ce tour : min du net sur mes cellules accessibles.
-            return minDeltaForMe(stat, State, BaseHash, offensiveContextHash, targetSeed, antidoteCd, hfp, healMap, meWalkFp)
-        }
-
-        // Les autres ne bougent pas -> net à leur cellule courante. Une entité intouchée
+        // Personne ne bouge -> net à sa cellule courante. Une entité intouchée
         // garde la même clé d'un nœud à l'autre -> hit, tout le déroulé est sauté.
         // Salée par TYPE_TAG = (id, IS_SUMMON) : le PROFIL de couverture heal (poireau/summon)
         // est un input du net depuis la vitalité. Le tag est posé à la construction et immuable.
@@ -124,92 +122,21 @@ class DeltaClass {
     }
 
     /*
-     * Net minimal de Me ce tour = min sur mes cellules accessibles du net à cette cellule
-     * (danger et heal séquencés au même endroit). Deux niveaux de cache : externe = le min
-     * entier par état de Me + set accessible, interne = le net d'une cellule.
+     * Graine du net de Me à une cellule : tout ce qui le fixe SAUF la cellule — contexte
+     * ennemi + mes shields et mon antidote (targetSeed), mes soigneurs (hfp), ma vie courante
+     * et max (cap du heal, coupure à 0), et mon PROFIL de cible heal (id, IS_SUMMON).
+     * UN seul chaînage : les champs locaux sont packés dans des slots DISJOINTS, avec les dix
+     * bits bas laissés libres pour la cellule. Invariants : cellule <= 612 (bits 0-9),
+     * id < 64 (bits 11-16), TOTAL_LIFE et LIFE sur leurs slots de 16 bits (17-32 et 33-48).
      */
-    static minDeltaForMe(MeStats, State, BaseHash, offensiveContextHash, targetSeed, antidoteCd, hfp, healMap, meWalkFp) {
-        // seed = tout ce qui fixe net(cellule) SAUF la cellule : contexte ennemi + mes shields
-        // et mon antidote (targetSeed), mes healers (hfp), ma vie courante et max (cap du heal,
-        // coupure à 0), et mon PROFIL de cible heal (id, IS_SUMMON).
-        // UN seul chaînage : les champs locaux sont packés dans des slots DISJOINTS, avec les
-        // dix bits bas laissés libres pour la cellule. Invariants : cellule <= 612 (bits 0-9),
-        // id < 64 (bits 11-16), TOTAL_LIFE et LIFE sur leurs slots de 16 bits (17-32 et 33-48).
-        var seed = addValueToBinHash(targetSeed ^ hfp,
+    static fleeSeedOf(MeStats, targetSeed, hfp) {
+        return addValueToBinHash(targetSeed ^ hfp,
             (MeStats.LIFE << 33) | (MeStats.TOTAL_LIFE << 17) | (Me << 11) | (MeStats.IS_SUMMON ? 1024 : 0))
-
-        // Externe : même état de Me sur le même TERRAIN -> recherche entière sautée. BaseHash
-        // dans la clé : le DOMAINE du min est mes cellules accessibles, qui dépendent des
-        // obstacles (un allié qui apparaît ou bouge le réduit sans toucher seed ni walkHash).
-        // meWalkFp est celle du nœud, déjà calculée par Node/BFS. Aucune rotation n'est
-        // nécessaire pour séparer les deux niveaux : ce sont deux MAPS distinctes.
-        var outerKey = seed ^ addValueToBinHash(BaseHash, meWalkFp)
-        if (outerKey in ENTITY_DELTA_CACHE_FOR_ME) return ENTITY_DELTA_CACHE_FOR_ME[outerKey]
-
-        var myWalkCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
-
-        // Une cellule qui a rendu 0 pour cette graine le rend TOUJOURS : le net à une cellule
-        // ne dépend que de (graine, cellule). Si l'une d'elles est encore accessible, le minimum
-        // est imbattable et aucune cellule n'a besoin d'être balayée. Sinon la recherche reprend
-        // normalement — l'indice n'est jamais lu autrement que comme un raccourci exact.
-        // Parcours à l'ENVERS : la plus récemment trouvée est la plus susceptible de tenir.
-        if (seed in SAFE_CELL_FOR_ME_CACHE) {
-            var hints = SAFE_CELL_FOR_ME_CACHE[seed]
-            for (var hi = count(hints) - 1; hi >= 0; hi--) {
-                if (hints[hi] in myWalkCells) {
-                    ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0
-                    return 0
-                }
-            }
-        }
-
-        // Le minimum est commutatif : l'ordre d'évaluation ne change AUCUNE valeur, et un zéro
-        // est imbattable donc il coupe le balayage. Réordonner est donc exact — et c'est tout
-        // l'intérêt de la première passe ci-dessous.
-        var minDelta = MAX_VALUE
-        var dangerCellSeed = DangerClass.cellCacheSeed(targetSeed, MeStats.ID)
-        var mySide = MeStats.SIDE
-        // Objets partagés par tout le balayage (plan, buckets, trois séquences), créés au
-        // PREMIER vrai miss et pas avant. Dans un tableau parce que le balayage se fait en deux
-        // passes : des locales ne pourraient pas les partager entre les deux.
-        var lazy = [null, null, null, null]
-
-        // PREMIÈRE PASSE — les cellules qui ont rendu 0 sous une AUTRE graine de ce tour. Ce ne
-        // sont que des CANDIDATS : ils sont évalués normalement, rien n'est présumé. Elles
-        // appartiennent de toute façon au balayage qui suit (qui les retrouvera dans le cache
-        // interne), donc la passe ne coûte que ses tests d'accessibilité — et quand elle trouve
-        // un zéro, elle épargne toutes les cellules FROIDES du balayage restant.
-        var nAny = count(SAFE_ANY_CELLS)
-        for (var ai = nAny - 1; ai >= 0; ai--) {
-            var hc = SAFE_ANY_CELLS[ai]
-            if (!(hc in myWalkCells)) continue
-            var hd = netAtFleeCell(hc, seed, dangerCellSeed, MeStats, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy)
-            if (hd == 0) {
-                rememberSafeCell(seed, hc)
-                ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0
-                return 0
-            }
-            if (hd < minDelta) minDelta = hd
-        }
-
-        for (var cell: var mp in myWalkCells) {
-            var delta = netAtFleeCell(cell, seed, dangerCellSeed, MeStats, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy)
-            if (delta < minDelta) {
-                if (delta == 0) {   // imbattable
-                    rememberSafeCell(seed, cell)
-                    rememberSafeAnyCell(cell)
-                    ENTITY_DELTA_CACHE_FOR_ME[outerKey] = 0
-                    return 0
-                }
-                minDelta = delta
-            }
-        }
-        ENTITY_DELTA_CACHE_FOR_ME[outerKey] = minDelta
-        return minDelta
     }
 
     /*
-     * Net de Me à UNE cellule de fuite : servi par le cache interne, sinon évalué à froid.
+     * Net de Me à UNE cellule où il pourrait finir le tour : servi par le cache interne,
+     * sinon évalué à froid. Source unique du danger de placement (FinalCell).
      * `lazy` porte les objets communs à tout le balayage — [plan, buckets, séquence de
      * couverture, séquence de net] — matérialisés au premier vrai besoin.
      */
@@ -238,22 +165,6 @@ class DeltaClass {
         }
         CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
         return delta
-    }
-
-    /* Indice EXACT : cette cellule rend 0 pour CETTE graine, donc le minimum y est imbattable. */
-    static rememberSafeCell(seed, cell) {
-        var hints = seed in SAFE_CELL_FOR_ME_CACHE ? SAFE_CELL_FOR_ME_CACHE[seed] : (SAFE_CELL_FOR_ME_CACHE[seed] = [])
-        push(hints, cell)
-    }
-
-    /* Indice HEURISTIQUE, toutes graines : une cellule sûre sous une graine l'est souvent sous
-     * les autres (elle est simplement loin des menaces). Borné, sinon la première passe finirait
-     * par coûter plus que ce qu'elle épargne. */
-    static rememberSafeAnyCell(cell) {
-        if (cell in SAFE_ANY_SET) return;
-        if (count(SAFE_ANY_CELLS) >= SAFE_ANY_MAX) return;
-        SAFE_ANY_SET[cell] = true
-        push(SAFE_ANY_CELLS, cell)
     }
 
     /*

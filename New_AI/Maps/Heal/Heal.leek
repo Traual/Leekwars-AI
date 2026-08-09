@@ -2,7 +2,7 @@
  * Heal map : le symétrique de la danger map, pour le soin. Les healers des DEUX camps sont
  * modélisés (un heal ennemi amortit ma pression de kill sur sa cible).
  *
- *   getHealMap(State) -> [casterId -> [ALLY_LEEK | ALLY_SUMMON -> [cell -> [heal, vitalité]]]]
+ *   [casterId -> [ALLY_LEEK | ALLY_SUMMON -> [cell -> [heal, vitalité]]]]
  *
  * Pour chaque caster vivant qui peut soigner (SAUF Me : mes heals sont le travail du BFS),
  * sa "couverture" : ce qu'il peut poser sur une cible de son camp à chaque cellule,
@@ -99,23 +99,6 @@ class HealClass {
             if (c != 0) _final[stat.SIDE] ^= c
         }
         return _final
-    }
-
-    /*
-     * Entrée sans argument : scanne State pour construire fingerprint + liste des casters,
-     * puis délègue. Pour les appelants qui ne parcourent pas déjà State (FinalCell).
-     */
-    static getHealMap(State) {
-        var fp = 0
-        var casters = []
-        for (var e: var stat in State) {
-            var c = healerContributionOf(stat, e)
-            if (c != 0) {
-                fp ^= c
-                push(casters, e)
-            }
-        }
-        return getHealMapPrecomputed(State, fp, casters)
     }
 
     /*

@@ -7,6 +7,10 @@
  *   ttk           = rounds avant la mort sous la pression    // HORIZON : danger net + traînée périodique
  *   value       = BASE_ALIVE + W_LIFE·sqrt(afterPeriodic) + W_TTK·g(ttk) + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)
  *   term        = sign · (importance·value + capability + drDeterrence)
+ * Me fait exception : son terme est STATIQUE (danger = 0). Là où il finira le tour n'est pas
+ * décidé pendant la recherche, projeter des attaques sur lui n'aurait donc aucun support.
+ * Sa sécurité est arbitrée après coup, par la pénalité de placement de FinalCell.
+ *
  * score = Σ term.  sign = +1 allié, −1 ennemi. Les morts contribuent 0 -> BASE_ALIVE
  * apporte une contribution fixe d'être vivant, importance·BASE_ALIVE (le terme complet
  * retiré par un kill ajoute le reste de survival, capability — possiblement négative — et
@@ -32,12 +36,18 @@ class ScoringClass {
      * hfpBySide et poisonKey sont construits UNE seule fois par l'appelant (racine du BFS)
      * et réutilisés ici, jamais reconstruits.
      */
-    static buildTermsMap(State, MySide, BaseHash, contextBySide, hfpBySide, poisonKey, meWalkFp) {
+    static buildTermsMap(State, MySide, BaseHash, contextBySide, hfpBySide, poisonKey) {
         BenchOps.Start("Scoring")
-        var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash, contextBySide, hfpBySide, meWalkFp)
+        var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash, contextBySide, hfpBySide)
         var terms = [: ]
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
+            if (e == Me) {
+                // Terme STATIQUE de Me : danger nul, donc drDeterrence nul aussi (les retours
+                // s'arrêtent à min(net, LIFE)). Signe toujours +1, Me étant de mon camp.
+                terms[e] = ImportanceClass.get(stat) * survivalValue(stat, 0, State, poisonKey) + ImportanceClass.capability(stat)
+                continue
+            }
             var sign = (stat.SIDE == MySide) ? 1 : -1
             terms[e] = sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e], State, poisonKey) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
         }
@@ -115,7 +125,6 @@ class ScoringClass {
         var nBase = node.BASE_HASH
         var nCtx = node.CONTEXT_BY_SIDE
         var nHfp = node.HFP_BY_SIDE
-        var nWalk = node.ME_WALK_FINGERPRINT
         var nPoison = node.POISON_KEY
 
         var delta = 0
@@ -126,7 +135,7 @@ class ScoringClass {
             // Cas courant : le masque du Node a déjà déterminé les termes locaux sales.
             // La valeur PORTE l'état d'après l'action : plus besoin de rouvrir l'état.
             for (var e: var stat in node.LOCAL_TERM_DIRTY) {
-                delta += termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, nBase, nCtx, nHfp, nWalk, nPoison)
+                delta += termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, nBase, nCtx, nHfp, nPoison)
             }
         } else {
             for (var e: var stat in State) {
@@ -135,25 +144,25 @@ class ScoringClass {
                 if (stat.LIFE <= 0 && !(e in cloned)) continue
                 // Terme local déjà sale : aucun test de dépendance à payer.
                 if (e in node.LOCAL_TERM_DIRTY) {
-                    delta += termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, nBase, nCtx, nHfp, nWalk, nPoison)
+                    delta += termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, nBase, nCtx, nHfp, nPoison)
                     continue
                 }
-                var globalDirty = (healChanged != null && stat.SIDE in healChanged)
-                    || (coefChanged && stat.POISON_OVER_TIME > 0)
-                if (!globalDirty && hasDirtyCasters) {
-                    if (casterDeps == null) casterDeps = buildCasterDeps(node, State)
-                    if (e == Me) {
-                        // Me se déplace : son danger dépend de TOUT son domaine de fuite, pas de
-                        // sa seule cellule. Non localement sale -> BaseHash et empreinte de
-                        // marche inchangés (check du Node), donc le domaine ENFANT est exact.
-                        globalDirty = dangerAffectsCells(casterDeps, stat.SIDE, WalkCellsClass.getMaxLayer(State, Me, node.BASE_HASH))
-                    } else {
-                        // Les autres encaissent à leur cellule courante : un seul test.
+                if (e == Me) {
+                    // Le terme de Me ne consomme ni danger projeté ni soins projetés : le seul
+                    // canal global qui puisse le salir est la couverture antidote, qui module
+                    // son poison résiduel.
+                    if (!(coefChanged && stat.POISON_OVER_TIME > 0)) continue
+                } else {
+                    var globalDirty = (healChanged != null && stat.SIDE in healChanged)
+                        || (coefChanged && stat.POISON_OVER_TIME > 0)
+                    if (!globalDirty && hasDirtyCasters) {
+                        if (casterDeps == null) casterDeps = buildCasterDeps(node, State)
+                        // Chacun encaisse à sa cellule courante : un seul test.
                         globalDirty = dangerAffectsCell(casterDeps, stat.SIDE, stat.CELL)
                     }
+                    if (!globalDirty) continue
                 }
-                if (!globalDirty) continue
-                delta += termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, nBase, nCtx, nHfp, nWalk, nPoison)
+                delta += termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, nBase, nCtx, nHfp, nPoison)
             }
         }
         // La map n'est utile qu'à CE scoring : les hits du ScoredCache refabriquent un
@@ -223,36 +232,24 @@ class ScoringClass {
         return false
     }
 
-    /* Même prédicat sur un DOMAINE de cellules (la fuite de Me) : vrai dès la première
-     * intersection, les tests de camp étant sortis de la boucle interne. */
-    static dangerAffectsCells(Deps, TargetSide, Cells) {
-        var n = count(Deps)
-        for (var i = 0; i < n; i += 4) {
-            var oldMap = Deps[i + 1]
-            var useOld = (oldMap != null && TargetSide != Deps[i])
-            var newMap = Deps[i + 3]
-            var useNew = (newMap != null && TargetSide != Deps[i + 2])
-            if (!useOld && !useNew) continue
-            for (var cell: var mp in Cells) {
-                if (useOld && (cell in oldMap)) return true
-                if (useNew && (cell in newMap)) return true
-            }
-        }
-        return false
-    }
-
     /* newTerm(e) − oldTerm(e) ; l'ancien terme est résolu dans la chaîne de snapshots
-     * (termOf), le nouveau n'est écrit QUE dans le patch local du nœud. */
-    static termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, NodeBaseHash, NodeContext, NodeHfp, NodeWalkFp, NodePoisonKey) {
+     * (termOf), le nouveau n'est écrit QUE dans le patch local du nœud.
+     * L'importance est figée par replan et vit dans une map par id : la lire ici, avec la clé
+     * déjà en main, évite l'appel et la relecture de l'id. L'appel reste le repli au tout
+     * premier calcul d'un id, et demeure le SEUL écrivain de la map. */
+    static termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, NodeBaseHash, NodeContext, NodeHfp, NodePoisonKey) {
         var newTerm = 0
         if (stat.LIFE > 0) {
-            var sign = (stat.SIDE == MySide) ? 1 : -1
-            var net = DeltaClass.netOf(e, stat, State, NodeBaseHash, NodeContext, NodeHfp, healMap, NodeWalkFp)
-            // L'importance est figée par replan et vit dans une map par id : la lire ici, avec
-            // la clé déjà en main, évite l'appel et la relecture de l'id. L'appel reste le repli
-            // au tout premier calcul d'un id, et demeure le SEUL écrivain de la map.
-            newTerm = sign * (((e in IMPORTANCE_BY_ID) ? IMPORTANCE_BY_ID[e] : ImportanceClass.get(stat)) * survivalValue(stat, net, State, NodePoisonKey) + ImportanceClass.capability(stat)
-                + (stat.DAMAGE_RETURN > 0 ? drDeterrence(stat, net, State) : 0))
+            if (e == Me) {
+                // Terme STATIQUE : aucun danger positionnel, donc pas de drDeterrence non plus.
+                // Sa sécurité est arbitrée après la recherche, par la pénalité de FinalCell.
+                newTerm = ((e in IMPORTANCE_BY_ID) ? IMPORTANCE_BY_ID[e] : ImportanceClass.get(stat)) * survivalValue(stat, 0, State, NodePoisonKey) + ImportanceClass.capability(stat)
+            } else {
+                var sign = (stat.SIDE == MySide) ? 1 : -1
+                var net = DeltaClass.netOf(e, stat, State, NodeBaseHash, NodeContext, NodeHfp, healMap)
+                newTerm = sign * (((e in IMPORTANCE_BY_ID) ? IMPORTANCE_BY_ID[e] : ImportanceClass.get(stat)) * survivalValue(stat, net, State, NodePoisonKey) + ImportanceClass.capability(stat)
+                    + (stat.DAMAGE_RETURN > 0 ? drDeterrence(stat, net, State) : 0))
+            }
         }
         var oldTerm = termOf(ParentTermNode, e)
         termsPatch[e] = newTerm
