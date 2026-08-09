@@ -42,14 +42,15 @@ class ScoringClass {
         var terms = [: ]
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
+            var w = REPLAN_WEIGHTS.entityWeights(e, stat)
             if (e == Me) {
                 // Terme STATIQUE de Me : danger nul, donc drDeterrence nul aussi (les retours
                 // s'arrêtent à min(net, LIFE)). Signe toujours +1, Me étant de mon camp.
-                terms[e] = ImportanceClass.get(stat) * survivalValue(stat, 0, State, poisonKey) + ImportanceClass.capability(stat)
+                terms[e] = w.SURVIVAL * survivalValue(stat, 0, State, poisonKey) + w.CAPABILITY * ImportanceClass.capability(stat)
                 continue
             }
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            terms[e] = sign * (ImportanceClass.get(stat) * survivalValue(stat, netDamageMap[e], State, poisonKey) + ImportanceClass.capability(stat) + drDeterrence(stat, netDamageMap[e], State))
+            terms[e] = sign * (w.SURVIVAL * survivalValue(stat, netDamageMap[e], State, poisonKey) + w.CAPABILITY * ImportanceClass.capability(stat) + w.DR * drDeterrence(stat, netDamageMap[e], State))
         }
         BenchOps.Stop("Scoring")
         return terms
@@ -234,21 +235,21 @@ class ScoringClass {
 
     /* newTerm(e) − oldTerm(e) ; l'ancien terme est résolu dans la chaîne de snapshots
      * (termOf), le nouveau n'est écrit QUE dans le patch local du nœud.
-     * L'importance est figée par replan et vit dans une map par id : la lire ici, avec la clé
-     * déjà en main, évite l'appel et la relecture de l'id. L'appel reste le repli au tout
-     * premier calcul d'un id, et demeure le SEUL écrivain de la map. */
+     * Les coefficients viennent du contexte de poids du replan, immuable pendant toute la
+     * recherche : une seule lecture par terme, et les champs ensuite. */
     static termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, NodeBaseHash, NodeContext, NodeHfp, NodePoisonKey) {
         var newTerm = 0
         if (stat.LIFE > 0) {
+            var w = REPLAN_WEIGHTS.entityWeights(e, stat)
             if (e == Me) {
                 // Terme STATIQUE : aucun danger positionnel, donc pas de drDeterrence non plus.
                 // Sa sécurité est arbitrée après la recherche, par la pénalité de FinalCell.
-                newTerm = ((e in IMPORTANCE_BY_ID) ? IMPORTANCE_BY_ID[e] : ImportanceClass.get(stat)) * survivalValue(stat, 0, State, NodePoisonKey) + ImportanceClass.capability(stat)
+                newTerm = w.SURVIVAL * survivalValue(stat, 0, State, NodePoisonKey) + w.CAPABILITY * ImportanceClass.capability(stat)
             } else {
                 var sign = (stat.SIDE == MySide) ? 1 : -1
                 var net = DeltaClass.netOf(e, stat, State, NodeBaseHash, NodeContext, NodeHfp, healMap)
-                newTerm = sign * (((e in IMPORTANCE_BY_ID) ? IMPORTANCE_BY_ID[e] : ImportanceClass.get(stat)) * survivalValue(stat, net, State, NodePoisonKey) + ImportanceClass.capability(stat)
-                    + (stat.DAMAGE_RETURN > 0 ? drDeterrence(stat, net, State) : 0))
+                newTerm = sign * (w.SURVIVAL * survivalValue(stat, net, State, NodePoisonKey) + w.CAPABILITY * ImportanceClass.capability(stat)
+                    + (stat.DAMAGE_RETURN > 0 ? w.DR * drDeterrence(stat, net, State) : 0))
             }
         }
         var oldTerm = termOf(ParentTermNode, e)

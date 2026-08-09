@@ -1,0 +1,111 @@
+/*
+ * Poids de scoring d'une PLANIFICATION.
+ *
+ * Le scoring additionne des composantes de natures différentes (survie, kit, dissuasion,
+ * placement). Chacune porte aujourd'hui un coefficient calculé en dur. Les trois classes de
+ * ce fichier extraient ces coefficients dans des objets IMMUABLES construits une fois par
+ * replan, pour qu'une source apprise puisse un jour les produire à la place de la formule
+ * historique sans que le scoring ni FinalCell aient à changer.
+ *
+ * Les champs correspondent aux composantes RÉELLEMENT indépendantes de la formule courante.
+ * Ce que la formule ne sépare pas, ces classes ne le séparent pas non plus :
+ *   - SURVIVAL multiplie la valeur de survie ENTIÈRE. Le fait d'être en vie, la vie brute,
+ *     l'horizon de mort et la vie max vivent dans cette somme et sont mémoïsés ensemble
+ *     (SURVIVAL_CACHE). Leur donner des poids distincts suppose d'abord de scinder
+ *     survivalValue en composantes — ce que ce lot ne fait pas, pour rester au bit près.
+ *   - Aucun terme d'accès aux soins n'existe dans la pénalité de placement : il n'y a donc
+ *     pas de champ pour lui.
+ */
+
+include("../includes.leek")
+
+/*
+ * Coefficients d'UNE entité. Immuable : construit par la fabrique, jamais muté ensuite.
+ *
+ *   terme    = SURVIVAL · survivalValue + CAPABILITY · capability + DR · drDeterrence
+ *   placement += FINAL_DISTANCE · éloignement + FINAL_COVID (dans le rayon de contagion)
+ */
+class EntityWeightsClass {
+	SURVIVAL         // multiplie la valeur de survie entière
+	CAPABILITY       // multiplie le canal des buffs et debuffs
+	DR               // multiplie la dissuasion des porteurs de renvoi de degats
+	FINAL_DISTANCE   // poids d'éloignement de cette entité dans la pénalité de placement
+	FINAL_COVID      // coût de contagion attaché à cette entité, nul si je ne suis pas contagieux
+	constructor(Survival, Capability, Dr, FinalDistance, FinalCovid) {
+		this.SURVIVAL = Survival
+		this.CAPABILITY = Capability
+		this.DR = Dr
+		this.FINAL_DISTANCE = FinalDistance
+		this.FINAL_COVID = FinalCovid
+	}
+}
+
+/*
+ * Coefficients GLOBAUX de la pénalité de placement — ceux qui ne s'attachent à aucune entité.
+ *
+ *   pénalité = DANGER · perte de survie + CENTER · éloignement du centre
+ *            + CROWDING (allié trop proche) + Σ des composantes par entité
+ */
+class FinalCellWeightsClass {
+	DANGER     // multiplie la perte de valeur de survie à la cellule
+	CENTER     // multiplie l'éloignement au centre de la carte
+	CROWDING   // pénalité forfaitaire d'un allié dans le rayon anti-AoE
+	constructor(Danger, Center, Crowding) {
+		this.DANGER = Danger
+		this.CENTER = Center
+		this.CROWDING = Crowding
+	}
+}
+
+/*
+ * Le contexte de poids d'une planification, IMMUABLE pendant toute la recherche.
+ *
+ * Ne vit ni dans les EntityState ni dans les nœuds : un seul objet, partagé par le scoring et
+ * par FinalCell, donc deux branches sœurs voient exactement le même. Reconstruit à CHAQUE
+ * planification réelle, pas seulement à chaque tour.
+ */
+class ReplanWeightsClass {
+	ENTITY_WEIGHTS_BY_ID   // [id -> EntityWeightsClass]
+	SUMMON_WEIGHTS         // [(invocateur, signature de stats) -> EntityWeightsClass] : deux
+	                       // invocations INDISCERNABLES du même invocateur partagent leurs poids.
+	                       // Le modèle ne porte pas d'identifiant de gabarit et ce lot n'en
+	                       // invente pas : la signature des stats dont les poids dépendent joue
+	                       // ce rôle, et elle ne dépend d'aucun id attribué à l'exécution.
+	FINAL_CELL_WEIGHTS     // FinalCellWeightsClass
+	GLOBAL_EMBEDDING       // représentation du contexte de combat, null tant qu'aucun réseau ne tourne
+	constructor(FinalCellWeights, GlobalEmbedding) {
+		this.ENTITY_WEIGHTS_BY_ID = [: ]
+		this.SUMMON_WEIGHTS = [: ]
+		this.FINAL_CELL_WEIGHTS = FinalCellWeights
+		this.GLOBAL_EMBEDDING = GlobalEmbedding
+	}
+
+	/*
+	 * Poids d'une entité. La table est semée au début du replan pour tout ce que l'état
+	 * connaissait alors, vivant ou mort — une entité qui ressuscite en branche retrouve donc
+	 * ses poids par son id, sans jamais rien recalculer.
+	 *
+	 * Une entité NÉE en branche (invocation) n'y est pas : ses poids sont alors construits à
+	 * la demande depuis son état réel, puis rangés sous son id ET sous son couple
+	 * (invocateur, gabarit). Aucun appelant ne peut donc recevoir de poids nuls.
+	 */
+	entityWeights(id, stat) {
+		if (id in this.ENTITY_WEIGHTS_BY_ID) return this.ENTITY_WEIGHTS_BY_ID[id]
+		var w = null
+		if (stat.IS_SUMMON) {
+			// Invocation née en branche : deux invocations indiscernables du même invocateur
+			// partagent leurs poids, sans jamais passer par leur id d'exécution.
+			var k = HistoricalWeightsFactory.summonKey(stat)
+			if (k in this.SUMMON_WEIGHTS) {
+				w = this.SUMMON_WEIGHTS[k]
+			} else {
+				w = HistoricalWeightsFactory.forEntity(stat)
+				this.SUMMON_WEIGHTS[k] = w
+			}
+		} else {
+			w = HistoricalWeightsFactory.forEntity(stat)
+		}
+		this.ENTITY_WEIGHTS_BY_ID[id] = w
+		return w
+	}
+}

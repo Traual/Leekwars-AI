@@ -47,6 +47,7 @@ function ReloadCacheNewTurn() {
     // Frontière de tour : les nets qu'ils portent dérivent de listes d'items filtrées par
     // cooldown (DANGER_ENTITY_CACHE), que leurs clés n'encodent pas. Vidage inconditionnel.
     GRAV_COVID_VALUE = null
+    REPLAN_WEIGHTS = null
     PLACEMENT_PLAN_IMP = null
     PLACEMENT_PLAN_COVID = null
     PLACEMENT_COST_CACHE = [: ]
@@ -318,6 +319,10 @@ global GRAV_COVID_VALUE = null
 
 // Les deux entrées des caches de placement que leurs clés n'encodent pas, telles qu'elles
 // étaient à la planification précédente : elles décident si ces caches survivent au replan.
+// Contexte de poids de la planification courante (ReplanWeightsClass), immuable pendant
+// toute la recherche et partage par le scoring et par FinalCell.
+global REPLAN_WEIGHTS = null
+
 global PLACEMENT_PLAN_IMP = null
 global PLACEMENT_PLAN_COVID = null
 

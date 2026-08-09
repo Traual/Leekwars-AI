@@ -1,0 +1,75 @@
+/*
+ * Fabrique des poids HISTORIQUES : elle produit exactement les coefficients que la formule
+ * calculait en dur. Tant qu'aucun modèle appris n'est chargé, c'est elle qui alimente le
+ * contexte de poids, et le scoring doit rendre le même score au dernier bit.
+ *
+ * Correspondance, relue sur la formule effective :
+ *   terme = importance · survivalValue + capability + drDeterrence
+ *     -> SURVIVAL = importance, CAPABILITY = 1, DR = 1
+ *   pénalité de placement, part par entité (GravityClass)
+ *     -> FINAL_DISTANCE = GRAV_W_ALLY · importance pour un allié,
+ *                         GRAV_W_ENEMY · importance pour un ennemi
+ *     -> FINAL_COVID    = (GRAV_COVID_W_PER_HP · covid) · importance, nul hors contagion
+ *   pénalité de placement, part globale (FinalCell)
+ *     -> DANGER = 1 (la perte de survie porte déjà l'importance de Me),
+ *        CENTER = GRAV_W_CENTER, CROWDING = GRAV_AOE_PENALTY
+ *
+ * Les multiplications par 1 sont EXACTES sur un flottant : brancher ces poids ne déplace donc
+ * aucun bit. Les produits qui existaient déjà (poids · importance) sont écrits ici dans le
+ * même ordre gauche-à-droite qu'avant.
+ */
+
+include("../includes.leek")
+
+class HistoricalWeightsFactory {
+
+	/*
+	 * Le contexte complet d'une planification, semé pour tout ce que l'état connaît —
+	 * VIVANTS ET MORTS. Une entité qui ressuscite en branche retrouve donc ses poids par son
+	 * id, sans recalcul et sans dépendre de la branche qui l'a relevée.
+	 *
+	 * @param State état RÉEL de la planification
+	 * @param mySide mon camp, qui décide le sens de l'éloignement de chaque entité
+	 */
+	static build(State, mySide) {
+		var covidWeight = GRAV_COVID_W_PER_HP * GravityClass.covidValue()
+		var weights = new ReplanWeightsClass(
+			new FinalCellWeightsClass(1, GRAV_W_CENTER, GRAV_AOE_PENALTY), null)
+		for (var e: var stat in State) {
+			weights.ENTITY_WEIGHTS_BY_ID[e] = forEntityOn(stat, stat.SIDE == mySide, covidWeight)
+		}
+		return weights
+	}
+
+	/*
+	 * Poids d'une entité isolée, pour un cas que le semis n'avait pas vu (invocation née en
+	 * branche). Relit le camp et la contagion depuis les globals du replan courant.
+	 */
+	static forEntity(stat) {
+		return forEntityOn(stat, stat.SIDE == getSide(Me), GRAV_COVID_W_PER_HP * GravityClass.covidValue())
+	}
+
+	static forEntityOn(stat, isAlly, covidWeight) {
+		var imp = ImportanceClass.get(stat)
+		return new EntityWeightsClass(
+			imp,
+			1,
+			1,
+			(isAlly ? GRAV_W_ALLY : GRAV_W_ENEMY) * imp,
+			covidWeight > 0 ? covidWeight * imp : 0)
+	}
+
+	/*
+	 * Clé de partage d'une invocation : son invocateur et les stats dont ses poids dépendent.
+	 * Deux invocations indiscernables du même invocateur la partagent, quels que soient les
+	 * ids que l'exécution leur a donnés. Stats plancherées à 0 comme partout ailleurs dans les
+	 * clés — une stat négative étendrait son signe et écraserait les champs hauts.
+	 */
+	static summonKey(stat) {
+		var h = mix64(((stat.SUMMONER + 1) << 40) | (max(0, stat.STRENGTH) & 0xFFFFF))
+		h = mix64(h ^ ((max(0, stat.MAGIC) & 0xFFFFF) << 20) ^ (max(0, stat.WISDOM) & 0xFFFFF))
+		h = mix64(h ^ ((max(0, stat.SCIENCE) & 0xFFFFF) << 20) ^ (max(0, stat.AGILITY) & 0xFFFFF))
+		return mix64(h ^ ((max(0, stat.RESISTANCE) & 0xFFFFF) << 40)
+			^ ((max(0, stat.TOTAL_TP) & 0xFFFFF) << 20) ^ (max(0, stat.TOTAL_MP) & 0xFFFFF))
+	}
+}

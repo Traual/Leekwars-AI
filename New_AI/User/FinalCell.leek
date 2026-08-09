@@ -95,7 +95,9 @@ class FinalCell {
         // C'est la valeur que le terme statique de Me a déjà comptée dans le score — la
         // pénalité ne facture donc QUE l'écart, jamais deux fois la survie.
         var safeSurvival = ScoringClass.survivalValue(MyState, 0, State, poisonKey)
-        var myImportance = (Me in IMPORTANCE_BY_ID) ? IMPORTANCE_BY_ID[Me] : ImportanceClass.get(MyState)
+        // Coefficients de CETTE planification, lus une fois pour tout le balayage.
+        var myWeights = REPLAN_WEIGHTS.entityWeights(Me, MyState)
+        var finalWeights = REPLAN_WEIGHTS.FINAL_CELL_WEIGHTS
 
         var bestCell    = MyState.CELL
         var bestPenalty = MAX_VALUE
@@ -120,8 +122,8 @@ class FinalCell {
                 // que le terme de Me vaudrait en moins s'il encaissait ce net. Le damage
                 // return s'en retranche — un porteur monnaie les coups qu'il prend — mais ne
                 // peut pas retourner le danger en bonus : le coût est planché à zéro.
-                var loss = myImportance * (safeSurvival - ScoringClass.survivalValue(MyState, net, State, poisonKey))
-                         - ScoringClass.drDeterrence(MyState, net, State)
+                var loss = finalWeights.DANGER * (myWeights.SURVIVAL * (safeSurvival - ScoringClass.survivalValue(MyState, net, State, poisonKey)))
+                         - myWeights.DR * ScoringClass.drDeterrence(MyState, net, State)
                 if (loss > 0) penalty += loss
             }
             if (penalty < bestPenalty) {

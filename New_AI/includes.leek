@@ -34,6 +34,9 @@ include("Scoring/Scoring.leek")
 
 include("Maps/Gravity/Gravity.leek")
 
+include("Scoring/ReplanWeights.leek")
+include("Scoring/HistoricalWeights.leek")
+
 include("User/Node.leek")
 include("User/BFS.leek")
 include("User/FinalCell.leek")
