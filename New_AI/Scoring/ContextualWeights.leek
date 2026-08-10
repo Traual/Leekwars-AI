@@ -31,6 +31,12 @@ global CONTEXTUAL_WEIGHTS_ENABLED = false
 global NN_MULT_MIN = 0.25
 global NN_MULT_MAX = 4.0
 
+// Un facteur MULTIPLICATIF ne peut pas rallumer un coefficient historiquement nul : zéro fois
+// n'importe quoi reste zéro. Les coefficients qui partent de zéro reçoivent donc une
+// contribution ADDITIVE, nulle quand le modèle est neutre et bornée au-dessus. Elle reste
+// positive, donc la pénalité de placement ne peut pas changer de signe.
+global NN_ADD_MAX = 4.0
+
 // Tailles. Modifier une taille impose de refournir des paramètres de la bonne longueur :
 // les trois NN_*_IN sont des sommes des autres, tenues à jour à la main.
 global NN_ENT_FEATURES = 37
@@ -39,9 +45,9 @@ global NN_BATTLE_FEATURES = 16
 global NN_GLOBAL_IN = 32    // NN_BATTLE_FEATURES + 2 · NN_EMBED
 global NN_RELATION = 3
 global NN_ENT_HEAD_IN = 19  // NN_EMBED + NN_EMBED + NN_RELATION
-global NN_ENT_HEAD_OUT = 5  // SURVIVAL, CAPABILITY, DR, FINAL_DISTANCE, FINAL_COVID
+global NN_ENT_HEAD_OUT = 8  // ALIVE, LIFE, THREAT, MAXLIFE, CAPABILITY, DR, FINAL_DISTANCE, FINAL_COVID
 global NN_FIN_HEAD_IN = 16  // NN_EMBED + NN_EMBED
-global NN_FIN_HEAD_OUT = 3  // DANGER, CENTER, CROWDING
+global NN_FIN_HEAD_OUT = 4  // NET, HEAL_COST, CENTER, CROWDING
 
 // Paramètres appris, à plat. null = modèle NEUTRE : toutes les sorties valent 0, donc tous
 // les facteurs valent 1, donc les poids historiques sortent inchangés.
@@ -100,19 +106,18 @@ class ContextualWeightNetworkClass {
 			push(headIn, stat.IS_SUMMON ? 1 : 0)
 			var out = dense(headIn, NN_W_ENT, NN_B_ENT, NN_ENT_HEAD_IN, NN_ENT_HEAD_OUT, false)
 			var h = historical.ENTITY_WEIGHTS_BY_ID[e]
-			// La tête ne sort encore qu'UN facteur de survie, appliqué à l'identique aux quatre
-			// morceaux : ce lot ne change donc rien au réseau non plus. Leur donner des sorties
-			// distinctes, c'est le lot suivant.
-			var fSurvival = bounded(out[0])
+			// Chaque morceau de la valeur reçoit son propre facteur : le réseau peut dire qu'ici
+			// achever compte plus que gratter, ou qu'une entité vaut surtout par son capital
+			// durable. Un facteur unique ne pouvait dire que QUI compte.
 			historical.ENTITY_WEIGHTS_BY_ID[e] = new EntityWeightsClass(
-				h.ALIVE * fSurvival,
-				h.LIFE * fSurvival,
-				h.THREAT * fSurvival,
-				h.MAXLIFE * fSurvival,
-				h.CAPABILITY * bounded(out[1]),
-				h.DR * bounded(out[2]),
-				h.FINAL_DISTANCE * bounded(out[3]),
-				h.FINAL_COVID * bounded(out[4]))
+				h.ALIVE * bounded(out[0]),
+				h.LIFE * bounded(out[1]),
+				h.THREAT * bounded(out[2]),
+				h.MAXLIFE * bounded(out[3]),
+				h.CAPABILITY * bounded(out[4]),
+				h.DR * bounded(out[5]),
+				h.FINAL_DISTANCE * bounded(out[6]),
+				h.FINAL_COVID * bounded(out[7]))
 		}
 
 		// Tête de placement : plongement global et plongement de Me.
@@ -122,13 +127,13 @@ class ContextualWeightNetworkClass {
 		for (var i = 0; i < NN_EMBED; i++) push(finIn, meEmb[i])
 		var fout = dense(finIn, NN_W_FIN, NN_B_FIN, NN_FIN_HEAD_IN, NN_FIN_HEAD_OUT, false)
 		var f = historical.FINAL_CELL_WEIGHTS
-		// La tête de placement ne sort pas encore de facteur pour le coût de soin : il passe tel
-		// quel. Lui en donner un fait partie de l'élargissement des têtes.
+		// Le coût de soin part de zéro : il reçoit une contribution ADDITIVE, sinon aucun facteur
+		// ne pourrait jamais l'allumer.
 		historical.FINAL_CELL_WEIGHTS = new FinalCellWeightsClass(
 			f.NET * bounded(fout[0]),
-			f.HEAL_COST,
-			f.CENTER * bounded(fout[1]),
-			f.CROWDING * bounded(fout[2]))
+			f.HEAL_COST + additive(fout[1]),
+			f.CENTER * bounded(fout[2]),
+			f.CROWDING * bounded(fout[3]))
 		return historical
 	}
 
@@ -140,6 +145,15 @@ class ContextualWeightNetworkClass {
 	 */
 	static bounded(raw) {
 		return min(NN_MULT_MAX, max(NN_MULT_MIN, 1 + raw))
+	}
+
+	/*
+	 * Contribution ADDITIVE bornée, pour les coefficients qui partent de zéro. Sortie nulle -> 0
+	 * EXACTEMENT, donc un modèle neutre n'ajoute rien et la parité tient. Jamais négative : un
+	 * terme de pénalité doit rester positif pour que la coupure terminale reste exacte.
+	 */
+	static additive(raw) {
+		return min(NN_ADD_MAX, max(0, raw))
 	}
 
 	/*

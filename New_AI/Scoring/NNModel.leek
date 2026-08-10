@@ -4,54 +4,24 @@
  * null = aucun modele : le reseau, meme active, laisse passer les poids historiques.
  * L'entrainement ne reecrit QUE la ligne du vecteur — le reste de l'IA n'en sait rien.
  *
- * Point de controle courant : tous les parametres nuls SAUF le biais DANGER de la tete de
- * placement (avant-derniere position), a 1. Le facteur applique a la penalite de danger vaut
- * donc 1 + 1 = 2 : la securite de fin de tour pese le double de ce que la formule historique
- * lui donne.
+ * Longueur attendue, deduite des tailles declarees dans ContextualWeights :
+ *   NN_EMBED x NN_ENT_FEATURES + NN_EMBED          encodeur d'entite
+ * + NN_EMBED x NN_GLOBAL_IN    + NN_EMBED          tete globale
+ * + NN_ENT_HEAD_OUT x NN_ENT_HEAD_IN + NN_ENT_HEAD_OUT   tete d'entite
+ * + NN_FIN_HEAD_OUT x NN_FIN_HEAD_IN + NN_FIN_HEAD_OUT   tete de placement
  *
- * Trouve par balayage de ce seul biais, contre l'IA historique, en combats miroirs apparies,
- * sur le scenario 4v4 du banc :
- *   facteur 0,5 -> -0,199   facteur 1,0 -> 0 (reference)   facteur 1,5 -> +0,135
- *   facteur 2,0 -> +0,438   facteur 3,0 -> +0,234          facteur 4,0 -> +0,280
+ * PIEGE : un vecteur de la mauvaise longueur est REJETE et le reseau retombe en neutre. Le
+ * combat se joue alors exactement comme la formule historique, et rien ne le signale a part
+ * une ligne de log. Toute injection de modele doit donc verifier que la longueur correspond
+ * aux tailles courantes, et qu'un modele non nul change bien le combat.
  *
- * VERDICT : ce reglage N'APPORTE RIEN. Mesure finale sur TROIS configurations et des graines
- * neuves, 24 paires de combats miroirs :
- *   bench_4v4_full +0,171   opt_4v4_top -0,063   opt_6v6_top +0,109
- *   POOL +0,072, erreur-type 0,115 — soit 0,6 ecart-type, indistinguable de zero.
- * Le +0,438 initial etait du surapprentissage a un scenario et a un jeu de graines : les
- * valeurs par scenario changent meme de SIGNE d'un jeu de graines a l'autre.
- *
- * Ce vecteur reste comme point de controle reproductible d'une experience menee jusqu'au
- * bout, pas comme reglage de l'IA. Le commutateur est faux, il ne change donc rien.
- *
- * Ce que l'experience a coute a savoir : 127 paires, soit 254 combats, sont necessaires pour
- * resoudre un ecart de 0,10 de fitness sur ce pool. Tout entrainement futur doit budgeter
- * cela PAR EVALUATION, et tourner sur plusieurs builds — un seul scenario apprend la carte.
+ * Budget de mesure etabli : l'ecart-type d'une paire de combats miroirs est d'environ 0,83 sur
+ * une echelle [-1, 1] — le paysage est chaotique, une seule decision differente fait diverger
+ * toute la partie. Il faut donc de l'ordre de 1100 paires, soit 2200 combats, pour resoudre un
+ * ecart de 0,05 de fitness. Le duel ne peut pas servir a CHERCHER un modele, seulement a
+ * valider un candidat deja choisi.
  */
 
 include("../includes.leek")
 
-global NN_MODEL = [
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0
-]
+global NN_MODEL = null
