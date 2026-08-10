@@ -64,7 +64,8 @@ class HistoricalWeightsFactory {
 			1,
 			1,
 			(isAlly ? GRAV_W_ALLY : GRAV_W_ENEMY) * imp,
-			covidWeight > 0 ? covidWeight * imp : 0)
+			covidWeight > 0 ? covidWeight * imp : 0,
+			0)
 	}
 
 	/*

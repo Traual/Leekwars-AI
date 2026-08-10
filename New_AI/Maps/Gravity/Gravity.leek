@@ -65,15 +65,22 @@ class GravityClass {
         var fw = REPLAN_WEIGHTS.FINAL_CELL_WEIGHTS
         var cost = fw.CENTER * CellClass.getDist(cell, GRAV_CENTER_CELL) / GRAV_MAXDIST
         var n = count(ents)
-        for (var i = 0; i < n; i += 4) {
+        for (var i = 0; i < n; i += 5) {
             var d = CellClass.getDist(cell, ents[i])
             var coef = ents[i + 1]                                                  // poids · importance, déjà multipliés
+            // Distance CIBLE : le coût est nul à la distance visée et monte des DEUX côtés.
+            // À cible nulle il vaut la distance elle-même — une distance étant positive,
+            // |d − 0| est exactement d, donc la forme historique est retrouvée au bit près.
+            // C'est le seul moyen d'exprimer « reste à portée d'arme, ni plus près ni plus
+            // loin » : aucune courbe croissante ne place son minimum ailleurs qu'à zéro.
+            var t = ents[i + 4]
+            var dd = (t == 0) ? d : abs(d - t)
             if (ents[i + 2]) {                                                      // ALLIÉ
-                cost += coef * (d <= GRAV_FALLOFF_MAX ? GRAV_ALLY_FALLOFF[d] : pow(d / GRAV_MAXDIST, GRAV_ALLY_POWER))
+                cost += coef * ((t == 0 && d <= GRAV_FALLOFF_MAX) ? GRAV_ALLY_FALLOFF[d] : pow(dd / GRAV_MAXDIST, GRAV_ALLY_POWER))
                 if (d < GRAV_AOE_RADIUS) cost += fw.CROWDING                        // anti-cluster
                 if (d <= COVID_RANGE) cost += ents[i + 3]                           // épargner l'allié (mes bulbes inclus)
             } else {                                                                 // ENNEMI
-                cost += coef * d / GRAV_MAXDIST                                     // éloignement linéaire
+                cost += coef * dd / GRAV_MAXDIST                                    // éloignement à la cible
                 if (d > COVID_RANGE) cost += ents[i + 3]                            // occasion manquée de contaminer
             }
         }
@@ -107,6 +114,7 @@ class GravityClass {
             push(ents, w.FINAL_DISTANCE)
             push(ents, stat.SIDE == mySide)
             push(ents, w.FINAL_COVID)
+            push(ents, w.FINAL_DISTANCE_TARGET)
         }
         GRAV_ENTS_CACHE[BaseHash] = ents
         return ents

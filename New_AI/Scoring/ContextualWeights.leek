@@ -6,7 +6,7 @@
  *   agrégation         : somme des plongements alliés, somme des plongements ennemis —
  *                        une somme ne dépend pas de l'ordre des entités
  *   tête globale       : (traits de combat, résumé allié, résumé ennemi) -> plongement global
- *   tête d'entité      : (plongement d'entité, plongement global, relation à Me) -> 8 facteurs
+ *   tête d'entité      : (plongement d'entité, plongement global, relation à Me) -> 9 facteurs
  *   tête de placement  : (plongement global, plongement de Me) -> 4 facteurs
  *
  * Le réseau ne REMPLACE pas les coefficients historiques : il les MULTIPLIE par un facteur
@@ -38,6 +38,10 @@ global NN_MULT_MAX = 4.0
 // contribution ADDITIVE, nulle quand le modèle est neutre et bornée au-dessus. Elle reste
 // positive, donc la pénalité de placement ne peut pas changer de signe.
 global NN_ADD_MAX = 4.0
+
+// Borne de la distance VISÉE, en cases. Zéro = la forme historique. Le plafond couvre les
+// portées d'arme utiles sans permettre de viser hors de la carte.
+global NN_TARGET_MAX = 12.0
 
 // Les types d'effet dont on donne au réseau la meilleure valeur en UN cast, en unités moteur
 // brutes. Volontairement sans pondération de ma part : « ce que ce kit peut produire » est un
@@ -74,7 +78,7 @@ global NN_BATTLE_FEATURES = 16
 global NN_GLOBAL_IN = 32    // NN_BATTLE_FEATURES + 2 · NN_EMBED
 global NN_RELATION = 3
 global NN_ENT_HEAD_IN = 19  // NN_EMBED + NN_EMBED + NN_RELATION
-global NN_ENT_HEAD_OUT = 8  // ALIVE, LIFE, THREAT, MAXLIFE, CAPABILITY, DR, FINAL_DISTANCE, FINAL_COVID
+global NN_ENT_HEAD_OUT = 9  // ALIVE, LIFE, THREAT, MAXLIFE, CAPABILITY, DR, FINAL_DISTANCE, FINAL_COVID, FINAL_DISTANCE_TARGET
 global NN_FIN_HEAD_IN = 16  // NN_EMBED + NN_EMBED
 global NN_FIN_HEAD_OUT = 4  // NET, HEAL_COST, CENTER, CROWDING
 
@@ -146,7 +150,9 @@ class ContextualWeightNetworkClass {
 				h.CAPABILITY * bounded(out[4]),
 				h.DR * bounded(out[5]),
 				h.FINAL_DISTANCE * bounded(out[6]),
-				h.FINAL_COVID * bounded(out[7]))
+				h.FINAL_COVID * bounded(out[7]),
+				// La distance visée part de zéro : canal additif, comme le coût de soin.
+				targetDistance(out[8]))
 		}
 
 		// Tête de placement : plongement global et plongement de Me.
@@ -183,6 +189,15 @@ class ContextualWeightNetworkClass {
 	 */
 	static additive(raw) {
 		return min(NN_ADD_MAX, max(0, raw))
+	}
+
+	/*
+	 * Distance visée, en cases. Sortie nulle -> 0 EXACTEMENT, donc la forme historique. Jamais
+	 * négative : une distance ne l'est pas, et un |d − cible| négatif casserait la positivité
+	 * de la pénalité.
+	 */
+	static targetDistance(raw) {
+		return min(NN_TARGET_MAX, max(0, raw))
 	}
 
 	/*
