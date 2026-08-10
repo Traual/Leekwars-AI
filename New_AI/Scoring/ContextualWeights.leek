@@ -33,10 +33,10 @@ global NN_MULT_MAX = 4.0
 
 // Tailles. Modifier une taille impose de refournir des paramètres de la bonne longueur :
 // les trois NN_*_IN sont des sommes des autres, tenues à jour à la main.
-global NN_ENT_FEATURES = 12
+global NN_ENT_FEATURES = 37
 global NN_EMBED = 8
-global NN_BATTLE_FEATURES = 6
-global NN_GLOBAL_IN = 22    // NN_BATTLE_FEATURES + 2 · NN_EMBED
+global NN_BATTLE_FEATURES = 16
+global NN_GLOBAL_IN = 32    // NN_BATTLE_FEATURES + 2 · NN_EMBED
 global NN_RELATION = 3
 global NN_ENT_HEAD_IN = 19  // NN_EMBED + NN_EMBED + NN_RELATION
 global NN_ENT_HEAD_OUT = 5  // SURVIVAL, CAPABILITY, DR, FINAL_DISTANCE, FINAL_COVID
@@ -163,33 +163,85 @@ class ContextualWeightNetworkClass {
 	 */
 	static entityFeatures(stat, meStat, mySide) {
 		var total = max(1, stat.TOTAL_LIFE)
+		var base = stat.BASE_STATS
 		return [
-			stat.LIFE / total,
-			total / 5000,
-			ImportanceClass.get(stat),
-			ImportanceClass.capability(stat) / 1000,
+			// Rôle
 			(stat.SIDE == mySide) ? 1 : 0,
 			stat.IS_SUMMON ? 1 : 0,
 			(stat.ID == Me) ? 1 : 0,
-			CellClass.getDist(stat.CELL, meStat.CELL) / GRAV_MAXDIST,
+			// Vitalité. La vie ABSOLUE compte autant que la fraction : un bulbe à moitié mort
+			// et un poireau à moitié mort ne sont pas la même menace.
+			stat.LIFE / total,
+			stat.LIFE / 5000,
+			total / 5000,
+			// Stats brutes
+			max(0, stat.STRENGTH) / 1000,
+			max(0, stat.MAGIC) / 1000,
+			max(0, stat.WISDOM) / 1000,
+			max(0, stat.SCIENCE) / 1000,
+			max(0, stat.AGILITY) / 1000,
+			max(0, stat.RESISTANCE) / 1000,
+			max(0, stat.POWER) / 100,
+			// Écart aux stats de base : buffé ou shacklé, et de combien. Le niveau seul ne dit
+			// pas si l'entité est en train de monter en puissance ou d'être démontée.
+			(stat.STRENGTH - base[STAT_STRENGTH]) / 500,
+			(stat.MAGIC - base[STAT_MAGIC]) / 500,
+			(stat.WISDOM - base[STAT_WISDOM]) / 500,
+			(stat.SCIENCE - base[STAT_SCIENCE]) / 500,
+			(stat.AGILITY - base[STAT_AGILITY]) / 500,
+			(stat.RESISTANCE - base[STAT_RESISTANCE]) / 500,
+			// Défenses
+			max(0, stat.ABSOLUTE_SHIELD) / 100,
+			max(0, stat.RELATIVE_SHIELD) / 100,
 			max(0, stat.DAMAGE_RETURN) / 100,
+			// Ressources, niveau et écart au base — les shackles de TP et de MP sont parmi les
+			// effets les plus lourds du jeu.
+			stat.TP / max(1, stat.TOTAL_TP),
+			stat.MP / max(1, stat.TOTAL_MP),
 			max(0, stat.TOTAL_TP) / 30,
 			max(0, stat.TOTAL_MP) / 10,
-			(stat.POISON + stat.AFTEREFFECT - stat.HEAL) / total
+			(stat.TOTAL_TP - base[STAT_TP]) / 10,
+			(stat.TOTAL_MP - base[STAT_MP]) / 5,
+			// Les six canaux périodiques SÉPARÉS. Les écraser en un net détruit exactement la
+			// distinction qui décide s'il faut nettoyer ou soigner : le poison se cure,
+			// l'aftereffect non, le soin sur la durée est amical.
+			stat.POISON / total,
+			stat.POISON_OVER_TIME / total,
+			stat.AFTEREFFECT / total,
+			stat.AFTEREFFECT_OVER_TIME / total,
+			stat.HEAL / total,
+			stat.HEAL_OVER_TIME / total,
+			// Géométrie
+			CellClass.getDist(stat.CELL, meStat.CELL) / GRAV_MAXDIST,
+			// Résumés de la formule historique. Ils partiront quand le réseau saura s'en passer.
+			ImportanceClass.get(stat),
+			ImportanceClass.capability(stat) / 1000
 		]
 	}
 
 	/* Traits du combat lui-même : de quoi distinguer une ouverture d'une fin de partie. */
 	static battleFeatures(State, meStat, mySide) {
 		var allies = 0, enemies = 0, allyLife = 0, enemyLife = 0
+		var allyImp = 0, enemyImp = 0, allyTp = 0, enemyTp = 0, allyMp = 0, enemyMp = 0
+		var distEnemyMin = GRAV_MAXDIST, distEnemySum = 0, distAllySum = 0
 		for (var e: var stat in State) {
 			if (stat.LIFE <= 0) continue
+			var d = CellClass.getDist(stat.CELL, meStat.CELL)
 			if (stat.SIDE == mySide) {
 				allies++
 				allyLife += stat.LIFE
+				allyImp += ImportanceClass.get(stat)
+				allyTp += stat.TOTAL_TP
+				allyMp += stat.TOTAL_MP
+				if (e != Me) distAllySum += d
 			} else {
 				enemies++
 				enemyLife += stat.LIFE
+				enemyImp += ImportanceClass.get(stat)
+				enemyTp += stat.TOTAL_TP
+				enemyMp += stat.TOTAL_MP
+				distEnemySum += d
+				if (d < distEnemyMin) distEnemyMin = d
 			}
 		}
 		return [
@@ -198,7 +250,24 @@ class ContextualWeightNetworkClass {
 			enemies / 6,
 			allyLife / 20000,
 			enemyLife / 20000,
-			meStat.LIFE / max(1, meStat.TOTAL_LIFE)
+			meStat.LIFE / max(1, meStat.TOTAL_LIFE),
+			// Les trois distances. Ensemble, la plus proche et la moyenne décrivent une position
+			// que ni l'une ni l'autre ne dit seule : collé à UN ennemi et loin des autres.
+			distEnemyMin / GRAV_MAXDIST,
+			(enemies > 0 ? distEnemySum / enemies : GRAV_MAXDIST) / GRAV_MAXDIST,
+			(allies > 1 ? distAllySum / (allies - 1) : GRAV_MAXDIST) / GRAV_MAXDIST,
+			// La valeur d'une équipe n'est pas son effectif : trois entités fortes et six faibles
+			// ne se jouent pas pareil.
+			allyImp / 6,
+			enemyImp / 6,
+			allyTp / 100,
+			enemyTp / 100,
+			allyMp / 50,
+			enemyMp / 50,
+			// Part physique du danger adverse : ce qui déclenche des retours de dégâts. La table
+			// est construite paresseusement au premier porteur évalué, donc elle peut ne pas
+			// exister encore ici — on ne la force pas, elle a sa propre logique de gel au tour.
+			(DR_PHYSRATIO_BY_SIDE != null && mySide in DR_PHYSRATIO_BY_SIDE) ? DR_PHYSRATIO_BY_SIDE[mySide] : 0.5
 		]
 	}
 
