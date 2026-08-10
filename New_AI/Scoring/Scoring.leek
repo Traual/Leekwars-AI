@@ -46,11 +46,11 @@ class ScoringClass {
             if (e == Me) {
                 // Terme STATIQUE de Me : danger nul, donc drDeterrence nul aussi (les retours
                 // s'arrêtent à min(net, LIFE)). Signe toujours +1, Me étant de mon camp.
-                terms[e] = w.SURVIVAL * survivalValue(stat, 0, State, poisonKey) + w.CAPABILITY * ImportanceClass.capability(stat)
+                terms[e] = survivalWeighted(stat, 0, State, poisonKey, w) + w.CAPABILITY * ImportanceClass.capability(stat)
                 continue
             }
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            terms[e] = sign * (w.SURVIVAL * survivalValue(stat, netDamageMap[e], State, poisonKey) + w.CAPABILITY * ImportanceClass.capability(stat) + w.DR * drDeterrence(stat, netDamageMap[e], State))
+            terms[e] = sign * (survivalWeighted(stat, netDamageMap[e], State, poisonKey, w) + w.CAPABILITY * ImportanceClass.capability(stat) + w.DR * drDeterrence(stat, netDamageMap[e], State))
         }
         BenchOps.Stop("Scoring")
         return terms
@@ -244,11 +244,11 @@ class ScoringClass {
             if (e == Me) {
                 // Terme STATIQUE : aucun danger positionnel, donc pas de drDeterrence non plus.
                 // Sa sécurité est arbitrée après la recherche, par la pénalité de FinalCell.
-                newTerm = w.SURVIVAL * survivalValue(stat, 0, State, NodePoisonKey) + w.CAPABILITY * ImportanceClass.capability(stat)
+                newTerm = survivalWeighted(stat, 0, State, NodePoisonKey, w) + w.CAPABILITY * ImportanceClass.capability(stat)
             } else {
                 var sign = (stat.SIDE == MySide) ? 1 : -1
                 var net = DeltaClass.netOf(e, stat, State, NodeBaseHash, NodeContext, NodeHfp, healMap)
-                newTerm = sign * (w.SURVIVAL * survivalValue(stat, net, State, NodePoisonKey) + w.CAPABILITY * ImportanceClass.capability(stat)
+                newTerm = sign * (survivalWeighted(stat, net, State, NodePoisonKey, w) + w.CAPABILITY * ImportanceClass.capability(stat)
                     + (stat.DAMAGE_RETURN > 0 ? w.DR * drDeterrence(stat, net, State) : 0))
             }
         }
@@ -339,6 +339,66 @@ class ScoringClass {
 
         SURVIVAL_CACHE[key] = value
         return value + tlTerm
+    }
+
+    /*
+     * Valeur de survie PONDÉRÉE, chacun des quatre morceaux portant son propre coefficient.
+     *
+     * Quand les quatre poids sont égaux — ce que rend la fabrique historique — la somme
+     * pondérée se factorise en un seul produit, qui est exactement le calcul d'avant : mêmes
+     * opérations, même arrondi, même cache. Factoriser n'étant PAS exact sur des flottants,
+     * c'est ce chemin rapide qui garantit la parité au bit, et non une égalité approchée.
+     */
+    static survivalWeighted(stat, danger, State, PoisonKey, w) {
+        var a = w.ALIVE
+        if (a == w.LIFE && a == w.THREAT && a == w.MAXLIFE) return a * survivalValue(stat, danger, State, PoisonKey)
+        var c = survivalComponents(stat, danger, State, PoisonKey)
+        return a * c[0] + w.LIFE * c[1] + w.THREAT * c[2] + w.MAXLIFE * c[3]
+    }
+
+    /*
+     * Les quatre morceaux de la valeur de survie, séparés : être en vie, vie courante, horizon
+     * de mort, capital durable. Même calcul que survivalValue, sans la somme finale. Emprunté
+     * seulement lorsque les poids diffèrent, donc jamais tant qu'aucun modèle ne tourne.
+     */
+    static survivalComponents(stat, danger, State, PoisonKey) {
+        var tlTerm = stat.TLSQ_MEMO
+        if (tlTerm == null) {
+            tlTerm = W_TOTAL_LIFE * sqrt(max(0, stat.TOTAL_LIFE))
+            stat.TLSQ_MEMO = tlTerm
+        }
+        var effectivePoisonRemaining = stat.POISON_OVER_TIME
+        if (effectivePoisonRemaining > 0) effectivePoisonRemaining = poisonCoefOf(stat, State, PoisonKey) * effectivePoisonRemaining
+        var netTick = stat.POISON + stat.AFTEREFFECT - stat.HEAL
+        var harmfulRemaining = max(0, effectivePoisonRemaining + stat.AFTEREFFECT_OVER_TIME - stat.HEAL_OVER_TIME)
+        var afterPeriodic = max(0, stat.LIFE - COEF_PERIODIC_TICK * netTick)
+        var tick = max(0, netTick)
+        var horizonLife = afterPeriodic
+        var pressure = danger
+        if (tick > 0 && harmfulRemaining > 0) {
+            if (afterPeriodic * tick <= (danger + tick) * harmfulRemaining) {
+                pressure = danger + tick
+            } else {
+                horizonLife = afterPeriodic - harmfulRemaining
+            }
+        }
+        var threat = 0
+        if (horizonLife > 0) threat = W_TTK * horizonLife / (horizonLife + TTK_HALF * pressure)
+        return [BASE_ALIVE, W_LIFE * sqrt(afterPeriodic), threat, tlTerm]
+    }
+
+    /*
+     * Perte de valeur de survie qu'un net infligerait, pondérée morceau par morceau. La valeur
+     * SANS danger est invariante sur tout un balayage de cellules : elle arrive déjà calculée,
+     * sous ses deux formes — la somme pour le chemin factorisé, les morceaux pour l'autre.
+     * Même raison de garder le chemin factorisé qu'ailleurs : a·(sûr − net) et a·sûr − a·net ne
+     * rendent pas le même flottant.
+     */
+    static survivalLossWeighted(stat, safeValue, safeParts, danger, State, PoisonKey, w) {
+        var a = w.ALIVE
+        if (a == w.LIFE && a == w.THREAT && a == w.MAXLIFE) return a * (safeValue - survivalValue(stat, danger, State, PoisonKey))
+        var c = survivalComponents(stat, danger, State, PoisonKey)
+        return a * (safeParts[0] - c[0]) + w.LIFE * (safeParts[1] - c[1]) + w.THREAT * (safeParts[2] - c[2]) + w.MAXLIFE * (safeParts[3] - c[3])
     }
 
     /*

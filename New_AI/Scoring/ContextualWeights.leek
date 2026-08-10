@@ -100,8 +100,15 @@ class ContextualWeightNetworkClass {
 			push(headIn, stat.IS_SUMMON ? 1 : 0)
 			var out = dense(headIn, NN_W_ENT, NN_B_ENT, NN_ENT_HEAD_IN, NN_ENT_HEAD_OUT, false)
 			var h = historical.ENTITY_WEIGHTS_BY_ID[e]
+			// La tête ne sort encore qu'UN facteur de survie, appliqué à l'identique aux quatre
+			// morceaux : ce lot ne change donc rien au réseau non plus. Leur donner des sorties
+			// distinctes, c'est le lot suivant.
+			var fSurvival = bounded(out[0])
 			historical.ENTITY_WEIGHTS_BY_ID[e] = new EntityWeightsClass(
-				h.SURVIVAL * bounded(out[0]),
+				h.ALIVE * fSurvival,
+				h.LIFE * fSurvival,
+				h.THREAT * fSurvival,
+				h.MAXLIFE * fSurvival,
 				h.CAPABILITY * bounded(out[1]),
 				h.DR * bounded(out[2]),
 				h.FINAL_DISTANCE * bounded(out[3]),
@@ -116,7 +123,7 @@ class ContextualWeightNetworkClass {
 		var fout = dense(finIn, NN_W_FIN, NN_B_FIN, NN_FIN_HEAD_IN, NN_FIN_HEAD_OUT, false)
 		var f = historical.FINAL_CELL_WEIGHTS
 		historical.FINAL_CELL_WEIGHTS = new FinalCellWeightsClass(
-			f.DANGER * bounded(fout[0]),
+			f.NET * bounded(fout[0]),
 			f.CENTER * bounded(fout[1]),
 			f.CROWDING * bounded(fout[2]))
 		return historical

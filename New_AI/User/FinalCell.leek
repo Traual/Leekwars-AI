@@ -98,6 +98,13 @@ class FinalCell {
         // Coefficients de CETTE planification, lus une fois pour tout le balayage.
         var myWeights = REPLAN_WEIGHTS.entityWeights(Me, MyState)
         var finalWeights = REPLAN_WEIGHTS.FINAL_CELL_WEIGHTS
+        // Morceaux de la survie sans danger, eux aussi invariants sur tout le balayage. Ils ne
+        // servent que si les quatre poids de survie diffèrent : la fabrique historique les rend
+        // égaux, et le chemin factorisé n'en a alors aucun besoin.
+        var safeParts = null
+        if (myWeights.ALIVE != myWeights.LIFE || myWeights.ALIVE != myWeights.THREAT || myWeights.ALIVE != myWeights.MAXLIFE) {
+            safeParts = ScoringClass.survivalComponents(MyState, 0, State, poisonKey)
+        }
 
         var bestCell    = MyState.CELL
         var bestPenalty = MAX_VALUE
@@ -122,7 +129,7 @@ class FinalCell {
                 // que le terme de Me vaudrait en moins s'il encaissait ce net. Le damage
                 // return s'en retranche — un porteur monnaie les coups qu'il prend — mais ne
                 // peut pas retourner le danger en bonus : le coût est planché à zéro.
-                var loss = finalWeights.DANGER * (myWeights.SURVIVAL * (safeSurvival - ScoringClass.survivalValue(MyState, net, State, poisonKey)))
+                var loss = finalWeights.NET * ScoringClass.survivalLossWeighted(MyState, safeSurvival, safeParts, net, State, poisonKey, myWeights)
                          - myWeights.DR * ScoringClass.drDeterrence(MyState, net, State)
                 if (loss > 0) penalty += loss
             }

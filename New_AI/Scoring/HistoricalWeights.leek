@@ -5,7 +5,10 @@
  *
  * Correspondance, relue sur la formule effective :
  *   terme = importance · survivalValue + capability + drDeterrence
- *     -> SURVIVAL = importance, CAPABILITY = 1, DR = 1
+ *     -> ALIVE = LIFE = THREAT = MAXLIFE = importance, CAPABILITY = 1, DR = 1
+ *        (la formule historique applique UN seul coefficient aux quatre morceaux de la survie ;
+ *         les séparer ne change donc rien tant que la fabrique leur donne la même valeur)
+ *     -> NET = 1 (la perte de survie porte déjà les poids de Me)
  *   pénalité de placement, part par entité (GravityClass)
  *     -> FINAL_DISTANCE = GRAV_W_ALLY · importance pour un allié,
  *                         GRAV_W_ENEMY · importance pour un ennemi
@@ -52,6 +55,9 @@ class HistoricalWeightsFactory {
 	static forEntityOn(stat, isAlly, covidWeight) {
 		var imp = ImportanceClass.get(stat)
 		return new EntityWeightsClass(
+			imp,
+			imp,
+			imp,
 			imp,
 			1,
 			1,

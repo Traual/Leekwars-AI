@@ -22,17 +22,28 @@ include("../includes.leek")
 /*
  * Coefficients d'UNE entité. Immuable : construit par la fabrique, jamais muté ensuite.
  *
- *   terme    = SURVIVAL · survivalValue + CAPABILITY · capability + DR · drDeterrence
+ *   terme    = ALIVE · être en vie + LIFE · vie courante + THREAT · horizon de mort
+ *            + MAXLIFE · capital durable + CAPABILITY · capability + DR · drDeterrence
  *   placement += FINAL_DISTANCE · éloignement + FINAL_COVID (dans le rayon de contagion)
+ *
+ * La valeur de survie est une SOMME de quatre morceaux indépendants, et chacun porte son poids.
+ * Un coefficient unique sur l'ensemble ne peut dire que QUI compte ; quatre coefficients disent
+ * aussi CE QUI compte chez lui — achever plutôt que gratter, éroder plutôt qu'entamer.
  */
 class EntityWeightsClass {
-	SURVIVAL         // multiplie la valeur de survie entière
+	ALIVE            // multiplie la valeur fixe d'être debout
+	LIFE             // multiplie la vie courante après le tick périodique
+	THREAT           // multiplie l'horizon de mort sous la pression courante
+	MAXLIFE          // multiplie le capital durable, seul canal de l'érosion et des novas
 	CAPABILITY       // multiplie le canal des buffs et debuffs
 	DR               // multiplie la dissuasion des porteurs de renvoi de degats
 	FINAL_DISTANCE   // poids d'éloignement de cette entité dans la pénalité de placement
 	FINAL_COVID      // coût de contagion attaché à cette entité, nul si je ne suis pas contagieux
-	constructor(Survival, Capability, Dr, FinalDistance, FinalCovid) {
-		this.SURVIVAL = Survival
+	constructor(Alive, Life, Threat, Maxlife, Capability, Dr, FinalDistance, FinalCovid) {
+		this.ALIVE = Alive
+		this.LIFE = Life
+		this.THREAT = Threat
+		this.MAXLIFE = Maxlife
 		this.CAPABILITY = Capability
 		this.DR = Dr
 		this.FINAL_DISTANCE = FinalDistance
@@ -43,15 +54,18 @@ class EntityWeightsClass {
 /*
  * Coefficients GLOBAUX de la pénalité de placement — ceux qui ne s'attachent à aucune entité.
  *
- *   pénalité = DANGER · perte de survie + CENTER · éloignement du centre
+ *   pénalité = NET · perte de survie + CENTER · éloignement du centre
  *            + CROWDING (allié trop proche) + Σ des composantes par entité
+ *
+ * Le poids porte sur le NET, c'est-à-dire sur ce que j'encaisse réellement une fois les
+ * boucliers et les soins appliqués — pas sur la menace qui m'est envoyée.
  */
 class FinalCellWeightsClass {
-	DANGER     // multiplie la perte de valeur de survie à la cellule
+	NET        // multiplie la perte de valeur de survie due aux dégâts réellement encaissés
 	CENTER     // multiplie l'éloignement au centre de la carte
 	CROWDING   // pénalité forfaitaire d'un allié dans le rayon anti-AoE
-	constructor(Danger, Center, Crowding) {
-		this.DANGER = Danger
+	constructor(Net, Center, Crowding) {
+		this.NET = Net
 		this.CENTER = Center
 		this.CROWDING = Crowding
 	}
