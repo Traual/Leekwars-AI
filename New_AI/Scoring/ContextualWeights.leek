@@ -6,12 +6,14 @@
  *   agrégation         : somme des plongements alliés, somme des plongements ennemis —
  *                        une somme ne dépend pas de l'ordre des entités
  *   tête globale       : (traits de combat, résumé allié, résumé ennemi) -> plongement global
- *   tête d'entité      : (plongement d'entité, plongement global, relation à Me) -> 5 facteurs
- *   tête de placement  : (plongement global, plongement de Me) -> 3 facteurs
+ *   tête d'entité      : (plongement d'entité, plongement global, relation à Me) -> 8 facteurs
+ *   tête de placement  : (plongement global, plongement de Me) -> 4 facteurs
  *
  * Le réseau ne REMPLACE pas les coefficients historiques : il les MULTIPLIE par un facteur
  * borné. Un modèle neutre (paramètres tous nuls) rend le facteur 1 exactement, et multiplier
- * un flottant par 1 ne déplace aucun bit — poids historiques retrouvés au bit près.
+ * un flottant par 1 ne déplace aucun bit — poids historiques retrouvés au bit près. Les
+ * coefficients qui partent de zéro reçoivent à la place une contribution additive, nulle au
+ * neutre : aucun facteur multiplicatif ne saurait les rallumer.
  *
  * Les paramètres vivent dans des tableaux numériques à plat, jamais dans un objet par neurone
  * ou par connexion. Une seule fonction de couche dense les consomme.
@@ -37,9 +39,36 @@ global NN_MULT_MAX = 4.0
 // positive, donc la pénalité de placement ne peut pas changer de signe.
 global NN_ADD_MAX = 4.0
 
-// Tailles. Modifier une taille impose de refournir des paramètres de la bonne longueur :
-// les trois NN_*_IN sont des sommes des autres, tenues à jour à la main.
-global NN_ENT_FEATURES = 37
+// Les types d'effet dont on donne au réseau la meilleure valeur en UN cast, en unités moteur
+// brutes. Volontairement sans pondération de ma part : « ce que ce kit peut produire » est un
+// fait du moteur, le taux de change entre un dégât et un bouclier est justement ce que le
+// réseau doit apprendre.
+global NN_KIT_EFFECTS = [
+	EFFECT_DAMAGE, EFFECT_POISON, EFFECT_HEAL,
+	EFFECT_ABSOLUTE_SHIELD, EFFECT_RELATIVE_SHIELD,
+	EFFECT_VULNERABILITY, EFFECT_ABSOLUTE_VULNERABILITY,
+	EFFECT_DAMAGE_RETURN, EFFECT_NOVA_DAMAGE,
+	EFFECT_BUFF_TP, EFFECT_SHACKLE_TP, EFFECT_BUFF_STRENGTH
+]
+// Même liste en map, pour tester l'appartenance sans balayer le tableau.
+global NN_KIT_MEMBER = [: ]
+// Familles de durée : un buff et un shackle ne se lisent pas pareil, mais tous les buffs se
+// lisent ensemble.
+global NN_BUFF_MEMBER = [
+	EFFECT_BUFF_STRENGTH: true, EFFECT_BUFF_MP: true, EFFECT_BUFF_TP: true,
+	EFFECT_BUFF_RESISTANCE: true, EFFECT_BUFF_WISDOM: true, EFFECT_BUFF_AGILITY: true,
+	EFFECT_RAW_BUFF_STRENGTH: true
+]
+global NN_SHACKLE_MEMBER = [
+	EFFECT_SHACKLE_STRENGTH: true, EFFECT_SHACKLE_MAGIC: true, EFFECT_SHACKLE_TP: true,
+	EFFECT_SHACKLE_MP: true, EFFECT_SHACKLE_WISDOM: true, EFFECT_SHACKLE_AGILITY: true
+]
+
+// Tailles. Modifier une taille impose de refournir des paramètres de la bonne longueur : les
+// NN_*_IN sont des sommes des autres, tenues à jour à la main. NN_ENT_FEATURES doit valoir
+// EXACTEMENT la longueur rendue par entityFeatures — trop court, la couche lit du vide ; trop
+// long, les derniers traits sont ignorés en silence.
+global NN_ENT_FEATURES = 57
 global NN_EMBED = 8
 global NN_BATTLE_FEATURES = 16
 global NN_GLOBAL_IN = 32    // NN_BATTLE_FEATURES + 2 · NN_EMBED
@@ -83,7 +112,7 @@ class ContextualWeightNetworkClass {
 		var allySummary = zeros(NN_EMBED)
 		var enemySummary = zeros(NN_EMBED)
 		for (var e: var stat in State) {
-			var emb = dense(entityFeatures(stat, meStat, mySide), NN_W_ENC, NN_B_ENC, NN_ENT_FEATURES, NN_EMBED, true)
+			var emb = dense(entityFeatures(stat, meStat, mySide, State), NN_W_ENC, NN_B_ENC, NN_ENT_FEATURES, NN_EMBED, true)
 			embeddings[e] = emb
 			var into = (stat.SIDE == mySide) ? allySummary : enemySummary
 			for (var i = 0; i < NN_EMBED; i++) into[i] += emb[i]
@@ -175,10 +204,73 @@ class ContextualWeightNetworkClass {
 	 * Traits d'une entité, tous normalisés dans des ordres de grandeur comparables : un réseau
 	 * n'apprend rien de propre sur des entrées dont les échelles diffèrent d'un facteur mille.
 	 */
-	static entityFeatures(stat, meStat, mySide) {
+	/*
+	 * Ce que l'entité PORTE : le covid contagieux, et combien de tours tiennent encore ses
+	 * protections et ses modificateurs de stats. Une valeur sans sa durée ne dit pas si elle
+	 * pèsera encore au prochain tour.
+	 *
+	 * Ligne d'effet : [0] type, [1] valeur, [2] lanceur, [3] tours, [4] critique, [5] item.
+	 */
+	static carriedFeatures(stat) {
+		var covid = 0, absT = 0, relT = 0, drT = 0, buffT = 0, shackT = 0
+		for (var eff in stat.EFFECTS) {
+			var ty = eff[0]
+			var tu = eff[3]
+			if (ty == EFFECT_POISON) {
+				if (eff[5] == CHIP_COVID && eff[1] > covid) covid = eff[1]
+			} else if (ty == EFFECT_ABSOLUTE_SHIELD) {
+				if (tu > absT) absT = tu
+			} else if (ty == EFFECT_RELATIVE_SHIELD) {
+				if (tu > relT) relT = tu
+			} else if (ty == EFFECT_DAMAGE_RETURN) {
+				if (tu > drT) drT = tu
+			} else if (ty in NN_BUFF_MEMBER) {
+				if (tu > buffT) buffT = tu
+			} else if (ty in NN_SHACKLE_MEMBER) {
+				if (tu > shackT) shackT = tu
+			}
+		}
+		return [covid / 500, absT / 10, relT / 10, drT / 10, buffT / 10, shackT / 10]
+	}
+
+	/*
+	 * Ce que l'entité peut PRODUIRE, par type d'effet : la meilleure valeur en un seul cast
+	 * parmi ses items disponibles, en unités moteur. Aucun poids de ma part n'intervient — le
+	 * taux de change entre un dégât et un bouclier est justement ce que le réseau doit trouver.
+	 */
+	static kitFeatures(stat) {
+		if (mapIsEmpty(NN_KIT_MEMBER)) {
+			for (var ty in NN_KIT_EFFECTS) NN_KIT_MEMBER[ty] = true
+		}
+		var best = [: ]
+		for (var i in stat.INVENTORY) {
+			if (StateClass.cooldownOf(stat, i) > 1) continue
+			for (var eff in ITEMINFO[i].EFFECTS) {
+				var ty = eff[0]
+				if (!(ty in NN_KIT_MEMBER)) continue
+				if (!(ty in best) || eff[1] > best[ty]) best[ty] = eff[1]
+			}
+		}
+		var out = []
+		for (var ty in NN_KIT_EFFECTS) push(out, (ty in best) ? best[ty] / 100 : 0)
+		return out
+	}
+
+	static entityFeatures(stat, meStat, mySide, State) {
 		var total = max(1, stat.TOTAL_LIFE)
 		var base = stat.BASE_STATS
-		return [
+		// Invocations possédées : une entité qui en tient huit ne se joue pas comme une qui en
+		// tient une, et le compte seul ne dit pas leur solidité.
+		var summons = 0, summonLife = 0
+		for (var o: var s in State) {
+			if (s.LIFE > 0 && s.SUMMONER == stat.ID) {
+				summons++
+				summonLife += s.LIFE
+			}
+		}
+		var carried = carriedFeatures(stat)
+		var kit = kitFeatures(stat)
+		var out = [
 			// Rôle
 			(stat.SIDE == mySide) ? 1 : 0,
 			stat.IS_SUMMON ? 1 : 0,
@@ -227,10 +319,16 @@ class ContextualWeightNetworkClass {
 			stat.HEAL_OVER_TIME / total,
 			// Géométrie
 			CellClass.getDist(stat.CELL, meStat.CELL) / GRAV_MAXDIST,
+			// Invocations possédées
+			summons / 4,
+			summonLife / 5000,
 			// Résumés de la formule historique. Ils partiront quand le réseau saura s'en passer.
 			ImportanceClass.get(stat),
 			ImportanceClass.capability(stat) / 1000
 		]
+		for (var v in carried) push(out, v)
+		for (var v in kit) push(out, v)
+		return out
 	}
 
 	/* Traits du combat lui-même : de quoi distinguer une ouverture d'une fin de partie. */
