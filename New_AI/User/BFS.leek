@@ -28,18 +28,17 @@ global BFS_CHAIN_STEPS = 0
  * Politique de choix du successeur à dérouler.
  *   true  : par RENDEMENT, priority = Δscore / coût RÉEL de l'action dans cet état — coût de
  *           l'item, changement d'arme, Saut, Téléportation, Saut + Téléportation compris.
- *           Un budget de TP est fini : ce qui compte n'est pas ce qu'une action rapporte,
- *           c'est ce qu'elle rapporte par TP dépensé.
- *   false : par Δscore absolu (comportement historique).
+ *   false : par Δscore absolu.
  * Le score d'un nœud reste ABSOLU dans les deux cas — le rendement ne sert qu'à classer.
  *
- * ARBITRÉ À false. Le rendement privilégie les actions bon marché, donc allonge les chaînes :
- * mesuré +8 à +18 % d'opérations par tour sur les scénarios à durée fixe, et le pire tour
- * d'une entité passe de 40,9 M à 85,4 M — sur un plafond moteur de 14 M, c'est rédhibitoire.
- * En face, 14 victoires contre 14 sur 28 parties décisives en duel direct : aucune qualité
- * de décision à acheter avec ça. La constante reste pour que le verdict se rejoue.
+ * Le rendement est le bon critère : un budget de TP est FINI, donc ce qui compte n'est pas ce
+ * qu'une action rapporte mais ce qu'elle rapporte par TP dépensé. Préférer 15 TP pour 3 de
+ * score à 3 TP pour 2 est un défaut de critère, pas un compromis.
+ *
+ * Il coûte des opérations : privilégier les actions bon marché allonge les chaînes, donc
+ * multiplie les nœuds. C'est une conséquence attendue du critère, pas un effet de bord.
  */
-global BFS_SCORE_PER_ACTION_COST = false
+global BFS_SCORE_PER_ACTION_COST = true
 
 class ActionSuite {
 
