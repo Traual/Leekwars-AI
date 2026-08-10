@@ -16,6 +16,7 @@ function ReloadCacheNewTurn() {
     CELL_DANGER_GET_CACHE = [: ]
     COMBO_FROM_ITEM_AOE_CACHE = [: ]
     CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
+    CELL_FLEE_HEALCOST_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
     SURVIVAL_CACHE = [: ]
@@ -331,6 +332,11 @@ global PLACEMENT_PLAN_COVID = null
 // cellule. Alimenté par le seul évaluateur terminal (FinalCell), qui repasse sur les mêmes
 // cellules pour chaque candidat qu'il classe.
 global CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
+
+// Soin que la cellule consomme : ce qui passe les boucliers, moins ce que j'encaisse vraiment.
+// Même clé que le net, et rempli en même temps que lui — un net déjà en cache a donc toujours
+// son coût de soin à côté. Vide tant qu'aucun poids ne le réclame.
+global CELL_FLEE_HEALCOST_CACHE = [: ]
 
 // WALKCELLS (par layer)
 

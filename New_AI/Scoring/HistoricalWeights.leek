@@ -9,6 +9,8 @@
  *        (la formule historique applique UN seul coefficient aux quatre morceaux de la survie ;
  *         les séparer ne change donc rien tant que la fabrique leur donne la même valeur)
  *     -> NET = 1 (la perte de survie porte déjà les poids de Me)
+ *     -> HEAL_COST = 0 : la formule historique ne facture pas le soin consommé. Un poids nul
+ *        laisse le terme éteint, et il n'est même pas calculé.
  *   pénalité de placement, part par entité (GravityClass)
  *     -> FINAL_DISTANCE = GRAV_W_ALLY · importance pour un allié,
  *                         GRAV_W_ENEMY · importance pour un ennemi
@@ -37,7 +39,7 @@ class HistoricalWeightsFactory {
 	static build(State, mySide) {
 		var covidWeight = GRAV_COVID_W_PER_HP * GravityClass.covidValue()
 		var weights = new ReplanWeightsClass(
-			new FinalCellWeightsClass(1, GRAV_W_CENTER, GRAV_AOE_PENALTY), null)
+			new FinalCellWeightsClass(1, 0, GRAV_W_CENTER, GRAV_AOE_PENALTY), null)
 		for (var e: var stat in State) {
 			weights.ENTITY_WEIGHTS_BY_ID[e] = forEntityOn(stat, stat.SIDE == mySide, covidWeight)
 		}

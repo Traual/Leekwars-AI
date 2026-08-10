@@ -122,8 +122,11 @@ class ContextualWeightNetworkClass {
 		for (var i = 0; i < NN_EMBED; i++) push(finIn, meEmb[i])
 		var fout = dense(finIn, NN_W_FIN, NN_B_FIN, NN_FIN_HEAD_IN, NN_FIN_HEAD_OUT, false)
 		var f = historical.FINAL_CELL_WEIGHTS
+		// La tête de placement ne sort pas encore de facteur pour le coût de soin : il passe tel
+		// quel. Lui en donner un fait partie de l'élargissement des têtes.
 		historical.FINAL_CELL_WEIGHTS = new FinalCellWeightsClass(
 			f.NET * bounded(fout[0]),
+			f.HEAL_COST,
 			f.CENTER * bounded(fout[1]),
 			f.CROWDING * bounded(fout[2]))
 		return historical

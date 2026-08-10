@@ -140,7 +140,7 @@ class DeltaClass {
      * `lazy` porte les objets communs à tout le balayage — [plan, buckets, séquence de
      * couverture, séquence de net] — matérialisés au premier vrai besoin.
      */
-    static netAtFleeCell(cell, seed, dangerCellSeed, MeStats, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy) {
+    static netAtFleeCell(cell, seed, dangerCellSeed, MeStats, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy, wantHealCost) {
         var innerKey = seed ^ cell
         if (innerKey in CELL_NETDAMAGE_FOR_ME_CACHE) return CELL_NETDAMAGE_FOR_ME_CACHE[innerKey]
         var dangerKey = dangerCellSeed ^ cell
@@ -164,6 +164,16 @@ class DeltaClass {
             delta = netDamage(MeStats, dangerAtCell, healMap, lazy[3], cell)
         }
         CELL_NETDAMAGE_FOR_ME_CACHE[innerKey] = delta
+        // Ce que la cellule coûte en SOIN : les dégâts qui passent mes boucliers, moins ce que
+        // j'encaisse réellement — donc ce que la position force mes soigneurs à dépenser. Une
+        // cellule où le net est nul parce qu'on m'a soigné n'est pas gratuite pour l'équipe.
+        // Planché à zéro : la pénalité de placement doit rester positive pour que la coupure
+        // terminale reste exacte. Calculé seulement si un poids le réclame.
+        if (wantHealCost) {
+            var raw = 0
+            for (var d in dangerAtCell) raw += d
+            CELL_FLEE_HEALCOST_CACHE[innerKey] = max(0, raw - delta)
+        }
         return delta
     }
 

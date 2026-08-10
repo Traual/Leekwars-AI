@@ -105,6 +105,9 @@ class FinalCell {
         if (myWeights.ALIVE != myWeights.LIFE || myWeights.ALIVE != myWeights.THREAT || myWeights.ALIVE != myWeights.MAXLIFE) {
             safeParts = ScoringClass.survivalComponents(MyState, 0, State, poisonKey)
         }
+        // Le coût de soin n'est calculé que si un poids le réclame : sans lui, la map de danger
+        // n'est même pas parcourue.
+        var wantHealCost = finalWeights.HEAL_COST != 0
 
         var bestCell    = MyState.CELL
         var bestPenalty = MAX_VALUE
@@ -122,8 +125,11 @@ class FinalCell {
             var spatial = GravityClass.costAt(State, BaseHash, cell)
             if (spatial >= bestPenalty) continue
 
-            var net = DeltaClass.netAtFleeCell(cell, seed, dangerCellSeed, MyState, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy)
+            var net = DeltaClass.netAtFleeCell(cell, seed, dangerCellSeed, MyState, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy, wantHealCost)
             var penalty = spatial
+            // Le soin que la cellule consomme s'ajoute au coût. Positif par construction, donc
+            // le spatial reste un minorant de la pénalité et la coupure du balayage reste exacte.
+            if (wantHealCost) penalty += finalWeights.HEAL_COST * CELL_FLEE_HEALCOST_CACHE[seed ^ cell]
             if (net > 0) {
                 // Perte de valeur de SURVIE, alignée sur le scoring statique : exactement ce
                 // que le terme de Me vaudrait en moins s'il encaissait ce net. Le damage

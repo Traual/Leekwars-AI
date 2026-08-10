@@ -54,18 +54,22 @@ class EntityWeightsClass {
 /*
  * Coefficients GLOBAUX de la pénalité de placement — ceux qui ne s'attachent à aucune entité.
  *
- *   pénalité = NET · perte de survie + CENTER · éloignement du centre
- *            + CROWDING (allié trop proche) + Σ des composantes par entité
+ *   pénalité = NET · perte de survie + HEAL_COST · soin consommé
+ *            + CENTER · éloignement du centre + CROWDING (allié trop proche)
+ *            + Σ des composantes par entité
  *
- * Le poids porte sur le NET, c'est-à-dire sur ce que j'encaisse réellement une fois les
- * boucliers et les soins appliqués — pas sur la menace qui m'est envoyée.
+ * NET est ce que j'encaisse réellement, une fois boucliers et soins appliqués. HEAL_COST est
+ * ce que la position a coûté à mes soigneurs. Les deux sont nécessaires : une cellule où le net
+ * est nul parce qu'un allié m'a soigné n'est pas gratuite, elle a mobilisé son tour.
  */
 class FinalCellWeightsClass {
 	NET        // multiplie la perte de valeur de survie due aux dégâts réellement encaissés
+	HEAL_COST  // multiplie le soin que la cellule consomme
 	CENTER     // multiplie l'éloignement au centre de la carte
 	CROWDING   // pénalité forfaitaire d'un allié dans le rayon anti-AoE
-	constructor(Net, Center, Crowding) {
+	constructor(Net, HealCost, Center, Crowding) {
 		this.NET = Net
+		this.HEAL_COST = HealCost
 		this.CENTER = Center
 		this.CROWDING = Crowding
 	}
