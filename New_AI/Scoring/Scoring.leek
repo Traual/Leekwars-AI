@@ -423,6 +423,16 @@ class ScoringClass {
      * Me exclu (comme des nets). FIGÉ au tour, construit au premier porteur évalué :
      * une constante du tour garde les termes patchés purs.
      */
+    /*
+     * La table, construite si elle ne l'est pas encore. Elle ne dépend que de l'état et reste
+     * gelée au tour : la demander tôt ne change donc aucune valeur, ça évite seulement qu'un
+     * lecteur voie « pas encore construite » et se rabatte sur une valeur par défaut.
+     */
+    static drPhysRatios(State) {
+        if (DR_PHYSRATIO_BY_SIDE == null) buildDrPhysRatios(State)
+        return DR_PHYSRATIO_BY_SIDE
+    }
+
     static buildDrPhysRatios(State) {
         var strBySide = [: ], magBySide = [: ], strAll = 0, magAll = 0
         var sides = [: ]

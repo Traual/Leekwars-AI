@@ -116,6 +116,10 @@ class ContextualWeightNetworkClass {
 		var allySummary = zeros(NN_EMBED)
 		var enemySummary = zeros(NN_EMBED)
 		for (var e: var stat in State) {
+			// Les MORTES sont exclues. Leurs traits ne decrivent rien — vie nulle, stats figees —
+			// et elles gonfleraient les resumes par camp d'entites qui ne jouent plus. Elles
+			// gardent leurs poids historiques, ce dont une resurrection a besoin.
+			if (stat.LIFE <= 0) continue
 			var emb = dense(entityFeatures(stat, meStat, mySide, State), NN_W_ENC, NN_B_ENC, NN_ENT_FEATURES, NN_EMBED, true)
 			embeddings[e] = emb
 			var into = (stat.SIDE == mySide) ? allySummary : enemySummary
@@ -130,6 +134,8 @@ class ContextualWeightNetworkClass {
 
 		// Tête d'entité : un passage par entité, ici et nulle part ailleurs.
 		for (var e: var stat in State) {
+			// Meme exclusion : sans plongement, pas de tete d'entite.
+			if (stat.LIFE <= 0) continue
 			var headIn = []
 			var emb = embeddings[e]
 			for (var i = 0; i < NN_EMBED; i++) push(headIn, emb[i])
@@ -391,10 +397,14 @@ class ContextualWeightNetworkClass {
 			enemyTp / 100,
 			allyMp / 50,
 			enemyMp / 50,
-			// Part physique du danger adverse : ce qui déclenche des retours de dégâts. La table
-			// est construite paresseusement au premier porteur évalué, donc elle peut ne pas
-			// exister encore ici — on ne la force pas, elle a sa propre logique de gel au tour.
-			(DR_PHYSRATIO_BY_SIDE != null && mySide in DR_PHYSRATIO_BY_SIDE) ? DR_PHYSRATIO_BY_SIDE[mySide] : 0.5
+			// Part physique du danger adverse : ce qui déclenche des retours de dégâts.
+			//
+			// La table est construite paresseusement au premier porteur évalué. La laisser à son
+			// sort donnait un trait qui vaut 0,5 quand le réseau tourne au replan, et sa vraie
+			// valeur quand quelque chose l'a déjà peuplée — deux entrées différentes pour le même
+			// état. Un modèle entraîné sur l'une et servi avec l'autre n'apprend rien d'utile.
+			// On la construit donc ici : elle ne dépend que de l'état, et elle est gelée au tour.
+			(mySide in ScoringClass.drPhysRatios(State)) ? DR_PHYSRATIO_BY_SIDE[mySide] : 0.5
 		]
 	}
 
