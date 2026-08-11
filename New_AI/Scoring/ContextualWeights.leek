@@ -26,7 +26,7 @@ include("../includes.leek")
 
 // Le commutateur. Faux = fabrique historique, vrai = réseau. C'est le SEUL endroit où le
 // choix se fait : aucune condition n'est dispersée dans le scoring ni dans FinalCell.
-global CONTEXTUAL_WEIGHTS_ENABLED = false
+global CONTEXTUAL_WEIGHTS_ENABLED = true
 
 // Bornes du facteur multiplicatif. Un modèle ne peut ni annuler ni faire exploser un
 // coefficient historique : il l'infléchit.
