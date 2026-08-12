@@ -1,0 +1,5 @@
+.build/
+.work/
+results/
+models/
+__pycache__/
