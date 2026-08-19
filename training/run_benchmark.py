@@ -42,6 +42,19 @@ MODEL_BIASES = {
     "CROWDING": 975,
 }
 
+TRANSITION_FEATURES = (
+    "DELTA", "EFFICIENCY", "CAPABILITY", "PERIODIC",
+    "LIFE", "MAX_LIFE", "SHIELD", "ALIVE",
+    "TP_LEFT", "MP_LEFT", "COOLDOWN", "COST",
+)
+TRANSITION_INPUTS = 8
+TRANSITION_OUTPUTS = len(TRANSITION_FEATURES)
+TRANSITION_SIZE = TRANSITION_INPUTS * TRANSITION_OUTPUTS + TRANSITION_OUTPUTS
+TRANSITION_BIASES = {
+    name: TRANSITION_INPUTS * TRANSITION_OUTPUTS + index
+    for index, name in enumerate(TRANSITION_FEATURES)
+}
+
 
 @dataclass(frozen=True)
 class PairSpec:
@@ -79,6 +92,37 @@ def vector_file(path: Path) -> list[float]:
     if not isinstance(vector, list) or len(vector) != 976:
         raise ValueError(f"vecteur candidat inattendu dans {path}: longueur 976 requise")
     return [float(value) for value in vector]
+
+
+def transition_vector_file(path: Path) -> list[float]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    vector = payload.get("transition_vector") if isinstance(payload, dict) else payload
+    if not isinstance(vector, list) or len(vector) != TRANSITION_SIZE:
+        raise ValueError(
+            f"tête de transition inattendue dans {path}: longueur {TRANSITION_SIZE} requise"
+        )
+    return [float(value) for value in vector]
+
+
+def patch_transition_model(
+    ai_dir: Path,
+    biases: dict[str, float],
+    replacement: list[float] | None = None,
+) -> None:
+    if not biases and replacement is None:
+        return
+    path = ai_dir / "Scoring/TransitionModel.leek"
+    text = path.read_text(encoding="utf-8")
+    match = re.search(r"global NN_TRANSITION_MODEL = (null|\[(.*?)\])", text, flags=re.DOTALL)
+    if not match:
+        raise ValueError(f"NN_TRANSITION_MODEL introuvable dans {path}")
+    vector = [0.0] * TRANSITION_SIZE if replacement is None else replacement.copy()
+    if len(vector) != TRANSITION_SIZE:
+        raise ValueError(f"tête de transition: {len(vector)} paramètres, attendu {TRANSITION_SIZE}")
+    for name, value in biases.items():
+        vector[TRANSITION_BIASES[name]] = value
+    rendered = "global NN_TRANSITION_MODEL = " + json.dumps(vector, separators=(",", ":"))
+    path.write_text(text[: match.start()] + rendered + text[match.end() :], encoding="utf-8")
 
 
 def patch_model(
@@ -133,6 +177,22 @@ def parse_assignments(values: list[str], allowed_names: bool) -> dict[Any, float
                 key = int(key)
                 if not 0 <= key < 976:
                     raise ValueError(f"index NN hors limites: {key}")
+            result[key] = float(value)
+    return result
+
+
+def parse_transition_assignments(values: list[str]) -> dict[str, float]:
+    result: dict[str, float] = {}
+    for raw in values:
+        for assignment in raw.split(","):
+            if not assignment:
+                continue
+            key, separator, value = assignment.partition("=")
+            key = key.upper()
+            if not separator or key not in TRANSITION_BIASES:
+                raise ValueError(
+                    f"transition invalide {assignment}; choix: {', '.join(TRANSITION_FEATURES)}"
+                )
             result[key] = float(value)
     return result
 
@@ -574,7 +634,9 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--profile-ops", action="store_true")
     parser.add_argument("--model-vector", type=Path)
+    parser.add_argument("--transition-vector", type=Path)
     parser.add_argument("--bias", action="append", default=[])
+    parser.add_argument("--transition", action="append", default=[])
     parser.add_argument("--index", action="append", default=[])
     parser.add_argument("--name", default="candidate")
     parser.add_argument("--data", type=Path, default=DEFAULT_DATA)
@@ -583,9 +645,19 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
+    # Les copies candidates vivent sous le générateur et doivent ensuite être rendues
+    # relatives à sa racine pour NativeFileSystem. Normaliser ici évite qu'un --generator
+    # relatif échoue dans Path.relative_to malgré deux chemins désignant le même dossier.
+    args.generator = args.generator.resolve()
+    args.data = args.data.resolve()
+
     biases = parse_assignments(args.bias, allowed_names=True)
+    transition_biases = parse_transition_assignments(args.transition)
     indices = parse_assignments(args.index, allowed_names=False)
     replacement = vector_file(args.model_vector) if args.model_vector else None
+    transition_replacement = (
+        transition_vector_file(args.transition_vector) if args.transition_vector else None
+    )
     solo, farmers, builds = load_records(args.data)
     pairs = make_pairs(args.mode, args.pairs, args.selection_seed, solo, farmers, builds)
     java_home = resolve_java_home(args.generator, args.java_home)
@@ -601,9 +673,13 @@ def main() -> int:
         "batch_size": args.batch_size,
         "profile_ops": args.profile_ops,
         "biases": biases,
+        "transition_biases": transition_biases,
         "indices": indices,
         "candidate_model_sha256": (
             file_sha256(args.model_vector) if args.model_vector else None
+        ),
+        "candidate_transition_sha256": (
+            file_sha256(args.transition_vector) if args.transition_vector else None
         ),
         "data_sha256": file_sha256(args.data),
         "model_sha256": file_sha256(ROOT / "New_AI/Scoring/NNModel.leek"),
@@ -622,6 +698,7 @@ def main() -> int:
         shutil.copytree(ROOT / "New_AI", candidate_dir)
         shutil.copytree(ROOT / "New_AI", reference_dir)
         patch_model(candidate_dir, biases, indices, replacement)
+        patch_transition_model(candidate_dir, transition_biases, transition_replacement)
         if args.profile_ops:
             enable_profiler(candidate_dir)
             enable_profiler(reference_dir)
@@ -675,8 +752,10 @@ def main() -> int:
         "selection_seed": args.selection_seed,
         "min_cores": args.min_cores,
         "biases": biases,
+        "transition_biases": transition_biases,
         "indices": indices,
         "candidate_model_sha256": fingerprint["candidate_model_sha256"],
+        "candidate_transition_sha256": fingerprint["candidate_transition_sha256"],
         "data_sha256": fingerprint["data_sha256"],
         "model_sha256": fingerprint["model_sha256"],
         "generator_sha256": fingerprint["generator_sha256"],

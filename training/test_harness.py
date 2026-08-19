@@ -11,11 +11,14 @@ from pathlib import Path
 from run_benchmark import (
     DEFAULT_DATA,
     MODEL_BIASES,
+    TRANSITION_BIASES,
+    TRANSITION_SIZE,
     PairSpec,
     load_records,
     make_pairs,
     model_vector,
     patch_model,
+    patch_transition_model,
     resolve_java_home,
     profile_lines,
     survival,
@@ -60,6 +63,28 @@ class TrainingHarnessTest(unittest.TestCase):
             path.write_text(json.dumps({"vector": original}), encoding="utf-8")
             loaded = vector_file(path)
         self.assertEqual(original, loaded)
+
+    def test_transition_layout_and_biases_are_separate_from_production_model(self) -> None:
+        self.assertEqual(108, TRANSITION_SIZE)
+        self.assertEqual(12, len(TRANSITION_BIASES))
+        self.assertEqual(len(TRANSITION_BIASES), len(set(TRANSITION_BIASES.values())))
+        source = ROOT / "New_AI/Scoring/TransitionModel.leek"
+        self.assertIn("global NN_TRANSITION_MODEL = null", source.read_text(encoding="utf-8"))
+
+    def test_transition_patch_activates_only_requested_bias(self) -> None:
+        source = ROOT / "New_AI/Scoring/TransitionModel.leek"
+        with tempfile.TemporaryDirectory() as temporary:
+            ai = Path(temporary)
+            (ai / "Scoring").mkdir()
+            shutil.copy2(source, ai / "Scoring/TransitionModel.leek")
+            patch_transition_model(ai, {"CAPABILITY": 0.25})
+            text = (ai / "Scoring/TransitionModel.leek").read_text(encoding="utf-8")
+        match = __import__("re").search(r"global NN_TRANSITION_MODEL = (\[.*\])", text)
+        self.assertIsNotNone(match)
+        vector = json.loads(match.group(1))
+        changed = {index for index, value in enumerate(vector) if value != 0}
+        self.assertEqual({TRANSITION_BIASES["CAPABILITY"]}, changed)
+        self.assertEqual(0.25, vector[TRANSITION_BIASES["CAPABILITY"]])
 
     def test_bundled_jdk_is_discovered_next_to_generator(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

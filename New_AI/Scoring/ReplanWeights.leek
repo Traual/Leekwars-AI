@@ -94,11 +94,13 @@ class ReplanWeightsClass {
 	                       // ce rôle, et elle ne dépend d'aucun id attribué à l'exécution.
 	FINAL_CELL_WEIGHTS     // FinalCellWeightsClass
 	GLOBAL_EMBEDDING       // représentation du contexte de combat, null tant qu'aucun réseau ne tourne
+	TRANSITION_WEIGHTS     // 12 coefficients du bonus de première transition, null = tête désactivée
 	constructor(FinalCellWeights, GlobalEmbedding) {
 		this.ENTITY_WEIGHTS_BY_ID = [: ]
 		this.SUMMON_WEIGHTS = [: ]
 		this.FINAL_CELL_WEIGHTS = FinalCellWeights
 		this.GLOBAL_EMBEDDING = GlobalEmbedding
+		this.TRANSITION_WEIGHTS = null
 	}
 
 	/*

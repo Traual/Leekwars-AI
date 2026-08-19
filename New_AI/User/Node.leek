@@ -59,10 +59,12 @@ class NodeClass {
 	                  // depuis le workspace encore muté, 0 sans antidote)
 	POISON_FOLD       // fold des porteurs d'antidote AUTRES que Me pour l'état du nœud : la moitié
 	                  // stable de POISON_KEY, héritée par les enfants (ScoringClass.poisonKeyOnNode)
+	ROOT_TRANSITION_BONUS // bonus de la première action, transporté inchangé dans toute la branche
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction
 		this.PARENT = Parent
+		this.ROOT_TRANSITION_BONUS = 0
 	}
 
 	/*

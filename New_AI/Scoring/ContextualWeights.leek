@@ -81,6 +81,9 @@ global NN_ENT_HEAD_IN = 19  // NN_EMBED + NN_EMBED + NN_RELATION
 global NN_ENT_HEAD_OUT = 9  // ALIVE, LIFE, THREAT, MAXLIFE, CAPABILITY, DR, FINAL_DISTANCE, FINAL_COVID, FINAL_DISTANCE_TARGET
 global NN_FIN_HEAD_IN = 16  // NN_EMBED + NN_EMBED
 global NN_FIN_HEAD_OUT = 4  // NET, HEAL_COST, CENTER, CROWDING
+global NN_TRANS_HEAD_IN = 8 // plongement global
+global NN_TRANS_HEAD_OUT = 12 // delta, rendement, capability, périodique, vie, vie max,
+                              // shields, kill/résu, TP, MP, cooldown et coût
 
 // Paramètres appris, à plat. null = modèle NEUTRE : toutes les sorties valent 0, donc tous
 // les facteurs valent 1, donc les poids historiques sortent inchangés.
@@ -92,6 +95,8 @@ global NN_W_ENT = null
 global NN_B_ENT = null
 global NN_W_FIN = null
 global NN_B_FIN = null
+global NN_W_TRANS = null
+global NN_B_TRANS = null
 
 class ContextualWeightNetworkClass {
 
@@ -131,6 +136,19 @@ class ContextualWeightNetworkClass {
 		for (var i = 0; i < NN_EMBED; i++) push(globalIn, enemySummary[i])
 		var globalEmbedding = dense(globalIn, NN_W_GLOBAL, NN_B_GLOBAL, NN_GLOBAL_IN, NN_EMBED, true)
 		historical.GLOBAL_EMBEDDING = globalEmbedding
+
+		// Petite tête de valeur de décision : elle ne regarde que le contexte du replan ici.
+		// Ses 12 sorties seront multipliées par les conséquences de la PREMIÈRE action, dans
+		// TransitionScore. null la désactive entièrement ; un vecteur nul l'exécute mais rend
+		// un bonus exactement nul, ce qui permet une vraie mesure de parité et de coût.
+		if (NN_TRANSITION_MODEL != null) {
+			if (NN_W_TRANS == null) loadTransitionVector(NN_TRANSITION_MODEL)
+			if (NN_W_TRANS != null) {
+				historical.TRANSITION_WEIGHTS = dense(
+					globalEmbedding, NN_W_TRANS, NN_B_TRANS,
+					NN_TRANS_HEAD_IN, NN_TRANS_HEAD_OUT, false)
+			}
+		}
 
 		// Tête d'entité : un passage par entité, ici et nulle part ailleurs.
 		for (var e: var stat in State) {
@@ -445,6 +463,23 @@ class ContextualWeightNetworkClass {
 		var a = []
 		for (var i = 0; i < n; i++) push(a, v[at + i])
 		return a
+	}
+
+	/*
+	 * Charge la tête de transition séparément du checkpoint historique de 976 paramètres.
+	 * Cela permet de l'activer dans une copie de benchmark sans réécrire ni invalider le
+	 * réseau de production. 8×12 poids + 12 biais = 108 paramètres.
+	 */
+	static loadTransitionVector(v) {
+		var expected = NN_TRANS_HEAD_OUT * NN_TRANS_HEAD_IN + NN_TRANS_HEAD_OUT
+		if (count(v) != expected) {
+			debugE("tête transition de longueur " + count(v) + ", attendu " + expected + " : tête ignorée")
+			NN_W_TRANS = null
+			NN_B_TRANS = null
+			return
+		}
+		NN_W_TRANS = take(v, 0, NN_TRANS_HEAD_OUT * NN_TRANS_HEAD_IN)
+		NN_B_TRANS = take(v, NN_TRANS_HEAD_OUT * NN_TRANS_HEAD_IN, NN_TRANS_HEAD_OUT)
 	}
 
 	/*

@@ -63,6 +63,24 @@ python3 training/run_benchmark.py \
   --model-vector training/models/candidate.json --name trained-model
 ```
 
+### Tête hybride de première transition
+
+Le score terminal de l'arbre reste intact. Une tête séparée de 108 paramètres peut ajouter un
+bonus à la première action réellement exécutée, puis ce bonus est transporté sans recalcul dans
+toute sa branche. Elle est `null` dans l'IA versionnée : aucun coût ni changement de comportement
+en production. Un benchmark l'active seulement dans sa copie candidate :
+
+```bash
+python3 training/run_benchmark.py \
+  --mode farmer --pairs 8 --max-turns 4 \
+  --transition CAPABILITY=0.25 --name transition-capability-025
+```
+
+Les douze biais disponibles sont `DELTA`, `EFFICIENCY`, `CAPABILITY`, `PERIODIC`, `LIFE`,
+`MAX_LIFE`, `SHIELD`, `ALIVE`, `TP_LEFT`, `MP_LEFT`, `COOLDOWN` et `COST`. Passer par exemple
+`--transition DELTA=0` injecte un vecteur entièrement nul : la tête tourne réellement et sert à
+mesurer sa parité et son coût intrinsèque.
+
 Les surcharges `--bias` et `--index` sont appliquées après ce vecteur, ce qui permet d'isoler
 une sortie avant de réexporter le modèle définitif.
 

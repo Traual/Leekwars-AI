@@ -103,6 +103,7 @@ class ActionSuite {
 		noPlay.CONTEXT_BY_SIDE = RootContext
 		noPlay.HFP_BY_SIDE = RootHfp
 		noPlay.POISON_KEY = RootPoisonKey
+		noPlay.ROOT_TRANSITION_BONUS = 0
 		// Racine des ÉTATS : elle seule porte la map complète d'office, patch vide.
 		noPlay.STATE_PARENT = null
 		noPlay.STATE_PATCH = [: ]
@@ -343,6 +344,8 @@ class ActionSuite {
 			var act = entry[0]
 			var candidate = NodeClass.ActionToNodeInTree(act, Workspace, from, MyWalkCells, cost, ITEMINFO[item], item, act.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, baseUses[item])
 			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, Workspace, ParentScore, Parent, Parent.HFP_BY_SIDE, MySide, Parent.POISON_KEY)
+			// ParentScore transporte déjà le bonus racine : ne jamais l'ajouter une seconde fois.
+			candidate.ROOT_TRANSITION_BONUS = Parent.ROOT_TRANSITION_BONUS
 			StateClass.restoreWorkspace(Workspace, candidate.CLONED)
 			candidate.CLONED = null
 			// Rendement sur le coût COURANT, celui que ce candidat paie vraiment dans cet état
@@ -386,6 +389,14 @@ class ActionSuite {
 			if (Workspace == null) Workspace = clone(State, 1)
 			var node = NodeClass.ActionToNodeInTree(act, Workspace, act.From, MyWalkCells, pair[1], ITEMINFO[Item], Item, act.To, BaseHash, null, ParentTermNode, ParentContext, ParentHfp, pair[2])
 			var nodeScore = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, ParentTermNode, ParentHfp, MySide, ParentPoisonKey)
+			// Seule une action directement issue de noPlay reçoit un nouveau bonus. Les nœuds
+			// suivants héritent du bonus déjà inclus dans ReferenceScore.
+			if (ParentTermNode.ACTION == null) {
+				node.ROOT_TRANSITION_BONUS = TransitionScoreClass.rootBonus(node, Workspace, ReferenceScore, nodeScore, pair[1])
+				nodeScore += node.ROOT_TRANSITION_BONUS
+			} else {
+				node.ROOT_TRANSITION_BONUS = ParentTermNode.ROOT_TRANSITION_BONUS
+			}
 			// Scoring fait : le workspace redevient le State parent pour le candidat suivant,
 			// et CLONED est libéré (STATE_PATCH porte désormais les entités modifiées).
 			StateClass.restoreWorkspace(Workspace, node.CLONED)

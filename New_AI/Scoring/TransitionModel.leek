@@ -1,0 +1,12 @@
+/*
+ * Tête légère de valeur de première transition.
+ *
+ * null = chemin désactivé, comportement et coût historiques.
+ * Un benchmark peut injecter 108 nombres (8×12 poids puis 12 biais) sans toucher au
+ * checkpoint NN_MODEL de 976 paramètres. Un vecteur entièrement nul active réellement le
+ * calcul mais rend un bonus nul au dernier bit.
+ */
+
+include("../includes.leek")
+
+global NN_TRANSITION_MODEL = null

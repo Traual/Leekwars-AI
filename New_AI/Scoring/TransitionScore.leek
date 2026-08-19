@@ -1,0 +1,94 @@
+/*
+ * Bonus de la PREMIÈRE transition d'une branche.
+ *
+ * Le BFS reste inchangé dans son principe : il évalue toujours la suite entière et son état
+ * terminal. Ce bonus ne remplace pas V(état terminal) ; il départage les branches dont le
+ * premier mouvement mène à des replans différents, même si leur état terminal hypothétique
+ * est identique. Il est calculé une fois au nœud racine puis transporté par ParentScore.
+ */
+
+include("../includes.leek")
+
+class TransitionScoreClass {
+
+	/*
+	 * Valeur additive en unités du scoring. node.CLONED et StateAfter sont encore disponibles
+	 * à ce point : aucune matérialisation d'état ni seconde simulation n'est nécessaire.
+	 */
+	static rootBonus(node, StateAfter, parentScore, nodeScore, cost) {
+		var weights = REPLAN_WEIGHTS.TRANSITION_WEIGHTS
+		if (weights == null) return 0
+		BenchOps.Start("Transition")
+		var f = features(node, StateAfter, parentScore, nodeScore, cost)
+		var bonus = 0
+		for (var i = 0; i < NN_TRANS_HEAD_OUT; i++) bonus += weights[i] * f[i]
+		BenchOps.Stop("Transition")
+		return bonus
+	}
+
+	/*
+	 * Douze faits peu coûteux et généralisables, jamais un identifiant d'item :
+	 *  0 delta d'état, 1 rendement/TP, 2 delta de capability, 3 flux périodique favorable,
+	 *  4 vie favorable, 5 vie max favorable, 6 shields favorables, 7 kill/résurrection,
+	 *  8 TP restants, 9 MP restants, 10 cooldown engagé, 11 coût TP réel.
+	 */
+	static features(node, StateAfter, parentScore, nodeScore, cost) {
+		var stateDelta = nodeScore - parentScore
+		var capability = 0, periodic = 0, life = 0, maxLife = 0, shields = 0, alive = 0
+		var mySide = StateAfter[Me].SIDE
+		for (var id: var oldStat in node.CLONED) {
+			var newStat = StateAfter[id]
+			var side = (oldStat == null) ? newStat.SIDE : oldStat.SIDE
+			var sign = (side == mySide) ? 1 : -1
+			var oldAlive = (oldStat != null && oldStat.LIFE > 0) ? 1 : 0
+			var newAlive = (newStat != null && newStat.LIFE > 0) ? 1 : 0
+			var oldCap = oldAlive ? ImportanceClass.capability(oldStat) : 0
+			var newCap = newAlive ? ImportanceClass.capability(newStat) : 0
+			capability += sign * (newCap - oldCap)
+			// Un stock nuisible qui baisse chez un allié ou monte chez un ennemi est favorable.
+			periodic -= sign * (periodicStock(newStat) - periodicStock(oldStat))
+			life += sign * (lifeOf(newStat) - lifeOf(oldStat)) / 100
+			maxLife += sign * (maxLifeOf(newStat) - maxLifeOf(oldStat)) / 100
+			shields += sign * (shieldValue(newStat) - shieldValue(oldStat))
+			alive += sign * (newAlive - oldAlive) * BASE_ALIVE
+		}
+		var oldMe = node.CLONED[Me]
+		var newMe = StateAfter[Me]
+		var tpLeft = newMe.TP / max(1, newMe.TOTAL_TP)
+		var mpLeft = newMe.MP / max(1, newMe.TOTAL_MP)
+		var cooldown = ITEMINFO[node.ACTION.Item].COOLDOWN
+		return [
+			stateDelta,
+			stateDelta / max(1, cost),
+			capability,
+			periodic,
+			life,
+			maxLife,
+			shields,
+			alive,
+			tpLeft,
+			mpLeft,
+			cooldown,
+			cost
+		]
+	}
+
+	static periodicStock(stat) {
+		if (stat == null || stat.LIFE <= 0) return 0
+		return stat.POISON + stat.AFTEREFFECT - stat.HEAL
+			+ (stat.POISON_OVER_TIME + stat.AFTEREFFECT_OVER_TIME - stat.HEAL_OVER_TIME) / 10
+	}
+
+	static lifeOf(stat) {
+		return (stat == null || stat.LIFE <= 0) ? 0 : stat.LIFE
+	}
+
+	static maxLifeOf(stat) {
+		return (stat == null || stat.LIFE <= 0) ? 0 : stat.TOTAL_LIFE
+	}
+
+	static shieldValue(stat) {
+		if (stat == null || stat.LIFE <= 0) return 0
+		return W_IDLE_ABS * stat.ABSOLUTE_SHIELD + W_IDLE_REL * stat.RELATIVE_SHIELD
+	}
+}

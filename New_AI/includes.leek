@@ -38,6 +38,8 @@ include("Scoring/ReplanWeights.leek")
 include("Scoring/HistoricalWeights.leek")
 include("Scoring/ContextualWeights.leek")
 include("Scoring/NNModel.leek")
+include("Scoring/TransitionModel.leek")
+include("Scoring/TransitionScore.leek")
 
 include("User/Node.leek")
 include("User/BFS.leek")
