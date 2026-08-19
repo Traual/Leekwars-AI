@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import tempfile
 import unittest
@@ -24,6 +25,13 @@ from run_benchmark import (
     survival,
     vector_file,
     write_scenario,
+)
+from train_transition import (
+    FEATURE_SCALES,
+    design_rows,
+    estimate_effects,
+    trained_vector,
+    vector_for,
 )
 
 
@@ -85,6 +93,40 @@ class TrainingHarnessTest(unittest.TestCase):
         changed = {index for index, value in enumerate(vector) if value != 0}
         self.assertEqual({TRANSITION_BIASES["CAPABILITY"]}, changed)
         self.assertEqual(0.25, vector[TRANSITION_BIASES["CAPABILITY"]])
+
+    def test_transition_training_design_is_orthogonal(self) -> None:
+        rows = design_rows()
+        self.assertEqual(8, len(rows))
+        self.assertTrue(all(len(row) == len(FEATURE_SCALES) for row in rows))
+        for column in range(len(FEATURE_SCALES)):
+            self.assertEqual(0, sum(row[column] for row in rows))
+            for other in range(column):
+                self.assertEqual(0, sum(row[column] * row[other] for row in rows))
+        self.assertTrue(all(len(vector_for(row)) == TRANSITION_SIZE for row in rows))
+
+    def test_transition_training_recovers_paired_effects(self) -> None:
+        rows = design_rows()
+        expected = [0.08, -0.03, 0.02, 0.01, -0.04, 0.015, -0.005]
+        reports = []
+        for row in rows:
+            reports.append({
+                "details": [
+                    {
+                        "index": pair,
+                        "fitness": 0.1 * pair
+                        + sum(code * effect for code, effect in zip(row, expected)),
+                    }
+                    for pair in range(4)
+                ]
+            })
+        estimates = estimate_effects(reports)
+        for estimate, effect in zip(estimates, expected):
+            self.assertAlmostEqual(effect, float(estimate["effect"]))
+            self.assertAlmostEqual(0, float(estimate["standard_error"]), places=12)
+        vector, biases = trained_vector(estimates)
+        for (name, scale), effect in zip(FEATURE_SCALES, expected):
+            self.assertAlmostEqual(math.copysign(scale, effect), biases[name])
+            self.assertEqual(biases[name], vector[TRANSITION_BIASES[name]])
 
     def test_bundled_jdk_is_discovered_next_to_generator(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

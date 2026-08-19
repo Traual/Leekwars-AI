@@ -81,6 +81,22 @@ Les douze biais disponibles sont `DELTA`, `EFFICIENCY`, `CAPABILITY`, `PERIODIC`
 `--transition DELTA=0` injecte un vecteur entièrement nul : la tête tourne réellement et sert à
 mesurer sa parité et son coût intrinsèque.
 
+Un petit entraînement de politique évite de choisir ces biais un par un. Huit variantes issues
+d'un plan de Hadamard font varier sept directions à la fois sur les mêmes paires miroir. Les
+effets sont estimés séparément par paire, puis les directions incertaines sont rétrécies vers
+zéro avant d'exporter un vecteur de 108 paramètres sparse :
+
+```bash
+python3 training/train_transition.py \
+  --pairs 16 --max-turns 8 --selection-seed 2026082001 \
+  --workers 2 --generator ../leek-wars-generator
+```
+
+Les rapports intermédiaires sont reprenables. Le candidat final est écrit dans
+`training/results/transition-orthogonal/trained-transition.json` et doit obligatoirement être
+testé sur une graine fraîche avec `--transition-vector` ; les paires du plan ne constituent pas
+un holdout.
+
 Les surcharges `--bias` et `--index` sont appliquées après ce vecteur, ce qui permet d'isoler
 une sortie avant de réexporter le modèle définitif.
 
@@ -108,12 +124,12 @@ artificiel de sécurité pour que le moteur n'interrompe pas l'entraînement. Un
 séparée avec `--min-cores 256` contrôle ensuite que le candidat reste déployable sous le plafond
 réel visé ; elle ne sert pas à choisir ses poids.
 
-Le ratio `total_operations_diagnostic` du rapport n'est donc **pas une contrainte de sélection** :
-de meilleurs poids peuvent rendre un combat plus serré, changer les branches explorées ou
-allonger le match. Le contrôle des 10 % porte sur le coût intrinsèque du scoring pour un travail
+Le ratio `total_operations_diagnostic` du rapport mélange coût intrinsèque et changement de
+comportement : de meilleurs poids peuvent rendre un combat plus serré, changer les branches
+explorées ou allonger le match. Il reste un garde-fou : cible `≤2×`, rejet absolu au-dessus de
+`3×`. Le profil `--profile-ops` isole en plus le coût intrinsèque du scoring pour un travail
 identique. Modifier les 976 poids déjà évalués par le MLP n'ajoute aucune inférence ; seul un
-canal conditionnel comme `HEAL_COST` peut ouvrir du calcul supplémentaire et doit être profilé
-séparément.
+canal conditionnel comme `HEAL_COST` ou la tête de transition doit être profilé séparément.
 
 `--profile-ops` active `BenchOps` uniquement dans les copies temporaires du candidat et de la
 référence. Le rapport donne alors le coût exact moyen par appel de `Scoring`, `FinalCell` et du

@@ -66,3 +66,58 @@ entièrement nul mais chemin réellement exécuté et profilé.
 
 Budget fixé avant sélection : cible au plus `2×`, rejet absolu au-dessus de `3×`. Le probe neutre
 valide donc largement le coût intrinsèque, mais ne prouve encore aucun gain de qualité.
+
+Premier holdout frais de `CAPABILITY=0,25`, figé avant lecture des résultats : 64 paires miroir
+éleveur, huit tours max, graine de sélection `2026081925`.
+
+- fitness moyenne `+0,0286`, erreur-type `0,0364`, IC 95 % `[−0,0428 ; +0,0999]` ;
+- 27 victoires candidat, 23 victoires référence et 78 nuls ;
+- coût total candidat/référence `1,1163` ;
+- aucune erreur d'IA ni dépassement.
+
+Décision préenregistrée appliquée : le signe positif mais l'intervalle ambigu ne suffit pas à
+promouvoir le coefficient. Aucun réglage n'est effectué sur ce holdout ; une confirmation sur
+de nouvelles graines est requise.
+
+Confirmation indépendante : 128 nouvelles paires, graine `2026081926`, sans graine de combat
+commune avec le premier holdout.
+
+- fitness moyenne `+0,0333`, erreur-type `0,0310`, IC 95 % `[−0,0273 ; +0,0940]` ;
+- 63 victoires candidat, 53 victoires référence et 140 nuls ;
+- coût total candidat/référence `1,1113` ;
+- aucune erreur d'IA ni dépassement.
+
+Les 192 paires combinées donnent `+0,0318`, erreur-type `0,0239`, IC 95 %
+`[−0,0151 ; +0,0786]`. La règle d'arrêt fixée avant la confirmation exigeait une moyenne de
+confirmation positive et une borne basse combinée strictement positive. La première condition
+est remplie, la seconde non : `CAPABILITY=0,25` est rejeté comme amélioration non prouvée. Le
+signal reste utile comme point de départ d'une tête multivariée, mais il ne doit pas être activé
+seul en production.
+
+### Entraînement orthogonal multivarié
+
+Un plan de Hadamard à huit politiques a ensuite fait varier sept biais simultanément sur les
+mêmes 16 paires (`selection_seed=2026082001`). L'estimation retire un intercept propre à chaque
+paire avant d'agréger les effets, puis rétrécit les directions incertaines vers zéro. Ces données
+sont de l'entraînement, pas un holdout.
+
+Les moyennes des huit politiques vont de `−0,2279` à `+0,0375` ; aucune ne constitue une preuve.
+Une politique brute a en outre atteint un ratio comportemental d'opérations `3,785×` et est donc
+hors du plafond absolu, indépendamment de sa fitness. La seule direction nette du plan était
+`SHIELD` négative (`effet −0,0610 ± 0,0514` à 95 %, `t=−2,33`). Après rétrécissement, le vecteur
+sparse exporté portait les biais suivants :
+
+- `CAPABILITY=−0,1121`, `PERIODIC=−0,0215`, `SHIELD=−0,8439` ;
+- `ALIVE=+0,0102`, `TP_LEFT=−0,4353`, `COST=+0,3920`, `COOLDOWN=+0,1144` ;
+- tous les autres paramètres de la tête à zéro.
+
+Holdout frais du vecteur appris : 64 paires éleveur, huit tours max, graine `2026082002`.
+
+- fitness moyenne `−0,0665`, erreur-type `0,0541`, IC 95 % `[−0,1726 ; +0,0395]` ;
+- 30 victoires candidat, 33 victoires référence et 65 nuls ;
+- coût total candidat/référence `1,3318` ;
+- aucune erreur d'IA ni dépassement.
+
+La règle fixée avant le holdout rejetait toute moyenne non positive. Le vecteur multivarié est
+donc rejeté et n'est testé ni en solo ni en battle royale. Aucun modèle de transition n'est
+activé dans l'IA versionnée.
