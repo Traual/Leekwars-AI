@@ -31,6 +31,13 @@ class Play {
 			OPS_DEADLINE = OPS_CAP - OPS_RESERVE_TURN - StateClass.countSummonsAfterMe(State, State[Me].SIDE) * OPS_RESERVE_PER_BULB
 			// Plus de quoi PLANIFIER : la chaine du dernier plan porte encore des actions,
 			// on les joue avant de se placer plutot que de laisser les TP intacts.
+			//
+			// MESURE : s'arreter PLUS TOT, des qu'un plan de plus ne tient pas, pour jouer la
+			// chaine a la place, PERD — difference appariee -0,366 +/- 0,144 (t = -2,55) a
+			// 9-12 cœurs, malgre 2,97 actions par tour de poireau contre 2,42 et deux fois
+			// moins d'avortements. Replanifier apres chaque action vaut donc plus que jouer
+			// des actions estimees sur un etat perime. La vidange ne sert que quand aucun plan
+			// n'est plus finançable du tout.
 			if (getOperations() > OPS_DEADLINE) {
 				drainChain(StateClass.countSummonsAfterMe(State, State[Me].SIDE))
 				break
