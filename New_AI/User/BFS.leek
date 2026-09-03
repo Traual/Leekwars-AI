@@ -118,6 +118,8 @@ class ActionSuite {
 		var candidates = [noPlay]
 
 		for (var entry in rootEntries) {
+			// Une différée ne vaut rien dans CET état : ni candidat terminal, ni tête de chaîne.
+			if (entry[6]) continue
 			var baseNode = entry[2]
 			baseNode.SCORE = entry[3]
 			push(candidates, baseNode)
@@ -249,6 +251,7 @@ class ActionSuite {
 			// Chemin frais : toutes les entrées sont positives et triées pour cet état.
 			if (count(Entries) == 0) return null
 			var top = Entries[0]
+			if (top[6]) return null   // la meilleure est différée : rien ne vaut mieux que s'arrêter
 			var fresh = top[2]
 			fresh.PARENT = Parent   // créé avec PARENT=null dans enumerateAndSort
 			fresh.SCORE = top[3]
@@ -356,6 +359,57 @@ class ActionSuite {
 			}
 		}
 
+		// Seconde passe, sur les SEULES actions de dégâts que la borne du tri vient d'écarter.
+		// Leur priorité stockée a été calculée dans un autre état ; un débuff joué depuis a pu
+		// retirer les boucliers qui les annulaient, et la liste, mémorisée sous une clé que ce
+		// débuff ne change pas, les laisserait invisibles pour tout le reste du déroulé.
+		// Le majorant tranche sans simuler : s'il ne bat pas la meilleure priorité courante,
+		// aucune simulation ne le fera, l'écarter est donc exact.
+		for (var entry in Reachable) {
+			if (entry[1] > BestPriority) continue   // déjà examinée par la boucle ci-dessus
+			var item2 = entry[5]
+			if (!ITEMINFO[item2].IS_BOUNDABLE_DAMAGE) continue
+			var cost2 = baseCosts[item2]
+			if (cost2 == null) {
+				var Infos2 = ITEMINFO[item2]
+				if (StateClass.cooldownOf(MyStats, item2) > 0) {
+					cost2 = -1
+				} else {
+					var used2 = StateClass.usesOf(MyStats, item2)
+					if (used2 >= Infos2.MAX_USES) {
+						cost2 = -1
+					} else {
+						baseUses[item2] = used2
+						cost2 = (Infos2.IS_WEAPON && MyWeapon != item2) ? Infos2.COST + 1 : Infos2.COST
+						if (cost2 > MyTp) cost2 = -1
+					}
+				}
+				baseCosts[item2] = cost2
+			}
+			if (cost2 < 0) continue
+			var from2 = entry[4]
+			if (!(from2 in MyOnlyWalk)) {
+				if (from2 in MyWalkCells.JUMP)                          cost2 += JumpCost
+				else if (from2 in MyWalkCells.TELEPORTATION)            cost2 += TeleCost
+				else if (from2 in MyWalkCells.TELEPORTATION_AND_JUMP)   cost2 += JumpCost + TeleCost
+			}
+			if (cost2 > MyTp) continue
+			var act2 = entry[0]
+			var ub = ScoringClass.actionUpperBound(item2, from2, act2.To, State, MySide, BaseHash)
+			if (ub <= BestPriority * max(1, cost2)) continue
+			if (Workspace == null) Workspace = clone(State, 1)
+			var cand2 = NodeClass.ActionToNodeInTree(act2, Workspace, from2, MyWalkCells, cost2, ITEMINFO[item2], item2, act2.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, baseUses[item2])
+			var score2 = ScoringClass.getStateScoreFromParent(cand2, Workspace, ParentScore, Parent, Parent.HFP_BY_SIDE, MySide, Parent.POISON_KEY)
+			StateClass.restoreWorkspace(Workspace, cand2.CLONED)
+			cand2.CLONED = null
+			var prio2 = priorityOf(score2 - ParentScore, cost2)
+			if (prio2 > BestPriority) {
+				BestPriority = prio2
+				BestNode = cand2
+				BestNode.SCORE = score2
+			}
+		}
+
 		return BestNode
 	}
 
@@ -405,10 +459,17 @@ class ActionSuite {
 					BOUND_SKIPPED++
 				}
 			}
-			if (delta <= BFS_DELTA_EPSILON) continue
+			// Une action de dégâts que les boucliers annulent AUJOURD'HUI peut valoir beaucoup
+			// une fois ces boucliers retirés par un débuff joué plus tôt dans la même suite.
+			// La jeter ici la rendrait introuvable pour tout le reste du déroulé, puisque la
+			// liste est mémorisée sous une clé que le débuff ne change pas. On la garde donc,
+			// marquée DIFFÉRÉE : elle n'est pas déroulée comme racine, seulement réexaminée
+			// comme successeur, avec son majorant recalculé dans l'état du moment.
+			var deferred = delta <= BFS_DELTA_EPSILON
+			if (deferred && !ITEMINFO[Item].IS_BOUNDABLE_DAMAGE) continue
 			// pair[1] est le coût TP COMPLET de cette action dans CET état (item + swap d'arme
 			// + saut/télépo), déjà résolu par getBaseActions pour son filtre de jouabilité.
-			push(Entries, [act, priorityOf(delta, pair[1]), node, nodeScore, act.From, Item])
+			push(Entries, [act, priorityOf(delta, pair[1]), node, nodeScore, act.From, Item, deferred])
 		}
 		// arraySort RENVOIE le tableau trié (doc LS) : il faut capturer le retour.
 		return arraySort(Entries, function(a, b) {
