@@ -38,7 +38,19 @@ global BFS_CHAIN_STEPS = 0
  * Il coûte des opérations : privilégier les actions bon marché allonge les chaînes, donc
  * multiplie les nœuds. C'est une conséquence attendue du critère, pas un effet de bord.
  */
-global BFS_SCORE_PER_ACTION_COST = true
+// Priorite de la recherche : Delta de score ABSOLU, pas le rendement par TP.
+//
+// Mesure du 2026-09-03, 480 combats aux builds du top 50, plan apparie (memes scenarios
+// rejoues avec et sans) : le rendement par TP valait +0,048 de fitness et 53 % de victoires
+// contre main, le Delta absolu vaut +0,209 +/- 0,035 et 57 %. L'ecart entre les deux est de
+// +0,160 +/- 0,047 (t = +3,43), et les QUATRE bandes de cœurs sont positives (+0,267 a <= 8,
+// +0,090 a 9-12, +0,187 a 13-16, +0,182 au-dessus de 16).
+//
+// Pourquoi : diviser par le cout fait remonter les petites actions bon marche en tete de
+// chaine. Le glouton les joue, epuise ses TP en gains marginaux, et n'atteint plus la grosse
+// action qui valait le tour. Le Delta absolu poursuit d'abord ce qui compte ; le cout reste
+// pris en compte, mais par la chaine elle-meme, qui s'arrete quand les TP manquent.
+global BFS_SCORE_PER_ACTION_COST = false
 
 class ActionSuite {
 
