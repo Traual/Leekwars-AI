@@ -495,11 +495,13 @@ global OPS_DEADLINE = 0
 // donc 1,8 fois le pire cas observe, pas cinq fois comme la premiere version qui rendait la
 // recherche perdante en tronquant plus qu'elle n'evitait d'avortements.
 global OPS_RESERVE_TURN = 150000
-// Part laissee a chaque bulbe vivant, qui cherche dans le MEME compteur apres son invocateur.
-// Un tour de bulbe complet coute 877 k en mediane, mais le bulbe porte la meme garde et se
-// coupe donc tout seul : on ne lui reserve que de quoi virtualiser, enumerer et se placer.
-// Le budget rendu profite a l'invocateur, dont les actions valent bien plus que les siennes.
-global OPS_RESERVE_PER_BULB = 250000
+// Part laissee a chaque summon qui joue APRES moi et cherche dans le MEME compteur.
+// Valeur DERIVEE, pas reglee : le cout fixe d'une decision vaut 531 k operations mesurees et
+// un tour de bulbe complet 877 k, donc en dessous de ce seuil le bulbe ne peut terminer
+// AUCUNE decision — il se coupe et ne joue rien. A 250 k, mesure sur six matchups a 4-9
+// cœurs : 0,50 action par tour de bulbe ; a 550 k : 0,56, au-dessus de main, et les poireaux
+// montent aussi (2,35 -> 2,42).
+global OPS_RESERVE_PER_BULB = 550000
 // Part STRICTE du placement final, celle que la vidange de chaine n'a pas le droit d'entamer.
 // Mesuree sur les memes 49 tours : maximum 82 861 operations, on en garde 100 000.
 // L'ecart avec OPS_RESERVE_TURN est ce qui finance la vidange, sans agrandir la reserve.
