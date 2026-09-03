@@ -391,6 +391,20 @@ class ActionSuite {
 			StateClass.restoreWorkspace(Workspace, node.CLONED)
 			node.CLONED = null
 			var delta = nodeScore - ReferenceScore
+			// AUDIT du majorant : il doit TOUJOURS couvrir le Δ réel. Une seule violation
+			// suffit à rendre toute coupure fondée dessus incorrecte, et elle serait muette.
+			if (BOUND_AUDIT) {
+				var ub = ScoringClass.actionUpperBound(Item, act.From, act.To, State, MySide, BaseHash)
+				if (ub != BOUND_MUST_SIMULATE) {
+					BOUND_CHECKED++
+					if (ub < delta) {
+						BOUND_VIOLATED++
+						debugE("[MAJORANT VIOLE] " + ITEMINFO[Item].NAME + " majorant " + ub + " < delta " + delta)
+					}
+				} else {
+					BOUND_SKIPPED++
+				}
+			}
 			if (delta <= BFS_DELTA_EPSILON) continue
 			// pair[1] est le coût TP COMPLET de cette action dans CET état (item + swap d'arme
 			// + saut/télépo), déjà résolu par getBaseActions pour son filtre de jouabilité.

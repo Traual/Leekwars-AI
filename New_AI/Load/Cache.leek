@@ -473,3 +473,10 @@ global MAP_CELL_TO_BITMASK  = []
 global MAP_OBSTACLES_CACHE  = []; for (var i = 0; i < 18; i++) push(MAP_OBSTACLES_CACHE, 0)
 global ACC_TEMPLATE         = []; for (var i = 0; i < 19; i++) push(ACC_TEMPLATE, 0)
 global CELL_BY_LSB          = []
+
+// Audit du majorant d'action (ScoringClass.actionUpperBound) : à true, chaque action simulée
+// vérifie que son majorant couvre bien son Δ réel. Coût nul à false.
+global BOUND_AUDIT = false
+global BOUND_CHECKED = 0
+global BOUND_VIOLATED = 0
+global BOUND_SKIPPED = 0

@@ -605,4 +605,95 @@ class ScoringClass {
                  * (BASE_ALIVE + W_LIFE * sqrt(reviveLife) + W_TOTAL_LIFE * sqrt(reviveTL))
              + ImportanceClass.capability(entity_state)
     }
+
+	/*
+	 * MAJORANT du gain d'une action, calculé SANS la simuler ni la scorer.
+	 *
+	 * Sert à ordonner la recherche et à couper : une action dont le majorant ne bat pas le
+	 * meilleur gain déjà réalisé ne peut pas gagner, on peut l'écarter sans la simuler.
+	 *
+	 * CONTRAT, à ne jamais affaiblir : la valeur rendue est toujours >= au Δ réel de l'action.
+	 * Toute approximation penche vers le HAUT (jet maximal, critique supposé, collatéral allié
+	 * ignoré), et toute famille d'effet que ce majorant ne sait pas borner rend
+	 * BOUND_MUST_SIMULATE, ce qui force la simulation au lieu d'élaguer. Sous-estimer serait un
+	 * bug muet : la coupure perdrait des kills sans rien afficher.
+	 *
+	 * Ne borne que les items dont TOUS les effets sont des dégâts sur ennemi. Un effet de plus
+	 * (soin, vol, bouclier, invocation, poison, vulnérabilité) apporterait de la valeur non
+	 * comptée ici, donc rendrait le majorant faux.
+	 */
+	static actionUpperBound(Item, From, To, State, MySide, BaseHash) {
+		var Infos = ITEMINFO[Item]
+		// Drapeau posé au preload : poison, dégâts de vie, soin, bouclier, vol, multiplicateur par
+		// nombre de cibles et effets sur le lanceur sortent tous du domaine de cette formule.
+		if (!Infos.IS_BOUNDABLE_DAMAGE) return BOUND_MUST_SIMULATE
+		var dmg = Infos.EFFECTS
+		var MyStats = State[Me]
+		// Force plancherée comme le moteur, puissance non plancherée, critique toujours supposé :
+		// les trois facteurs de la formule de dégâts, pris à leur valeur la plus favorable.
+		var gainFactor = (1 + max(0, MyStats.STRENGTH) / 100) * (1 + MyStats.POWER / 100) * CRITICAL_FACTOR
+		var raw = 0
+		for (var eff in dmg) raw += eff[1] + eff[2]
+		raw = raw * gainFactor
+		var Targets = ConsequencesClass.ConsequenceTargets(Item, From, To, State, Me, BaseHash)
+		var bound = 0
+		// Vol de vie : chaque coup me rend des points de vie, donc MON terme monte aussi. Cumulé
+		// sur les cibles, plafonné par ma vie manquante, et converti une seule fois à la fin.
+		var stealFactor = max(0, MyStats.WISDOM) / 1000
+		var stealRoom = MyStats.TOTAL_LIFE - MyStats.LIFE
+		var stolen = 0
+		for (var tar: var dist in Targets) {
+			var stat = State[tar]
+			if (stat == null) continue
+			if (stat.LIFE <= 0) continue
+			// Le collatéral sur un allié ne peut que RETIRER de la valeur : l'ignorer majore.
+			if (stat.SIDE == MySide) continue
+			// +1 : le moteur ARRONDIT les dégâts après les boucliers, l'arrondi peut monter d'un
+			// demi-point. Majorer d'une unité coûte une addition et referme la brèche.
+			var dealt = raw * AOE_FALLOFF[dist] * (1 - stat.RELATIVE_SHIELD / 100) - stat.ABSOLUTE_SHIELD + 1
+			if (dealt <= 0) continue
+			var w = REPLAN_WEIGHTS.entityWeights(tar, stat)
+			var life = stat.LIFE
+			if (dealt >= life) {
+				// Une mort vaut bien plus que le terme de sa victime : elle tue les invocations de
+				// l'entité, retire tous les effets qu'elle avait lancés, et allège le danger que
+				// subissent tous mes alliés. Rien de tout cela n'est bornable à ce prix : on refuse
+				// de borner et on laisse la simulation trancher.
+				return BOUND_MUST_SIMULATE
+			} else {
+				// Canal STOCK : la formule de survie lit afterPeriodic, pas LIFE. L'écart de racines
+				// y est plus grand, c'est donc lui qu'il faut majorer.
+				var ap = life - COEF_PERIODIC_TICK * (stat.POISON + stat.AFTEREFFECT - stat.HEAL)
+				if (ap < 0) ap = 0
+				var apAfter = ap - dealt
+				if (apAfter < 0) apAfter = 0
+				var sa = sqrt(ap)
+				var sb = sqrt(apAfter)
+				bound += w.LIFE * W_LIFE * (sa - sb)
+				// Canal HORIZON : g = h/(h+2p). Sa baisse quand h perd d vaut 2pd/((h+2p)(h-d+2p)),
+				// maximale en p = sqrt(h(h-d))/2 où elle vaut d/(sqrt(h)+sqrt(h-d))². Ce majorant
+				// tient donc pour TOUTE pression, qu'on n'a pas à calculer.
+				var den = sa + sb
+				if (den > 0) bound += w.THREAT * W_TTK * dealt / (den * den)
+				// Canal DISSUASION : le terme d'un porteur de renvoi décroît quand sa vie baisse,
+				// donc mon score monte d'autant. La baisse est plafonnée par les dégâts infligés.
+				if (stat.DAMAGE_RETURN > 0) bound += w.DR * DR_RETURN_EXPECT * dealt * stat.DAMAGE_RETURN / 100
+				// Canal CAPITAL : les dégâts érodent la vie max de la cible (10 % en critique, plus
+				// les 5 % de base), ce qui abaisse encore son terme.
+				var tl = stat.TOTAL_LIFE
+				var eroded = tl - EROSION_CRIT * dealt
+				if (eroded < 0) eroded = 0
+				bound += w.MAXLIFE * W_TOTAL_LIFE * (sqrt(tl) - sqrt(eroded))
+				stolen += dealt * stealFactor
+			}
+		}
+		if (stolen > 0 && stealRoom > 0) {
+			if (stolen > stealRoom) stolen = stealRoom
+			var myAp = MyStats.LIFE - COEF_PERIODIC_TICK * (MyStats.POISON + MyStats.AFTEREFFECT - MyStats.HEAL)
+			if (myAp < 0) myAp = 0
+			var myW = REPLAN_WEIGHTS.entityWeights(Me, MyStats)
+			bound += myW.LIFE * W_LIFE * (sqrt(myAp + stolen) - sqrt(myAp))
+		}
+		return bound
+	}
 }

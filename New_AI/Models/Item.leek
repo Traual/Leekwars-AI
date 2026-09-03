@@ -25,6 +25,7 @@ class ItemClass {
 	AOE_DIST_STEP   // pas de ce balayage (2 pour les zones en X, 1 partout ailleurs)
 	IS_WEAPON
 	STACKABLE
+	IS_BOUNDABLE_DAMAGE                // tous ses effets sont des degats directs sur ennemi : majorable sans simuler
 	IS_VULNERABILITY
 	LAUNCH_GEOMETRY_KEY
 	FULL_GEOMETRY_KEY
@@ -63,9 +64,19 @@ class ItemClass {
 			this.AOE_DIST_STEP = EntityDangerClass.MapAdditionDist[this.AREA]
 			this.IS_WEAPON = isWeapon(id)
 			this.STACKABLE = this.EFFECTS[0][5] & EFFECT_MODIFIER_STACKABLE   // flag du premier effet
+			var allPureDamage = true
+			for (var e0 in this.EFFECTS) {
+				if (e0[0] != EFFECT_DAMAGE) allPureDamage = false
+				else if (e0[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) allPureDamage = false
+				else if (e0[5] & EFFECT_MODIFIER_ON_CASTER) allPureDamage = false
+				else if (!(e0[4] & EFFECT_TARGET_ENEMIES)) allPureDamage = false
+			}
+			this.IS_BOUNDABLE_DAMAGE = allPureDamage
 			// PARCOURS UNIQUE d'EFFECTS : classification vulné (inchangée) + construction des
 			// vues précompilées Heal/Danger — lignes ORIGINALES, ordre d'EFFECTS conservé,
 			// tableaux créés au premier ajout seulement (null = vide).
+			// Item dont TOUS les effets sont des dégâts directs sur ennemi, sans multiplicateur par
+			// nombre de cibles : le seul cas que ScoringClass.actionUpperBound sait majorer.
 			this.IS_VULNERABILITY = false
 			this.IS_HEAL_ITEM = false
 			this.IS_DANGER_ITEM = false

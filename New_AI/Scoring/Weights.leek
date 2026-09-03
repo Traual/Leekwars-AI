@@ -99,3 +99,7 @@ global CAST_COST = [
 // à 1/4 : le poison garde ~80% de sa valeur là-bas, ~35% contre une équipe full-antidote).
 // Monter => dévaloriser le poison plus fort contre les équipes couvertes.
 global POISON_CLEANSE_W = 1.0
+
+// Valeur rendue par ScoringClass.actionUpperBound quand il ne sait pas borner l'action :
+// assez grande pour qu'elle soit toujours simulée plutôt qu'élaguée.
+global BOUND_MUST_SIMULATE = 1000000000
