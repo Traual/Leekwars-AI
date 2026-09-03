@@ -490,8 +490,13 @@ global BOUND_SKIPPED = 0
 // OPS_CAP survit au tour : le bulbe lit celui de son invocateur (getCores() rendrait le sien).
 global OPS_CAP = null
 global OPS_DEADLINE = 0
-// Reserve de fin de tour : executer les actions restantes, choisir la cellule finale et s'y
-// rendre. Mesures du profil : un cast coute 3 k au moteur, FinalCell 8 k par cellule evaluee.
-global OPS_RESERVE_TURN = 400000
-// Part laissee a chaque bulbe vivant, qui cherchera dans le meme compteur apres moi.
-global OPS_RESERVE_PER_BULB = 800000
+// Reserve de fin de tour : choisir la cellule finale et s'y rendre. MESURE sur bench_4v4_full,
+// 49 tours d'entite : mediane 12 882 operations, p90 32 234, maximum 82 861. La reserve vaut
+// donc 1,8 fois le pire cas observe, pas cinq fois comme la premiere version qui rendait la
+// recherche perdante en tronquant plus qu'elle n'evitait d'avortements.
+global OPS_RESERVE_TURN = 150000
+// Part laissee a chaque bulbe vivant, qui cherche dans le MEME compteur apres son invocateur.
+// Un tour de bulbe complet coute 877 k en mediane, mais le bulbe porte la meme garde et se
+// coupe donc tout seul : on ne lui reserve que de quoi virtualiser, enumerer et se placer.
+// Le budget rendu profite a l'invocateur, dont les actions valent bien plus que les siennes.
+global OPS_RESERVE_PER_BULB = 250000
