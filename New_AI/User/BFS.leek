@@ -182,9 +182,22 @@ class ActionSuite {
 		}
 		BenchOps.Stop("Terminal")
 
-		if (best.ACTION == null) return null
+		if (best.ACTION == null) {
+			BFS_LAST_CHAIN = []
+			return null
+		}
+		// Chaine complete du meilleur candidat, de la racine vers la feuille. Play n'en joue
+		// que la tete tant qu'il peut replanifier ; quand le budget ne finance plus un plan,
+		// la suite se joue telle quelle plutot que de ne rien jouer du tout. Remontee bornee
+		// par la longueur de chaine (mediane 2, maximum 7).
+		var chain = []
 		var ancestor = best
-		while (ancestor.PARENT != null) ancestor = ancestor.PARENT
+		while (ancestor.PARENT != null) {
+			push(chain, ancestor.ACTION)
+			ancestor = ancestor.PARENT
+		}
+		reverse(chain)   // en place : reverse ne rend rien
+		BFS_LAST_CHAIN = chain
 		debug("Best: " + ITEMINFO[ancestor.ACTION.Item].NAME + " | From: " + ancestor.ACTION.From + " | To: " + ancestor.ACTION.To + " | Delta: " + (bestFinal - initialScore) + " | " + nBases + " bases, " + BFS_CHAIN_STEPS + " steps")
 		return ancestor.ACTION
 	}

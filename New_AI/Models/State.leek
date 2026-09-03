@@ -105,6 +105,22 @@ class StateClass {
 	}
 
 	/*
+	 * Summons vivants du camp qui joueront APRES moi dans cette ronde — la seule notion utile
+	 * au budget d'operations : poireau et bulbes partagent un compteur et un plafond par
+	 * ronde, donc je ne dois de reserve qu'a ceux qui chercheront encore apres moi. Compter
+	 * TOUS les vivants faisait refuser d'agir a un bulbe pour des freres deja joues et pour
+	 * lui-meme (mesure : 0,37 action par tour de bulbe a 8 coeurs contre 0,90 sans garde).
+	 */
+	static countSummonsAfterMe(State, side) {
+		var myOrder = State[Me].TURN_ORDER
+		var n = 0
+		for (var e: var stat in State) {
+			if (stat.LIFE > 0 && stat.IS_SUMMON && stat.SIDE == side && stat.TURN_ORDER > myOrder) n++
+		}
+		return n
+	}
+
+	/*
 	 * LE clone de simulation — source unique. Les containers sont PARTAGÉS par défaut :
 	 * personne n'écrit INVENTORY ni BASE_STATS pendant la sim ; EFFECTS est partagé
 	 * mais JAMAIS muté en place — toute modification (remplacement, mort du caster, revive)

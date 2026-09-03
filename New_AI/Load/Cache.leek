@@ -500,3 +500,14 @@ global OPS_RESERVE_TURN = 150000
 // coupe donc tout seul : on ne lui reserve que de quoi virtualiser, enumerer et se placer.
 // Le budget rendu profite a l'invocateur, dont les actions valent bien plus que les siennes.
 global OPS_RESERVE_PER_BULB = 250000
+// Part STRICTE du placement final, celle que la vidange de chaine n'a pas le droit d'entamer.
+// Mesuree sur les memes 49 tours : maximum 82 861 operations, on en garde 100 000.
+// L'ecart avec OPS_RESERVE_TURN est ce qui finance la vidange, sans agrandir la reserve.
+global OPS_RESERVE_PLACEMENT = 100000
+// Cout d'une action REELLE (deplacement puis lancer), le plus cher observe dans ce combat.
+// Mesure de depart sur 77 executions a 4 et 8 coeurs : mediane 3 682, p90 7 521, maximum
+// 16 194 ; on part au-dessus du pire cas vu, et chaque execution releve la valeur si besoin.
+global OPS_EXEC_MAX = 20000
+// Chaine complete du meilleur candidat du dernier plan, racine comprise : quand le budget
+// ne finance plus un plan, ses actions suivantes se jouent telles quelles.
+global BFS_LAST_CHAIN = []

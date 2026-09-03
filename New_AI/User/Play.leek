@@ -19,14 +19,22 @@ class Play {
 		// Plafond du moteur, lu une seule fois par combat : getCores() vaut 15 operations et,
 		// dans un bulbe, rendrait SES coeurs alors que le compteur est celui de l'invocateur.
 		if (OPS_CAP == null) OPS_CAP = getCores() * 1000000
+		// Chaine du dernier plan, remise a zero a chaque tour : la vidange ne doit jamais
+		// rejouer celle d'un autre tour ni celle d'une autre entite (poireau et bulbes
+		// partagent la VM, donc les globals).
+		BFS_LAST_CHAIN = []
 		while (true) {
 			var State = StateClass.Virtualize()
 			// Date limite du tour, recalculee a chaque action reelle : le nombre de bulbes
 			// vivants change quand j'en invoque un ou qu'il meurt, et chacun cherchera apres
 			// moi dans ce meme compteur.
-			OPS_DEADLINE = OPS_CAP - OPS_RESERVE_TURN - StateClass.countLivingSummons(State, State[Me].SIDE) * OPS_RESERVE_PER_BULB
-			// Plus de quoi chercher : on garde ce qu'il faut pour se placer et on sort.
-			if (getOperations() > OPS_DEADLINE) break
+			OPS_DEADLINE = OPS_CAP - OPS_RESERVE_TURN - StateClass.countSummonsAfterMe(State, State[Me].SIDE) * OPS_RESERVE_PER_BULB
+			// Plus de quoi PLANIFIER : la chaine du dernier plan porte encore des actions,
+			// on les joue avant de se placer plutot que de laisser les TP intacts.
+			if (getOperations() > OPS_DEADLINE) {
+				drainChain(StateClass.countSummonsAfterMe(State, State[Me].SIDE))
+				break
+			}
 			// Ancre de replan : ma vraie cellule actuelle — meilleure estimation de ma cellule
 			// de fin de tour pour la couverture antidote, converge au fil des actions réelles.
 			// Portée par la POISON_KEY : les maps de l'ancienne ancre deviennent injoignables.
@@ -54,7 +62,12 @@ class Play {
 			debug("Using : " + ITEMINFO[Item].NAME + " from : " + From + " to : " + To)
 			var moveRes = WalkCellsClass.MoveTo(From, State, TmpBaseHash)
 			// Déplacement raté -> l'item n'est PAS lancé.
+			var opsBeforeExec = getOperations()
 			var res = moveRes[0] ? executeAction(Action) : moveRes
+			// Le plus cher deplacement-puis-lancer du combat : c'est la marge que la vidange
+			// exige avant de tenter une action de plus.
+			var execCost = getOperations() - opsBeforeExec
+			if (execCost > OPS_EXEC_MAX) OPS_EXEC_MAX = execCost
 			if (!res[0]) {
 				var failKey = res[1] + "|" + res[2] + "|" + Item + "|" + From + "|" + To
 					+ "|" + Action.RESURRECT_ID + "|" + getCell() + "|" + getTP() + "|" + getMP() + "|" + getWeapon()
@@ -81,6 +94,40 @@ class Play {
 	 * Exécute l'action (item classique, summon ou résurrection) et renvoie
 	 * [succès, phase, code moteur] : un résultat <= 0 (USE_FAILED = 0 compris) est un ÉCHEC.
 	 */
+	/*
+	 * Joue la suite de la chaine du dernier plan, sans replanifier. Appelee quand le budget
+	 * ne finance plus une recherche : le choix est alors entre des actions estimees sur un
+	 * etat d'il y a un coup, et aucune action du tout.
+	 *
+	 * Le financement ne vient PAS d'une reserve agrandie : OPS_RESERVE_TURN borne la
+	 * planification, OPS_RESERVE_PLACEMENT borne le placement final, et l'ecart entre les deux
+	 * est ce que la vidange a le droit de depenser. Chaque action verifie qu'elle tient dans
+	 * cet ecart AVANT de virtualiser, avec la marge du pire pas deja mesure.
+	 */
+	drainChain(livingSummons) {
+		var n = count(BFS_LAST_CHAIN)
+		if (n < 2) return;
+		var limit = OPS_CAP - OPS_RESERVE_PLACEMENT - livingSummons * OPS_RESERVE_PER_BULB
+		for (var i = 1; i < n; i++) {
+			var opsBefore = getOperations()
+			if (opsBefore + OPS_EXEC_MAX > limit) return;
+			var State = StateClass.Virtualize()
+			var Action = BFS_LAST_CHAIN[i]
+			var BaseHash = StateClass.getBaseHash(State)
+			var moveRes = WalkCellsClass.MoveTo(Action.From, State, BaseHash)
+			if (!moveRes[0]) return;
+			var res = executeAction(Action)
+			if (!res[0]) return;
+			debugC("[VIDANGE] " + ITEMINFO[Action.Item].NAME + " depuis " + Action.From, COLOR_GREEN)
+			var stepCost = getOperations() - opsBefore
+			if (stepCost > OPS_EXEC_MAX) OPS_EXEC_MAX = stepCost
+			// Une invocation jouee ici cherchera dans ce meme compteur : sa part est due.
+			// L'etat virtualise date d'AVANT le lancer, il ne la contient pas : on la compte
+			// sur l'effet de l'item, pas sur l'etat.
+			if (ITEMINFO[Action.Item].EFFECTS[0][0] == EFFECT_SUMMON) limit = limit - OPS_RESERVE_PER_BULB
+		}
+	}
+
 	executeAction(Action) {
 		var Item = Action.Item
 		var To = Action.To
