@@ -24,7 +24,9 @@ class DangerPlanClass {
 	 * cellule <= 612 (10 bits), MP < 1024 (10 bits), mp clampé (shacklé négatif == 0). */
 	static mapCellItemAoeKeyOf(EntityStats) {
 		var usesJumpLayer = WalkCellsClass.canJumpNextTurn(EntityStats) ? 1 : 0
-		return (EntityStats.ID << 21) | (usesJumpLayer << 20) | (EntityStats.CELL << 10) | max(0, EntityStats.TOTAL_MP)
+		// L'allonge de telepo entre dans la cle : sans elle, le meme caster avec et sans telepo
+		// prete partagerait une geometrie, donc une menace fausse dans un cas sur deux.
+		return (EntityStats.ID << 21) | (usesJumpLayer << 20) | (EntityStats.CELL << 10) | WalkCellsClass.dangerMpOf(EntityStats)
 	}
 
 	/* [cellule -> [item -> plus petite distance d'AoE]] : ce que le caster peut atteindre.

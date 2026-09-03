@@ -126,7 +126,7 @@ class WalkCellsClass {
 	static getWalkNoEntitiesFull(stats) {
 		// mp clampé à 0 : un shackle peut stocker TOTAL_MP négatif — non clampé, le signe
 		// s'étend et ÉCRASE le champ CELL de cette clé persistante. mp < 0 marche comme mp = 0.
-		var mp = max(0, stats.TOTAL_MP)
+		var mp = dangerMpOf(stats)
 		var key = (stats.CELL << 32) | mp
 		if (key in WALKABLE_CACHE_NOENT) return WALKABLE_CACHE_NOENT[key]
 		BenchOps.Start("WalkCells")
@@ -137,7 +137,7 @@ class WalkCellsClass {
 	}
 
 	static getJumpNoEntitiesFull(stats) {
-		var mp = max(0, stats.TOTAL_MP) // clampé : voir getWalkNoEntitiesFull
+		var mp = dangerMpOf(stats) // clampé : voir getWalkNoEntitiesFull
 		var key = (stats.CELL << 32) | mp
 		if (key in JUMP_CACHE_NOENT) return JUMP_CACHE_NOENT[key]
 		BenchOps.Start("WalkCells")
@@ -150,6 +150,26 @@ class WalkCellsClass {
 	/* Jump FUTUR d'une entité non-Me (potentiel de déplacement à son prochain tour) : ses TP
 	 * seront rechargés -> TOTAL_TP, cooldown <= 1 (il aura tourné d'ici là). Ne pas confondre
 	 * avec canJump (TP réellement restants), qui reste le filtre du BFS de Me. */
+	/* Allonge de TELEPORTATION du prochain tour d'une entite non-Me, exprimee en points de
+	 * mouvement. La telepo n'etait dans AUCUNE couche du domaine de danger : un ennemi qui la
+	 * porte etait donc juge incapable de franchir douze cases, et une cellule declaree sure ne
+	 * l'etait pas. C'est ce defaut qui a decide le combat miroir du 2026-09-02.
+	 * La compter comme de la marche SURESTIME la portee reelle (elle ignore les obstacles),
+	 * ce qui est le bon sens de l'erreur pour une menace. */
+	static teleReachNextTurn(stats) {
+		var cd = teleCdOf(stats)
+		if (cd < 0 || cd > 1) return 0
+		if (stats.TOTAL_TP < TELE_COST) return 0
+		return ITEMINFO[CHIP_TELEPORTATION].MAXRANGE
+	}
+
+	/* Budget de deplacement du prochain tour, allonge de telepo comprise. Il traverse TOUTES
+	 * les cles concernees (caches NoEntities et geometrie par caster) pour qu'un ennemi
+	 * telepo-pret et le meme sans telepo ne partagent jamais une entree. */
+	static dangerMpOf(stats) {
+		return max(0, stats.TOTAL_MP) + teleReachNextTurn(stats)
+	}
+
 	static canJumpNextTurn(stats) {
 		var cd = jumpCdOf(stats)
 		return cd >= 0 && cd <= 1 && stats.TOTAL_TP >= JUMP_COST

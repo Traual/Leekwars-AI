@@ -140,7 +140,10 @@ class HealClass {
         var usesJumpLayer = WalkCellsClass.canJumpNextTurn(casterStats) ? 1 : 0
         // movementKey (21 bits, sans ID) : le contexte de déplacement partagé avec Danger —
         // clé des géométries persistantes du builder commun.
-        var movementKey = (usesJumpLayer << 20) | (casterStats.CELL << 10) | max(0, casterStats.TOTAL_MP)
+        // Meme allonge de telepo que le danger : la geometrie vient des memes fetchers, la cle
+        // doit donc porter le meme budget de deplacement, sinon deux soigneurs de meme TOTAL_MP
+        // mais d'accessibilite differente partageraient une couverture.
+        var movementKey = (usesJumpLayer << 20) | (casterStats.CELL << 10) | WalkCellsClass.dangerMpOf(casterStats)
         var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, movementKey)
         key = addValueToBinHash(key, ((critFactor > 1 ? 1 : 0) << 30) | (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
         if (key in HEAL_COVERAGE_CACHE) return HEAL_COVERAGE_CACHE[key]
