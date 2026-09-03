@@ -128,7 +128,10 @@ class ActionsClass {
 	}
 
 	/* Cellule d'invocation : près des ennemis pour un bulbe offensif (MeanBulbs), près des
-	 * alliés sinon (bulbe doux / résurrection). */
+	 * alliés pour un bulbe doux. La résurrection prend un troisième critère : l'entité revient
+	 * à vie partielle et ne joue qu'à la ronde suivante, donc elle doit d'abord SURVIVRE une
+	 * ronde entière. On la pose près des alliés mais à l'écart des ennemis, les deux distances
+	 * étant dans la même unité. */
 	// Pas de cache local : le résultat est déjà couvert par ACTIONS_SUMMON_CACHE (clé
 	// BaseHash + cellule), et les distances moyennes ont leurs propres caches.
 	static getSummonAction(LaunchType, basefrom, MinRange, MaxRange, LeekCells, item, State, base_hash) {
@@ -141,6 +144,18 @@ class ActionsClass {
 				if (c in LeekCells) continue
 				if (CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) {
 					var ScoreOfTestedCell = StateClass.getAverageDistFromEnnemies(entity_side, State, c, ID_NOBODY, base_hash)
+					if (ScoreOfTestedCell < BestScore) {
+						BestScore = ScoreOfTestedCell
+						CellToSummon = c
+					}
+				}
+			}
+		} else if (item == CHIP_RESURRECTION) {
+			for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
+				if (c in LeekCells) continue
+				if (CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) {
+					var ScoreOfTestedCell = StateClass.getAverageDistFromAllies(entity_side, State, c, ID_NOBODY, base_hash)
+						- StateClass.getAverageDistFromEnnemies(entity_side, State, c, ID_NOBODY, base_hash)
 					if (ScoreOfTestedCell < BestScore) {
 						BestScore = ScoreOfTestedCell
 						CellToSummon = c
