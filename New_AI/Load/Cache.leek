@@ -480,3 +480,18 @@ global BOUND_AUDIT = false
 global BOUND_CHECKED = 0
 global BOUND_VIOLATED = 0
 global BOUND_SKIPPED = 0
+
+// ---------------------------------------------------------------------------
+// BUDGET D'OPERATIONS
+// Le plafond du moteur vaut cores x 1e6 par tour, et getOperations() est CUMULATIF sur la VM :
+// un poireau et ses bulbes se partagent le meme compteur et le meme plafond. La date limite
+// est donc ABSOLUE, jamais relative, et le proprietaire doit reserver de quoi finir son tour
+// ET de quoi laisser jouer ses bulbes.
+// OPS_CAP survit au tour : le bulbe lit celui de son invocateur (getCores() rendrait le sien).
+global OPS_CAP = null
+global OPS_DEADLINE = 0
+// Reserve de fin de tour : executer les actions restantes, choisir la cellule finale et s'y
+// rendre. Mesures du profil : un cast coute 3 k au moteur, FinalCell 8 k par cellule evaluee.
+global OPS_RESERVE_TURN = 400000
+// Part laissee a chaque bulbe vivant, qui cherchera dans le meme compteur apres moi.
+global OPS_RESERVE_PER_BULB = 800000

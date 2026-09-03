@@ -204,6 +204,9 @@ class ActionSuite {
 	 * qu'il y en a une, en collectant chaque nœud traversé comme candidat terminal.
 	 */
 	static unroll(node, ScoredCache, ReachableCache, MySide, candidates) {
+		// Tout noeud deja visite est une suite ou l'on peut s'arreter : couper ici rend
+		// simplement une chaine plus courte, jamais un resultat invalide.
+		if (getOperations() > OPS_DEADLINE) return;
 		var next = findBestNextNode(node, ScoredCache, ReachableCache, MySide)
 		if (next == null) return;
 		push(candidates, next)
@@ -342,6 +345,7 @@ class ActionSuite {
 			}
 			if (cost > MyTp) continue
 
+			if (getOperations() > OPS_DEADLINE) break
 			if (Workspace == null) Workspace = clone(State, 1)
 			var act = entry[0]
 			var candidate = NodeClass.ActionToNodeInTree(act, Workspace, from, MyWalkCells, cost, ITEMINFO[item], item, act.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, baseUses[item])
@@ -439,6 +443,9 @@ class ActionSuite {
 		// état matérialisé, sinon les enfants reconstruiraient un état faux.
 		var Workspace = null
 		for (var pair in basePairs) {
+			// Les racines deja scorees restent des candidats valides : s'arreter ici revient a
+			// n'avoir enumere qu'une partie de l'eventail.
+			if (getOperations() > OPS_DEADLINE) break
 			var act = pair[0]
 			var Item = act.Item
 			if (Workspace == null) Workspace = clone(State, 1)
