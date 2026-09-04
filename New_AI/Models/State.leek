@@ -111,11 +111,28 @@ class StateClass {
 	 * TOUS les vivants faisait refuser d'agir a un bulbe pour des freres deja joues et pour
 	 * lui-meme (mesure : 0,37 action par tour de bulbe a 8 coeurs contre 0,90 sans garde).
 	 */
-	static countSummonsAfterMe(State, side) {
-		var myOrder = State[Me].TURN_ORDER
+	/*
+	 * Combien d'entites vont ENCORE consommer MON compteur d'operations cette ronde.
+	 *
+	 * Le compteur du moteur est par INVOCATEUR, pas par camp : BulbAI.runIA execute la fonction
+	 * avec mOwnerAI comme contexte, donc un bulbe debite le compteur du poireau qui l'a invoque
+	 * et d'aucun autre. Compter par SIDE, comme on le faisait, amputait le poireau d'une part
+	 * pour chaque bulbe ALLIE vivant — un bulbe qui ne touchera jamais son compteur. En combat
+	 * d'equipe avec deux ou trois allies porteurs de bulbes, c'est le tiers du budget rendu.
+	 *
+	 * Et quand c'est un BULBE qui appelle, ce qu'il doit reserver n'est pas sa propre
+	 * descendance (il n'en a pas) mais ses FRERES du meme invocateur qui jouent apres lui :
+	 * eux aussi debitent le compteur de leur proprietaire commun.
+	 */
+	static countSummonsAfterMe(State) {
+		var MyStats = State[Me]
+		var myOrder = MyStats.TURN_ORDER
+		// Le proprietaire du compteur : moi si je suis un poireau, mon invocateur si je suis un bulbe.
+		var owner = MyStats.IS_SUMMON ? MyStats.SUMMONER : Me
 		var n = 0
 		for (var e: var stat in State) {
-			if (stat.LIFE > 0 && stat.IS_SUMMON && stat.SIDE == side && stat.TURN_ORDER > myOrder) n++
+			if (e == Me) continue
+			if (stat.LIFE > 0 && stat.IS_SUMMON && stat.SUMMONER == owner && stat.TURN_ORDER > myOrder) n++
 		}
 		return n
 	}

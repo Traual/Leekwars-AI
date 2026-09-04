@@ -28,7 +28,7 @@ class Play {
 			// Date limite du tour, recalculee a chaque action reelle : le nombre de bulbes
 			// vivants change quand j'en invoque un ou qu'il meurt, et chacun cherchera apres
 			// moi dans ce meme compteur.
-			OPS_DEADLINE = OPS_CAP - OPS_RESERVE_TURN - StateClass.countSummonsAfterMe(State, State[Me].SIDE) * OPS_RESERVE_PER_BULB
+			OPS_DEADLINE = OPS_CAP - OPS_RESERVE_TURN - StateClass.countSummonsAfterMe(State) * OPS_RESERVE_PER_BULB
 			// Plus de quoi PLANIFIER : la chaine du dernier plan porte encore des actions,
 			// on les joue avant de se placer plutot que de laisser les TP intacts.
 			//
@@ -39,7 +39,7 @@ class Play {
 			// des actions estimees sur un etat perime. La vidange ne sert que quand aucun plan
 			// n'est plus finançable du tout.
 			if (getOperations() > OPS_DEADLINE) {
-				drainChain(StateClass.countSummonsAfterMe(State, State[Me].SIDE))
+				drainChain(StateClass.countSummonsAfterMe(State))
 				break
 			}
 			// Ancre de replan : ma vraie cellule actuelle — meilleure estimation de ma cellule
