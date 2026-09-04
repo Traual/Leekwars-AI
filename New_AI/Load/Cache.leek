@@ -510,6 +510,10 @@ global OPS_RESERVE_PLACEMENT = 100000
 // Mesure de depart sur 77 executions a 4 et 8 coeurs : mediane 3 682, p90 7 521, maximum
 // 16 194 ; on part au-dessus du pire cas vu, et chaque execution releve la valeur si besoin.
 global OPS_EXEC_MAX = 20000
+// Marge laissee au deplacement final APRES le balayage de placement : le balayage s'interrompt
+// quand il ne reste plus que ca. Mesure : un deplacement-puis-lancer reel coute 3 682 operations
+// en mediane et 16 194 au pire sur 77 executions ; 25 000 couvre le pire cas vu.
+global OPS_MOVE_MARGIN = 25000
 // Chaine complete du meilleur candidat du dernier plan, racine comprise : quand le budget
 // ne finance plus un plan, ses actions suivantes se jouent telles quelles.
 global BFS_LAST_CHAIN = []

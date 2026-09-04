@@ -35,7 +35,13 @@ class FinalCell {
         var fold = ScoringClass.carrierFoldOthers(State)
         var poisonKey = (ANY_ANTIDOTE == true) ? ScoringClass.poisonKeyFromFold(State, BaseHash, fold) : 0
         var meWalkFp = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(State[Me])
-        var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey, meWalkFp)
+        // SEUL appel autorise a tronquer : c'est le placement REEL de fin de tour, celui qui se
+        // fait tuer par le moteur quand le budget est epuise (585 tours mesures sur 480 combats,
+        // contre 3 pour main). Le balayage est un MINIMUM dont la graine est ma cellule courante :
+        // s'arreter en route rend donc une reponse VALIDE, seulement moins bonne — strictement
+        // mieux que de mourir dedans, et mieux que de ne pas se placer du tout (mesure : sauter le
+        // placement coute -0,055, et -0,425 sous 8 coeurs).
+        var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey, meWalkFp, true)
         debug("Best final cell: " + res[0] + " (pénalité: " + res[1] + ", net: " + res[2] + ")")
         return res[0]
     }
@@ -56,7 +62,7 @@ class FinalCell {
      *        elle fixe exactement mes cellules accessibles
      * @return [meilleure cellule, pénalité (>= 0), net à cette cellule]
      */
-    static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey, meWalkFp) {
+    static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey, meWalkFp, allowTruncate) {
         BenchOps.Start("FinalCell")
         var MyState = State[Me]
         var mySide = MyState.SIDE
@@ -117,7 +123,17 @@ class FinalCell {
         // PREMIER vrai miss et pas avant : une cellule déjà en cache n'en construit aucun.
         var lazy = [null, null, null, null]
 
+        // Vrai seulement si le budget a coupe le balayage : le resultat n'est alors PAS
+        // l'optimum du set, il ne doit pas entrer dans le memo qui promet le contraire.
+        var truncated = false
         for (var cell: var mp in possibleCells) {
+            // Budget epuise : on garde le meilleur trouve jusqu'ici et on laisse de quoi bouger.
+            // Le test n'est paye que sur le placement REEL — le reclassement du BFS, qui appelle
+            // cette fonction une fois par candidat, passe allowTruncate a faux.
+            if (allowTruncate && getOperations() + OPS_MOVE_MARGIN > OPS_CAP) {
+                truncated = true
+                break
+            }
             // Le coût spatial est un PLANCHER de la pénalité de cette cellule : le coût du
             // danger ne peut que s'y ajouter. Une cellule dont le seul spatial dépasse déjà le
             // meilleur total ne peut pas gagner — coupure EXACTE, et elle épargne le net,
@@ -149,7 +165,9 @@ class FinalCell {
 
         // Renvoyé PAR RÉFÉRENCE, read-only en aval comme les autres maps cachées de l'IA.
         var res = [bestCell, bestPenalty, bestNet]
-        FINAL_PLACEMENT_CACHE[memoKey] = res
+        // Un balayage tronque n'est pas l'optimum : le memoriser servirait une reponse degradee
+        // a un etat qui, lui, aurait le budget de faire mieux.
+        if (!truncated) FINAL_PLACEMENT_CACHE[memoKey] = res
         BenchOps.Stop("FinalCell")
         return res
     }
