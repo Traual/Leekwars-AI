@@ -237,6 +237,12 @@ class ActionsClass {
 		var _final = []
 		var ItemInfos = ITEMINFO[Item]
 		var isLaser = ItemInfos.AREA == AREA_LASER_LINE
+		// Un item SANS ligne de vue requise se lance a travers les murs ET a travers les corps :
+		// la geometrie amont le sait deja (LoadHashedMapAoe choisit LaunchWithoutLos), mais la
+		// verification dynamique ci-dessous s'appliquait quand meme et lui reprenait tout ce que
+		// la geometrie venait de lui accorder. Concerne arsenic (38 builds du top 50), spark et
+		// repotting. Ne pas la payer est aussi plus rapide : c'est une LoS de moins par candidat.
+		var needLos = ItemInfos.NEEDLOS
 		var MinRange = ItemInfos.MINRANGE
 		// Toutes les LoS de cette boucle partagent le même BaseHash : la rotation de leur clé
 		// est hissée ici et chaque lookup ne paie plus qu'un XOR.
@@ -247,7 +253,7 @@ class ActionsClass {
 			if (from in HashedMapAoe) {
 				for (var to: var toHash in HashedMapAoe[from]) {
 					if (toHash in DoneHashs) continue
-					if (CellClass.getLosWithPrefix(from, to, State, BaseHash, losPrefix)) {
+					if (!needLos || CellClass.getLosWithPrefix(from, to, State, BaseHash, losPrefix)) {
 						if (isLaser) {
 							// Dédup dans les DEUX ordres : un fallback ANTÉRIEUR a pu déjà viser
 							// cette cellule (B-Laser : le bloqueur est lui-même un candidat).
