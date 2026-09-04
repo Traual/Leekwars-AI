@@ -494,7 +494,16 @@ global OPS_DEADLINE = 0
 // 49 tours d'entite : mediane 12 882 operations, p90 32 234, maximum 82 861. La reserve vaut
 // donc 1,8 fois le pire cas observe, pas cinq fois comme la premiere version qui rendait la
 // recherche perdante en tronquant plus qu'elle n'evitait d'avortements.
-global OPS_RESERVE_TURN = 150000
+//
+// PORTEE de 150 000 a 220 000 sur une dose-reponse mesuree en trois points, 480 combats chacun :
+//   90 000  -> -0,121 +/- 0,027 (t = -4,48), les quatre bandes reculent
+//   150 000 -> reference
+//   220 000 -> +0,050 +/- 0,034, et surtout +0,118 +/- 0,050 (t = +2,34) a 9-12 coeurs
+// Cette reserve ne couvre pas que le placement : la vidange de chaine, l'execution de la
+// derniere action reelle et la part que les bulbes trouveront ensuite dans le compteur partage
+// en dependent aussi. Tout ce qu'on rend a la recherche est pris a quelque chose qui en a plus
+// besoin.
+global OPS_RESERVE_TURN = 220000
 // Part laissee a chaque summon qui joue APRES moi et cherche dans le MEME compteur.
 // Valeur DERIVEE, pas reglee : le cout fixe d'une decision vaut 531 k operations mesurees et
 // un tour de bulbe complet 877 k, donc en dessous de ce seuil le bulbe ne peut terminer
