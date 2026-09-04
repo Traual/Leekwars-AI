@@ -495,23 +495,40 @@ global OPS_DEADLINE = 0
 // donc 1,8 fois le pire cas observe, pas cinq fois comme la premiere version qui rendait la
 // recherche perdante en tronquant plus qu'elle n'evitait d'avortements.
 //
-// PORTEE a 300 000 sur une dose-reponse mesuree en quatre points, 480 combats chacun :
+// DELIBEREMENT GENEREUSE, en attendant la refonte du scoring. Cette reserve est une fonction
+// du COUT du scoring, pas une valeur absolue : un scoring plus cher pour la position rend
+// FinalCell plus cher, donc la reserve doit monter avec lui. La regler finement maintenant
+// reviendrait a ajuster quelque chose que la refonte deplacera. On la met haute et on la
+// reglera avec le nouveau scoring.
+//
+// Dose-reponse mesuree jusqu'ici, 480 combats par point, plan apparie :
 //   90 000  -> -0,121 +/- 0,027 (t = -4,48), les quatre bandes reculent
 //   150 000 -> reference
 //   220 000 -> +0,050 +/- 0,034, et +0,118 +/- 0,050 (t = +2,34) a 9-12 coeurs
-//   300 000 -> +0,061 +/- 0,030 (t = +2,00) de plus, monotone, la courbe n'a pas tourne
+//   300 000 -> +0,061 +/- 0,030 (t = +2,00) de plus
+// La courbe MONTAIT encore a 300 000 : 500 000 va dans le sens mesure, il n'est simplement
+// pas verifie que l'optimum soit la.
 // Cette reserve ne couvre pas que le placement : la vidange de chaine, l'execution de la
 // derniere action reelle et la part que les bulbes trouveront ensuite dans le compteur partage
 // en dependent aussi. Tout ce qu'on rend a la recherche est pris a quelque chose qui en a plus
 // besoin.
-global OPS_RESERVE_TURN = 300000
+global OPS_RESERVE_TURN = 500000
 // Part laissee a chaque summon qui joue APRES moi et cherche dans le MEME compteur.
-// Valeur DERIVEE, pas reglee : le cout fixe d'une decision vaut 531 k operations mesurees et
-// un tour de bulbe complet 877 k, donc en dessous de ce seuil le bulbe ne peut terminer
-// AUCUNE decision — il se coupe et ne joue rien. A 250 k, mesure sur six matchups a 4-9
-// cœurs : 0,50 action par tour de bulbe ; a 550 k : 0,56, au-dessus de main, et les poireaux
-// montent aussi (2,35 -> 2,42).
-global OPS_RESERVE_PER_BULB = 550000
+// DELIBEREMENT GENEREUSE, meme raison que la reserve de tour : ce qu'un bulbe consomme depend
+// du cout du scoring, que la refonte va changer. On lui donne large maintenant et on reglera
+// la courbe avec le nouveau scoring.
+//
+// Ce qui est mesure : le cout fixe d'une decision vaut 531 k operations et un tour de bulbe
+// complet 877 k, donc sous ce seuil le bulbe ne termine AUCUNE decision et se tait. A 250 k,
+// sur six matchups a 4-9 cœurs : 0,50 action par tour de bulbe ; a 550 k : 0,56, au-dessus de
+// main. Aucune dose-reponse n'a jamais ete faite au-dela — 1 000 000 n'est pas un optimum
+// verifie, c'est une marge assumee.
+//
+// Arithmetique a garder en tete : le poireau garde cœurs x 1e6 - 500 k - 1 000 k par summon
+// jouant apres lui. Le seul cas ou cela descend sous le cout d'une decision est 4 cœurs avec
+// trois bulbes a jouer apres — 500 k restants. Il lui reste alors de quoi vidanger sa chaine
+// et se placer, pas de quoi replanifier.
+global OPS_RESERVE_PER_BULB = 1000000
 // Part STRICTE du placement final, celle que la vidange de chaine n'a pas le droit d'entamer.
 // Mesuree sur les memes 49 tours : maximum 82 861 operations, on en garde 100 000.
 // L'ecart avec OPS_RESERVE_TURN est ce qui finance la vidange, sans agrandir la reserve.
