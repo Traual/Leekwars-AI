@@ -640,6 +640,11 @@ class ScoringClass {
 		if (!Infos.IS_BOUNDABLE_DAMAGE) return BOUND_MUST_SIMULATE
 		var dmg = Infos.EFFECTS
 		var MyStats = State[Me]
+		// Cette formule suppose le cast critique. Or un critique declenche d'abord le passif
+		// Unstable Destroyer, qui me soigne AVANT les effets (Entity.java:757-765) et fait monter
+		// mon propre terme — un canal que la formule n'a pas. Plutot que de sous-estimer, on
+		// refuse de borner. Deux lectures et une comparaison, sur le seul porteur concerne.
+		if (MyStats.SPECIAL_WEAPON == WEAPON_UNSTABLE_DESTROYER && MyStats.LIFE < MyStats.TOTAL_LIFE) return BOUND_MUST_SIMULATE
 		// Force plancherée comme le moteur, puissance non plancherée, critique toujours supposé :
 		// les trois facteurs de la formule de dégâts, pris à leur valeur la plus favorable.
 		var gainFactor = (1 + max(0, MyStats.STRENGTH) / 100) * (1 + MyStats.POWER / 100) * CRITICAL_FACTOR

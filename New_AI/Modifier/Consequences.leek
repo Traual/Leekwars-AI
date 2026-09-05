@@ -435,10 +435,12 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					// Le moteur annule CHAQUE tick sur un porteur d'invincibilite
-					// (EffectPoison.java:23-25) ; l'etat etant permanent (turns = -1), toute la
-					// ligne vaut zero.
-					var calculatedValue = EntityStateClass.hasState(targetStats, STATE_INVINCIBLE) ? 0 : round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					// Valeur BRUTE : EffectPoison.apply ne teste aucun etat, il fige la valeur une
+					// fois pour toutes (EffectPoison.java:12). L'invincibilite s'applique au TICK,
+					// un par un (:23-25) — si le lanceur de la protection meurt, les ticks
+					// restants blessent. La ligne, les agregats et le total rendu au vol de vie
+					// portent donc la valeur pleine, comme le moteur.
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
 					targetStats.POISON += calculatedValue
 					targetStats.POISON_OVER_TIME += calculatedValue * effectDuration
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5])
@@ -1056,7 +1058,10 @@ class ConsequencesClass {
 	static applyOnCriticalPassive(CastStats) {
 		if (CastStats.LIFE <= 0) return;
 		if (CastStats.SPECIAL_WEAPON == WEAPON_UNSTABLE_DESTROYER && CastStats.LIFE < CastStats.TOTAL_LIFE) {
-			// RAW_HEAL instantané (durée 0) : JAMAIS enregistré au ledger.
+			// RAW_HEAL instantané (durée 0) : JAMAIS enregistré au ledger, et refusé tel quel à
+			// un porteur d'UNHEALABLE — le passif passe par createEffect(TYPE_RAW_HEAL)
+			// (Entity.java:763), dont la garde sort avant tout calcul (EffectRawHeal.java:12).
+			if (EntityStateClass.hasState(CastStats, STATE_UNHEALABLE)) return;
 			CastStats.LIFE = min(CastStats.TOTAL_LIFE, CastStats.LIFE + PASSIVE_INFO[WEAPON_UNSTABLE_DESTROYER][EFFECT_CRITICAL_TO_HEAL][1])
 		}
 	}
