@@ -16,6 +16,16 @@ class DangerComboClass {
 	static REL_MASK = 32767          // 15 bits
 	static REL_SHIFT = 15
 	static TARGET_TYPE_SHIFT = 50
+	// Les deux états du moteur que ces packs LISENT, pris directement dans le masque d'états :
+	// UNHEALABLE (ordinal 2) et INVINCIBLE (ordinal 3) y sont voisins, un ET puis un décalage les
+	// posent en 51 et 52, au-dessus du slot de type. Les autres états ne changent aucune des
+	// valeurs packées ici — les porter fragmenterait les caches sans rien corriger.
+	// Derives des ordinaux du MOTEUR, pas ecrits en dur : la cle et l'escompte lisent alors le
+	// meme bit par construction, et un ordinal qui bougerait cote generateur les deplacerait
+	// ensemble au lieu de les faire diverger en silence.
+	static STATE_KEY_MASK = (1 << STATE_UNHEALABLE) | (1 << STATE_INVINCIBLE)
+	static INVINCIBLE_KEY_MASK = 1 << STATE_INVINCIBLE
+	static STATE_KEY_SHIFT = 49      // UNHEALABLE -> bit 51, INVINCIBLE -> bit 52
 
 	/*
 	 * Pack DÉFENSIF de la cible : shields COURANTS de la chaîne et antidote, RIEN d'autre.
@@ -26,18 +36,26 @@ class DangerComboClass {
 	 * C'est ce niveau qui nourrit la graine des clés de CELLULE : l'identité de la cible y est
 	 * déjà portée à part, et son type est immuable pour un id donné — l'ajouter n'apporterait
 	 * aucune information et déplacerait toutes les clés pour rien.
+	 * Les deux états d'immunité, eux, y entrent : le moteur annule les dégâts directs et les ticks
+	 * de poison sur un INVINCIBLE, et refuse le soin instantané sur un UNHEALABLE. Les deux
+	 * valeurs cachées sous cette graine en dépendent donc, le danger d'une cellule pour l'un et
+	 * le net pour l'autre. La graine étant la SOURCE UNIQUE des clés de cellule, de net et de
+	 * fuite, les y poser une fois couvre tous les consommateurs d'un seul geste.
 	 */
-	static targetDefensePack(CurAbs, CurRel, AntidoteCd) {
-		return ((CurAbs & ABS_MASK) << ABS_SHIFT) | ((CurRel & REL_MASK) << REL_SHIFT) | AntidoteCd
+	static targetDefensePack(CurAbs, CurRel, AntidoteCd, TargetStates) {
+		return ((TargetStates & STATE_KEY_MASK) << STATE_KEY_SHIFT) | ((CurAbs & ABS_MASK) << ABS_SHIFT) | ((CurRel & REL_MASK) << REL_SHIFT) | AntidoteCd
 	}
 
 	/*
 	 * Part INVARIANTE du pack de couple : le type de la cible et son cooldown d'antidote. Ni
 	 * l'un ni l'autre ne bouge le long d'une chaîne de vulnés ni d'un caster à l'autre — le
 	 * déroulé les repackait pourtant à chaque combo.
+	 * L'invincibilité les rejoint : elle est fixe sur toute la chaîne comme eux, et elle décide ce
+	 * que vaut chaque effet. Elle SEULE — l'incurabilité ne change aucun dégât, la porter ici
+	 * scinderait gabarits et listes de dégâts en deux mondes identiques.
 	 */
-	static targetFixedPack(IsSummon, AntidoteCd) {
-		return ((IsSummon ? 1 : 0) << TARGET_TYPE_SHIFT) | AntidoteCd
+	static targetFixedPack(IsSummon, AntidoteCd, TargetStates) {
+		return ((TargetStates & INVINCIBLE_KEY_MASK) << STATE_KEY_SHIFT) | ((IsSummon ? 1 : 0) << TARGET_TYPE_SHIFT) | AntidoteCd
 	}
 
 	/*

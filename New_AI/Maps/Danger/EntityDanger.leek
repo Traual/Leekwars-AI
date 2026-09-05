@@ -50,7 +50,7 @@ class EntityDangerClass {
 			// Shields de la cible en SCALAIRES (la chaîne de vulnés ne mute jamais l'objet).
 			var shieldFactor = 1 - curRel / 100
 			var lifeFactor = CasterStats.LIFE / 100
-			for (var row in templateFor(TemplateKey, CasterStats, TargetStats.IS_SUMMON, CritFactor, AntidoteCd)) {
+			for (var row in templateFor(TemplateKey, CasterStats, TargetStats.IS_SUMMON, CritFactor, AntidoteCd, EntityStateClass.hasState(TargetStats, STATE_INVINCIBLE))) {
 				var Damage = 0
 				var kind = row[3]
 				if (kind == TPL_DAMAGE) {
@@ -96,8 +96,13 @@ class EntityDangerClass {
 	 * ses effets, chacun avec sa nature. Les items sans vue d'effets applicable et les
 	 * distances sans le moindre effet de dégâts ne produisent aucune ligne, comme la boucle
 	 * d'origine ne produisait aucun EntityDanger pour eux.
+	 *
+	 * L'invincibilité de la cible est tranchée ICI, une fois par gabarit : elle est dans la clé et
+	 * ne dépend d'aucun bouclier. Les effets que le moteur annule totalement disparaissent de la
+	 * ligne ; un dégât de VIE garde la sienne, à valeur nulle, parce que le moteur lui laisse la
+	 * soustraction du bouclier absolu — que le lecteur applique déjà.
 	 */
-	static templateFor(TemplateKey, CasterStats, IsSummonTarget, CritFactor, AntidoteCd) {
+	static templateFor(TemplateKey, CasterStats, IsSummonTarget, CritFactor, AntidoteCd, TargetInvincible) {
 		if (TemplateKey in DANGER_TEMPLATE_CACHE) return DANGER_TEMPLATE_CACHE[TemplateKey]
 		var powerFactor = 1 + CasterStats.POWER / 100
 		var strengthFactor = 1 + max(0, CasterStats.STRENGTH) / 100 // plancher à l'usage, comme le moteur
@@ -130,14 +135,24 @@ class EntityDangerClass {
 					var kind = TPL_DAMAGE
 					var value = 0
 					if (effType == EFFECT_DAMAGE) {
+						// Le moteur annule les dégâts directs APRÈS les boucliers : sur un invincible
+						// la valeur est nulle quels que soient ces boucliers, la ligne n'a donc plus
+						// rien à porter.
+						if (TargetInvincible) continue
 						value = eff[2] * distFactor * powerFactor * strengthFactor * CritFactor
 					} else if (effType == EFFECT_POISON) {
+						// Le tick est mis à zéro tant que le porteur est invincible, et aucun chip ne
+						// pose cet état pour une durée finie : aucun tick projeté ne passe.
+						if (TargetInvincible) continue
 						kind = TPL_POISON
 						value = eff[2] * powerFactor * distFactor * magicFactor * CritFactor * min(eff[3], AntidoteCd + 1)
 					} else if (effType == EFFECT_LIFE_DAMAGE) {
 						kind = TPL_LIFE
 						// Coupée AVANT lifeFactor : la vie du caster n'est pas dans la clé.
-						value = eff[2] * powerFactor
+						// Ici le moteur annule AVANT les boucliers : il reste la soustraction du
+						// bouclier absolu, qui laisse passer des dégâts quand il est NÉGATIF. La ligne
+						// survit donc à valeur nulle, et le lecteur en retranche curAbs comme d'habitude.
+						value = TargetInvincible ? 0 : (eff[2] * powerFactor)
 					} else {
 						continue
 					}

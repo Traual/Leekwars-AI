@@ -126,8 +126,9 @@ class DangerClass {
 		var packs = Plan.CASTER_PACKS
 		var seeds = Plan.CASTER_SEEDS
 		var crits = Plan.CRIT_FACTORS
-		// Type de la cible et cooldown d'antidote : fixes pour toute la chaîne, packs une fois.
-		var targetFixed = DangerComboClass.targetFixedPack(TargetStats.IS_SUMMON, AntidoteCd)
+		// Type de la cible, cooldown d'antidote et invincibilité : fixes pour toute la chaîne,
+		// packés une fois.
+		var targetFixed = DangerComboClass.targetFixedPack(TargetStats.IS_SUMMON, AntidoteCd, TargetStats.STATES)
 		var covIdx = Coverage[0]
 		var covMap = Coverage[1]
 		var covHash = Coverage[2]
