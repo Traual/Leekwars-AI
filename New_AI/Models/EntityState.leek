@@ -132,6 +132,15 @@ class EntityStateClass extends EntityClass {
 			STAT_TP:         this.TOTAL_TP
 		]
 
+		// TICKS RESTANTS D'UN FLUX PÉRIODIQUE — le moteur ne les compte pas comme on le croyait.
+		// Le tick tombe au tour du PORTEUR (Entity.startTurn:768-774) mais la durée n'est
+		// décrémentée qu'au tour du LANCEUR (:776-790, seul site de setTurns). Quand l'IA
+		// s'exécute, son propre tick de la ronde est déjà tombé et le compteur n'a pas bougé :
+		// eff[3] surestime donc d'UN tick toute ligne dont le prochain tour du lanceur précède
+		// celui du porteur. Une ligne auto-lancée garde bien eff[3], le tick précédant la
+		// décrémentation dans le même startTurn.
+		var myTurnOrder = getEntityTurnOrder(Me)
+		var bearerOrder = this.TURN_ORDER
 		for (var eff in this.EFFECTS) {
 			switch (eff[0]) {
 				// --- AGILITY ---
@@ -143,8 +152,9 @@ class EntityStateClass extends EntityClass {
 					// Persistant seulement — un heal instantané (durée 0) n'entre jamais au
 					// ledger moteur, garde par sécurité.
 					if (eff[3] > 0) {
-						this.HEAL += eff[1]
-						this.HEAL_OVER_TIME += eff[1] * eff[3]
+						var healTicks = EntityStateClass.remainingTicks(eff, bearerOrder, myTurnOrder)
+						if (healTicks > 0) this.HEAL += eff[1]
+						this.HEAL_OVER_TIME += eff[1] * healTicks
 					}
 					break
 				case EFFECT_BUFF_TP:
@@ -178,8 +188,9 @@ class EntityStateClass extends EntityClass {
 
 					// --- RESISTANCE ---
 				case EFFECT_AFTEREFFECT:
-					this.AFTEREFFECT += eff[1]
-					this.AFTEREFFECT_OVER_TIME += eff[1] * eff[3]
+					var afterTicks = EntityStateClass.remainingTicks(eff, bearerOrder, myTurnOrder)
+					if (afterTicks > 0) this.AFTEREFFECT += eff[1]
+					this.AFTEREFFECT_OVER_TIME += eff[1] * afterTicks
 					break
 				case EFFECT_SHACKLE_TP:
 					this.BASE_STATS[STAT_TP] += eff[1]
@@ -187,8 +198,9 @@ class EntityStateClass extends EntityClass {
 
 					// --- FLUX PÉRIODIQUES (même passe, six agrégats positifs) ---
 				case EFFECT_POISON:
-					this.POISON += eff[1]
-					this.POISON_OVER_TIME += eff[1] * eff[3]
+					var poisonTicks = EntityStateClass.remainingTicks(eff, bearerOrder, myTurnOrder)
+					if (poisonTicks > 0) this.POISON += eff[1]
+					this.POISON_OVER_TIME += eff[1] * poisonTicks
 					break
 				case EFFECT_SHACKLE_MP:
 					this.BASE_STATS[STAT_MP] += eff[1]
@@ -229,10 +241,58 @@ class EntityStateClass extends EntityClass {
 	 * qu'un tour protège jusqu'à ce que son lanceur rejoue, et plus après.
 	 * Un bouclier AUTO-LANCÉ n'est jamais listé — il expire au début du tour de la cible,
 	 * donc après toute la fenêtre.
-	 * `turns == 1` suffit à qualifier : aucun bouclier castable ne dure un seul tour (minimum
-	 * deux), un bouclier posé en branche n'entre donc jamais dans la liste.
-	 * À rappeler après TOUTE réécriture d'EFFECTS qui peut retirer ou réduire un bouclier.
+	 * `turns == 1` suffit à qualifier : c'est exactement la durée d'un effet retiré pendant la
+	 * fenêtre, puisqu'il tombe au prochain tour de son lanceur.
+	 *
+	 * VULNÉRABILITÉS COMPRISES. Une vulnérabilité est un bouclier NÉGATIF sur la même stat —
+	 * EffectVulnerability.java:12-15 fait `setStat(STAT_RELATIVE_SHIELD, -value)` — et le moteur
+	 * la retire par la MÊME règle de lanceur (Entity.java:776-790, sans distinction de type).
+	 * Elle entre donc dans la liste avec un retrait NÉGATIF : quand elle tombe, le porteur
+	 * RÉCUPÈRE du bouclier. Sans cela, l'IA appliquait une vulnérabilité déjà tombée à tous les
+	 * attaquants jouant après son lanceur et surestimait les dégâts entrants exactement pour les
+	 * casters les plus tardifs de la fenêtre — donc fuyait plus qu'il ne faut. Les trois porteuses
+	 * de la méta durent toutes UN tour : shotgun (absolue 25), heavy_sword (absolue 60),
+	 * inversion (relative 20).
+	 *
+	 * Conséquence sur l'invariant d'origine : un BOUCLIER posé en branche n'entre toujours jamais
+	 * dans la liste (aucun ne dure un seul tour), mais une VULNÉRABILITÉ posée en branche, elle,
+	 * y entre — et c'est correct, elle tombera bien au prochain tour de son lanceur.
+	 *
+	 * À rappeler après TOUTE réécriture d'EFFECTS qui peut retirer ou réduire un bouclier
+	 * ou une vulnérabilité.
 	 */
+	/*
+	 * Ticks qu'une ligne périodique fera ENCORE tomber sur son porteur.
+	 *
+	 * Le moteur applique le tick au début du tour du PORTEUR puis décrémente, au début du tour
+	 * du LANCEUR, les durées des lignes que CELUI-CI a posées (Entity.java:762-790). Il reste
+	 * donc eff[3] − 1 ticks quand le prochain tour du lanceur précède celui du porteur, et
+	 * eff[3] sinon — l'auto-lancé restant à eff[3] puisque, dans un même startTurn, le tick
+	 * (:768) précède la décrémentation (:776).
+	 *
+	 * Lanceur mort ou absent de l'ordre de tour : plus personne ne décrémente sa ligne, elle
+	 * ne tombera jamais d'elle-même. On garde eff[3], qui la sous-estime alors — jamais
+	 * l'inverse.
+	 */
+	static remainingTicks(eff, bearerOrder, myTurnOrder) {
+		var casterOrder = getEntityTurnOrder(eff[2])
+		if (casterOrder <= 0) return eff[3]
+		return nextTurnBefore(casterOrder, bearerOrder, myTurnOrder) ? eff[3] - 1 : eff[3]
+	}
+
+	/*
+	 * Le prochain tour de A tombe-t-il avant celui de B, vu de MAINTENANT — mon tour étant en
+	 * cours ? Une entité dont l'ordre dépasse le mien rejoue dans cette ronde, les autres à la
+	 * ronde suivante ; à catégorie égale l'ordre tranche. Deux entités de même ordre (donc la
+	 * même) rendent faux, ce qui donne bien eff[3] à l'auto-lancé.
+	 */
+	static nextTurnBefore(orderA, orderB, myTurnOrder) {
+		var aThisRound = orderA > myTurnOrder
+		var bThisRound = orderB > myTurnOrder
+		if (aThisRound != bThisRound) return aThisRound
+		return orderA < orderB
+	}
+
 	static refreshShieldExpiry(stats) {
 		var list = null
 		var id = stats.ID
@@ -243,6 +303,10 @@ class EntityStateClass extends EntityClass {
 			var rel = 0
 			if (t == EFFECT_ABSOLUTE_SHIELD || t == EFFECT_RAW_ABSOLUTE_SHIELD) abs = eff[1]
 			else if (t == EFFECT_RELATIVE_SHIELD || t == EFFECT_RAW_RELATIVE_SHIELD) rel = eff[1]
+			// Retrait NÉGATIF : le consommateur fait `chainAbs -= drop`, et la chute d'une
+			// vulnérabilité REND du bouclier au porteur.
+			else if (t == EFFECT_ABSOLUTE_VULNERABILITY) abs = -eff[1]
+			else if (t == EFFECT_VULNERABILITY) rel = -eff[1]
 			else continue
 			if (list == null) list = []
 			push(list, eff[2])

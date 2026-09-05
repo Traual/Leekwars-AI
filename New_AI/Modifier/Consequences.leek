@@ -1003,6 +1003,13 @@ class ConsequencesClass {
 		var DamagesWithShield = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
 		var TargetLife = TarStats.LIFE
 		var Damage = min(round(DamagesWithShield), TargetLife)
+		// Retour de degats FIGE AVANT la mort, comme le moteur : EffectDamage.java:21-22 calcule
+		// returnDamage sur la cible encore vivante et encore porteuse de son buff, avant meme les
+		// boucliers, et le bloc de retour :64-77 n'est jamais conditionne a sa survie. Lu apres,
+		// il valait ZERO sur tout coup letal — getKillConsequences deroule les effets AUTO-LANCES
+		// de la victime, et Thorn comme Mirror en sont (targets=30, bit TARGET_CASTER). L'IA
+		// evaluait donc tout coup de grace comme gratuit face a un renvoyeur.
+		var TargetDamageReturn = TarStats.DAMAGE_RETURN
 		if (Damage >= TargetLife && TargetLife > 0) {
 			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
 		} else {
@@ -1017,7 +1024,7 @@ class ConsequencesClass {
 			applyOnNovaDamagePassive(TarStats, directErosion)
 		}
 		if (!TarIsCaster) {
-			var Damage_Return = round(BaseDamages * (TarStats.DAMAGE_RETURN / 100))
+			var Damage_Return = round(BaseDamages * (TargetDamageReturn / 100))
 			// Ordre moteur (EffectDamage) : dégâts -> LIFESTEAL crédité au caster -> PUIS retour,
 			// plafonné à la vie restante POST-lifesteal — un gros lifesteal peut donc sauver d'un
 			// retour léthal. L'érosion suit le retour APPLIQUÉ, pas le brut.
@@ -1099,6 +1106,8 @@ class ConsequencesClass {
 		var InitialDamages = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
 		var TargetLife = TarStats.LIFE
 		var Damage = min(round(InitialDamages), TargetLife)
+		// Meme figeage que pour EFFECT_DAMAGE : EffectLifeDamage.java:23-25 puis :45-57.
+		var TargetDamageReturn = TarStats.DAMAGE_RETURN
 		if (Damage >= TargetLife && TargetLife > 0) {
 			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
 		} else {
@@ -1113,7 +1122,7 @@ class ConsequencesClass {
 			applyOnNovaDamagePassive(TarStats, lifeErosion)
 		}
 		if (!TarIsCaster) {
-			var Damage_Return = round(BaseDamages * (TarStats.DAMAGE_RETURN / 100))
+			var Damage_Return = round(BaseDamages * (TargetDamageReturn / 100))
 			var appliedReturn = min(Damage_Return, CastStats.LIFE)   // plafonné à la vie restante (érosion sur l'appliqué)
 			if (Damage_Return >= CastStats.LIFE && CastStats.LIFE > 0) {
 				// Retour léthal : voir getEntityDamageConsequences.
