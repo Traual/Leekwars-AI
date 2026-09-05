@@ -544,3 +544,10 @@ global OPS_MOVE_MARGIN = 25000
 // Chaine complete du meilleur candidat du dernier plan, racine comprise : quand le budget
 // ne finance plus un plan, ses actions suivantes se jouent telles quelles.
 global BFS_LAST_CHAIN = []
+// Ordre de tour de Me, relu une fois par Virtualize. Sert a dater les ticks restants des
+// flux periodiques : un effet tombe au tour de son LANCEUR mais tique a celui du PORTEUR,
+// donc le compte depend de qui des deux rejoue en premier vu de MON tour.
+global MY_TURN_ORDER = 0
+// [id du lanceur -> son ordre de tour], memo d'un tour. Vide a chaque Virtualize, remplie
+// pendant l'import des effets : plusieurs lignes partagent le meme lanceur.
+global TURN_ORDER_BY_ID = [: ]

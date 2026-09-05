@@ -13,6 +13,8 @@ class StateClass {
 		// construire le State) : après une vraie invocation, le nouveau summon entre dans la
 		// liste des ignorés de la LoS statique avant tout nouveau calcul.
 		EVERYONE = getAllies() + getEnemies()
+		MY_TURN_ORDER = getEntityTurnOrder(Me)
+		TURN_ORDER_BY_ID = [: ]
 		var _final = [: ]
 		for (var e in EVERYONE) {
 			_final[e] = new EntityStateClass(e)

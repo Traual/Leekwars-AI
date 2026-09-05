@@ -115,7 +115,22 @@ class EntityStateClass extends EntityClass {
 			ENTITY_COOLDOWNS_BY_ID[id] = cooldowns
 			this.COOLDOWNS = cooldowns
 		}
-		this.EFFECTS = getEffects(id)
+		// Ligne d'effet DATEE : au layout moteur [type, valeur, lanceur, tours, critique,
+		// item, cible, modifiers] s'ajoute en index 8 le nombre de ticks que cette ligne fera
+		// ENCORE tomber. Les agregats periodiques sont ecrits avec ce nombre et effaces avec
+		// lui, donc il doit etre le MEME aux deux bouts : le memoriser garantit l'egalite, la
+		// ou le recalculer au retrait la brise des que l'ordre de lecture change. Il reste
+		// valable tout le tour — invocation et resurrection inserent un creneau sans permuter
+		// les vivants, et une ligne dont le lanceur ou le porteur meurt disparait.
+		var rawEffects = getEffects(id)
+		var datedEffects = []
+		var myOrder = MY_TURN_ORDER
+		var thisOrder = this.TURN_ORDER
+		for (var eff in rawEffects) {
+			push(datedEffects, [eff[0], eff[1], eff[2], eff[3], eff[4], eff[5], eff[6], eff[7],
+				EntityStateClass.countedTicks(eff, thisOrder, myOrder)])
+		}
+		this.EFFECTS = datedEffects
 		// Flux périodiques remplis en UNE passe, dans le déroulé d'effets plus bas.
 		this.POISON = 0
 		this.POISON_OVER_TIME = 0
@@ -159,8 +174,6 @@ class EntityStateClass extends EntityClass {
 		// eff[3] surestime donc d'UN tick toute ligne dont le prochain tour du lanceur précède
 		// celui du porteur. Une ligne auto-lancée garde bien eff[3], le tick précédant la
 		// décrémentation dans le même startTurn.
-		var myTurnOrder = getEntityTurnOrder(Me)
-		var bearerOrder = this.TURN_ORDER
 		for (var eff in this.EFFECTS) {
 			switch (eff[0]) {
 				// --- AGILITY ---
@@ -172,7 +185,7 @@ class EntityStateClass extends EntityClass {
 					// Persistant seulement — un heal instantané (durée 0) n'entre jamais au
 					// ledger moteur, garde par sécurité.
 					if (eff[3] > 0) {
-						var healTicks = EntityStateClass.remainingTicks(eff, bearerOrder, myTurnOrder)
+						var healTicks = eff[8]
 						if (healTicks > 0) this.HEAL += eff[1]
 						this.HEAL_OVER_TIME += eff[1] * healTicks
 					}
@@ -208,7 +221,7 @@ class EntityStateClass extends EntityClass {
 
 					// --- RESISTANCE ---
 				case EFFECT_AFTEREFFECT:
-					var afterTicks = EntityStateClass.remainingTicks(eff, bearerOrder, myTurnOrder)
+					var afterTicks = eff[8]
 					if (afterTicks > 0) this.AFTEREFFECT += eff[1]
 					this.AFTEREFFECT_OVER_TIME += eff[1] * afterTicks
 					break
@@ -218,7 +231,7 @@ class EntityStateClass extends EntityClass {
 
 					// --- FLUX PÉRIODIQUES (même passe, six agrégats positifs) ---
 				case EFFECT_POISON:
-					var poisonTicks = EntityStateClass.remainingTicks(eff, bearerOrder, myTurnOrder)
+					var poisonTicks = eff[8]
 					if (poisonTicks > 0) this.POISON += eff[1]
 					this.POISON_OVER_TIME += eff[1] * poisonTicks
 					break
@@ -294,8 +307,19 @@ class EntityStateClass extends EntityClass {
 	 * ne tombera jamais d'elle-même. On garde eff[3], qui la sous-estime alors — jamais
 	 * l'inverse.
 	 */
-	static remainingTicks(eff, bearerOrder, myTurnOrder) {
-		var casterOrder = getEntityTurnOrder(eff[2])
+	/*
+	 * Appele une fois par ligne importee, jamais dans un nœud : le resultat part en index 8.
+	 * L'ordre du lanceur passe par un memo de tour, plusieurs lignes le partageant souvent.
+	 */
+	static countedTicks(eff, bearerOrder, myTurnOrder) {
+		var casterId = eff[2]
+		var casterOrder = 0
+		if (casterId in TURN_ORDER_BY_ID) {
+			casterOrder = TURN_ORDER_BY_ID[casterId]
+		} else {
+			casterOrder = getEntityTurnOrder(casterId)
+			TURN_ORDER_BY_ID[casterId] = casterOrder
+		}
 		if (casterOrder <= 0) return eff[3]
 		return nextTurnBefore(casterOrder, bearerOrder, myTurnOrder) ? eff[3] - 1 : eff[3]
 	}
