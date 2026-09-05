@@ -227,7 +227,8 @@ class StateClass {
 	 *                     qualification de healer est immuable pour le replan).
 	 *   DIFF_LOCAL_TERM : un input LOCAL du terme de scoring a bougé — LIFE, TOTAL_LIFE
 	 *                     (plafond de soin Delta), CELL, DAMAGE_RETURN, six flux
-	 *                     périodiques, cooldown effectif d'Antidote, et tout input de
+	 *                     périodiques, masque d'ÉTATS (il décide lesquels de ces flux
+	 *                     comptent), cooldown effectif d'Antidote, et tout input de
 	 *                     capability (même effet que l'ancienne invalidation de CAP_MEMO).
 	 * Mémos : TLSQ_MEMO <- TOTAL_LIFE seule ; CAP_MEMO <- les dix inputs de capability
 	 * (STR/MAG/WIS/SCI/AGI/RES/TOTAL_TP/TOTAL_MP/ABS/REL). Un mémo déjà null reste null.
@@ -288,7 +289,16 @@ class StateClass {
 			|| parentStat.AFTEREFFECT != childStat.AFTEREFFECT
 			|| parentStat.AFTEREFFECT_OVER_TIME != childStat.AFTEREFFECT_OVER_TIME
 			|| parentStat.HEAL != childStat.HEAL
-			|| parentStat.HEAL_OVER_TIME != childStat.HEAL_OVER_TIME) {
+			|| parentStat.HEAL_OVER_TIME != childStat.HEAL_OVER_TIME
+			// Le masque d'états décide lesquels des six flux comptent vraiment : UNHEALABLE éteint
+			// les deux flux de soin, INVINCIBLE annule les deux flux de poison au tick. Les lignes,
+			// elles, restent PLEINES au ledger — quand un état apparaît ou tombe, aucun autre champ
+			// comparé ici ne bouge, et le terme de la porteuse resterait celui qu'elle avait sous
+			// un état qu'elle ne porte plus. Le cas courant est la mort du lanceur de l'état, qui le
+			// retire chez toutes ses cibles sans rien changer d'autre chez elles.
+			// Deux entiers comparés, placés en DERNIER : un état bouge rarement, donc n'importe
+			// lequel des tests précédents court-circuite celui-ci.
+			|| parentStat.STATES != childStat.STATES) {
 			mask |= DIFF_LOCAL_TERM
 		}
 

@@ -291,10 +291,32 @@ class ScoringClass {
             tlTerm = W_TOTAL_LIFE * sqrt(max(0, stat.TOTAL_LIFE))
             stat.TLSQ_MEMO = tlTerm
         }
-        var effectivePoisonRemaining = stat.POISON_OVER_TIME
-        if (effectivePoisonRemaining > 0) effectivePoisonRemaining = poisonCoefOf(stat, State, PoisonKey) * effectivePoisonRemaining
-        var netTick = stat.POISON + stat.AFTEREFFECT - stat.HEAL
-        var harmfulRemaining = max(0, effectivePoisonRemaining + stat.AFTEREFFECT_OVER_TIME - stat.HEAL_OVER_TIME)
+        // Flux periodiques EFFECTIFS : ce qui va vraiment tomber, pas ce qui est ecrit.
+        // Le moteur reteste l'etat a chaque tick pour deux familles seulement — il annule le
+        // tick de poison d'un porteur INVINCIBLE et le tick de soin d'un porteur UNHEALABLE.
+        // L'aftereffect n'est jamais escompte ici : sa garde est a la POSE, une ligne deja
+        // posee frappe meme un invincible. La vitalite non plus, ce n'est pas un soin.
+        // Les lignes restent PLEINES au ledger : si l'etat tombe, les ticks restants comptent.
+        // Un seul test de masque suffit a prouver qu'il n'y a rien a escompter.
+        var poisonTick = stat.POISON
+        var poisonRemaining = stat.POISON_OVER_TIME
+        var healTick = stat.HEAL
+        var healRemaining = stat.HEAL_OVER_TIME
+        if (stat.STATES != 0) {
+            if (EntityStateClass.hasState(stat, STATE_INVINCIBLE)) {
+                poisonTick = 0
+                poisonRemaining = 0
+            }
+            if (EntityStateClass.hasState(stat, STATE_UNHEALABLE)) {
+                healTick = 0
+                healRemaining = 0
+            }
+        }
+        if (poisonRemaining > 0) poisonRemaining = poisonCoefOf(stat, State, PoisonKey) * poisonRemaining
+        var netTick = poisonTick + stat.AFTEREFFECT - healTick
+        var harmfulRemaining = max(0, poisonRemaining + stat.AFTEREFFECT_OVER_TIME - healRemaining)
+        // L'escompte est applique AVANT la cle : netTick et harmfulRemaining le portent deja,
+        // l'etat entre donc dans la cle du cache sans un bit de plus.
         var key = (stat.LIFE << 48) | ((netTick & 0x3FFF) << 34) | ((harmfulRemaining & 0x1FFFF) << 17) | (danger & 0x1FFFF)
         if (key in SURVIVAL_CACHE) return SURVIVAL_CACHE[key] + tlTerm
 
@@ -367,10 +389,25 @@ class ScoringClass {
             tlTerm = W_TOTAL_LIFE * sqrt(max(0, stat.TOTAL_LIFE))
             stat.TLSQ_MEMO = tlTerm
         }
-        var effectivePoisonRemaining = stat.POISON_OVER_TIME
-        if (effectivePoisonRemaining > 0) effectivePoisonRemaining = poisonCoefOf(stat, State, PoisonKey) * effectivePoisonRemaining
-        var netTick = stat.POISON + stat.AFTEREFFECT - stat.HEAL
-        var harmfulRemaining = max(0, effectivePoisonRemaining + stat.AFTEREFFECT_OVER_TIME - stat.HEAL_OVER_TIME)
+        // Memes flux effectifs que dans survivalValue : le tick de poison d'un INVINCIBLE et
+        // le tick de soin d'un UNHEALABLE ne tombent pas, l'aftereffect si.
+        var poisonTick = stat.POISON
+        var poisonRemaining = stat.POISON_OVER_TIME
+        var healTick = stat.HEAL
+        var healRemaining = stat.HEAL_OVER_TIME
+        if (stat.STATES != 0) {
+            if (EntityStateClass.hasState(stat, STATE_INVINCIBLE)) {
+                poisonTick = 0
+                poisonRemaining = 0
+            }
+            if (EntityStateClass.hasState(stat, STATE_UNHEALABLE)) {
+                healTick = 0
+                healRemaining = 0
+            }
+        }
+        if (poisonRemaining > 0) poisonRemaining = poisonCoefOf(stat, State, PoisonKey) * poisonRemaining
+        var netTick = poisonTick + stat.AFTEREFFECT - healTick
+        var harmfulRemaining = max(0, poisonRemaining + stat.AFTEREFFECT_OVER_TIME - healRemaining)
         var afterPeriodic = max(0, stat.LIFE - COEF_PERIODIC_TICK * netTick)
         var tick = max(0, netTick)
         var horizonLife = afterPeriodic
@@ -655,7 +692,10 @@ class ScoringClass {
 		var bound = 0
 		// Vol de vie : chaque coup me rend des points de vie, donc MON terme monte aussi. Cumulé
 		// sur les cibles, plafonné par ma vie manquante, et converti une seule fois à la fin.
-		var stealFactor = max(0, MyStats.WISDOM) / 1000
+		// Le moteur refuse tout vol de vie a un lanceur UNHEALABLE, avant meme de le plafonner
+		// (EffectDamage.java:52) : le canal disparait alors entierement du gain reel, donc du
+		// majorant. C'est ce que fait deja getEntityDamageConsequences.
+		var stealFactor = EntityStateClass.hasState(MyStats, STATE_UNHEALABLE) ? 0 : max(0, MyStats.WISDOM) / 1000
 		var stealRoom = MyStats.TOTAL_LIFE - MyStats.LIFE
 		var stolen = 0
 		for (var tar: var dist in Targets) {
@@ -679,7 +719,17 @@ class ScoringClass {
 			} else {
 				// Canal STOCK : la formule de survie lit afterPeriodic, pas LIFE. L'écart de racines
 				// y est plus grand, c'est donc lui qu'il faut majorer.
-				var ap = life - COEF_PERIODIC_TICK * (stat.POISON + stat.AFTEREFFECT - stat.HEAL)
+				// Flux periodiques EFFECTIFS, exactement ceux que la formule de survie lit. Sans
+				// cet escompte, une cible UNHEALABLE qui porte un soin donnerait un ap trop haut,
+				// donc un ecart de racines trop petit, et le majorant passerait SOUS le gain reel :
+				// la coupure perdrait des kills sans rien afficher.
+				var apPoison = stat.POISON
+				var apHeal = stat.HEAL
+				if (stat.STATES != 0) {
+					if (EntityStateClass.hasState(stat, STATE_INVINCIBLE)) apPoison = 0
+					if (EntityStateClass.hasState(stat, STATE_UNHEALABLE)) apHeal = 0
+				}
+				var ap = life - COEF_PERIODIC_TICK * (apPoison + stat.AFTEREFFECT - apHeal)
 				if (ap < 0) ap = 0
 				var apAfter = ap - dealt
 				if (apAfter < 0) apAfter = 0
@@ -705,7 +755,16 @@ class ScoringClass {
 		}
 		if (stolen > 0 && stealRoom > 0) {
 			if (stolen > stealRoom) stolen = stealRoom
-			var myAp = MyStats.LIFE - COEF_PERIODIC_TICK * (MyStats.POISON + MyStats.AFTEREFFECT - MyStats.HEAL)
+			// Meme escompte pour moi : sqrt(ap+vol)-sqrt(ap) decroit en ap, donc sous UNHEALABLE
+			// mon ap effectif est plus bas et le gain reel du vol plus grand. Le lire brut ferait
+			// passer le majorant sous ce gain.
+			var myPoison = MyStats.POISON
+			var myHeal = MyStats.HEAL
+			if (MyStats.STATES != 0) {
+				if (EntityStateClass.hasState(MyStats, STATE_INVINCIBLE)) myPoison = 0
+				if (EntityStateClass.hasState(MyStats, STATE_UNHEALABLE)) myHeal = 0
+			}
+			var myAp = MyStats.LIFE - COEF_PERIODIC_TICK * (myPoison + MyStats.AFTEREFFECT - myHeal)
 			if (myAp < 0) myAp = 0
 			var myW = REPLAN_WEIGHTS.entityWeights(Me, MyStats)
 			bound += myW.LIFE * W_LIFE * (sqrt(myAp + stolen) - sqrt(myAp))

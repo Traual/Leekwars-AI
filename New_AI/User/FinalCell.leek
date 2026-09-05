@@ -80,9 +80,14 @@ class FinalCell {
         // épargne alors le balayage entier. Sa clé est la signature COMPLÈTE des entrées —
         // le terrain et ma mobilité (donc mes cellules accessibles), la graine de fuite (qui
         // porte déjà menace adverse, mes boucliers, mon antidote, mes soigneurs, ma vie et ma
-        // vie max), les soigneurs des deux camps, la couverture antidote, et mes flux
-        // périodiques, seuls restants à décider ce qu'un net me coûte en survie.
-        var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp ^ poisonKey))
+        // vie max), les soigneurs des deux camps, la couverture antidote, mes flux périodiques
+        // et le masque d'états qui dit lesquels s'appliquent — les derniers à décider ce qu'un
+        // net me coûte en survie.
+        // Les six flux sont packés BRUTS plus bas : c'est l'état qui tranche lesquels comptent,
+        // donc deux placements aux mêmes flux et aux états différents n'ont ni la même survie
+        // sans danger ni la même perte sous danger. Le masque vaut exactement 0 tant que je ne
+        // porte aucun état : la clé est alors inchangée et rien ne refroidit.
+        var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp ^ poisonKey) ^ MyState.STATES)
         memoKey = mix64(memoKey ^ combinedHfp
             ^ ((MyState.POISON & 0xFFFFF) << 44) ^ ((MyState.AFTEREFFECT & 0x7FF) << 33)
             ^ ((MyState.HEAL & 0x7FF) << 22) ^ ((MyState.DAMAGE_RETURN & 0x7FF) << 11))
