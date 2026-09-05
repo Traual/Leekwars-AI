@@ -421,18 +421,28 @@ class ActionSuite {
 			}
 			if (cost2 < 0) continue
 			var from2 = entry[4]
+			// Le majorant ne couvre QUE les effets de l'item. Une cellule de tir hors de la couche
+			// de MARCHE s'atteint par le saut ou la teleportation, qui posent sur moi une valeur
+			// que la formule ignore : 100 d'agilite (Node.leek:104) ou 15 de vie et de vie max
+			// (Node.leek:126). Couper la ecarterait une branche reellement meilleure : on ne coupe
+			// pas, on simule. Une cellule de marche, elle, n'ajoute rien au score — Me est hors du
+			// BaseHash, hors du contexte danger (Delta.leek:243), et son terme ne lit pas sa cellule.
+			var boundCovers = true
 			if (!(from2 in MyOnlyWalk)) {
+				boundCovers = false
 				if (from2 in MyWalkCells.JUMP)                          cost2 += JumpCost
 				else if (from2 in MyWalkCells.TELEPORTATION)            cost2 += TeleCost
 				else if (from2 in MyWalkCells.TELEPORTATION_AND_JUMP)   cost2 += JumpCost + TeleCost
 			}
 			if (cost2 > MyTp) continue
 			var act2 = entry[0]
-			var ub = ScoringClass.actionUpperBound(item2, from2, act2.To, State, MySide, BaseHash)
-			// Les deux membres sur la MEME echelle : BestPriority est une priorite, le majorant
-			// un Δscore, et priorityOf est le seul convertisseur de l'un vers l'autre — c'est la
-			// politique de rendement qui decide s'il faut diviser par le cout, pas ce site.
-			if (priorityOf(ub, cost2) <= BestPriority) continue
+			if (boundCovers) {
+				var ub = ScoringClass.actionUpperBound(item2, from2, act2.To, State, MySide, BaseHash)
+				// Les deux membres sur la MEME echelle : BestPriority est une priorite, le majorant
+				// un Δscore, et priorityOf est le seul convertisseur de l'un vers l'autre — c'est la
+				// politique de rendement qui decide s'il faut diviser par le cout, pas ce site.
+				if (priorityOf(ub, cost2) <= BestPriority) continue
+			}
 			if (Workspace == null) Workspace = clone(State, 1)
 			var cand2 = NodeClass.ActionToNodeInTree(act2, Workspace, from2, MyWalkCells, cost2, ITEMINFO[item2], item2, act2.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, baseUses[item2])
 			var score2 = ScoringClass.getStateScoreFromParent(cand2, Workspace, ParentScore, Parent, Parent.HFP_BY_SIDE, MySide, Parent.POISON_KEY)

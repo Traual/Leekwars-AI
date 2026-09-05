@@ -621,6 +621,17 @@ class ScoringClass {
 	 * Ne borne que les items dont TOUS les effets sont des dégâts sur ennemi. Un effet de plus
 	 * (soin, vol, bouclier, invocation, poison, vulnérabilité) apporterait de la valeur non
 	 * comptée ici, donc rendrait le majorant faux.
+	 *
+	 * PORTÉE : la valeur rendue majore les effets de l'ITEM, rien d'autre. Elle ne dit rien du
+	 * déplacement qui amène à la cellule de tir — le saut pose 100 d'agilité sur le lanceur et
+	 * la téléportation 15 de vie et de vie max (Node.leek:101 et :116), deux gains qui montent
+	 * le terme de Me. L'appelant ne coupe donc sur ce majorant que depuis une cellule de la
+	 * couche de marche, la seule qui n'ajoute rien au score.
+	 *
+	 * Le jet est pris à eff[1] + eff[2] alors que le layout d'un effet d'ITEM porte DÉJÀ le jet
+	 * maximal en eff[2] (= value1 + value2, EntityAI.java:649-650) : la valeur de base compte
+	 * deux fois. C'est une marge de sûreté — le majorant ne peut que monter. La resserrer
+	 * ferait couper PLUS, et demande donc son propre lot.
 	 */
 	static actionUpperBound(Item, From, To, State, MySide, BaseHash) {
 		var Infos = ITEMINFO[Item]
