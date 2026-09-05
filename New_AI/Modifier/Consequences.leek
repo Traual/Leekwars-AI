@@ -785,11 +785,14 @@ class ConsequencesClass {
 		for (var i: var eff in effects) {
 			if (eff[0] == EffectType && eff[5] == Item && eff[3] == Duration && eff[2] == CasterId) { mergeIdx = i; break }
 		}
-		// Pas de refreshShieldExpiry ici ni plus bas : aucun bouclier castable ne dure un
-		// seul tour, une ligne posée ou fusionnée n'entre donc jamais dans SHIELD_EXPIRY (la
-		// fusion exige d'ailleurs une durée ÉGALE).
+		// Une ligne d'UN tour peut entrer dans SHIELD_EXPIRY — les vulnérabilités de la méta
+		// durent exactement un tour — et la poser comme la fusionner périme la liste de la cible.
+		// Aucune autre durée n'y entre depuis une branche : le lanceur y est moi ou un de mes
+		// bulbes, et ni l'un ni l'autre ne joue deux fois avant sa cible. D'où une garde à un seul
+		// test sur ce chemin, le plus chaud du ledger.
 		if (mergeIdx == -1) {
 			TarStats.EFFECTS = effects + [[EffectType, AppliedValue, CasterId, Duration, Critical, Item, TarStats.ID, Modifiers, Duration]]
+			if (Duration == 1) EntityStateClass.refreshShieldExpiry(TarStats)
 			return;
 		}
 		var newEffects = []
@@ -801,6 +804,7 @@ class ConsequencesClass {
 			}
 		}
 		TarStats.EFFECTS = newEffects
+		if (Duration == 1) EntityStateClass.refreshShieldExpiry(TarStats)
 	}
 
 	/*

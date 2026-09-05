@@ -24,8 +24,11 @@ class DangerClass {
 	/*
 	 * Les boucliers expirants de la cible, convertis en RANGS dans sa séquence de jeu :
 	 * [rang du lanceur, retrait absolu, retrait relatif]. Même partition que les séquences du plan.
-	 * Le lanceur est un allié, il n'apparaît donc jamais dans la chaîne de danger — c'est son
-	 * rang, pas sa présence, qui dit quels attaquants le bouclier ne couvre plus.
+	 * Le lanceur peut être un attaquant de cette chaîne : une vulnérabilité est posée par
+	 * l'adversaire. Son propre rang compte alors, car le moteur retire la ligne au début de son
+	 * tour, avant qu'il n'agisse — il frappe sans elle et en repose une neuve dans son combo.
+	 * Le rang zéro est celui de la cible : il porte une ligne déjà tombée quand le cycle s'ouvre,
+	 * donc retirée pour tous les attaquants.
 	 * Liste NEUVE à chaque appel : le déroulé y marque les retraits consommés.
 	 */
 	static expiryDropsByRank(Plan, TargetStats) {
@@ -147,12 +150,16 @@ class DangerClass {
 		// elle dit si le caster fait des dégâts, pas si sa contribution pondérée est positive.
 		if (dn > 0) {
 			for (var i: var idx in covIdx) {
-				// Ce caster joue-t-il après le lanceur du bouclier ? Si oui, il ne le voit plus.
+				// Ce caster joue-t-il au tour du lanceur du bouclier, ou après ? Si oui, il ne le
+				// voit plus : le moteur retire la ligne au DÉBUT du tour de son lanceur
+				// (Entity.java:810-824), avant que ce lanceur n'agisse (Fight.java:367 puis 378).
+				// L'égalité de rang compte donc, et c'est le cas courant : le lanceur d'une
+				// vulnérabilité est un attaquant de cette chaîne, qui en repose une neuve.
 				// Balayage plutôt que tri : la liste tient en un ou deux retraits.
 				var o = ords[idx]
 				var rank = o >= targetOrder ? o - targetOrder : o - targetOrder + SEQ_WRAP
 				for (var k = 0; k < dn; k += 3) {
-					if (drops[k] >= rank) continue
+					if (drops[k] > rank) continue
 					chainAbs -= drops[k + 1]
 					chainRel -= drops[k + 2]
 					drops[k] = SEQ_WRAP * 2   // consommé : ne repassera sous aucun rang
