@@ -843,14 +843,26 @@ class ConsequencesClass {
 		for (var e in touched) {
 			var stat = StateClass.ensureCloned(EveryStats, e, clonedIds)
 			var newEffects = []
+			var droppedStates = 0
 			for (var eff in stat.EFFECTS) {
 				if (eff[2] == Caster) {
-					removeCastedEffect(eff[0], stat, eff[1], eff[8])
+					// Un etat n'existe que par sa ligne : la ligne partie, l'etat part avec elle
+					// (Entity.die:868-872 -> removeEffect:917-923 -> updateBuffStats:892-902,
+					// qui reconstruit le masque a partir des lignes restantes). Aucun agregat a
+					// defaire pour ce type : removeCastedEffect n'a pas de cas ADD_STATE.
+					if (eff[0] == EFFECT_ADD_STATE) droppedStates |= (1 << eff[1])
+					else removeCastedEffect(eff[0], stat, eff[1], eff[8])
 				} else {
 					push(newEffects, eff)
 				}
 			}
 			stat.EFFECTS = newEffects
+			// Un etat ne tombe que si PLUS AUCUNE ligne ne le porte.
+			if (droppedStates != 0) {
+				var keptStates = 0
+				for (var eff in newEffects) if (eff[0] == EFFECT_ADD_STATE) keptStates |= (1 << eff[1])
+				stat.STATES = (stat.STATES & ~droppedStates) | keptStates
+			}
 			EntityStateClass.refreshShieldExpiry(stat)
 		}
 	}
@@ -1115,9 +1127,21 @@ class ConsequencesClass {
 		// intacts : irréductibles par nature. Lignes et tableau NEUFS — jamais de mutation
 		// des containers du parent.
 		var newEffects = []
+		var droppedStates = 0
 		for (var eff in TarStats.EFFECTS) {
 			if (eff[7] & EFFECT_MODIFIER_IRREDUCTIBLE) {
 				push(newEffects, eff)
+				continue
+			}
+			// Ligne d'etat : sa valeur est l'ORDINAL de l'etat, pas une quantite. Le moteur
+			// surcharge la reduction pour ce seul type (EffectAddState.java:24-29) : sous 100 %
+			// la ligne ne bouge pas, a 100 % sa valeur tombe a zero, la ligne sort du ledger et
+			// l'etat part avec elle — le masque est reconstruit a partir des lignes qui restent
+			// (Entity.removeEffect:917-923 -> Entity.updateBuffStats:892-902). Aucun agregat a
+			// defaire : removeCastedEffect n'a pas de cas pour ce type.
+			if (eff[0] == EFFECT_ADD_STATE) {
+				if (DebuffPower > 0) push(newEffects, eff)
+				else droppedStates |= (1 << eff[1])
 				continue
 			}
 			var newValue = round(eff[1] * DebuffPower)
@@ -1126,6 +1150,14 @@ class ConsequencesClass {
 			if (newValue > 0) push(newEffects, [eff[0], newValue, eff[2], eff[3], eff[4], eff[5], eff[6], eff[7], eff[8]])
 		}
 		TarStats.EFFECTS = newEffects
+		// Un etat ne tombe que si PLUS AUCUNE ligne ne le porte : une ligne irreductible
+		// survivante le remet (protection divine, eveil, tourelle). Passe payee uniquement
+		// quand une ligne d'etat est reellement sortie.
+		if (droppedStates != 0) {
+			var keptStates = 0
+			for (var eff in newEffects) if (eff[0] == EFFECT_ADD_STATE) keptStates |= (1 << eff[1])
+			TarStats.STATES = (TarStats.STATES & ~droppedStates) | keptStates
+		}
 		EntityStateClass.refreshShieldExpiry(TarStats)
 	}
 
