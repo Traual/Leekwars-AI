@@ -23,6 +23,7 @@ class BulbState {
 	SIDE
 	SPECIAL_WEAPON
 	EFFECTS
+	STATES               // masque d'états du moteur, même contrat qu'EntityState
 	SHIELD_EXPIRY        // même contrat qu'EntityState : null tant qu'aucun bouclier n'expire
 	SHIELD_EXPIRY_HASH   // digest de la liste, exactement 0 quand elle est vide
 	CAP_MEMO    // memos de champs dérivés, même contrat qu'EntityState (copiés au clone puis validés)
@@ -58,7 +59,19 @@ class BulbState {
 	CELL
 	STATIC
 
-	constructor(id, SummonerLevelTimes, Chip, To, Summoner, SummonerStats, NPriorVirtuals) {
+	/*
+	 * Une caractéristique de bulbe, transcrite mot pour mot de BulbTemplate.base :
+	 * (int)((base + floor((bonus - base) * coeff)) * multiplier). Les deux arrondis et leur
+	 * ORDRE comptent — le plancher tombe sur l'interpolation seule, la troncature sur le
+	 * produit final — et le multiplicateur d'un cast critique vaut 1,2 ici, pas le 1,3 des
+	 * autres effets. Garder l'expression identique fait tomber les mêmes entiers que le
+	 * moteur, y compris quand le produit par 1,2 passe juste sous la borne.
+	 */
+	static interpolate(row, coeff, multiplier) {
+		return floor((row[0] + floor((row[1] - row[0]) * coeff)) * multiplier)
+	}
+
+	constructor(id, SummonerLevelTimes, Chip, To, Summoner, SummonerStats, NPriorVirtuals, Critical) {
 		// Charger les stats dynamiques via l'API
 		var stats = getBulbStats(Chip)
 
@@ -99,18 +112,21 @@ class BulbState {
 		// (l'état de BRANCHE), cohérent si l'invocateur porte lui-même un ordre fractionnaire.
 		this.TURN_ORDER = SummonerStats.TURN_ORDER + 0.5 / (1 + NPriorVirtuals)
 
-		// === Leek Stats (interpolation min + (max - min) * SummonerLevelTimes) ===
-		this.LIFE = stats[STAT_LIFE][0] + (stats[STAT_LIFE][1] - stats[STAT_LIFE][0]) * SummonerLevelTimes
+		// === Leek Stats ===
+		// Un cast critique donne un bulbe entièrement +20 % : le moteur passe le drapeau
+		// jusqu'à createInvocation, qui l'applique aux NEUF caractéristiques.
+		var multiplier = Critical ? 1.2 : 1.0
+		this.LIFE = interpolate(stats[STAT_LIFE], SummonerLevelTimes, multiplier)
 		this.TOTAL_LIFE = this.LIFE
-		this.STRENGTH = stats[STAT_STRENGTH][0] + (stats[STAT_STRENGTH][1] - stats[STAT_STRENGTH][0]) * SummonerLevelTimes
-		this.WISDOM = stats[STAT_WISDOM][0] + (stats[STAT_WISDOM][1] - stats[STAT_WISDOM][0]) * SummonerLevelTimes
-		this.AGILITY = stats[STAT_AGILITY][0] + (stats[STAT_AGILITY][1] - stats[STAT_AGILITY][0]) * SummonerLevelTimes
-		this.RESISTANCE = stats[STAT_RESISTANCE][0] + (stats[STAT_RESISTANCE][1] - stats[STAT_RESISTANCE][0]) * SummonerLevelTimes
-		this.SCIENCE = stats[STAT_SCIENCE][0] + (stats[STAT_SCIENCE][1] - stats[STAT_SCIENCE][0]) * SummonerLevelTimes
-		this.MAGIC = stats[STAT_MAGIC][0] + (stats[STAT_MAGIC][1] - stats[STAT_MAGIC][0]) * SummonerLevelTimes
-		this.MP = stats[STAT_MP][0] + (stats[STAT_MP][1] - stats[STAT_MP][0]) * SummonerLevelTimes
+		this.STRENGTH = interpolate(stats[STAT_STRENGTH], SummonerLevelTimes, multiplier)
+		this.WISDOM = interpolate(stats[STAT_WISDOM], SummonerLevelTimes, multiplier)
+		this.AGILITY = interpolate(stats[STAT_AGILITY], SummonerLevelTimes, multiplier)
+		this.RESISTANCE = interpolate(stats[STAT_RESISTANCE], SummonerLevelTimes, multiplier)
+		this.SCIENCE = interpolate(stats[STAT_SCIENCE], SummonerLevelTimes, multiplier)
+		this.MAGIC = interpolate(stats[STAT_MAGIC], SummonerLevelTimes, multiplier)
+		this.MP = interpolate(stats[STAT_MP], SummonerLevelTimes, multiplier)
 		this.TOTAL_MP = this.MP
-		this.TP = stats[STAT_TP][0] + (stats[STAT_TP][1] - stats[STAT_TP][0]) * SummonerLevelTimes
+		this.TP = interpolate(stats[STAT_TP], SummonerLevelTimes, multiplier)
 		this.TOTAL_TP = this.TP
 		this.NAME = getNameFromChip(Chip)
 

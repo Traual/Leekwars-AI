@@ -582,7 +582,9 @@ class ConsequencesClass {
 					// virtual bulbs of this summoner (dead included: deterministic offsets).
 					var nPriorVirtuals = 0
 					for (var vid: var vstat in State) if (vid > SUMMON_ID_BASE && vstat.SUMMONER == Caster) nPriorVirtuals++
-					var EntityStats = new BulbState(Id, SUMMONER_LEVEL_TIMES, Item, To, Caster, CastStats, nPriorVirtuals)
+					// Le critique gouverne AUSSI le bulbe : summonEntity tire son generateCritical
+					// et le passe à createInvocation, qui multiplie les neuf stats par 1,2.
+					var EntityStats = new BulbState(Id, SUMMONER_LEVEL_TIMES, Item, To, Caster, CastStats, nPriorVirtuals, CAST_IS_CRITICAL)
 					// SEULE mutation de la map extérieure faite ici : elle s'enregistre à la
 					// SOURCE, comme ensureCloned pour une entité mutée — ancien état s'il y en
 					// avait un (collision d'id : le workspace le retrouvera à la restauration),
