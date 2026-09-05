@@ -894,9 +894,26 @@ class ConsequencesClass {
 			applyPassiveRawEffect(killer, EFFECT_RAW_BUFF_TP, killRow[1], WEAPON_ENHANCED_LIGHTNINGER, killRow, true)
 		}
 
-		// Entity.die : retrait de tous les effets lancés par la victime, PUIS cascade — les
-		// summons VIVANTS de la victime meurent avec killer null (récursif : summons de summons).
+		// Entity.die fait DEUX vidanges, dans cet ordre : les effets LANCÉS par la victime,
+		// retirés de leurs porteurs...
 		RemoveCastedEffects(EveryStats, Killed, clonedIds)
+
+		// ...puis les effets que la victime PORTE, quel qu'en soit le lanceur, suivis d'un
+		// updateBuffStats sur une liste vide : le cadavre repart sur ses stats de base, sans
+		// bouclier, sans entrave et sans état. Défaire chaque ligne au lieu de vider sec, les
+		// agrégats étant tenus incrémentalement. C'est aussi ce qui rend le ledger cohérent
+		// plus tard : la ligne ayant disparu du cadavre, la mort ultérieure de son lanceur ne
+		// la décomptera pas une seconde fois — le moteur l'a lui aussi retirée de son côté.
+		var victim = StateClass.ensureCloned(EveryStats, Killed, clonedIds)
+		if (count(victim.EFFECTS) > 0) {
+			for (var eff in victim.EFFECTS) removeCastedEffect(eff[0], victim, eff[1], eff[3])
+			victim.EFFECTS = []
+			EntityStateClass.refreshShieldExpiry(victim)
+		}
+		victim.STATES = 0
+
+		// Cascade : les summons VIVANTS de la victime meurent avec killer null (récursif :
+		// summons de summons).
 		var cascadeIds = []
 		for (var e: var stat in EveryStats) {
 			if (stat.LIFE > 0 && stat.SUMMONER == Killed) push(cascadeIds, e)
