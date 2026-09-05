@@ -330,7 +330,14 @@ class ActionsClass {
 			if (from != null && CellClass.getLosWithBaseHash(from, EntityCell, State, BaseHash)) {
 				var To = attract ? getClosestCellToAttract(from, EntityCell, MinRange, MaxRange, OccupiedCellsArray)
 				                 : getFarthestCellToPush(from, EntityCell, MinRange, MaxRange, OccupiedCellsArray)
-				if (To != null) push(_final, new ActionClass(Item, from, To))
+				// Glissement nul (cible au contact pour attract, adossée à un obstacle pour
+				// push) : le moteur accepte quand même le cast et applique les autres effets
+				// de l'item — la boucle d'Attack.applyOnCell ne coupe pas quand la cellule de
+				// glissement est celle de l'entité. Viser la cellule de la cible est légal :
+				// verifyLoS rend true dès que la cellule bloquée est l'ARRIVÉE, et le segment
+				// qui y mène vient d'être validé juste au-dessus.
+				if (To == null) To = EntityCell
+				push(_final, new ActionClass(Item, from, To))
 			}
 		}
 		return _final
@@ -343,12 +350,21 @@ class ActionsClass {
 	}
 
 	static getFarthestCellToPush(from, EntityCell, MinRange, MaxRange, ArrayCellsOccupied) {
-		var MaxDist = CellClass.getDist(from, EntityCell)
+		var EntityDist = CellClass.getDist(from, EntityCell)
+		var MaxDist = EntityDist
 		var MaxDistCell
 		var PossiblesCellsToPush = CellClass.getLaserAoe(from, EntityCell, MinRange, MaxRange)
 		for (var c: var bool2 in PossiblesCellsToPush) {
-			if (c in ArrayCellsOccupied) continue
 			var ThisDist = CellClass.getDist(c, from)
+			// Le moteur n'ignore qu'UNE entité en ligne (la première, donc la cible) : un
+			// second corps au-delà d'elle bloque la LoS vers toute cellule plus lointaine et
+			// fait refuser le cast entier. La cible est le seul corps en deçà, la LoS jusqu'à
+			// elle ayant été validée par l'appelant. getLaserAoe insère par distance
+			// croissante : couper ici écarte exactement les cellules illégales.
+			if (c in ArrayCellsOccupied) {
+				if (ThisDist > EntityDist) break
+				continue
+			}
 			if (MaxDist < ThisDist) {
 				MaxDist = ThisDist
 				MaxDistCell = c
