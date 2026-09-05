@@ -189,6 +189,10 @@ class EntityDangerClass {
 	}
 
 	static MapDistPossibles = [
+		// Zones a l'echelle du CAMP (apocalypse, divine_protection) : toutes les cibles sont a
+		// distance 0, il n'y a aucun palier de decroissance a balayer.
+		AREA_ENEMIES: 0,
+		AREA_ALLIES: 0,
 		AREA_CIRCLE_1: 1,
 		AREA_CIRCLE_2: 2,
 		AREA_CIRCLE_3: 3,
@@ -206,6 +210,8 @@ class EntityDangerClass {
 	]
 
 	static MapAdditionDist = [
+		AREA_ENEMIES: 1,
+		AREA_ALLIES: 1,
 		AREA_CIRCLE_1: 1,
 		AREA_CIRCLE_2: 1,
 		AREA_CIRCLE_3: 1,

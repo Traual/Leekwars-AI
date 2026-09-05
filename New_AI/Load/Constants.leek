@@ -204,3 +204,14 @@ global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
 // gloutonne + early-exit des chaînes). Attrape les résidus float des chips type Antidote /
 // Libération / Rémission quand aucun effet pertinent ne s'applique.
 global BFS_DELTA_EPSILON = 0.01
+
+// Etats d'entite du moteur (attack/EntityState.java) : NONE 0, RESURRECTED 1, UNHEALABLE 2,
+// INVINCIBLE 3, PACIFIST 4, HEAVY 5, DENSE 6, MAGNETIZED 7. Seul INVINCIBLE est modelise : le
+// moteur met les degats a ZERO sur son porteur, dans les cinq familles.
+global STATE_INVINCIBLE = 3
+
+// Ligne ON_CASTER du chip de saut, lue dans data/chips.json (chip 144, effet 41) : agilite brute
+// +100 pendant deux tours. Le chip porte aussi un EFFECT_TELEPORT, deja joue par la couche de
+// deplacement — seule cette ligne-ci est appliquee.
+global JUMP_AGILITY_BUFF = 100
+global JUMP_AGILITY_TURNS = 2

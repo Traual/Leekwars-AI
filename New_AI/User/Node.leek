@@ -89,6 +89,19 @@ class NodeClass {
 	 *
 	 * @return le nouveau nœud, hashs et patch remplis
 	 */
+	/*
+	 * Ligne ON_CASTER du chip de saut : RAW_BUFF_AGILITY 100 sur deux tours
+	 * (data/chips.json, chip 144, effet 41, modificateur 4 = ON_CASTER).
+	 * Posee par le meme chemin qu'un buff ordinaire : RecordCastedEffect inscrit la ligne au
+	 * ledger, ce qui la rend visible a l'expiration, a Liberation et au reset de resurrection,
+	 * et marque CAP_DIRTY pour que la capability soit recomparee.
+	 * Valeur NON critee : convention conservatrice de toute la simulation.
+	 */
+	static applyJumpAgility(meStat) {
+		meStat.AGILITY += JUMP_AGILITY_BUFF
+		ConsequencesClass.RecordCastedEffect(meStat, EFFECT_RAW_BUFF_AGILITY, JUMP_AGILITY_BUFF, Me, JUMP_AGILITY_TURNS, false, CHIP_JUMP, EFFECT_MODIFIER_ON_CASTER)
+	}
+
 	static ActionToNodeInTree(Act, Workspace, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, StateParent, ParentContext, ParentHfp, ItemUses) {
 		BenchOps.Start("Node")
 		// clonedIds = l'ensemble exact des entités effectivement mutables : Me pré-cloné ici ;
@@ -128,13 +141,31 @@ class NodeClass {
 		// l'incrémenter ici rouvrait la chaîne d'inventaire, un niveau par nœud du chemin.
 		StateClass.setUses(meStat, Item, ItemUses + 1)
 		// Cooldowns des items de déplacement si la cellule d'arrivée vient d'une layer jump/télépo.
+		//
+		// ET LEURS EFFETS. Le saut n'est pas qu'un déplacement : data/chips.json lui donne aussi
+		// une ligne RAW_BUFF_AGILITY de 100 sur DEUX tours, sur le lanceur (modificateur 4).
+		// L'IA prélevait les TP et le cooldown sans jamais l'appliquer, donc tout le sous-arbre
+		// était scoré avec 100 d'agilité de moins qu'en vrai. Le seuil de critique est BINAIRE à
+		// 950 (MIN_AGILITY_TO_FULLY_CRIT) : un build entre 850 et 949 le franchit RÉELLEMENT en
+		// sautant, et l'IA ne le voyait pas — elle sous-estimait ses propres dégâts après un saut.
+		//
+		// On n'applique surtout PAS la ligne par getConsequences : le chip porte aussi un
+		// EFFECT_TELEPORT, que la couche de déplacement vient déjà de jouer — le passer
+		// redéplacerait l'entité. Seule la ligne ON_CASTER est posée, par le même chemin que
+		// n'importe quel buff (RecordCastedEffect gère le ledger, l'expiration et CAP_DIRTY).
+		// Valeur non critée, conforme à la convention conservatrice de toute la simulation.
+		//
+		// La téléportation porte, elle, une ligne VITALITY de 15 : NON appliquée, l'IA n'ayant
+		// aucun cas EFFECT_VITALITY dans applyEffect. Manque distinct, à traiter à part.
 		if (usedLayer == LAYER_JUMP) {
 			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
+			applyJumpAgility(meStat)
 		} else if (usedLayer == LAYER_TELEPORTATION) {
 			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
 		} else if (usedLayer == LAYER_TELEPORTATION_AND_JUMP) {
 			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
 			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
+			applyJumpAgility(meStat)
 		}
 		// Empreinte de mobilité de Me : calculée UNE fois, après TOUTES ses écritures
 		// (cellule, MP, TP, conséquences, cooldowns d'item et de déplacement). Elle sale le

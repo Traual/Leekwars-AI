@@ -238,7 +238,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = max(0, round(casterStatMultiplier * AOE_FALLOFF[aoeDistance]))
+					var calculatedValue = targetStats.INVINCIBLE ? 0 : max(0, round(casterStatMultiplier * AOE_FALLOFF[aoeDistance]))
 					// Léthal : même cascade que les dégâts — LIFE=0 + déroulé des buffs du mort +
 					// procs on-kill. Érosion sur les dégâts réellement encaissés (cap à la vie
 					// restante), comme getEntityDamageConsequences.
@@ -281,7 +281,7 @@ class ConsequencesClass {
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100) * (1 + CastStats.POWER / 100) // SCIENCE planchée, POWER non (EffectNovaDamage du moteur)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
-					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					var calculatedValue = targetStats.INVINCIBLE ? 0 : round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
 					var damageAmount = min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
 					targetStats.TOTAL_LIFE -= damageAmount
 					// onNovaDamage moteur : seul test isDead, PAS d'exclusion self.
@@ -403,7 +403,10 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					// Le moteur annule CHAQUE tick sur un porteur d'invincibilite
+					// (EffectPoison.java:23-25) ; l'etat etant permanent (turns = -1), toute la
+					// ligne vaut zero.
+					var calculatedValue = targetStats.INVINCIBLE ? 0 : round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
 					targetStats.POISON += calculatedValue
 					targetStats.POISON_OVER_TIME += calculatedValue * effectDuration
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5])
@@ -1010,6 +1013,10 @@ class ConsequencesClass {
 		// de la victime, et Thorn comme Mirror en sont (targets=30, bit TARGET_CASTER). L'IA
 		// evaluait donc tout coup de grace comme gratuit face a un renvoyeur.
 		var TargetDamageReturn = TarStats.DAMAGE_RETURN
+		// Cible INVINCIBLE : le moteur met les degats a zero APRES les boucliers et APRES avoir
+		// fige le retour (EffectDamage.java:21-31). Le retour survit donc — frapper un porteur
+		// d'invincibilite equipe d'un renvoyeur blesse bel et bien l'attaquant pour rien.
+		if (TarStats.INVINCIBLE) Damage = 0
 		if (Damage >= TargetLife && TargetLife > 0) {
 			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
 		} else {
@@ -1107,6 +1114,13 @@ class ConsequencesClass {
 		var TargetLife = TarStats.LIFE
 		var Damage = min(round(InitialDamages), TargetLife)
 		// Meme figeage que pour EFFECT_DAMAGE : EffectLifeDamage.java:23-25 puis :45-57.
+		// ORDRE INVERSE pour l'invincibilite, et le moteur est asymetrique : ici l'annulation
+		// (EffectLifeDamage.java:18-20) precede le calcul du retour (:22-25), donc le retour
+		// tombe a zero LUI AUSSI. On annule BaseDamages, dont le retour derive.
+		if (TarStats.INVINCIBLE) {
+			BaseDamages = 0
+			Damage = 0
+		}
 		var TargetDamageReturn = TarStats.DAMAGE_RETURN
 		if (Damage >= TargetLife && TargetLife > 0) {
 			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
@@ -1155,6 +1169,29 @@ class ConsequencesClass {
 					if (e == Me || stat.LIFE <= 0) continue
 					var Dist = MapAoe[stat.CELL]
 					if (Dist != null) _final[e] = Dist
+				}
+				break
+			// Zones a l'echelle du CAMP : le moteur ne fait aucune geometrie, il prend les
+			// cellules de toutes les entites du camp vise (AreaEnemies.java:18-28,
+			// AreaAllies.java:18-30). Elles ne peuvent donc pas passer par getAreaDist, qui est
+			// purement geometrique et mis en cache — la cible depend du State, pas de la carte.
+			// Deux items seulement, tous deux de niveau 1 : apocalypse (ennemis) et
+			// divine_protection (allies, caster COMPRIS — c'est ainsi qu'une equipe entiere
+			// devient invincible).
+			// L'exclusion moteur des entites dont le nom contient « crystal » n'est pas reprise :
+			// aucune entite invocable de ce jeu ne porte ce nom.
+			case AREA_ENEMIES:
+				var MyCampE = EveryStats[Me].SIDE
+				for (var e: var stat in EveryStats) {
+					if (stat.LIFE <= 0 || stat.SIDE == MyCampE) continue
+					_final[e] = 0
+				}
+				break
+			case AREA_ALLIES:
+				var MyCampA = EveryStats[Me].SIDE
+				for (var e: var stat in EveryStats) {
+					if (stat.LIFE <= 0 || stat.SIDE != MyCampA) continue
+					_final[e] = 0
 				}
 				break
 			case AREA_FIRST_INLINE:

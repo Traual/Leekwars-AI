@@ -62,6 +62,11 @@ class EntityStateClass extends EntityClass {
 	// clone peut donc en partager la référence.
 	SHIELD_EXPIRY
 	SHIELD_EXPIRY_HASH   // digest de la liste, exactement 0 quand elle est vide
+	// Le moteur met les degats a ZERO sur un porteur d'INVINCIBLE, dans les cinq familles
+	// (EffectDamage.java:29-31 et voisins). Deux items le posent, en PERMANENT (turns = -1,
+	// modificateur IRREDUCTIBLE, donc insensible a Liberation) : divine_protection, et
+	// awakening via un bloc en dur de State.java:942-945 applique a tout ressuscite.
+	INVINCIBLE
 	MP
 	TOTAL_MP
 	TP
@@ -69,6 +74,7 @@ class EntityStateClass extends EntityClass {
 	CELL
 	constructor(id) {
 		super(id)
+		this.INVINCIBLE = false
 		this.ABSOLUTE_SHIELD = getAbsoluteShield(id)
 		this.RELATIVE_SHIELD = getRelativeShield(id)
 		this.DAMAGE_RETURN = getDamageReturn(id)
@@ -197,6 +203,11 @@ class EntityStateClass extends EntityClass {
 					break
 
 					// --- FLUX PÉRIODIQUES (même passe, six agrégats positifs) ---
+				case EFFECT_ADD_STATE:
+					// Seul INVINCIBLE change un resultat que l'IA calcule ; les autres etats
+					// (PACIFIST, HEAVY, DENSE...) ne touchent rien de ce qu'elle simule.
+					if (eff[1] == STATE_INVINCIBLE) this.INVINCIBLE = true
+					break
 				case EFFECT_POISON:
 					var poisonTicks = EntityStateClass.remainingTicks(eff, bearerOrder, myTurnOrder)
 					if (poisonTicks > 0) this.POISON += eff[1]
