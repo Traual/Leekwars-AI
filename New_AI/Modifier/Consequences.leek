@@ -1154,17 +1154,16 @@ class ConsequencesClass {
 	static getEntityLifeDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, clonedIds) {
 		var BaseDamages = base * AOE_FALLOFF[Dist]
 		var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
+		// Invincibilite : le moteur annule le brut AVANT les boucliers (EffectLifeDamage.java:18),
+		// a l'inverse d'EFFECT_DAMAGE qui l'annule apres (EffectDamage.java:29). L'annulation
+		// precede aussi le calcul du retour (:24), qui tombe donc a zero lui aussi.
+		// Consequence a garder : un bouclier absolu NEGATIF est soustrait apres, donc
+		// 0 - (-25) = 25 degats passent a travers l'invincibilite. Annuler le brut ici, et
+		// laisser la chaine de boucliers se derouler, reproduit les deux cas d'un coup.
+		if (EntityStateClass.hasState(TarStats, STATE_INVINCIBLE)) BaseDamages = 0
 		var InitialDamages = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
 		var TargetLife = TarStats.LIFE
 		var Damage = min(round(InitialDamages), TargetLife)
-		// Meme figeage que pour EFFECT_DAMAGE : EffectLifeDamage.java:23-25 puis :45-57.
-		// ORDRE INVERSE pour l'invincibilite, et le moteur est asymetrique : ici l'annulation
-		// (EffectLifeDamage.java:18-20) precede le calcul du retour (:22-25), donc le retour
-		// tombe a zero LUI AUSSI. On annule BaseDamages, dont le retour derive.
-		if (EntityStateClass.hasState(TarStats, STATE_INVINCIBLE)) {
-			BaseDamages = 0
-			Damage = 0
-		}
 		var TargetDamageReturn = TarStats.DAMAGE_RETURN
 		if (Damage >= TargetLife && TargetLife > 0) {
 			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
