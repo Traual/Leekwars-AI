@@ -236,6 +236,8 @@ class ConsequencesClass {
 			case EFFECT_RAW_HEAL:
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
+					// EffectRawHeal.java:12 : sort AVANT tout calcul sur un porteur d'UNHEALABLE.
+					if (EntityStateClass.hasState(targetStats, STATE_UNHEALABLE)) continue
 					targetStats.LIFE += min(round(baseEffectValue * AOE_FALLOFF[aoeDistance]), targetStats.TOTAL_LIFE - targetStats.LIFE)
 				}
 				break
@@ -300,8 +302,9 @@ class ConsequencesClass {
 				break
 			case EFFECT_STEAL_LIFE:
 				// Moteur : le CASTER récupère le TOTAL de l'effet PRÉCÉDENT, cappé à sa vie
-				// manquante. (L'état UNHEALABLE n'est pas modélisé dans la simu.)
-				var stolen = min(PrevEffectTotal, CastStats.TOTAL_LIFE - CastStats.LIFE)
+				// manquante — sauf s'il porte UNHEALABLE, EffectStealLife.java:12 sortant
+				// avant tout credit.
+				var stolen = EntityStateClass.hasState(CastStats, STATE_UNHEALABLE) ? 0 : min(PrevEffectTotal, CastStats.TOTAL_LIFE - CastStats.LIFE)
 				CastStats.LIFE += stolen
 				effectTotal = stolen
 				break
