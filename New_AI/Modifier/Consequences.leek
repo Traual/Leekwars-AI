@@ -69,6 +69,9 @@ class ConsequencesClass {
 				var effectDuration = Effect[3]
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
+					// UNHEALABLE : le moteur sort AVANT toute application, y compris pour un
+					// soin sur la duree (EffectHeal.java:18 et :31).
+					if (EntityStateClass.hasState(targetStats, STATE_UNHEALABLE)) continue
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
 					if (effectDuration > 0) {
@@ -134,6 +137,12 @@ class ConsequencesClass {
 					targetStats.TOTAL_TP += calculatedValue
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
 				}
+				break
+			case EFFECT_ADD_STATE:
+				// L'IA peut elle-meme lancer un chip qui pose un etat (divine_protection sur ses
+				// allies, awakening sur un mort). L'ordinal est en value1, comme cote moteur
+				// (EffectAddState.java:12-14).
+				for (var targetId: var aoeDistance in RealTargets) State[targetId].STATES |= (1 << Effect[1])
 				break
 			case EFFECT_BOOST_MAX_LIFE:
 				// PAS de ledger : removeEffect ne défait JAMAIS addTotalLife
@@ -238,7 +247,7 @@ class ConsequencesClass {
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
-					var calculatedValue = targetStats.INVINCIBLE ? 0 : max(0, round(casterStatMultiplier * AOE_FALLOFF[aoeDistance]))
+					var calculatedValue = EntityStateClass.hasState(targetStats, STATE_INVINCIBLE) ? 0 : max(0, round(casterStatMultiplier * AOE_FALLOFF[aoeDistance]))
 					// Léthal : même cascade que les dégâts — LIFE=0 + déroulé des buffs du mort +
 					// procs on-kill. Érosion sur les dégâts réellement encaissés (cap à la vie
 					// restante), comme getEntityDamageConsequences.
@@ -281,7 +290,7 @@ class ConsequencesClass {
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100) * (1 + CastStats.POWER / 100) // SCIENCE planchée, POWER non (EffectNovaDamage du moteur)
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
-					var calculatedValue = targetStats.INVINCIBLE ? 0 : round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					var calculatedValue = EntityStateClass.hasState(targetStats, STATE_INVINCIBLE) ? 0 : round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
 					var damageAmount = min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
 					targetStats.TOTAL_LIFE -= damageAmount
 					// onNovaDamage moteur : seul test isDead, PAS d'exclusion self.
@@ -406,7 +415,7 @@ class ConsequencesClass {
 					// Le moteur annule CHAQUE tick sur un porteur d'invincibilite
 					// (EffectPoison.java:23-25) ; l'etat etant permanent (turns = -1), toute la
 					// ligne vaut zero.
-					var calculatedValue = targetStats.INVINCIBLE ? 0 : round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					var calculatedValue = EntityStateClass.hasState(targetStats, STATE_INVINCIBLE) ? 0 : round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
 					targetStats.POISON += calculatedValue
 					targetStats.POISON_OVER_TIME += calculatedValue * effectDuration
 					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5])
@@ -1016,7 +1025,7 @@ class ConsequencesClass {
 		// Cible INVINCIBLE : le moteur met les degats a zero APRES les boucliers et APRES avoir
 		// fige le retour (EffectDamage.java:21-31). Le retour survit donc — frapper un porteur
 		// d'invincibilite equipe d'un renvoyeur blesse bel et bien l'attaquant pour rien.
-		if (TarStats.INVINCIBLE) Damage = 0
+		if (EntityStateClass.hasState(TarStats, STATE_INVINCIBLE)) Damage = 0
 		if (Damage >= TargetLife && TargetLife > 0) {
 			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
 		} else {
@@ -1031,11 +1040,15 @@ class ConsequencesClass {
 			applyOnNovaDamagePassive(TarStats, directErosion)
 		}
 		if (!TarIsCaster) {
-			var Damage_Return = round(BaseDamages * (TargetDamageReturn / 100))
+			// Lanceur INVINCIBLE : le moteur n'applique aucun retour sur lui
+			// (EffectDamage.java:64, EffectLifeDamage.java:45).
+			var Damage_Return = EntityStateClass.hasState(CastStats, STATE_INVINCIBLE) ? 0 : round(BaseDamages * (TargetDamageReturn / 100))
 			// Ordre moteur (EffectDamage) : dégâts -> LIFESTEAL crédité au caster -> PUIS retour,
 			// plafonné à la vie restante POST-lifesteal — un gros lifesteal peut donc sauver d'un
 			// retour léthal. L'érosion suit le retour APPLIQUÉ, pas le brut.
-			var lifeAfterSteal = CastStats.LIFE + min(round(Damage * max(0, CastStats.WISDOM) / 1000), CastStats.TOTAL_LIFE - CastStats.LIFE) // WIS clampée : le moteur gate lifeSteal > 0, une sagesse shacklée négative ne DRAINE pas
+			// Lifesteal : le moteur le refuse a un lanceur UNHEALABLE (EffectDamage.java:52).
+			var stolen = EntityStateClass.hasState(CastStats, STATE_UNHEALABLE) ? 0 : min(round(Damage * max(0, CastStats.WISDOM) / 1000), CastStats.TOTAL_LIFE - CastStats.LIFE)
+			var lifeAfterSteal = CastStats.LIFE + stolen // WIS clampée : le moteur gate lifeSteal > 0, une sagesse shacklée négative ne DRAINE pas
 			var appliedReturn = min(Damage_Return, lifeAfterSteal)
 			if (Damage_Return >= lifeAfterSteal && CastStats.LIFE > 0) {
 				// Retour léthal : le caster meurt VRAIMENT (cascade de ses summons + déroulé de
@@ -1117,7 +1130,7 @@ class ConsequencesClass {
 		// ORDRE INVERSE pour l'invincibilite, et le moteur est asymetrique : ici l'annulation
 		// (EffectLifeDamage.java:18-20) precede le calcul du retour (:22-25), donc le retour
 		// tombe a zero LUI AUSSI. On annule BaseDamages, dont le retour derive.
-		if (TarStats.INVINCIBLE) {
+		if (EntityStateClass.hasState(TarStats, STATE_INVINCIBLE)) {
 			BaseDamages = 0
 			Damage = 0
 		}
@@ -1136,7 +1149,7 @@ class ConsequencesClass {
 			applyOnNovaDamagePassive(TarStats, lifeErosion)
 		}
 		if (!TarIsCaster) {
-			var Damage_Return = round(BaseDamages * (TargetDamageReturn / 100))
+			var Damage_Return = EntityStateClass.hasState(CastStats, STATE_INVINCIBLE) ? 0 : round(BaseDamages * (TargetDamageReturn / 100))
 			var appliedReturn = min(Damage_Return, CastStats.LIFE)   // plafonné à la vie restante (érosion sur l'appliqué)
 			if (Damage_Return >= CastStats.LIFE && CastStats.LIFE > 0) {
 				// Retour léthal : voir getEntityDamageConsequences.

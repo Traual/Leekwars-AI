@@ -67,7 +67,7 @@ class BulbState {
 		this.RELATIVE_SHIELD = 0
 		this.DAMAGE_RETURN = 0
 		this.POWER = 0
-		this.INVINCIBLE = false   // un bulbe nait sans etat
+		this.STATES = 0   // un bulbe nait sans aucun etat
 		this.SUMMONER = Summoner
 		this.IS_SUMMON = true
 		this.ID = id

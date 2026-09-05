@@ -102,6 +102,21 @@ class NodeClass {
 		ConsequencesClass.RecordCastedEffect(meStat, EFFECT_RAW_BUFF_AGILITY, JUMP_AGILITY_BUFF, Me, JUMP_AGILITY_TURNS, false, CHIP_JUMP, EFFECT_MODIFIER_ON_CASTER)
 	}
 
+	/*
+	 * Ligne ON_CASTER du chip de teleportation : EFFECT_BOOST_MAX_LIFE de 15
+	 * (data/chips.json, chip 59, effet 12, modificateur 4 = ON_CASTER).
+	 * Meme regle que le cas EFFECT_BOOST_MAX_LIFE de Consequences : la sagesse multiplie, le
+	 * moteur planche le RESULTAT, vie et vie max montent ensemble, et RIEN n'entre au ledger —
+	 * un gain de vie max n'est jamais defait cote moteur.
+	 * Valeur de base seule, sans le jet ni le critique : convention conservatrice de la
+	 * simulation.
+	 */
+	static applyTeleportVitality(meStat) {
+		var gain = round(TELE_VITALITY * max(0, 1 + meStat.WISDOM / 100))
+		meStat.LIFE += gain
+		meStat.TOTAL_LIFE += gain
+	}
+
 	static ActionToNodeInTree(Act, Workspace, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, StateParent, ParentContext, ParentHfp, ItemUses) {
 		BenchOps.Start("Node")
 		// clonedIds = l'ensemble exact des entités effectivement mutables : Me pré-cloné ici ;
@@ -155,17 +170,22 @@ class NodeClass {
 		// n'importe quel buff (RecordCastedEffect gère le ledger, l'expiration et CAP_DIRTY).
 		// Valeur non critée, conforme à la convention conservatrice de toute la simulation.
 		//
-		// La téléportation porte, elle, une ligne VITALITY de 15 : NON appliquée, l'IA n'ayant
-		// aucun cas EFFECT_VITALITY dans applyEffect. Manque distinct, à traiter à part.
+		// La téléportation porte, elle, une ligne EFFECT_BOOST_MAX_LIFE de 15 (chip 59, effet 12,
+		// ON_CASTER) — le moteur l'appelle VITALITY en interne, c'est le même effet. Appliquée
+		// aussi, par la même règle que le cas EFFECT_BOOST_MAX_LIFE de Consequences : vie et vie
+		// max montent ensemble, et RIEN n'entre au ledger, le moteur ne défaisant jamais un gain
+		// de vie max (EffectMultiplyStats.java:39).
 		if (usedLayer == LAYER_JUMP) {
 			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
 			applyJumpAgility(meStat)
 		} else if (usedLayer == LAYER_TELEPORTATION) {
 			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
+			applyTeleportVitality(meStat)
 		} else if (usedLayer == LAYER_TELEPORTATION_AND_JUMP) {
 			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
 			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
 			applyJumpAgility(meStat)
+			applyTeleportVitality(meStat)
 		}
 		// Empreinte de mobilité de Me : calculée UNE fois, après TOUTES ses écritures
 		// (cellule, MP, TP, conséquences, cooldowns d'item et de déplacement). Elle sale le

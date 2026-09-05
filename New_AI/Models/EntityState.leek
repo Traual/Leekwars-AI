@@ -62,11 +62,21 @@ class EntityStateClass extends EntityClass {
 	// clone peut donc en partager la référence.
 	SHIELD_EXPIRY
 	SHIELD_EXPIRY_HASH   // digest de la liste, exactement 0 quand elle est vide
-	// Le moteur met les degats a ZERO sur un porteur d'INVINCIBLE, dans les cinq familles
-	// (EffectDamage.java:29-31 et voisins). Deux items le posent, en PERMANENT (turns = -1,
-	// modificateur IRREDUCTIBLE, donc insensible a Liberation) : divine_protection, et
-	// awakening via un bloc en dur de State.java:942-945 applique a tout ressuscite.
-	INVINCIBLE
+	// ETATS DU MOTEUR, en MASQUE DE BITS : le bit i vaut l'ordinal i de attack/EntityState.java
+	// (NONE 0, RESURRECTED 1, UNHEALABLE 2, INVINCIBLE 3, PACIFIST 4, HEAVY 5, DENSE 6,
+	// MAGNETIZED 7, CHAINED 8, ROOTED 9, PETRIFIED 10, STATIC 11).
+	//
+	// Lu par getStates(id), qui rend l'ensemble des ordinaux : source AUTORITAIRE, et surtout
+	// GENERIQUE — un etat ajoute au moteur entre dans le masque sans toucher a ce code, seule
+	// la regle qui l'exploite reste a ecrire. Un masque plutot qu'un tableau : un champ entier
+	// de plus par clone, contre une allocation par entite.
+	//
+	// Ce que le moteur teste REELLEMENT aujourd'hui (grep hasState) :
+	//   INVINCIBLE : degats a ZERO dans les cinq familles, et le porteur ne subit AUCUN retour
+	//   UNHEALABLE : bloque soin, soin brut, vol de vie, et le lifesteal credite au lanceur
+	//   STATIC     : l'entite ne peut pas se deplacer (State.java:775, 796, 817)
+	//   PACIFIST   : declare mais teste NULLE PART — il ne fait rien
+	STATES
 	MP
 	TOTAL_MP
 	TP
@@ -74,7 +84,11 @@ class EntityStateClass extends EntityClass {
 	CELL
 	constructor(id) {
 		super(id)
-		this.INVINCIBLE = false
+		// Masque construit en une lecture : getStates coute 25 operations, payees une fois par
+		// entite et par virtualisation, jamais dans le chemin chaud des nœuds.
+		this.STATES = 0
+		var st = getStates(id)
+		if (st != null) for (var o in st) this.STATES |= (1 << o)
 		this.ABSOLUTE_SHIELD = getAbsoluteShield(id)
 		this.RELATIVE_SHIELD = getRelativeShield(id)
 		this.DAMAGE_RETURN = getDamageReturn(id)
@@ -203,11 +217,6 @@ class EntityStateClass extends EntityClass {
 					break
 
 					// --- FLUX PÉRIODIQUES (même passe, six agrégats positifs) ---
-				case EFFECT_ADD_STATE:
-					// Seul INVINCIBLE change un resultat que l'IA calcule ; les autres etats
-					// (PACIFIST, HEAVY, DENSE...) ne touchent rien de ce qu'elle simule.
-					if (eff[1] == STATE_INVINCIBLE) this.INVINCIBLE = true
-					break
 				case EFFECT_POISON:
 					var poisonTicks = EntityStateClass.remainingTicks(eff, bearerOrder, myTurnOrder)
 					if (poisonTicks > 0) this.POISON += eff[1]
@@ -302,6 +311,11 @@ class EntityStateClass extends EntityClass {
 		var bThisRound = orderB > myTurnOrder
 		if (aThisRound != bThisRound) return aThisRound
 		return orderA < orderB
+	}
+
+	/* L'entite porte-t-elle cet etat ? `state` est l'ordinal moteur. */
+	static hasState(stats, state) {
+		return (stats.STATES >> state) & 1
 	}
 
 	static refreshShieldExpiry(stats) {
