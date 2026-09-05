@@ -69,15 +69,18 @@ class ConsequencesClass {
 				var effectDuration = Effect[3]
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
-					// UNHEALABLE : le moteur sort AVANT toute application, y compris pour un
-					// soin sur la duree (EffectHeal.java:18 et :31).
-					if (EntityStateClass.hasState(targetStats, STATE_UNHEALABLE)) continue
+					// UNHEALABLE ne bloque QUE le soin INSTANTANE : la garde EffectHeal.java:18 est
+					// SOUS le test turns == 0. Un soin sur la duree se pose normalement — le moteur
+					// remplace la ligne precedente (Effect.java:240-253), cree la sienne avec la
+					// valeur pleine (:269), et saute le TICK un par un au debut du tour du porteur
+					// (EffectHeal.java:31). Si l'etat tombe, les ticks restants soignent : ligne et
+					// flux la portent donc en BRUT, comme l'import la lit deja du moteur.
 					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
 					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
 					if (effectDuration > 0) {
 						targetStats.HEAL += calculatedValue
 						targetStats.HEAL_OVER_TIME += calculatedValue * effectDuration
-					} else {
+					} else if (!EntityStateClass.hasState(targetStats, STATE_UNHEALABLE)) {
 						targetStats.LIFE += min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
 					}
 					// HoT seulement (durée 0 = soin instantané, le gate du helper l'écarte).
@@ -142,7 +145,24 @@ class ConsequencesClass {
 				// L'IA peut elle-meme lancer un chip qui pose un etat (divine_protection sur ses
 				// allies, awakening sur un mort). L'ordinal est en value1, comme cote moteur
 				// (EffectAddState.java:12-14).
-				for (var targetId: var aoeDistance in RealTargets) State[targetId].STATES |= (1 << Effect[1])
+				// Un etat vit par sa LIGNE : le moteur reconstruit l'ensemble des etats depuis les
+				// lignes portees a chaque retrait (Entity.updateBuffStats:892-902). Sans ligne au
+				// ledger, aucun etat ne retombe jamais dans la simulation, pas meme en tuant son
+				// lanceur, alors que Entity.die le fait tomber chez toutes ses cibles.
+				// La ligne n'est ni empilable ni fusionnable : createEffect force stacks = false
+				// pour ADD_STATE (Effect.java:238), d'ou un remplacement (type, item) sans
+				// condition, et l'exclut de la fusion (:258), qui additionnerait deux ordinaux et
+				// donnerait un etat qui n'existe pas.
+				var stateBit = 1 << Effect[1]
+				// Une ligne de duree nulle n'entre pas au ledger (Effect.java:269) : l'etat serait
+				// pose sans rien pour le porter. Duree invariante par cible, testee une fois.
+				var stateLingers = Effect[3] != 0
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					ReplacementChangeStats(Item, Effect, targetStats)
+					targetStats.STATES |= stateBit
+					if (stateLingers) targetStats.EFFECTS = targetStats.EFFECTS + [[EffectType, Effect[1], Caster, Effect[3], CAST_IS_CRITICAL, Item, targetId, Effect[5], Effect[3]]]
+				}
 				break
 			case EFFECT_BOOST_MAX_LIFE:
 				// PAS de ledger : removeEffect ne défait JAMAIS addTotalLife
@@ -792,10 +812,11 @@ class ConsequencesClass {
 	 * disparue ne sera pas re-déroulée à la mort de son ancien caster.
 	 */
 	/*
-	 * CONTRAT D'ENTRÉE : l'effet n'est PAS empilable. Les 33 sites d'appel le garantissent, par
-	 * deux gardes distinctes — 32 par `if (!isEffectStackable)` dans applyEffect, où
-	 * isEffectStackable est le même bit du même objet Effect, et le 33e par
-	 * `!(passiveRow[5] & EFFECT_MODIFIER_STACKABLE)`, où passiveRow[5] devient Effect[5].
+	 * CONTRAT D'ENTRÉE : l'effet n'est PAS empilable. Les 34 sites d'appel le garantissent, par
+	 * trois voies — 32 par `if (!isEffectStackable)` dans applyEffect, où isEffectStackable est
+	 * le même bit du même objet Effect, un par `!(passiveRow[5] & EFFECT_MODIFIER_STACKABLE)`, où
+	 * passiveRow[5] devient Effect[5], et un par la règle moteur : un ADD_STATE n'empile jamais,
+	 * quel que soit son bit (Effect.java:238).
 	 * Reposer la question ici coûtait une lecture, un ET et un branchement à chaque
 	 * remplacement. Tout NOUVEAU site d'appel doit honorer ce contrat.
 	 */
@@ -809,15 +830,19 @@ class ConsequencesClass {
 		if (!found) return;
 		var newEffects = []
 		var removed = false
+		var statesDirty = false
 		for (var eff in TarStats.EFFECTS) {
 			if (!removed && eff[0] == Effect[0] && eff[5] == Item) {
 				removeCastedEffect(eff[0], TarStats, eff[1], eff[8])
+				if (eff[0] == EFFECT_ADD_STATE) statesDirty = true
 				removed = true
 				continue   // la ligne remplacée ne passe pas dans le nouveau tableau
 			}
 			push(newEffects, eff)
 		}
 		TarStats.EFFECTS = newEffects
+		// Ligne d'etat disparue : le masque se relit dans les lignes qui restent.
+		if (statesDirty) EntityStateClass.refreshStates(TarStats)
 		EntityStateClass.refreshShieldExpiry(TarStats)
 	}
 
@@ -843,26 +868,18 @@ class ConsequencesClass {
 		for (var e in touched) {
 			var stat = StateClass.ensureCloned(EveryStats, e, clonedIds)
 			var newEffects = []
-			var droppedStates = 0
+			var statesDirty = false
 			for (var eff in stat.EFFECTS) {
 				if (eff[2] == Caster) {
-					// Un etat n'existe que par sa ligne : la ligne partie, l'etat part avec elle
-					// (Entity.die:868-872 -> removeEffect:917-923 -> updateBuffStats:892-902,
-					// qui reconstruit le masque a partir des lignes restantes). Aucun agregat a
-					// defaire pour ce type : removeCastedEffect n'a pas de cas ADD_STATE.
-					if (eff[0] == EFFECT_ADD_STATE) droppedStates |= (1 << eff[1])
-					else removeCastedEffect(eff[0], stat, eff[1], eff[8])
+					removeCastedEffect(eff[0], stat, eff[1], eff[8])
+					if (eff[0] == EFFECT_ADD_STATE) statesDirty = true
 				} else {
 					push(newEffects, eff)
 				}
 			}
 			stat.EFFECTS = newEffects
-			// Un etat ne tombe que si PLUS AUCUNE ligne ne le porte.
-			if (droppedStates != 0) {
-				var keptStates = 0
-				for (var eff in newEffects) if (eff[0] == EFFECT_ADD_STATE) keptStates |= (1 << eff[1])
-				stat.STATES = (stat.STATES & ~droppedStates) | keptStates
-			}
+			// La mort du lanceur retire l'etat qu'il accordait, comme Entity.die.
+			if (statesDirty) EntityStateClass.refreshStates(stat)
 			EntityStateClass.refreshShieldExpiry(stat)
 		}
 	}
@@ -1127,21 +1144,22 @@ class ConsequencesClass {
 		// intacts : irréductibles par nature. Lignes et tableau NEUFS — jamais de mutation
 		// des containers du parent.
 		var newEffects = []
-		var droppedStates = 0
+		var statesDirty = false
 		for (var eff in TarStats.EFFECTS) {
 			if (eff[7] & EFFECT_MODIFIER_IRREDUCTIBLE) {
 				push(newEffects, eff)
 				continue
 			}
-			// Ligne d'etat : sa valeur est l'ORDINAL de l'etat, pas une quantite. Le moteur
-			// surcharge la reduction pour ce seul type (EffectAddState.java:24-29) : sous 100 %
-			// la ligne ne bouge pas, a 100 % sa valeur tombe a zero, la ligne sort du ledger et
-			// l'etat part avec elle — le masque est reconstruit a partir des lignes qui restent
-			// (Entity.removeEffect:917-923 -> Entity.updateBuffStats:892-902). Aucun agregat a
-			// defaire : removeCastedEffect n'a pas de cas pour ce type.
+			// Un etat est BINAIRE : sa valeur est un ORDINAL, pas une quantite. Le moteur ne la
+			// met jamais a l'echelle (EffectAddState.reduce) — seule une reduction TOTALE le
+			// retire, et la ligne tombee a zero disparait (Entity.reduceEffects). Mise a
+			// l'echelle, une Liberation a 40 % changeait Sterile (12) en Magnetise (7).
 			if (eff[0] == EFFECT_ADD_STATE) {
-				if (DebuffPower > 0) push(newEffects, eff)
-				else droppedStates |= (1 << eff[1])
+				if (DebuffPower > 0) {
+					push(newEffects, eff)
+				} else {
+					statesDirty = true
+				}
 				continue
 			}
 			var newValue = round(eff[1] * DebuffPower)
@@ -1150,14 +1168,7 @@ class ConsequencesClass {
 			if (newValue > 0) push(newEffects, [eff[0], newValue, eff[2], eff[3], eff[4], eff[5], eff[6], eff[7], eff[8]])
 		}
 		TarStats.EFFECTS = newEffects
-		// Un etat ne tombe que si PLUS AUCUNE ligne ne le porte : une ligne irreductible
-		// survivante le remet (protection divine, eveil, tourelle). Passe payee uniquement
-		// quand une ligne d'etat est reellement sortie.
-		if (droppedStates != 0) {
-			var keptStates = 0
-			for (var eff in newEffects) if (eff[0] == EFFECT_ADD_STATE) keptStates |= (1 << eff[1])
-			TarStats.STATES = (TarStats.STATES & ~droppedStates) | keptStates
-		}
+		if (statesDirty) EntityStateClass.refreshStates(TarStats)
 		EntityStateClass.refreshShieldExpiry(TarStats)
 	}
 

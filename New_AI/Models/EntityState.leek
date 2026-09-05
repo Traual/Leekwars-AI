@@ -342,6 +342,22 @@ class EntityStateClass extends EntityClass {
 		return (stats.STATES >> state) & 1
 	}
 
+	/*
+	 * Relit le masque d'etats dans les lignes portees, comme le moteur : updateBuffStats vide
+	 * l'ensemble puis le refait ligne par ligne (Entity.java:892-902). Un bit ne peut donc pas
+	 * s'effacer tout seul — deux lanceurs peuvent accorder le meme etat, et retirer le bit sans
+	 * relire les lignes le supprimerait a tort.
+	 * Appelee UNIQUEMENT quand une ligne d'etat vient de disparaitre : remplacement, mort du
+	 * lanceur, debuff total. Jamais dans le chemin chaud.
+	 */
+	static refreshStates(stats) {
+		var mask = 0
+		for (var eff in stats.EFFECTS) {
+			if (eff[0] == EFFECT_ADD_STATE) mask |= (1 << eff[1])
+		}
+		stats.STATES = mask
+	}
+
 	static refreshShieldExpiry(stats) {
 		var list = null
 		var id = stats.ID
