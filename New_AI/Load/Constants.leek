@@ -217,3 +217,8 @@ global JUMP_AGILITY_TURNS = 2
 // Ligne ON_CASTER du chip de teleportation (chip 59, effet 12) : EFFECT_BOOST_MAX_LIFE de 15,
 // instantane. Valeur de base seule, le jet (value2 = 5) n'etant pas simule.
 global TELE_VITALITY = 15
+
+// Sel de la cle du cache d'actions d'invocation quand Me est STERILE. Une constante quelconque
+// non nulle suffit : elle ne sert qu'a separer deux mondes qui ne doivent jamais partager une
+// liste. Choisie dans les bits hauts pour ne recouvrir ni la cellule ni le BaseHash.
+global STERILE_KEY_SALT = 6148914691236517205

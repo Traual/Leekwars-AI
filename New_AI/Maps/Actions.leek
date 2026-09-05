@@ -103,7 +103,18 @@ class ActionsClass {
 	}
 
 	static getEverySummonActions(MyCell, Inventory, State, LeekCells, BaseHash) {
+		// STERILE (sabre du desert) : le moteur refuse l'invocation, et RIEN d'autre. La garde
+		// est dans summonEntity (State.java:887, USE_FAILED) ; resurrectEntity est une methode
+		// distincte qui ne la porte pas — un sterile peut donc toujours ressusciter.
+		//
+		// L'etat SALE LA CLE du cache, il ne peut pas rester hors d'elle : BaseHash exclut Me
+		// par construction (c'est ce qui permet a une liste de survivre a mes propres
+		// deplacements), donc sans ce sel une liste calculee avant le coup de sabre serait
+		// resservie apres. Sel nul dans le cas courant : la cle ne bouge pas tant que je ne
+		// suis pas sterile.
+		var sterile = EntityStateClass.hasState(State[Me], STATE_STERILE)
 		var TmpHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), MyCell)
+		if (sterile) TmpHash = TmpHash ^ STERILE_KEY_SALT
 		if (TmpHash in ACTIONS_SUMMON_CACHE) return ACTIONS_SUMMON_CACHE[TmpHash]
 		// Summons vivants du camp, comptés UNE fois par build (bulbes virtuels de la branche
 		// inclus — ils sont dans State). Sain sous le cache : le compte est une fonction du
@@ -116,7 +127,7 @@ class ActionsClass {
 			// ce cache est partagé par BaseHash, qui n'encode PAS un summon virtuel MORT
 			// ressuscitable (contributions LIFE-gated), un candidat dépendant du State ici
 			// servirait des listes fausses.
-			var castable = (item == CHIP_RESURRECTION) || (livingSummons < SUMMON_LIMIT)
+			var castable = (item == CHIP_RESURRECTION) || (!sterile && livingSummons < SUMMON_LIMIT)
 			if (castable) {
 				var Infos = ITEMINFO[item]
 				var Act = getSummonAction(Infos.LAUNCHTYPE, MyCell, Infos.MINRANGE, Infos.MAXRANGE, LeekCells, item, State, BaseHash)
