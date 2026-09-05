@@ -1095,6 +1095,11 @@ class ConsequencesClass {
 		// fige le retour (EffectDamage.java:21-31). Le retour survit donc — frapper un porteur
 		// d'invincibilite equipe d'un renvoyeur blesse bel et bien l'attaquant pour rien.
 		if (EntityStateClass.hasState(TarStats, STATE_INVINCIBLE)) Damage = 0
+		// Le moteur fige le montant du vol de vie AVANT de retirer la vie a la cible
+		// (EffectDamage.java:41 puis :47) : la sagesse lue est celle d'AVANT le kill. La relire
+		// apres crediterait une sagesse que la mort de la victime vient de rendre au lanceur, en
+		// deroulant les entraves qu'elle avait posees sur lui.
+		var rawSteal = round(Damage * max(0, CastStats.WISDOM) / 1000)
 		if (Damage >= TargetLife && TargetLife > 0) {
 			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
 		} else {
@@ -1115,8 +1120,10 @@ class ConsequencesClass {
 			// Ordre moteur (EffectDamage) : dégâts -> LIFESTEAL crédité au caster -> PUIS retour,
 			// plafonné à la vie restante POST-lifesteal — un gros lifesteal peut donc sauver d'un
 			// retour léthal. L'érosion suit le retour APPLIQUÉ, pas le brut.
-			// Lifesteal : le moteur le refuse a un lanceur UNHEALABLE (EffectDamage.java:52).
-			var stolen = EntityStateClass.hasState(CastStats, STATE_UNHEALABLE) ? 0 : min(round(Damage * max(0, CastStats.WISDOM) / 1000), CastStats.TOTAL_LIFE - CastStats.LIFE)
+			// Lifesteal : le moteur le refuse a un lanceur UNHEALABLE (EffectDamage.java:52). Le
+			// montant a ete fige avant le kill ; seul le PLAFOND se lit maintenant, comme le
+			// moteur qui relit la vie du lanceur apres avoir retire celle de la cible (:54).
+			var stolen = EntityStateClass.hasState(CastStats, STATE_UNHEALABLE) ? 0 : min(rawSteal, CastStats.TOTAL_LIFE - CastStats.LIFE)
 			var lifeAfterSteal = CastStats.LIFE + stolen // WIS clampée : le moteur gate lifeSteal > 0, une sagesse shacklée négative ne DRAINE pas
 			var appliedReturn = min(Damage_Return, lifeAfterSteal)
 			if (Damage_Return >= lifeAfterSteal && CastStats.LIFE > 0) {
