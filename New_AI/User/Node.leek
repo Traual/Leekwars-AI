@@ -7,14 +7,6 @@ include("../includes.leek")
 
 class NodeClass {
 
-	// Layer de déplacement empruntée pour arriver sur From — résolue une fois par nœud, relue
-	// par les cooldowns de déplacement.
-	static LAYER_NONE = 0
-	static LAYER_WALK = 1
-	static LAYER_JUMP = 2
-	static LAYER_TELEPORTATION = 3
-	static LAYER_TELEPORTATION_AND_JUMP = 4
-
 	ACTION
 	END_STATS         // CACHE PARESSEUX de l'état complet : rempli d'office sur la racine,
 	                  // null sur un candidat neuf, matérialisé (STATE_PARENT + STATE_PATCH)
@@ -90,29 +82,38 @@ class NodeClass {
 	 * @return le nouveau nœud, hashs et patch remplis
 	 */
 	/*
-	 * Ligne ON_CASTER du chip de saut : RAW_BUFF_AGILITY 100 sur deux tours
-	 * (data/chips.json, chip 144, effet 41, modificateur 4 = ON_CASTER).
-	 * Posee par le meme chemin qu'un buff ordinaire : RecordCastedEffect inscrit la ligne au
-	 * ledger, ce qui la rend visible a l'expiration, a Liberation et au reset de resurrection,
-	 * et marque CAP_DIRTY pour que la capability soit recomparee.
-	 * Valeur NON critee : convention conservatrice de toute la simulation.
+	 * Le cast de la puce de saut, jouee comme couche de deplacement (chip 144).
+	 * Elle porte deux effets : un EFFECT_TELEPORT, que la couche vient de jouer en posant la
+	 * cellule d'arrivee, et une ligne ON_CASTER RAW_BUFF_AGILITY de 100 sur deux tours
+	 * (effet 41, modificateur 4). Seule la seconde est posee ici — repasser par
+	 * getConsequences redeplacerait l'entite.
+	 * Un cast critique declenche le passif de critique AVANT les effets (State.java:768) puis
+	 * multiplie la valeur par CRITICAL_FACTOR (EffectRawBuffAgility.java:11).
+	 * RecordCastedEffect inscrit la ligne au ledger : expiration, Liberation, reset de
+	 * resurrection et CAP_DIRTY suivent, et le retrait rendra exactement la valeur ajoutee.
 	 */
-	static applyJumpAgility(meStat) {
-		meStat.AGILITY += JUMP_AGILITY_BUFF
-		ConsequencesClass.RecordCastedEffect(meStat, EFFECT_RAW_BUFF_AGILITY, JUMP_AGILITY_BUFF, Me, JUMP_AGILITY_TURNS, false, CHIP_JUMP, EFFECT_MODIFIER_ON_CASTER)
+	static applyJumpCast(meStat, isCritical) {
+		if (isCritical && meStat.SPECIAL_WEAPON != null) ConsequencesClass.applyOnCriticalPassive(meStat)
+		var gain = isCritical ? round(JUMP_AGILITY_BUFF * CRITICAL_FACTOR) : JUMP_AGILITY_BUFF
+		meStat.AGILITY += gain
+		ConsequencesClass.RecordCastedEffect(meStat, EFFECT_RAW_BUFF_AGILITY, gain, Me, JUMP_AGILITY_TURNS, isCritical, CHIP_JUMP, EFFECT_MODIFIER_ON_CASTER)
 	}
 
 	/*
-	 * Ligne ON_CASTER du chip de teleportation : EFFECT_BOOST_MAX_LIFE de 15
-	 * (data/chips.json, chip 59, effet 12, modificateur 4 = ON_CASTER).
+	 * Le cast de la puce de teleportation, jouee comme couche de deplacement (chip 59).
+	 * Meme forme que le saut : un EFFECT_TELEPORT deja joue par la couche, et une ligne
+	 * ON_CASTER EFFECT_BOOST_MAX_LIFE de 15, instantanee (effet 12, modificateur 4).
 	 * Meme regle que le cas EFFECT_BOOST_MAX_LIFE de Consequences : la sagesse multiplie, le
 	 * moteur planche le RESULTAT, vie et vie max montent ensemble, et RIEN n'entre au ledger —
 	 * un gain de vie max n'est jamais defait cote moteur.
-	 * Valeur de base seule, sans le jet ni le critique : convention conservatrice de la
-	 * simulation.
+	 * Le jet (value2 = 5) n'est pas simule ; le critique l'est : passif d'abord, puis
+	 * multiplication de la valeur (State.java:768, EffectVitality.java:11).
 	 */
-	static applyTeleportVitality(meStat) {
-		var gain = round(TELE_VITALITY * max(0, 1 + meStat.WISDOM / 100))
+	static applyTeleportCast(meStat, isCritical) {
+		if (isCritical && meStat.SPECIAL_WEAPON != null) ConsequencesClass.applyOnCriticalPassive(meStat)
+		var raw = TELE_VITALITY * max(0, 1 + meStat.WISDOM / 100)
+		if (isCritical) raw = raw * CRITICAL_FACTOR
+		var gain = round(raw)
 		meStat.LIFE += gain
 		meStat.TOTAL_LIFE += gain
 	}
@@ -126,23 +127,35 @@ class NodeClass {
 		StateClass.beginActionOnWorkspace(Workspace, clonedIds)
 		var ThisActionStats = Workspace
 
-		// Déplacement : retire les MP de la layer utilisée. Le clone de Me et la layer d'arrivée
-		// sont résolus UNE fois — les cooldowns de déplacement plus bas les relisaient tous les deux.
+		// Déplacement : la couche empruntée pour arriver sur From retire ses MP et, quand elle
+		// passe par une puce, JOUE cette puce. Le moteur en fait un cast complet — critique tiré,
+		// passif de critique, puis effets, cooldown et TP (State.java:762-778) — et ce cast est
+		// ENTIÈREMENT antérieur à celui de l'action. L'agilité du saut est donc déjà en place
+		// quand getConsequences fige le critique de l'action, et la vitalité de la télépo déjà
+		// encaissée quand les seuils de kill et les caps de soin sont chiffrés sur Me.
+		// Le critique de chaque puce se lit sur l'agilité d'AVANT le buff du saut, qui est la même
+		// pour les deux : la reconstruction du chemin joue la télépo puis le saut
+		// (WalkCellsClass.getActionsToGet, downgrade['tpJump'] essaie 'jump' en premier, donc le
+		// saut est l'action la plus tardive).
 		var meStat = ThisActionStats[Me]
 		meStat.CELL = From
-		var usedLayer = LAYER_NONE
 		if (From in MyWalkCells.WALK) {
-			usedLayer = LAYER_WALK
 			meStat.MP -= MyWalkCells.WALK[From]
 		} else if (From in MyWalkCells.JUMP) {
-			usedLayer = LAYER_JUMP
 			meStat.MP -= MyWalkCells.JUMP[From]
+			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
+			applyJumpCast(meStat, meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)
 		} else if (From in MyWalkCells.TELEPORTATION) {
-			usedLayer = LAYER_TELEPORTATION
 			meStat.MP -= MyWalkCells.TELEPORTATION[From]
+			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
+			applyTeleportCast(meStat, meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)
 		} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
-			usedLayer = LAYER_TELEPORTATION_AND_JUMP
 			meStat.MP -= MyWalkCells.TELEPORTATION_AND_JUMP[From]
+			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
+			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
+			var moveCritical = meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT
+			applyTeleportCast(meStat, moveCritical)
+			applyJumpCast(meStat, moveCritical)
 		}
 		meStat.TP -= Cost
 		if (Info.IS_WEAPON) meStat.WEAPON = Item
@@ -155,38 +168,6 @@ class NodeClass {
 		// Le compte d'usages vient de l'appelant, qui l'a résolu pour son filtre de jouabilité :
 		// l'incrémenter ici rouvrait la chaîne d'inventaire, un niveau par nœud du chemin.
 		StateClass.setUses(meStat, Item, ItemUses + 1)
-		// Cooldowns des items de déplacement si la cellule d'arrivée vient d'une layer jump/télépo.
-		//
-		// ET LEURS EFFETS. Le saut n'est pas qu'un déplacement : data/chips.json lui donne aussi
-		// une ligne RAW_BUFF_AGILITY de 100 sur DEUX tours, sur le lanceur (modificateur 4).
-		// L'IA prélevait les TP et le cooldown sans jamais l'appliquer, donc tout le sous-arbre
-		// était scoré avec 100 d'agilité de moins qu'en vrai. Le seuil de critique est BINAIRE à
-		// 950 (MIN_AGILITY_TO_FULLY_CRIT) : un build entre 850 et 949 le franchit RÉELLEMENT en
-		// sautant, et l'IA ne le voyait pas — elle sous-estimait ses propres dégâts après un saut.
-		//
-		// On n'applique surtout PAS la ligne par getConsequences : le chip porte aussi un
-		// EFFECT_TELEPORT, que la couche de déplacement vient déjà de jouer — le passer
-		// redéplacerait l'entité. Seule la ligne ON_CASTER est posée, par le même chemin que
-		// n'importe quel buff (RecordCastedEffect gère le ledger, l'expiration et CAP_DIRTY).
-		// Valeur non critée, conforme à la convention conservatrice de toute la simulation.
-		//
-		// La téléportation porte, elle, une ligne EFFECT_BOOST_MAX_LIFE de 15 (chip 59, effet 12,
-		// ON_CASTER) — le moteur l'appelle VITALITY en interne, c'est le même effet. Appliquée
-		// aussi, par la même règle que le cas EFFECT_BOOST_MAX_LIFE de Consequences : vie et vie
-		// max montent ensemble, et RIEN n'entre au ledger, le moteur ne défaisant jamais un gain
-		// de vie max (EffectMultiplyStats.java:39).
-		if (usedLayer == LAYER_JUMP) {
-			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
-			applyJumpAgility(meStat)
-		} else if (usedLayer == LAYER_TELEPORTATION) {
-			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
-			applyTeleportVitality(meStat)
-		} else if (usedLayer == LAYER_TELEPORTATION_AND_JUMP) {
-			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
-			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
-			applyJumpAgility(meStat)
-			applyTeleportVitality(meStat)
-		}
 		// Empreinte de mobilité de Me : calculée UNE fois, après TOUTES ses écritures
 		// (cellule, MP, TP, conséquences, cooldowns d'item et de déplacement). Elle sale le
 		// filtre de cellules de tir du ScoredCache (BFS.findBestNextNode).
