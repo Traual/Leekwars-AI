@@ -725,11 +725,20 @@ class ScoringClass {
 				// la coupure perdrait des kills sans rien afficher.
 				var apPoison = stat.POISON
 				var apHeal = stat.HEAL
+				var apPoisonRem = stat.POISON_OVER_TIME
+				var apHealRem = stat.HEAL_OVER_TIME
 				if (stat.STATES != 0) {
-					if (EntityStateClass.hasState(stat, STATE_INVINCIBLE)) apPoison = 0
-					if (EntityStateClass.hasState(stat, STATE_UNHEALABLE)) apHeal = 0
+					if (EntityStateClass.hasState(stat, STATE_INVINCIBLE)) {
+						apPoison = 0
+						apPoisonRem = 0
+					}
+					if (EntityStateClass.hasState(stat, STATE_UNHEALABLE)) {
+						apHeal = 0
+						apHealRem = 0
+					}
 				}
-				var ap = life - COEF_PERIODIC_TICK * (apPoison + stat.AFTEREFFECT - apHeal)
+				var netTick = apPoison + stat.AFTEREFFECT - apHeal
+				var ap = life - COEF_PERIODIC_TICK * netTick
 				if (ap < 0) ap = 0
 				var apAfter = ap - dealt
 				if (apAfter < 0) apAfter = 0
@@ -739,8 +748,22 @@ class ScoringClass {
 				// Canal HORIZON : g = h/(h+2p). Sa baisse quand h perd d vaut 2pd/((h+2p)(h-d+2p)),
 				// maximale en p = sqrt(h(h-d))/2 où elle vaut d/(sqrt(h)+sqrt(h-d))². Ce majorant
 				// tient donc pour TOUTE pression, qu'on n'a pas à calculer.
-				var den = sa + sb
-				if (den > 0) bound += w.THREAT * W_TTK * dealt / (den * den)
+				// La demonstration ci-dessus ne vaut qu'a REGIME CONSTANT. Or la formule de survie a
+				// TROIS regimes et des degats peuvent en franchir la frontiere : une cible qui mourait
+				// APRES sa trainee (h = ap moins la trainee, pression = danger) se met a mourir
+				// PENDANT (h = ap, pression = danger + tick). Ni h ni p ne sont alors ceux de la
+				// demonstration, et le majorant passe SOUS le gain reel.
+				// Le regime ne peut se scinder que si un tick net positif rencontre une trainee. Dans
+				// ce seul cas, on majore le canal par sa perte MAXIMALE : il vaut W_TTK au mieux et ne
+				// descend jamais sous zero. Borne plus lache, mais valide sur toutes les transitions.
+				// La trainee est evaluee a couverture antidote NULLE, seule majoration possible sans
+				// la cle de poison — le coefficient ne fait que la reduire.
+				if (netTick > 0 && apPoisonRem + stat.AFTEREFFECT_OVER_TIME - apHealRem > 0) {
+					bound += w.THREAT * W_TTK
+				} else {
+					var den = sa + sb
+					if (den > 0) bound += w.THREAT * W_TTK * dealt / (den * den)
+				}
 				// Canal DISSUASION : le terme d'un porteur de renvoi décroît quand sa vie baisse,
 				// donc mon score monte d'autant. La baisse est plafonnée par les dégâts infligés.
 				if (stat.DAMAGE_RETURN > 0) bound += w.DR * DR_RETURN_EXPECT * dealt * stat.DAMAGE_RETURN / 100
