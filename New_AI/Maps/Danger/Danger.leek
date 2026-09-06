@@ -180,6 +180,25 @@ class DangerClass {
 					_final[casterId] = combo[0] * DANGER_COEF
 					chainAbs = combo[1]   // le caster suivant voit les shields post-vulné/debuff
 					chainRel = combo[2]
+					// Le moteur reduit la VALEUR de chaque ligne, puis retire la ligne dans son
+					// etat REDUIT (Effect.reduce puis Entity.reduceEffects). Une echeance qui
+					// transporterait encore son montant d'origine rendrait plus de bouclier qu'il
+					// n'en reste : 60 restants pour 100 retires font apparaitre une vulnerabilite
+					// de 40 qui n'existe pas. Les echeances subissent donc les memes debuffs, dans
+					// l'ordre, LIGNE A LIGNE et avec l'arrondi signe du moteur — arrondir leur
+					// somme ne donne pas la somme de leurs arrondis.
+					var kept = combo[3]
+					if (kept != null) {
+						for (var kv in kept) {
+							for (var k = 0; k < dn; k += 3) {
+								if (drops[k] > SEQ_WRAP) continue   // deja consomme
+								var da = drops[k + 1]
+								var dr = drops[k + 2]
+								drops[k + 1] = da >= 0 ? round(da * kv) : -round(-da * kv)
+								drops[k + 2] = dr >= 0 ? round(dr * kv) : -round(-dr * kv)
+							}
+						}
+					}
 				}
 			}
 		} else {

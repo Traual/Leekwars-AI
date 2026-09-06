@@ -161,6 +161,10 @@ class DangerComboClass {
 		// soit — ni tableau de shields, ni structure de résultat, ni clone de l'overlay.
 		var vulneEffs = isSummon ? 1 : 0   // sélection de vue résolue une fois hors boucle
 		var targetAlive = TargetStats.LIFE > 0
+		// Facteurs de conservation des debuffs RETENUS, dans l'ordre : les echeances de bouclier
+		// doivent les subir comme les lignes qu'elles retirent. Reste null dans l'immense
+		// majorite des combos, aucun n'ayant de debuff.
+		var keeps = null
 		while (true) {
 			var bestDamage = 0
 			var bestItem = -1
@@ -168,6 +172,7 @@ class DangerComboClass {
 			var bestRel = 0
 			var bestTp = 0
 			var bestUses = 0
+			var bestKeeps = null
 			for (var item: var aoe in ItemAoeMap) {
 				var Infos = ITEMINFO[item]
 				// Le test le plus sélectif d'abord : la plupart des items atteignant la cellule
@@ -181,6 +186,7 @@ class DangerComboClass {
 					// vide : shields inchangés (l'ancien isHitable refusait tout sur un mort).
 					var newAbs = curAbs
 					var newRel = curRel
+					var thisKeeps = null
 					if (targetAlive) {
 						var effs = vulneEffs ? Infos.DANGER_VULNE_EFFECTS_ENEMY_SUMMON : Infos.DANGER_VULNE_EFFECTS_ENEMY_LEEK
 						if (effs != null) {
@@ -192,6 +198,8 @@ class DangerComboClass {
 									// AGRÉGÉS on applique la même règle d'arrondi à l'agrégat :
 									// même granularité que le moteur, sans son détail par ligne.
 									var keep = max(0, 1 - floor(eff[1] * CritFactor) / 100)   // clampé : un débuff crité peut dépasser 100%
+									if (thisKeeps == null) thisKeeps = []
+									push(thisKeeps, keep)
 									newAbs = newAbs >= 0 ? round(newAbs * keep) : -round(-newAbs * keep)   // ABS puis REL, même ordre qu'avant
 									newRel = newRel >= 0 ? round(newRel * keep) : -round(-newRel * keep)
 								} else if (EffType == EFFECT_VULNERABILITY) {
@@ -217,6 +225,7 @@ class DangerComboClass {
 						bestRel = newRel
 						bestTp = thisTp
 						bestUses = thisUses
+						bestKeeps = thisKeeps
 					}
 				}
 			}
@@ -225,12 +234,16 @@ class DangerComboClass {
 			curAbs = bestAbs
 			curRel = bestRel
 			baseTp = bestTp
+			if (bestKeeps != null) {
+				if (keeps == null) keeps = []
+				for (var kv in bestKeeps) push(keeps, kv)
+			}
 			// SEUL le candidat retenu matérialise l'overlay : création si null, sinon un unique
 			// clone. L'overlay du parent n'est jamais muté.
 			playedUses = (playedUses == null) ? [: ] : clone(playedUses)
 			playedUses[bestItem] = bestUses
 		}
-		var entry = [best, curAbs, curRel]
+		var entry = [best, curAbs, curRel, keeps]
 		COMBO_FROM_ITEM_AOE_CACHE[comboKey] = entry
 		return entry
 	}
