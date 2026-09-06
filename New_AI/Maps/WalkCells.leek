@@ -317,27 +317,22 @@ class WalkCellsClass {
 	}
 
 	/*
-	 * Depuis la couche telepo+saut, quelle capacite pose le DERNIER pas vers `cell` ?
-	 * getActionsToGet remonte le chemin a l'envers et essaie le saut EN PREMIER (la table
-	 * downgrade plus bas) : le dernier pas est donc un saut des qu'il existe, a portee de saut,
-	 * une cellule de la couche telepo qui ne coute pas plus cher. Sinon c'est la telepo, et la
-	 * sequence JOUEE est saut puis telepo.
-	 * Les deux casts n'etant pas commutatifs — le saut donne 100 d'agilite, qui peut faire
-	 * passer le cast suivant en critique — Node a besoin de cet ordre sans reconstruire le
-	 * chemin. Memoise par cellule : une meme cellule d'arrivee sert des centaines de nœuds.
-	 * Toute evolution de la table downgrade doit etre reportee ici.
+	 * Quelle puce pose le DERNIER cast du chemin vers `cell` ?
+	 * La reconstruction ci-dessous est la seule source de verite, et elle a TROIS issues, pas
+	 * deux : elle remonte le chemin a l'envers, essaie le saut puis la telepo, et RECULE D'UN
+	 * PAS DE MARCHE quand aucun des deux n'atterrit directement. Un chemin peut donc finir par
+	 * un saut suivi de marche, sans qu'aucun saut n'atteigne la cellule d'arrivee — deduire la
+	 * telepo de l'absence de saut immediat est faux. On appelle donc la reconstruction telle
+	 * quelle : les deux ne peuvent pas diverger.
+	 * Le premier argument ne sert qu'a un message de debug, le parcours etant purement arriere.
+	 * Memoise par cellule sur les couches, qui portent deja la reponse pour des centaines de
+	 * nœuds et meurent avec les cartes dont elle derive.
 	 */
 	static lastStepIsJump(layers, cell) {
 		if (cell in layers.LAST_IS_JUMP) return layers.LAST_IS_JUMP[cell]
-		var tp = layers.TELEPORTATION
-		var curCost = layers.TELEPORTATION_AND_JUMP[cell]
-		var isJump = false
-		for (var neigh: var dist in CellClass.getAreaDist(AREA_CIRCLE_3, cell)) {
-			if (neigh in tp && tp[neigh] <= curCost) {
-				isJump = true
-				break
-			}
-		}
+		var path = getActionsToGet(cell, cell, layers.TELEPORTATION_AND_JUMP, layers.TELEPORTATION, layers.JUMP, layers.WALK)
+		var n = count(path)
+		var isJump = n > 0 && path[n - 1].Item == CHIP_JUMP
 		layers.LAST_IS_JUMP[cell] = isJump
 		return isJump
 	}

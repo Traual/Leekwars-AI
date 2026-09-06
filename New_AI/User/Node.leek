@@ -154,9 +154,9 @@ class NodeClass {
 			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
 			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
 			// Les deux casts ne commutent pas : le saut pose 100 d'agilite, qui peut faire passer
-			// le cast SUIVANT en critique. L'ordre vient de la reconstruction du chemin, qui essaie
-			// le saut en dernier pas d'abord — mais retombe sur la telepo quand aucun atterrissage
-			// ne convient. Chaque cast lit donc le seuil sur les stats que le precedent lui laisse.
+			// le cast SUIVANT en critique. L'ordre n'est donc pas devinable — il est DEMANDE a la
+			// reconstruction du chemin, qui seule connait ses trois issues, repli de marche compris.
+			// Chaque cast lit ensuite le seuil sur les stats que le precedent lui laisse.
 			if (WalkCellsClass.lastStepIsJump(MyWalkCells, From)) {
 				applyTeleportCast(meStat, meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)
 				applyJumpCast(meStat, meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)
