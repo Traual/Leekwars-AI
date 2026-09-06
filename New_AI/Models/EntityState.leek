@@ -360,9 +360,31 @@ class EntityStateClass extends EntityClass {
 
 	static refreshShieldExpiry(stats) {
 		var list = null
-		var id = stats.ID
+		var bearerOrder = stats.TURN_ORDER
+		var myOrder = MY_TURN_ORDER
 		for (var eff in stats.EFFECTS) {
-			if (eff[3] != 1 || eff[2] == id) continue
+			var dur = eff[3]
+			// Seules les durees 1 et 2 peuvent tomber dans la fenetre : d* n'y vaut que 0, 1 ou 2.
+			// La duree -1 est le permanent du moteur, hors de ce calcul.
+			if (dur != 1 && dur != 2) continue
+			var casterId = eff[2]
+			var casterOrder = (casterId in TURN_ORDER_BY_ID) ? TURN_ORDER_BY_ID[casterId] : 0
+			// Lanceur vivant hors de l'ordre de tour : personne ne decremente sa ligne, elle ne
+			// tombe jamais d'elle-meme. Un lanceur MORT, lui, a deja vu ses lignes retirees.
+			if (casterOrder <= 0) continue
+			// Date de l'expiration contre la fenetre projetee W = [(R,T), (R+1,T)), R la ronde
+			// courante et T l'ordre du porteur — la fenetre que le sequenceur du danger utilise
+			// deja, pivotee sur la cible et ouverte a son creneau de CETTE ronde.
+			// L'expiration moteur tombe en (R + [C <= M] + d - 1, C), le creneau du lanceur dans
+			// la fenetre est (R + [C < T], C), d'ou le nombre de tours qui l'y amenent :
+			var dStar = (casterOrder < bearerOrder ? 1 : 0) - (casterOrder <= myOrder ? 1 : 0) + 1
+			// d > d* : l'expiration tombe apres la fermeture, rien a retirer sur ce cycle.
+			// d < d* : elle est deja acquise a l'ouverture, elle vaut pour TOUS les attaquants.
+			// d = d* : elle tombe au creneau du lanceur, avant qu'il n'agisse.
+			// Un bouclier AUTO-LANCE se range tout seul : C = T donne d* = 1 quand le porteur
+			// rejoue apres moi (retrait au rang zero) et d* = 0 sinon — le bouclier d'un tour que
+			// Me vient de se poser le protege donc jusqu'a son prochain tour.
+			if (dur > dStar) continue
 			var t = eff[0]
 			var abs = 0
 			var rel = 0
@@ -374,7 +396,7 @@ class EntityStateClass extends EntityClass {
 			else if (t == EFFECT_VULNERABILITY) rel = -eff[1]
 			else continue
 			if (list == null) list = []
-			push(list, eff[2])
+			push(list, dur < dStar ? EXPIRY_PRE_OPENING : casterId)
 			push(list, abs)
 			push(list, rel)
 		}

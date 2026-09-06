@@ -14,7 +14,9 @@ class StateClass {
 		// liste des ignorés de la LoS statique avant tout nouveau calcul.
 		EVERYONE = getAllies() + getEnemies()
 		MY_TURN_ORDER = getEntityTurnOrder(Me)
-		TURN_ORDER_BY_ID = [: ]
+		// Me y est pose d'office : il est le lanceur de toute ligne enregistree en branche, et
+		// l'import des effets ne l'y met que s'il a lui-meme lance un effet deja au registre.
+		TURN_ORDER_BY_ID = [Me: MY_TURN_ORDER]
 		var _final = [: ]
 		for (var e in EVERYONE) {
 			_final[e] = new EntityStateClass(e)

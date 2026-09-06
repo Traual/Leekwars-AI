@@ -551,3 +551,6 @@ global MY_TURN_ORDER = 0
 // [id du lanceur -> son ordre de tour], memo d'un tour. Vide a chaque Virtualize, remplie
 // pendant l'import des effets : plusieurs lignes partagent le meme lanceur.
 global TURN_ORDER_BY_ID = [: ]
+// Marque, dans SHIELD_EXPIRY, un retrait deja acquis quand la fenetre s'ouvre : il vaut pour
+// TOUS les attaquants du cycle. Un id d'entite n'etant jamais negatif, la place est libre.
+global EXPIRY_PRE_OPENING = -1

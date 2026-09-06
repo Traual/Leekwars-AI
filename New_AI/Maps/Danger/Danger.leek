@@ -40,6 +40,15 @@ class DangerClass {
 		var n = count(raw)
 		for (var i = 0; i < n; i += 3) {
 			var casterId = raw[i]
+			if (casterId == EXPIRY_PRE_OPENING) {
+				// Retrait deja acquis a l'ouverture du cycle : rang zero, le creneau de la cible
+				// elle-meme, qu'aucun attaquant n'occupe. Il est donc consomme avant le premier
+				// combo, exactement comme s'il etait retire de la defense initiale.
+				push(out, 0)
+				push(out, raw[i + 1])
+				push(out, raw[i + 2])
+				continue
+			}
 			// Lanceur absent de l'ordre de tour : plus rien à retirer de son fait.
 			if (!(casterId in ordersById)) continue
 			var o = ordersById[casterId]
