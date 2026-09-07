@@ -783,14 +783,40 @@ class ScoringClass {
 			// passer le majorant sous ce gain.
 			var myPoison = MyStats.POISON
 			var myHeal = MyStats.HEAL
+			var myPoisonRem = MyStats.POISON_OVER_TIME
+			var myHealRem = MyStats.HEAL_OVER_TIME
 			if (MyStats.STATES != 0) {
-				if (EntityStateClass.hasState(MyStats, STATE_INVINCIBLE)) myPoison = 0
-				if (EntityStateClass.hasState(MyStats, STATE_UNHEALABLE)) myHeal = 0
+				if (EntityStateClass.hasState(MyStats, STATE_INVINCIBLE)) {
+					myPoison = 0
+					myPoisonRem = 0
+				}
+				if (EntityStateClass.hasState(MyStats, STATE_UNHEALABLE)) {
+					myHeal = 0
+					myHealRem = 0
+				}
 			}
-			var myAp = MyStats.LIFE - COEF_PERIODIC_TICK * (myPoison + MyStats.AFTEREFFECT - myHeal)
+			var myNetTick = myPoison + MyStats.AFTEREFFECT - myHeal
+			var myAp = MyStats.LIFE - COEF_PERIODIC_TICK * myNetTick
 			if (myAp < 0) myAp = 0
 			var myW = REPLAN_WEIGHTS.entityWeights(Me, MyStats)
-			bound += myW.LIFE * W_LIFE * (sqrt(myAp + stolen) - sqrt(myAp))
+			var mySa = sqrt(myAp)
+			var mySb = sqrt(myAp + stolen)
+			bound += myW.LIFE * W_LIFE * (mySb - mySa)
+			// Canal HORIZON de Me, qui manquait entierement. Voler de la vie ne monte pas que mon
+			// stock : g = h/(h+2p) monte avec h, et sa hausse quand h gagne v vaut
+			// 2pv/((h+2p)(h+v+2p)), maximale en p = sqrt(h(h+v))/2 ou elle vaut
+			// v/(sqrt(h)+sqrt(h+v))^2 — meme forme que la baisse chez la cible, donc un majorant
+			// pour TOUTE pression.
+			// Et comme chez elle, la demonstration ne vaut qu'a REGIME CONSTANT : un seul point de
+			// vie vole peut faire expirer ma trainee AVANT ma mort projetee, ce qui fait tomber la
+			// pression du tick et bondir le canal. Quand mon regime peut se scinder, on le majore
+			// donc par sa hausse MAXIMALE : il ne depasse jamais W_TTK.
+			if (myNetTick > 0 && myPoisonRem + MyStats.AFTEREFFECT_OVER_TIME - myHealRem > 0) {
+				bound += myW.THREAT * W_TTK
+			} else {
+				var myDen = mySa + mySb
+				if (myDen > 0) bound += myW.THREAT * W_TTK * stolen / (myDen * myDen)
+			}
 		}
 		return bound
 	}
