@@ -388,7 +388,10 @@ class EntityStateClass extends EntityClass {
 			var t = eff[0]
 			var abs = 0
 			var rel = 0
-			if (t == EFFECT_ABSOLUTE_SHIELD || t == EFFECT_RAW_ABSOLUTE_SHIELD) abs = eff[1]
+			// Le vol de bouclier ecrit le MEME stat que les autres boucliers absolus
+			// (EffectStealAbsoluteShield.java:13) et removeCastedEffect le soustrait deja du
+			// meme agregat : sa ligne expire donc comme les leurs.
+			if (t == EFFECT_ABSOLUTE_SHIELD || t == EFFECT_RAW_ABSOLUTE_SHIELD || t == EFFECT_STEAL_ABSOLUTE_SHIELD) abs = eff[1]
 			else if (t == EFFECT_RELATIVE_SHIELD || t == EFFECT_RAW_RELATIVE_SHIELD) rel = eff[1]
 			// Retrait NÉGATIF : le consommateur fait `chainAbs -= drop`, et la chute d'une
 			// vulnérabilité REND du bouclier au porteur.
