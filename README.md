@@ -18,7 +18,7 @@ après chaque action. Entrée principale : [`New_AI/Main.leek`](New_AI/Main.leek
   dédoublonnées par ensemble de cibles.
 - **`NodeClass`** porte un nœud de recherche (State + hash + termes de score patchés) ;
   **`ConsequencesClass`** simule l'application d'un cast : dégâts, effets persistants
-  (ledger à huit champs), kills et cascades, passives, push/attract, résurrection — les
+  (ledger à neuf champs), kills et cascades, passives, push/attract, résurrection — les
   mécaniques couvertes suivent le moteur, sous réserve des limites documentées plus bas.
 - **`ActionSuite`** : recherche arborescente gloutonne — toutes les actions racines sont
   évaluées, puis chaque branche déroule récursivement son meilleur successeur (`unroll`).
@@ -81,9 +81,12 @@ volontairement un summon ou une entité faible moins précieux.
   parser LeekScript l'expression de la ligne suivante.
 - Aucun objet provenant d'un cache ne doit être muté en place.
 - Tout nouvel input lu par une fonction cachée doit être ajouté à sa clé **le jour même**.
-- Les effets persistants utilisent le ledger moteur à huit champs :
-  `[type, value, casterFId, turns, critical, itemId, targetFId, modifiers]` — enregistrement,
-  merge, remplacement, suppression et debuff passent par ce format unique.
+- Les effets persistants utilisent le ledger moteur à huit champs, plus un neuvième propre à
+  l'IA :
+  `[type, value, casterFId, turns, critical, itemId, targetFId, modifiers, ticksDatés]` — le
+  neuvième porte les ticks encore DATÉS de la ligne, ceux qui ont nourri les agrégats par tour,
+  et c'est lui que lit `removeCastedEffect` pour défaire exactement ce qui avait été ajouté.
+  Enregistrement, merge, remplacement, suppression et debuff passent par ce format unique.
 - Les fichiers Java de recherche présents localement à la racine du dépôt ne font **pas**
   partie de l'IA et ne doivent **jamais** être commités.
 
@@ -137,7 +140,8 @@ Documentés comme des choix, pas des bugs à corriger immédiatement :
   nœuds pour être rentable.
 - Valeurs pessimistes/minimales dans Danger et Heal (jets minimaux, heal amorti par
   `HEAL_COEF`).
-- `UNHEALABLE` non simulé — aucun item actuel ne le produit.
+- `UNHEALABLE` est simulé (refus du vol de vie au lanceur, soins et ticks de soin annulés chez
+  le porteur), mais aucun item actuel ne le pose : le chemin ne s'exerce qu'en forçant l'état.
 - Ordre de tour approximatif (fin de liste) pour une entité déjà morte et inconnue lors de la
   capture initiale.
 - Possible score de résurrection stale après un kill réel au milieu du tour : les clés de
