@@ -686,7 +686,14 @@ class ScoringClass {
 		// les trois facteurs de la formule de dégâts, pris à leur valeur la plus favorable.
 		var gainFactor = (1 + max(0, MyStats.STRENGTH) / 100) * (1 + MyStats.POWER / 100) * CRITICAL_FACTOR
 		var raw = 0
-		for (var eff in dmg) raw += eff[1] + eff[2]
+		// Le moteur applique les boucliers effet par effet — Attack.java:257-266 appelle
+		// createEffect une fois par effet, et EffectDamage.java:26 les retranche a chacun :
+		// le nombre d'effets entre donc dans la borne.
+		var nEff = 0
+		for (var eff in dmg) {
+			raw += eff[1] + eff[2]
+			nEff++
+		}
 		raw = raw * gainFactor
 		var Targets = ConsequencesClass.ConsequenceTargets(Item, From, To, State, Me, BaseHash)
 		var bound = 0
@@ -704,9 +711,14 @@ class ScoringClass {
 			if (stat.LIFE <= 0) continue
 			// Le collatéral sur un allié ne peut que RETIRER de la valeur : l'ignorer majore.
 			if (stat.SIDE == MySide) continue
-			// +1 : le moteur ARRONDIT les dégâts après les boucliers, l'arrondi peut monter d'un
-			// demi-point. Majorer d'une unité coûte une addition et referme la brèche.
-			var dealt = raw * AOE_FALLOFF[dist] * (1 - stat.RELATIVE_SHIELD / 100) - stat.ABSOLUTE_SHIELD + 1
+			// Bouclier absolu : le moteur le retranche a CHACUN des effets de l'item. Positif,
+			// il ne peut que retirer des degats, et ne le retrancher qu'une fois majore bien.
+			// NEGATIF — une vulnerabilite absolue — il en AJOUTE a chacun : ne l'ajouter qu'une
+			// seule fois passe SOUS le reel, d'autant plus que l'item porte d'effets.
+			// Et l'arrondi du moteur suit le meme compte : un demi-point par effet, majore a
+			// l'unite comme avant.
+			var absShield = stat.ABSOLUTE_SHIELD
+			var dealt = raw * AOE_FALLOFF[dist] * (1 - stat.RELATIVE_SHIELD / 100) - (absShield > 0 ? absShield : nEff * absShield) + nEff
 			if (dealt <= 0) continue
 			var w = REPLAN_WEIGHTS.entityWeights(tar, stat)
 			var life = stat.LIFE
