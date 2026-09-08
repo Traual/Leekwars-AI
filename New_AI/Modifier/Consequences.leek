@@ -626,7 +626,7 @@ class ConsequencesClass {
 					ResurrectionClass.Update(To, State, ResurrectId, clonedIds)
 					break
 			}
-			var TmpTargets = RealConsequenceTargets(Targets, Effect, State, CastStats, Caster)
+			var TmpTargets = RealConsequenceTargets(Targets, Effect, State, CastStats, Caster, Item)
 			var Multiplier = (Effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) ? mapSize(TmpTargets) : 1 //Saving Multiplier
 			if (CAST_IS_CRITICAL) Multiplier *= CRITICAL_FACTOR
 			var RealTargets = Effect[5] & EFFECT_MODIFIER_ON_CASTER ? [Caster: 0] : TmpTargets
@@ -1351,10 +1351,28 @@ class ConsequencesClass {
 		return addValueToBinHash(OFFSET_BASIS ^ BaseHash, (Me << 40) | (Item << 30) | (From << 15) | To)
 	}
 
-	static RealConsequenceTargets(AllTargets, Effect, State, CastStats, Caster) {
+	static RealConsequenceTargets(AllTargets, Effect, State, CastStats, Caster, Item) {
 		var _final = [: ]
-		for (var tar: var dist in AllTargets)
-			if (isHitable(Effect, State[tar], CastStats, tar == Caster)) _final[tar] = dist
+		// NON REMPLAÇABLE : le moteur écarte la cible AVANT tout calcul quand elle porte déjà
+		// une ligne du MÊME item (Attack.java:248-251). Son prédicat, Entity.hasEffect:855, ne
+		// teste QUE l'item — ni le type d'effet, ni le lanceur : une ligne posée par un ennemi
+		// bloque donc mon propre cast. La cible n'entre pas dans la liste, createEffect n'est
+		// jamais appelé, rien n'est posé et le coût du cast est perdu.
+		// Un seul item du jeu porte ce bit : covid, dont le poison dure 7 tours et se propage
+		// tout seul de porteur en porteur. Le drapeau est lu UNE fois, hors de la boucle.
+		var notReplaceable = Effect[5] & EFFECT_MODIFIER_NOT_REPLACEABLE
+		for (var tar: var dist in AllTargets) {
+			var TarStats = State[tar]
+			if (!isHitable(Effect, TarStats, CastStats, tar == Caster)) continue
+			if (notReplaceable) {
+				var already = false
+				for (var eff in TarStats.EFFECTS) {
+					if (eff[5] == Item) { already = true; break }
+				}
+				if (already) continue
+			}
+			_final[tar] = dist
+		}
 		return _final
 	}
 
