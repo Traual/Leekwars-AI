@@ -709,8 +709,18 @@ class ScoringClass {
 			var stat = State[tar]
 			if (stat == null) continue
 			if (stat.LIFE <= 0) continue
-			// Le collatéral sur un allié ne peut que RETIRER de la valeur : l'ignorer majore.
-			if (stat.SIDE == MySide) continue
+			// Un allie touche n'apporte pas QUE du negatif. Sa pression projetee BAISSE quand sa
+			// vie baisse — le soin gaspille au plafond de vie max redevient utile
+			// (Delta.leek:228) — donc son horizon monte, et son terme est de signe +1. Et le
+			// moteur credite au lanceur le vol de vie des degats infliges a ses PROPRES allies :
+			// seul le lanceur lui-meme en est exclu (EffectDamage.java:40). Deux canaux montants
+			// que cette formule n'a pas : hors domaine, on simule.
+			// Me reste ignorable : se blesser soi-meme ne fait que baisser son propre terme, et
+			// le moteur refuse au lanceur le vol de vie sur lui-meme.
+			if (stat.SIDE == MySide) {
+				if (tar != Me) return BOUND_MUST_SIMULATE
+				continue
+			}
 			// Bouclier absolu : le moteur le retranche a CHACUN des effets de l'item. Positif,
 			// il ne peut que retirer des degats, et ne le retrancher qu'une fois majore bien.
 			// NEGATIF — une vulnerabilite absolue — il en AJOUTE a chacun : ne l'ajouter qu'une
