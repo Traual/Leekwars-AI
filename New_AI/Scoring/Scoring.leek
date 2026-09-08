@@ -728,8 +728,19 @@ class ScoringClass {
 			// seule fois passe SOUS le reel, d'autant plus que l'item porte d'effets.
 			// Et l'arrondi du moteur suit le meme compte : un demi-point par effet, majore a
 			// l'unite comme avant.
+			// Facteur relatif PLANCHÉ à zéro. Au-delà de 100 % de bouclier relatif il devient
+			// négatif, et toute la marge de sûreté de `raw` — qui compte la base deux fois et
+			// suppose le critique — se retourne en DÉFICIT : plus l'item porte de jet, plus le
+			// majorant passe sous le réel. Il pouvait alors devenir négatif face à des dégâts
+			// bien positifs (une vulnérabilité absolue passe à travers un bouclier relatif, le
+			// moteur ne planche qu'APRÈS les deux, EffectDamage.java:26-27), la cible était
+			// sautée, le garde de kill jamais atteint, et le majorant rendait zéro sur un coup
+			// mortel. À facteur nul, seule la vulnérabilité absolue passe, ce qui est exactement
+			// ce que le moteur laisse passer.
+			var relFactor = 1 - stat.RELATIVE_SHIELD / 100
+			if (relFactor < 0) relFactor = 0
 			var absShield = stat.ABSOLUTE_SHIELD
-			var dealt = raw * AOE_FALLOFF[dist] * (1 - stat.RELATIVE_SHIELD / 100) - (absShield > 0 ? absShield : nEff * absShield) + nEff
+			var dealt = raw * AOE_FALLOFF[dist] * relFactor - (absShield > 0 ? absShield : nEff * absShield) + nEff
 			if (dealt <= 0) continue
 			var w = REPLAN_WEIGHTS.entityWeights(tar, stat)
 			var life = stat.LIFE
