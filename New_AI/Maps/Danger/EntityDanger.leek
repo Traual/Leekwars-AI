@@ -58,13 +58,20 @@ class EntityDangerClass {
 				} else if (kind == TPL_MULTI) {
 					// Natures et valeurs alternées à la queue de la ligne, dans l'ordre de la vue
 					// d'effets : les additions successives se suivent exactement comme avant.
+					// Chaque terme est planché à zéro SÉPARÉMENT, comme le moteur qui applique
+					// max(0, d) à chaque effet (EffectDamage.java:27) — un effet est un objet
+					// distinct, Attack.java:264 appelle createEffect une fois par effet. Sans ce
+					// plancher, le résidu NÉGATIF d'un dégât direct que le bouclier absolu absorbe
+					// entièrement se soustrait au poison du MÊME item, qui lui ne voit aucun
+					// bouclier (EffectPoison.java:12). Trois items mélangent les deux :
+					// double_gun, flame_thrower et excalibur.
 					var n = count(row)
 					for (var j = 4; j < n; j += 2) {
 						var k = row[j]
 						var v = row[j + 1]
-						if (k == TPL_DAMAGE) Damage += (v * shieldFactor - curAbs)
+						if (k == TPL_DAMAGE) Damage += max(0, v * shieldFactor - curAbs)
 						else if (k == TPL_POISON) Damage += v
-						else Damage += (v * lifeFactor * CritFactor * shieldFactor - curAbs)
+						else Damage += max(0, v * lifeFactor * CritFactor * shieldFactor - curAbs)
 					}
 				} else if (kind == TPL_POISON) {
 					Damage += row[4]
