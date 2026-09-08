@@ -190,6 +190,13 @@ class DangerComboClass {
 					if (targetAlive) {
 						var effs = vulneEffs ? Infos.DANGER_VULNE_EFFECTS_ENEMY_SUMMON : Infos.DANGER_VULNE_EFFECTS_ENEMY_LEEK
 						if (effs != null) {
+							// Décroissance de zone : le moteur multiplie la valeur de CHAQUE
+							// vulnérabilité et de chaque débuff par le facteur d'aire avant
+							// d'arrondir (EffectVulnerability.java:11, EffectDebuff.java:10 :
+							// (v1 + v2·jet) · aoe · criticalPower). Le gabarit de dégâts l'applique
+							// déjà (EntityDanger.leek:127) ; cette chaîne l'oubliait, et voyait la
+							// cible plus vulnérable qu'elle ne le sera.
+							var fall = AOE_FALLOFF[aoe]
 							for (var eff in effs) {
 								var EffType = eff[0]
 								if (EffType == EFFECT_DEBUFF) {
@@ -197,7 +204,7 @@ class DangerComboClass {
 									// chaque ligne par round(|v| · r) · signe(v). Sur des shields
 									// AGRÉGÉS on applique la même règle d'arrondi à l'agrégat :
 									// même granularité que le moteur, sans son détail par ligne.
-									var keep = max(0, 1 - floor(eff[1] * CritFactor) / 100)   // clampé : un débuff crité peut dépasser 100%
+									var keep = max(0, 1 - floor(eff[1] * fall * CritFactor) / 100)   // clampé : un débuff crité peut dépasser 100%
 									if (thisKeeps == null) thisKeeps = []
 									push(thisKeeps, keep)
 									newAbs = newAbs >= 0 ? round(newAbs * keep) : -round(-newAbs * keep)   // ABS puis REL, même ordre qu'avant
@@ -205,10 +212,10 @@ class DangerComboClass {
 								} else if (EffType == EFFECT_VULNERABILITY) {
 									// Montant arrondi à l'entier et appliqué seulement s'il est
 									// strictement positif, comme EffectVulnerability.
-									var relDrop = round(eff[1] * CritFactor)
+									var relDrop = round(eff[1] * fall * CritFactor)
 									if (relDrop > 0) newRel -= relDrop
 								} else {   // EFFECT_ABSOLUTE_VULNERABILITY
-									var absDrop = round(eff[1] * CritFactor)
+									var absDrop = round(eff[1] * fall * CritFactor)
 									if (absDrop > 0) newAbs -= absDrop
 								}
 							}
