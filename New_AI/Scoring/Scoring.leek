@@ -650,10 +650,11 @@ class ScoringClass {
 	 * meilleur gain déjà réalisé ne peut pas gagner, on peut l'écarter sans la simuler.
 	 *
 	 * CONTRAT, à ne jamais affaiblir : la valeur rendue est toujours >= au Δ réel de l'action.
-	 * Toute approximation penche vers le HAUT (jet maximal, critique supposé, collatéral allié
-	 * ignoré), et toute famille d'effet que ce majorant ne sait pas borner rend
-	 * BOUND_MUST_SIMULATE, ce qui force la simulation au lieu d'élaguer. Sous-estimer serait un
-	 * bug muet : la coupure perdrait des kills sans rien afficher.
+	 * Toute approximation penche vers le HAUT (jet maximal, critique supposé, dégâts que le
+	 * lanceur s'inflige à lui-même ignorés), et tout ce que ce majorant ne sait pas borner rend
+	 * BOUND_MUST_SIMULATE, ce qui force la simulation au lieu d'élaguer — une famille d'effet
+	 * hors domaine, une cible qui meurt, un ALLIÉ dans le souffle. Sous-estimer serait un bug
+	 * muet : la coupure perdrait des kills sans rien afficher.
 	 *
 	 * Ne borne que les items dont TOUS les effets sont des dégâts sur ennemi. Un effet de plus
 	 * (soin, vol, bouclier, invocation, poison, vulnérabilité) apporterait de la valeur non

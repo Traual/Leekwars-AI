@@ -63,8 +63,10 @@ class EntityDangerClass {
 					// distinct, Attack.java:264 appelle createEffect une fois par effet. Sans ce
 					// plancher, le résidu NÉGATIF d'un dégât direct que le bouclier absolu absorbe
 					// entièrement se soustrait au poison du MÊME item, qui lui ne voit aucun
-					// bouclier (EffectPoison.java:12). Trois items mélangent les deux :
-					// double_gun, flame_thrower et excalibur.
+					// bouclier (EffectPoison.java:12). Quatre items mélangent les deux : double_gun,
+					// flame_thrower, excalibur et burning. Le plancher change aussi la valeur des
+					// items à plusieurs dégâts, dont le bouclier absolu se retranche désormais ligne
+					// à ligne : machine_gun, illicit_grenade_launcher et devil_strike.
 					var n = count(row)
 					for (var j = 4; j < n; j += 2) {
 						var k = row[j]

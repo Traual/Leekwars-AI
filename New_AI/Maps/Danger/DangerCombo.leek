@@ -194,7 +194,7 @@ class DangerComboClass {
 							// vulnérabilité et de chaque débuff par le facteur d'aire avant
 							// d'arrondir (EffectVulnerability.java:11, EffectDebuff.java:10 :
 							// (v1 + v2·jet) · aoe · criticalPower). Le gabarit de dégâts l'applique
-							// déjà (EntityDanger.leek:127) ; cette chaîne l'oubliait, et voyait la
+							// déjà (son `distFactor`) ; cette chaîne l'oubliait, et voyait la
 							// cible plus vulnérable qu'elle ne le sera.
 							var fall = AOE_FALLOFF[aoe]
 							for (var eff in effs) {
