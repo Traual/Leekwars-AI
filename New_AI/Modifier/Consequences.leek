@@ -202,7 +202,10 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_LIFE_DAMAGE:
-				var casterStatMultiplier = baseEffectValue * (CastStats.LIFE / 100) * (1 + CastStats.POWER / 100)
+				// Le moteur divise la VALEUR de l'effet par 100 avant de la multiplier par la vie
+				// (EffectLifeDamage.java:16 : ((value1 + jet*value2) / 100) * caster.getLife()) ;
+				// diviser la vie a la place change le dernier bit et fait diverger l'arrondi final.
+				var casterStatMultiplier = baseEffectValue / 100 * CastStats.LIFE * (1 + CastStats.POWER / 100)
 				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityLifeDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
 				break
 			case EFFECT_ANTIDOTE:
@@ -1081,7 +1084,14 @@ class ConsequencesClass {
 		// Érosion : +10 points si le cast est critique (crit binaire à 950), le RETOUR érode
 		// au MÊME taux (celui de l'attaque, comme le moteur).
 		var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
-		var DamagesWithShield = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
+		// Groupement du moteur, au caractere pres (EffectDamage.java:26) :
+		//     d -= d * (rel / 100.0) + abs
+		// et non d * (1 - rel/100) - abs. Les deux sont algebriquement egaux, pas en IEEE-754 :
+		// le facteur (1 - rel/100) porte un arrondi de plus que le moteur n'a pas, et il tombe
+		// toujours du meme cote — la valeur passe un ulp SOUS un demi-entier exact, round()
+		// descend d'une unite, et l'IA sous-estime. Balayage exhaustif degat 1..500 x bouclier
+		// relatif 0..100 : 138 couples divergents, 138 sous-estimations, zero sur-estimation.
+		var DamagesWithShield = max(0, BaseDamages - (BaseDamages * (TarStats.RELATIVE_SHIELD / 100) + TarStats.ABSOLUTE_SHIELD))
 		var TargetLife = TarStats.LIFE
 		var Damage = min(round(DamagesWithShield), TargetLife)
 		// Retour de degats FIGE AVANT la mort, comme le moteur : EffectDamage.java:21-22 calcule
@@ -1116,7 +1126,9 @@ class ConsequencesClass {
 		if (!TarIsCaster) {
 			// Lanceur INVINCIBLE : le moteur n'applique aucun retour sur lui
 			// (EffectDamage.java:64, EffectLifeDamage.java:45).
-			var Damage_Return = EntityStateClass.hasState(CastStats, STATE_INVINCIBLE) ? 0 : round(BaseDamages * (TargetDamageReturn / 100))
+			// Le moteur divise le PRODUIT (EffectDamage.java:22 : d * getDamageReturn() / 100.0),
+			// il ne multiplie pas par un taux pre-divise : meme valeur en algebre, pas au bit.
+			var Damage_Return = EntityStateClass.hasState(CastStats, STATE_INVINCIBLE) ? 0 : round(BaseDamages * TargetDamageReturn / 100)
 			// Ordre moteur (EffectDamage) : dégâts -> LIFESTEAL crédité au caster -> PUIS retour,
 			// plafonné à la vie restante POST-lifesteal — un gros lifesteal peut donc sauver d'un
 			// retour léthal. L'érosion suit le retour APPLIQUÉ, pas le brut.
@@ -1220,7 +1232,8 @@ class ConsequencesClass {
 		// 0 - (-25) = 25 degats passent a travers l'invincibilite. Annuler le brut ici, et
 		// laisser la chaine de boucliers se derouler, reproduit les deux cas d'un coup.
 		if (EntityStateClass.hasState(TarStats, STATE_INVINCIBLE)) BaseDamages = 0
-		var InitialDamages = max(0, BaseDamages * (1 - TarStats.RELATIVE_SHIELD / 100) - TarStats.ABSOLUTE_SHIELD)
+		// Meme groupement que le moteur (EffectLifeDamage.java:28), voir getEntityDamageConsequences.
+		var InitialDamages = max(0, BaseDamages - (BaseDamages * (TarStats.RELATIVE_SHIELD / 100) + TarStats.ABSOLUTE_SHIELD))
 		var TargetLife = TarStats.LIFE
 		var Damage = min(round(InitialDamages), TargetLife)
 		var TargetDamageReturn = TarStats.DAMAGE_RETURN
@@ -1238,7 +1251,8 @@ class ConsequencesClass {
 			applyOnNovaDamagePassive(TarStats, lifeErosion)
 		}
 		if (!TarIsCaster) {
-			var Damage_Return = EntityStateClass.hasState(CastStats, STATE_INVINCIBLE) ? 0 : round(BaseDamages * (TargetDamageReturn / 100))
+			// Meme groupement que le moteur (EffectLifeDamage.java:24).
+			var Damage_Return = EntityStateClass.hasState(CastStats, STATE_INVINCIBLE) ? 0 : round(BaseDamages * TargetDamageReturn / 100)
 			var appliedReturn = min(Damage_Return, CastStats.LIFE)   // plafonné à la vie restante (érosion sur l'appliqué)
 			if (Damage_Return >= CastStats.LIFE && CastStats.LIFE > 0) {
 				// Retour léthal : voir getEntityDamageConsequences.
