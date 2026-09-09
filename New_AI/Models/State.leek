@@ -329,9 +329,11 @@ class StateClass {
 		var contextStatsChanged = false
 		var healStatsChanged = false
 		if (capChanged) {
-			var oldCrit = (parentStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((parentStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-			var newCrit = (childStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((childStat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
-			var critChanged = oldCrit != newCrit
+			// La MEME classe que celle des empreintes (critClassOf, source unique) : elle porte
+			// les seuils de crit ET les memes diminues des 100 AGI que Saut pose, puisqu'un
+			// palier sauteur joue sa propre classe. Recopier ici les seuils NUS laisserait
+			// passer sans invalidation tout franchissement des seuils sautes.
+			var critChanged = DangerComboClass.critClassOf(parentStat.AGILITY) != DangerComboClass.critClassOf(childStat.AGILITY)
 			var effectiveTotalMpChanged = max(0, parentStat.TOTAL_MP) != max(0, childStat.TOTAL_MP)
 			var effectiveTotalTpChanged = max(0, parentStat.TOTAL_TP) != max(0, childStat.TOTAL_TP)
 			contextStatsChanged = critChanged || effectiveTotalMpChanged || effectiveTotalTpChanged
