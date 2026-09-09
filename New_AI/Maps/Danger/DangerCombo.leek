@@ -135,12 +135,15 @@ class DangerComboClass {
 	 * @param curAbs/curRel shields COURANTS de la cible (scalaires portés par la chaîne)
 	 * @return [dégâts, absFinal, relFinal] — que des scalaires, aucune référence retenue
 	 */
-	static comboOfCaster(ItemAoeMap, ContentHash, CasterSeed, CasterPack, CritFactor, CasterStats, TargetStats, curAbs, curRel, AntidoteCd, TargetFixed) {
+	static comboOfCaster(ItemAoeMap, ContentHash, CasterSeed, CasterPack, CritFactor, CasterStats, TargetStats, curAbs, curRel, AntidoteCd, TargetFixed, TpCost) {
 		// CONTRAT : la map d'items n'est jamais vide — elle vient d'une couverture, et
 		// buildMapCellItemAoe ne crée l'entrée d'une cellule qu'en y écrivant un item.
 		var isSummon = TargetStats.IS_SUMMON
 		var pairKey = dangerPairKey(CasterSeed, CasterPack, targetPairPackWith(curAbs, curRel, TargetFixed))
-		var comboKey = addValueToBinHash(pairKey, ContentHash)
+		// Le surcoût de franchissement entre dans la clé : le même caster, sur deux cellules
+		// couvertes par les mêmes items, ne joue pas le même combo selon qu'il doit sauter
+		// pour y arriver ou non.
+		var comboKey = addTwoValuesToBinHash(pairKey, ContentHash, TpCost)
 		if (comboKey in COMBO_FROM_ITEM_AOE_CACHE) return COMBO_FROM_ITEM_AOE_CACHE[comboKey]
 
 		// TOTAL_TP : le danger représente le potentiel max du prochain tour, pas les TP
@@ -149,7 +152,9 @@ class DangerComboClass {
 		// de vulnés (seuls les boucliers y varient), donc calculée une seule fois, après le
 		// cache de combo pour qu'un hit ne la paie jamais.
 		var templateKey = dangerPairKey(CasterSeed, CasterPack, targetPairPackWith(0, 0, TargetFixed))
-		var baseTp = CasterStats.TOTAL_TP
+		// Ce que le franchissement lui prend n'est plus disponible pour attaquer. Planché à
+		// zéro : un budget négatif ne joue rien, comme un budget nul.
+		var baseTp = max(0, CasterStats.TOTAL_TP - TpCost)
 		// Uses : racine TOUJOURS zéro (caster jamais Me, EntityState initialise à 0 et le
 		// danger est son prochain tour) — playedUses est l'overlay SPARSE des seuls items
 		// consommés par la chaîne, null tant qu'aucun ne l'est.

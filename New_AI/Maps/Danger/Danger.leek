@@ -88,7 +88,6 @@ class DangerClass {
 			return hit[0]
 		}
 		var maps = Plan.OFFENSIVE_MAPS
-		var mapKeys = Plan.MAP_KEYS
 		// TROIS tableaux parallèles et non un tableau plat à pas de 3 : le déroulé lisait
 		// l'élément i, puis i+1 et i+2 en repayant l'addition d'indice à chaque caster. Un
 		// parcours par clé:valeur donne l'indice gratuitement et les deux autres lectures
@@ -96,26 +95,63 @@ class DangerClass {
 		var covIdx = []
 		var covMap = []
 		var covHash = []
+		var covTp = []
+		// Variantes SUPPLÉMENTAIRES de palier, null dans le cas courant : quand deux paliers
+		// donnent la même panoplie sur cette cellule, le moins cher les représente tous.
+		var covAlt = []
+		var tierMaps = Plan.TIER_MAPS
+		var tierKeys = Plan.TIER_KEYS
 		var hash = 0
 		for (var idx in CovSeq) {
 			// CONTRAT : CovSeq ne retient que les casters à map offensive non nulle.
 			var offMap = maps[idx]
 			// Caster incapable d'atteindre cette cellule : aucun triplet, aucun combo.
 			if (!(Cell in offMap)) continue
-			var itemMap = offMap[Cell]
-			// Hash de contenu mémorisé par (map, cellule) et transporté jusqu'au combo.
-			var contentHash = DangerPlanClass.itemAoeHashOf(mapKeys[idx], Cell, itemMap)
+			// Une variante par PALIER qui atteint la cellule, dédoublonnée par le hash de
+			// CONTENU de sa panoplie : les paliers sont emboîtés, donc plusieurs rendent souvent
+			// la même. Le balayage monte en prix, la première retenue est donc la moins chère,
+			// et c'est elle que le déroulé évalue en premier.
+			var tm = tierMaps[idx]
+			var tk = tierKeys[idx]
+			var vMap = null
+			var vHash = 0
+			var vTp = 0
+			var alts = null
+			var seen = [: ]
+			for (var t = 0; t < 4; t++) {
+				var mt = tm[t]
+				if (mt == null) continue
+				if (!(Cell in mt)) continue
+				var im = mt[Cell]
+				var h = DangerPlanClass.itemAoeHashOf(tk[t], Cell, im)
+				if (h in seen) continue
+				seen[h] = true
+				if (vMap == null) {
+					vMap = im
+					vHash = h
+					vTp = WalkCellsClass.dangerLayerTpCost(t)
+				} else {
+					if (alts == null) alts = []
+					push(alts, [im, h, WalkCellsClass.dangerLayerTpCost(t)])
+				}
+			}
+			var contentHash = vHash
 			push(covIdx, idx)
-			push(covMap, itemMap)
-			push(covHash, contentHash)
+			push(covMap, vMap)
+			push(covHash, vHash)
+			push(covTp, vTp)
+			push(covAlt, alts)
 			// Même fold que le regroupement par bucket, mais sur les valeurs déjà en main.
 			// Digest de longueur variable : chaîne à MULTIPLICATION (contrat des clés, famille
 			// 3b). Pas de finaliseur — il n'existe qu'une consommation, une égalité pleine de
 			// clé de bucket, et les termes agrégés sont déjà avalanchés.
 			hash = (hash ^ (contentHash ^ (idx << 56))) * MIX_A
+			// Les variantes entrent aussi dans le digest : deux cellules de même panoplie la
+			// moins chère mais d'alternatives différentes ne jouent pas la même chaîne.
+			if (alts != null) for (var av in alts) hash = (hash ^ (av[1] ^ (av[2] << 48))) * MIX_A
 		}
 		LAST_COVERAGE_HASH = hash
-		var cov = [covIdx, covMap, covHash]
+		var cov = [covIdx, covMap, covHash, covTp, covAlt]
 		Plan.COV_BY_CELL[covKey] = [cov, hash]
 		return cov
 	}
@@ -141,6 +177,8 @@ class DangerClass {
 		var covIdx = Coverage[0]
 		var covMap = Coverage[1]
 		var covHash = Coverage[2]
+		var covTp = Coverage[3]
+		var covAlt = Coverage[4]
 		// Boucliers alliés qui tombent pendant la fenêtre. Presque toujours null : le déroulé
 		// est alors exactement celui d'avant, à un test près.
 		var drops = expiryDropsByRank(Plan, TargetStats)
@@ -175,7 +213,17 @@ class DangerClass {
 					drops[k] = SEQ_WRAP * 2   // consommé : ne repassera sous aucun rang
 				}
 				var casterId = order[idx]
-				var combo = DangerComboClass.comboOfCaster(covMap[i], covHash[i], seeds[idx], packs[idx], crits[idx], State[casterId], TargetStats, chainAbs, chainRel, AntidoteCd, targetFixed)
+				var combo = DangerComboClass.comboOfCaster(covMap[i], covHash[i], seeds[idx], packs[idx], crits[idx], State[casterId], TargetStats, chainAbs, chainRel, AntidoteCd, targetFixed, covTp[i])
+				// Le caster choisit son palier : franchir lui ouvre des items ou raccourcit sa
+				// distance de zone, mais lui prend des TP. On garde le meilleur des deux mondes,
+				// et null — le cas courant — ne coûte qu'un test.
+				var alt = covAlt[i]
+				if (alt != null) {
+					for (var av in alt) {
+						var c2 = DangerComboClass.comboOfCaster(av[0], av[1], seeds[idx], packs[idx], crits[idx], State[casterId], TargetStats, chainAbs, chainRel, AntidoteCd, targetFixed, av[2])
+						if (c2[0] > combo[0]) combo = c2
+					}
+				}
 				if (combo[0] > 0) {
 					_final[casterId] = combo[0] * DANGER_COEF
 					chainAbs = combo[1]   // le caster suivant voit les shields post-vulné/debuff
@@ -204,7 +252,17 @@ class DangerClass {
 		} else {
 			for (var i: var idx in covIdx) {
 				var casterId = order[idx]
-				var combo = DangerComboClass.comboOfCaster(covMap[i], covHash[i], seeds[idx], packs[idx], crits[idx], State[casterId], TargetStats, chainAbs, chainRel, AntidoteCd, targetFixed)
+				var combo = DangerComboClass.comboOfCaster(covMap[i], covHash[i], seeds[idx], packs[idx], crits[idx], State[casterId], TargetStats, chainAbs, chainRel, AntidoteCd, targetFixed, covTp[i])
+				// Le caster choisit son palier : franchir lui ouvre des items ou raccourcit sa
+				// distance de zone, mais lui prend des TP. On garde le meilleur des deux mondes,
+				// et null — le cas courant — ne coûte qu'un test.
+				var alt = covAlt[i]
+				if (alt != null) {
+					for (var av in alt) {
+						var c2 = DangerComboClass.comboOfCaster(av[0], av[1], seeds[idx], packs[idx], crits[idx], State[casterId], TargetStats, chainAbs, chainRel, AntidoteCd, targetFixed, av[2])
+						if (c2[0] > combo[0]) combo = c2
+					}
+				}
 				if (combo[0] > 0) {
 					_final[casterId] = combo[0] * DANGER_COEF
 					chainAbs = combo[1]   // le caster suivant voit les shields post-vulné/debuff

@@ -24,7 +24,12 @@ class DangerPlanClass {
 	 * Pack direct injectif : cellule <= 612 (10 bits), MP < 1024 (10 bits), mp clampé
 	 * (shacklé négatif == 0). */
 	static mapCellItemAoeKeyOf(EntityStats) {
-		var layer = WalkCellsClass.dangerLayerOf(EntityStats)
+		return mapCellItemAoeKeyForLayer(EntityStats, WalkCellsClass.dangerLayerOf(EntityStats))
+	}
+
+	/* La meme clé pour une couche IMPOSEE. Sert a la couverture de marche seule, qui partage
+	 * ainsi son entree avec celle d'un caster reellement immobile. */
+	static mapCellItemAoeKeyForLayer(EntityStats, layer) {
 		return (EntityStats.ID << 22) | (layer << 20) | (EntityStats.CELL << 10) | WalkCellsClass.dangerMpOf(EntityStats)
 	}
 
@@ -32,7 +37,7 @@ class DangerPlanClass {
 	 * TmpHash est la clé DÉJÀ calculée par l'appelant, jamais reconstruite ici. */
 	static getMapCellItemAoe(EntityStats, EntityWalkCells, TmpHash) {
 		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
-		// Les 21 bits bas sont exactement movementKey, clé des géométries persistantes.
+		// Les 22 bits bas sont exactement movementKey, clé des géométries persistantes.
 		var _final = ItemCoverageClass.buildMapCellItemAoe(EntityDangerClass.getItemsList(EntityStats), EntityWalkCells, TmpHash & MOVEMENT_KEY_MASK)
 		MAP_CELL_ITEM_AOE_CACHE[TmpHash] = _final
 		return _final
@@ -210,6 +215,8 @@ class DangerPlanClass {
 		var crits = []
 		var actives = []
 		var sameSides = []
+		var tierMaps = []
+		var tierKeys = []
 		var activeMask = 0
 		var mapsMask = 0
 		for (var i: var id in order) {
@@ -220,6 +227,8 @@ class DangerPlanClass {
 			var mapKey = null
 			var pack = null
 			var crit = 1
+			var tiers = null
+			var tierKey = null
 			// Exclusions : Me (ma menace est le travail du BFS, jamais le danger ambiant),
 			// le camp de la cible, les morts, et les casters sans item menaçant — la liste
 			// d'items EST la qualification, aucun second scan d'inventaire.
@@ -231,9 +240,25 @@ class DangerPlanClass {
 					: getMapCellItemAoe(stat, WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(stat), mapKey)
 				crit = DangerComboClass.critFactorOf(stat)
 				pack = DangerComboClass.casterOffensivePack(stat, crit)
+				// Une couverture par PALIER de déplacement. Le caster choisit une position et une
+				// panoplie ; franchir lui coûte des TP qu'il n'aura plus pour attaquer, et le prix
+				// est celui du palier SUFFISANT — un saut à 4 pour une cellule que le saut donne,
+				// même s'il pouvait aussi se téléporter. Les clés forcent le palier, donc celle du
+				// palier 0 est exactement celle d'un caster immobile et partage son entrée.
+				tiers = [null, null, null, null]
+				tierKey = [0, 0, 0, 0]
+				for (var t = 0; t < 4; t++) {
+					if (!WalkCellsClass.dangerTierAvailable(stat, t)) continue
+					var tk = mapCellItemAoeKeyForLayer(stat, t)
+					tierKey[t] = tk
+					tiers[t] = (tk in MAP_CELL_ITEM_AOE_CACHE) ? MAP_CELL_ITEM_AOE_CACHE[tk]
+						: getMapCellItemAoe(stat, WalkCellsClass.getDangerLayerCells(stat, t), tk)
+				}
 			}
 			push(maps, offMap)
 			push(mapKeys, mapKey)
+			push(tierMaps, tiers)
+			push(tierKeys, tierKey)
 			push(packs, pack)
 			push(seeds, DangerComboClass.casterSeedOf(id))
 			push(crits, crit)
@@ -249,7 +274,7 @@ class DangerPlanClass {
 			// chaque cellule et à chaque nœud dans le déroulé du net.
 			push(sameSides, stat != null && stat.SIDE == TargetSide)
 		}
-		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, packs, seeds, crits, actives, sameSides)
+		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, packs, seeds, crits, actives, sameSides, tierMaps, tierKeys)
 		// Les séquences de jeu ne dépendent QUE de l'ordre de tour (donc du set des vivants, qui
 		// pinne le tri), du camp visé, de qui menace et de qui peut changer un net. La clé du plan,
 		// elle, porte le BaseHash : un ennemi poussé fabrique un plan neuf dont les séquences
@@ -288,10 +313,13 @@ class DangerTeamPlanClass {
 	ACTIVE          // [i] = ce caster peut-il changer un net de ce camp ?
 	OFFENSIVE_MAPS  // [i] = [cellule -> ItemAoeMap] du caster, ou null s'il ne menace pas
 	MAP_KEYS        // [i] = clé de cette map (préfixe des hashs de contenu), ou null
+	TIER_MAPS       // [i] = [couverture du palier 0..3], null aux paliers que ce caster ne
+	                // peut pas jouer. Le palier 0 (marche) est toujours présent.
+	TIER_KEYS       // [i] = la clé de chacune de ces couvertures, pour son hash de contenu
 	CASTER_PACKS    // [i] = pack offensif canonique du caster, ou null
 	CASTER_SEEDS    // [i] = premier pas de la chaîne de clé, fonction du seul identifiant
 	CRIT_FACTORS    // [i] = facteur critique déjà résolu, 1 par défaut
-	constructor(ThisOrder, ThisOrderById, ThisTurnOrders, ThisMaps, ThisMapKeys, ThisPacks, ThisSeeds, ThisCrits, ThisActives, ThisSameSides) {
+	constructor(ThisOrder, ThisOrderById, ThisTurnOrders, ThisMaps, ThisMapKeys, ThisPacks, ThisSeeds, ThisCrits, ThisActives, ThisSameSides, ThisTierMaps, ThisTierKeys) {
 		this.ORDER = ThisOrder
 		this.ORDER_BY_ID = ThisOrderById
 		this.TURN_ORDERS = ThisTurnOrders
@@ -302,6 +330,8 @@ class DangerTeamPlanClass {
 		this.ACTIVE = ThisActives
 		this.OFFENSIVE_MAPS = ThisMaps
 		this.MAP_KEYS = ThisMapKeys
+		this.TIER_MAPS = ThisTierMaps
+		this.TIER_KEYS = ThisTierKeys
 		this.CASTER_PACKS = ThisPacks
 		this.CASTER_SEEDS = ThisSeeds
 		this.CRIT_FACTORS = ThisCrits
