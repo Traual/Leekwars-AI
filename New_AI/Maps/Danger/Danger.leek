@@ -145,7 +145,12 @@ class DangerClass {
 			// Digest de longueur variable : chaîne à MULTIPLICATION (contrat des clés, famille
 			// 3b). Pas de finaliseur — il n'existe qu'une consommation, une égalité pleine de
 			// clé de bucket, et les termes agrégés sont déjà avalanchés.
-			hash = (hash ^ (contentHash ^ (idx << 56))) * MIX_A
+			// Le COÛT de la variante principale en fait partie, au même titre que celui des
+			// alternatives : deux cellules de même panoplie mais atteintes l'une en marchant et
+			// l'autre en sautant ne jouent pas le même combo, et sans lui elles partageraient un
+			// bucket — la première lue servirait sa valeur à la seconde, dans un sens ou dans
+			// l'autre selon l'ordre de balayage.
+			hash = (hash ^ (contentHash ^ (idx << 56) ^ (vTp << 48))) * MIX_A
 			// Les variantes entrent aussi dans le digest : deux cellules de même panoplie la
 			// moins chère mais d'alternatives différentes ne jouent pas la même chaîne.
 			if (alts != null) for (var av in alts) hash = (hash ^ (av[1] ^ (av[2] << 48))) * MIX_A
