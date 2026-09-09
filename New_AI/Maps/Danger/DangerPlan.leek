@@ -210,13 +210,13 @@ class DangerPlanClass {
 		var orders = []
 		var maps = []
 		var mapKeys = []
-		var packs = []
 		var seeds = []
-		var crits = []
 		var actives = []
 		var sameSides = []
 		var tierMaps = []
 		var tierKeys = []
+		var tierCrits = []
+		var tierPacks = []
 		var activeMask = 0
 		var mapsMask = 0
 		for (var i: var id in order) {
@@ -229,6 +229,8 @@ class DangerPlanClass {
 			var crit = 1
 			var tiers = null
 			var tierKey = null
+			var tierCrit = null
+			var tierPack = null
 			// Exclusions : Me (ma menace est le travail du BFS, jamais le danger ambiant),
 			// le camp de la cible, les morts, et les casters sans item menaçant — la liste
 			// d'items EST la qualification, aucun second scan d'inventaire.
@@ -245,8 +247,14 @@ class DangerPlanClass {
 				// est celui du palier SUFFISANT — un saut à 4 pour une cellule que le saut donne,
 				// même s'il pouvait aussi se téléporter. Les clés forcent le palier, donc celle du
 				// palier 0 est exactement celle d'un caster immobile et partage son entrée.
+				// Un palier sauteur joue une autre CLASSE DE CRITIQUE, et son pack doit porter ce
+				// bit. Deux valeurs suffisent — sautée ou non — résolues une fois par caster,
+				// jamais par cellule.
+				tierCrit = DangerComboClass.tierCritFactorsOf(stat)
+				var jPack = (tierCrit[1] == crit) ? pack : DangerComboClass.casterOffensivePack(stat, tierCrit[1])
 				tiers = [null, null, null, null]
 				tierKey = [0, 0, 0, 0]
+				tierPack = [pack, jPack, pack, jPack]
 				for (var t = 0; t < 4; t++) {
 					if (!WalkCellsClass.dangerTierAvailable(stat, t)) continue
 					var tk = mapCellItemAoeKeyForLayer(stat, t)
@@ -259,9 +267,9 @@ class DangerPlanClass {
 			push(mapKeys, mapKey)
 			push(tierMaps, tiers)
 			push(tierKeys, tierKey)
-			push(packs, pack)
+			push(tierCrits, tierCrit)
+			push(tierPacks, tierPack)
 			push(seeds, DangerComboClass.casterSeedOf(id))
-			push(crits, crit)
 			// Peut-il changer le net d'une cible de ce camp ? Menace, ou soigneur éligible à la
 			// heal map (mêmes conditions que healerContributionOf).
 			var active = offMap != null || (id != Me && stat.LIFE > 0 && HealClass.hasHealItem(stat))
@@ -274,7 +282,7 @@ class DangerPlanClass {
 			// chaque cellule et à chaque nœud dans le déroulé du net.
 			push(sameSides, stat != null && stat.SIDE == TargetSide)
 		}
-		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, packs, seeds, crits, actives, sameSides, tierMaps, tierKeys)
+		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, seeds, actives, sameSides, tierMaps, tierKeys, tierCrits, tierPacks)
 		// Les séquences de jeu ne dépendent QUE de l'ordre de tour (donc du set des vivants, qui
 		// pinne le tri), du camp visé, de qui menace et de qui peut changer un net. La clé du plan,
 		// elle, porte le BaseHash : un ennemi poussé fabrique un plan neuf dont les séquences
@@ -316,10 +324,11 @@ class DangerTeamPlanClass {
 	TIER_MAPS       // [i] = [couverture du palier 0..3], null aux paliers que ce caster ne
 	                // peut pas jouer. Le palier 0 (marche) est toujours présent.
 	TIER_KEYS       // [i] = la clé de chacune de ces couvertures, pour son hash de contenu
-	CASTER_PACKS    // [i] = pack offensif canonique du caster, ou null
+	TIER_CRITS      // [i] = [facteur critique du palier 0..3] : les paliers sauteurs portent
+	                // les +100 AGI que Saut pose, et ne jouent donc pas la même classe
+	TIER_PACKS      // [i] = [pack offensif du palier 0..3], aligné sur TIER_CRITS
 	CASTER_SEEDS    // [i] = premier pas de la chaîne de clé, fonction du seul identifiant
-	CRIT_FACTORS    // [i] = facteur critique déjà résolu, 1 par défaut
-	constructor(ThisOrder, ThisOrderById, ThisTurnOrders, ThisMaps, ThisMapKeys, ThisPacks, ThisSeeds, ThisCrits, ThisActives, ThisSameSides, ThisTierMaps, ThisTierKeys) {
+	constructor(ThisOrder, ThisOrderById, ThisTurnOrders, ThisMaps, ThisMapKeys, ThisSeeds, ThisActives, ThisSameSides, ThisTierMaps, ThisTierKeys, ThisTierCrits, ThisTierPacks) {
 		this.ORDER = ThisOrder
 		this.ORDER_BY_ID = ThisOrderById
 		this.TURN_ORDERS = ThisTurnOrders
@@ -332,8 +341,8 @@ class DangerTeamPlanClass {
 		this.MAP_KEYS = ThisMapKeys
 		this.TIER_MAPS = ThisTierMaps
 		this.TIER_KEYS = ThisTierKeys
-		this.CASTER_PACKS = ThisPacks
+		this.TIER_CRITS = ThisTierCrits
+		this.TIER_PACKS = ThisTierPacks
 		this.CASTER_SEEDS = ThisSeeds
-		this.CRIT_FACTORS = ThisCrits
 	}
 }

@@ -264,10 +264,12 @@ class DeltaClass {
      */
     static contextContribution(stat, id) {
         if (stat.LIFE <= 0) return 0
-        // critClass (2 bits, cases 60-61 — libres tant que STRENGTH < 4096) : la seule
-        // composante d'AGILITÉ que le danger consomme (les seuils de crit binaires). Sans
-        // elle, un buff/shackle d'AGI traversant un seuil en branche servirait du danger stale.
-        var critClass = (stat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((stat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
+        // critClass (3 bits, cases 60-62 — libres tant que STRENGTH < 4096) : la seule
+        // composante d'AGILITÉ que le danger consomme. Elle porte les seuils de crit ET les
+        // mêmes seuils diminués des 100 AGI que Saut pose, puisqu'un palier sauteur joue
+        // désormais sa propre classe. Sans elle, un buff/shackle d'AGI traversant un seuil en
+        // branche servirait du danger stale.
+        var critClass = DangerComboClass.critClassOf(stat.AGILITY)
         return mix64(mix64Memo((id << 10) | stat.CELL) ^ ((critClass << 60) | (max(0, stat.STRENGTH) << 48) | (max(0, stat.MAGIC) << 36) | (max(0, stat.TOTAL_MP) << 24) | (max(0, stat.TOTAL_TP) << 12) | stat.POWER))
     }
 }

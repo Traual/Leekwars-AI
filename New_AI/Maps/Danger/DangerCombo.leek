@@ -102,8 +102,38 @@ class DangerComboClass {
 	 * partir de MIN_AGILITY_TO_FULLY_CRIT (on ne compte pas sur sa chance).
 	 */
 	static critFactorOf(CasterStats) {
+		return critFactorAt(CasterStats, CasterStats.AGILITY)
+	}
+
+	/* Le meme facteur pour une AGILITE imposee : celle d'apres deplacement, quand le palier
+	 * retenu passe par Saut et pose ses +100. */
+	static critFactorAt(CasterStats, Agility) {
 		var critAt = (CasterStats.SIDE != getSide(Me)) ? MIN_AGILITY_ENEMY_CRIT : MIN_AGILITY_TO_FULLY_CRIT
-		return (CasterStats.AGILITY >= critAt) ? CRITICAL_FACTOR : 1
+		return (Agility >= critAt) ? CRITICAL_FACTOR : 1
+	}
+
+	/* Facteurs critiques des QUATRE paliers de deplacement — SOURCE UNIQUE de la regle.
+	 * Saut pose RAW_BUFF_AGILITY 100 des le cast : tout ce qui se joue depuis un palier
+	 * sauteur (1 et 3) porte donc ce bonus. On ne separe pas au sein d'un palier ce qui
+	 * aurait pu se passer du saut : son cout est paye de toute facon, et sauter d'une case
+	 * puis revenir est toujours possible. */
+	static tierCritFactorsOf(CasterStats) {
+		var base = critFactorOf(CasterStats)
+		var jumped = critFactorAt(CasterStats, CasterStats.AGILITY + JUMP_AGILITY_BUFF)
+		return [base, jumped, base, jumped]
+	}
+
+	/* Classe d'agilite d'un caster pour les empreintes de contexte — SOURCE UNIQUE.
+	 * Les quatre seuils que le danger peut franchir : les deux seuils de crit, et les memes
+	 * diminues des 100 AGI que Saut pose. Sans les seuils sautes, deux etats de meme classe
+	 * de base mais de classe SAUTEE differente (AGI 800 et 900 pour un allie) partageraient
+	 * une empreinte et donc une carte de danger. */
+	static critClassOf(Agility) {
+		if (Agility >= MIN_AGILITY_TO_FULLY_CRIT) return 4
+		if (Agility >= MIN_AGILITY_TO_FULLY_CRIT - JUMP_AGILITY_BUFF) return 3
+		if (Agility >= MIN_AGILITY_ENEMY_CRIT) return 2
+		if (Agility >= MIN_AGILITY_ENEMY_CRIT - JUMP_AGILITY_BUFF) return 1
+		return 0
 	}
 
 	/* Clé CANONIQUE du couple (caster, cible-avec-ses-shields-courants) — SOURCE UNIQUE.

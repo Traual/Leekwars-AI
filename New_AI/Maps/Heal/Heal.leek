@@ -43,10 +43,11 @@ class HealClass {
      * clampées elles absorberaient les champs hauts.
      */
     static healerContribution(stat, id) {
-        // critClass (bits 10-11, libres : cellule < 1024) : le facteur de crit du healer
-        // dépend de son AGI par seuils — sans ces bits, un buff/shackle d'AGI traversant
-        // un seuil en branche servirait une couverture stale.
-        var critClass = (stat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) ? 2 : ((stat.AGILITY >= MIN_AGILITY_ENEMY_CRIT) ? 1 : 0)
+        // critClass (bits 44-46, au-dessus de WIS) : le facteur de crit du soigneur dépend de
+        // son AGI par seuils, et un palier sauteur y ajoute les 100 AGI de Saut — d'où les
+        // cinq classes. Sans ces bits, un buff/shackle d'AGI traversant un seuil en branche
+        // servirait une couverture stale.
+        var critClass = DangerComboClass.critClassOf(stat.AGILITY)
         // Clé WIS = max(0, WIS + 100) : le facteur moteur est max(0, 1 + WIS/100), donc -50
         // (soigne 50%) doit se distinguer de 0 (100%) ; -100 et -150 partagent 0 (facteur nul).
         // mix64 et non addValueToBinHash : ces contributions sont XOR-foldees par camp. Un fold
@@ -54,7 +55,7 @@ class HealClass {
         // soigneurs qui echangent leurs stats rendent le meme fingerprint, et HEAL_MAP_CACHE
         // sert alors la map d'une AUTRE configuration. Mesure avant correctif : 2 245 hits
         // faux sur 59 812 (3,75 %). Meme forme que contextContribution ; (id + 1) car mix64(0) = 0.
-        return mix64(mix64Memo(id + 1) ^ ((max(0, stat.WISDOM + 100) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | (critClass << 10) | stat.CELL))
+        return mix64(mix64Memo(id + 1) ^ ((critClass << 44) | (max(0, stat.WISDOM + 100) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | stat.CELL))
     }
 
     /*
@@ -130,10 +131,10 @@ class HealClass {
     static getCasterCoverage(casterStats) {
         // Crit binaire asymétrique (Constants) : healer ENNEMI craint critique dès
         // MIN_AGILITY_ENEMY_CRIT (son soutien joue contre moi), healer allié crédité
-        // seulement à MIN_AGILITY_TO_FULLY_CRIT. Facteur commun -> post-multiplication de la
+        // seulement à MIN_AGILITY_TO_FULLY_CRIT. Facteur PAR PALIER : franchir par Saut pose
+        // +100 AGI et peut faire passer le soigneur en critique. Post-multiplication de la
         // couverture (l'ordre du combo ne change pas), les combos restent crit-free.
-        var critAt = (casterStats.SIDE != getSide(Me)) ? MIN_AGILITY_ENEMY_CRIT : MIN_AGILITY_TO_FULLY_CRIT
-        var critFactor = (casterStats.AGILITY >= critAt) ? CRITICAL_FACTOR : 1
+        var crits = DangerComboClass.tierCritFactorsOf(casterStats)
         // Paliers de déplacement JOUABLES au prochain tour du soigneur, en masque : il les
         // compare tous, il ne se contente pas du plus haut. Le masque entre dans la clé, et
         // ne se déduit pas de la couche — à moins de 13 TP, savoir sauter ET se téléporter
@@ -144,7 +145,7 @@ class HealClass {
         if (WalkCellsClass.dangerTierAvailable(casterStats, 3)) availMask += 8
         var mp = WalkCellsClass.dangerMpOf(casterStats)
         var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, (availMask << 20) | (casterStats.CELL << 10) | mp)
-        key = addValueToBinHash(key, ((critFactor > 1 ? 1 : 0) << 30) | (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
+        key = addValueToBinHash(key, ((crits[1] > 1 ? 1 : 0) << 31) | ((crits[0] > 1 ? 1 : 0) << 30) | (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
         if (key in HEAL_COVERAGE_CACHE) return HEAL_COVERAGE_CACHE[key]
 
         // UNE géométrie par palier jouable, clé (id, palier, cellule, MP) — même pack que la
@@ -173,7 +174,7 @@ class HealClass {
         // Part du caster dans la clé de combo : INVARIANTE sur toutes les cellules et sur les
         // deux profils au bit de profil près. Packée une fois ici, plus jamais par cellule.
         var statPack = (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP)   // WIS encodée max(0, WIS+100), voir healerContribution
-        var _final = new HealCoverageClass(geoms, casterStats, critFactor,
+        var _final = new HealCoverageClass(geoms, casterStats, crits,
             (HEAL_PROFILE_ALLY_LEEK << 34) | statPack, (HEAL_PROFILE_ALLY_SUMMON << 34) | statPack)
         HEAL_COVERAGE_CACHE[key] = _final
         return _final
@@ -191,13 +192,17 @@ class HealClass {
         var parts = null
         var pack = (Profile == HEAL_PROFILE_ALLY_SUMMON) ? Coverage.PACK_SUMMON : Coverage.PACK_LEEK
         var geoms = Coverage.GEOMS
+        var crits = Coverage.CRITS
         var totalTp = Coverage.STATS.TOTAL_TP
         // Le soigneur choisit son palier : franchir lui ouvre des cibles mais lui prend les TP
         // qu'il aurait dépensés en soins. Les paliers sont emboîtés, donc plusieurs rendent
         // souvent la même panoplie sur cette cellule : on les dédoublonne par hash de CONTENU
-        // et le balayage montant garde le moins cher. Ce qui départage ensuite, c'est la vie
-        // projetée rendue — soin et vitalité confondus, les deux termes que le déroulé somme.
+        // et le balayage montant garde le moins cher — sauf quand leurs facteurs critiques
+        // diffèrent, Saut posant +100 AGI : le palier plus cher est alors une vraie option.
+        // Ce qui départage ensuite, c'est la vie projetée rendue, critique compris — soin et
+        // vitalité confondus, les deux termes que le déroulé somme.
         var combo = null
+        var critFactor = 1
         var seen = [: ]
         for (var t = 0; t < 4; t++) {
             var geom = geoms[t]
@@ -205,15 +210,22 @@ class HealClass {
             var itemAoeMap = ItemCoverageClass.itemAoeAt(geom, Cell)
             if (itemAoeMap == null) continue
             var contentHash = ItemCoverageClass.contentHashAt(geom, Cell, itemAoeMap)
-            if (contentHash in seen) continue
-            seen[contentHash] = true
+            var crit = crits[t]
+            // Un bit par classe de critique dans la même map : deux paliers de même panoplie
+            // dont l'un saute ne posent pas le même soin, et ne sont donc pas des doublons.
+            var cb = (crit > 1) ? 2 : 1
+            var sm = (contentHash in seen) ? seen[contentHash] : 0
+            if ((sm & cb) != 0) continue
+            seen[contentHash] = sm | cb
             var budget = totalTp - WalkCellsClass.dangerLayerTpCost(t)
             if (budget <= 0) continue
             var c = comboAtCell(itemAoeMap, Coverage.STATS, Profile, pack, contentHash, budget)
-            if (combo == null || c[0] + c[1] > combo[0] + combo[1]) combo = c
+            if (combo == null || (c[0] + c[1]) * crit > (combo[0] + combo[1]) * critFactor) {
+                combo = c
+                critFactor = crit
+            }
         }
         if (combo != null && (combo[0] > 0 || combo[1] > 0)) {
-            var critFactor = Coverage.CRIT
             // HEAL_COEF replie ICI : le déroulé du net le remultipliait à chaque usage alors
             // que la valeur est mémoïsée par cellule. La multiplication flottante étant
             // commutative au bit près, la valeur rendue est identique.
@@ -342,16 +354,17 @@ class HealCoverageClass {
     GEOMS         // [couverture paresseuse du palier 0..3], null aux paliers injouables —
                   // chacune partagée avec les soigneurs de même déplacement, hashs compris
     STATS         // stats du caster, relues par le combo
-    CRIT          // facteur critique, appliqué APRÈS le combo (les combos restent crit-free)
+    CRITS         // [facteur critique du palier 0..3], appliqué APRÈS le combo (les combos
+                  // restent crit-free) ; les paliers sauteurs portent les +100 AGI de Saut
     PACK_LEEK     // part caster de la clé de combo, profil poireau
     PACK_SUMMON   // idem, profil summon
     LEEK          // [cellule -> [heal, vitalité]] résolues, null quand rien n'est posé
     SUMMON
 
-    constructor(ThisGeoms, ThisStats, ThisCrit, ThisPackLeek, ThisPackSummon) {
+    constructor(ThisGeoms, ThisStats, ThisCrits, ThisPackLeek, ThisPackSummon) {
         this.GEOMS = ThisGeoms
         this.STATS = ThisStats
-        this.CRIT = ThisCrit
+        this.CRITS = ThisCrits
         this.PACK_LEEK = ThisPackLeek
         this.PACK_SUMMON = ThisPackSummon
         this.LEEK = [: ]
