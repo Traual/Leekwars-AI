@@ -115,6 +115,7 @@ class Target {
 		EFFECT_RESURRECT: Target.NONE,
 
 		EFFECT_DEBUFF: Target.ALL,
+		EFFECT_TOTAL_DEBUFF: Target.ALL,
 		EFFECT_ATTRACT: Target.ALL,
 		EFFECT_INVERT: Target.ALL,
 		EFFECT_PUSH: Target.ALL,

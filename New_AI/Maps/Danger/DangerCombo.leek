@@ -199,7 +199,10 @@ class DangerComboClass {
 							var fall = AOE_FALLOFF[aoe]
 							for (var eff in effs) {
 								var EffType = eff[0]
-								if (EffType == EFFECT_DEBUFF) {
+								// Le debuff TOTAL se reduit comme l'autre du point de vue des boucliers : la
+								// chaine ne transporte que deux agregats, et un bouclier n'est jamais
+								// irreductible. La difference des deux effets ne se voit qu'au ledger.
+								if (EffType == EFFECT_DEBUFF || EffType == EFFECT_TOTAL_DEBUFF) {
 									// Le moteur TRONQUE le pourcentage à l'entier, puis réduit
 									// chaque ligne par round(|v| · r) · signe(v). Sur des shields
 									// AGRÉGÉS on applique la même règle d'arrondi à l'agrégat :

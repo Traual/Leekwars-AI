@@ -101,6 +101,7 @@ class BulbState {
 			this.USES[i] = 0
 		}
 		this.SIDE = SummonerStats.SIDE
+		this.SPECIAL_WEAPON = 0   // masque vide : une invocation ne porte pas d'arme
 		this.EFFECTS = []
 		// Un bulbe naît sans effet : aucun bouclier ne peut expirer sur lui. Posés en dur, ce
 		// constructeur ne passant pas par celui d'EntityStateClass.

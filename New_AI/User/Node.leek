@@ -93,7 +93,7 @@ class NodeClass {
 	 * resurrection et CAP_DIRTY suivent, et le retrait rendra exactement la valeur ajoutee.
 	 */
 	static applyJumpCast(meStat, isCritical) {
-		if (isCritical && meStat.SPECIAL_WEAPON != null) ConsequencesClass.applyOnCriticalPassive(meStat)
+		if (isCritical && meStat.SPECIAL_WEAPON != 0) ConsequencesClass.applyOnCriticalPassive(meStat)
 		var gain = isCritical ? round(JUMP_AGILITY_BUFF * CRITICAL_FACTOR) : JUMP_AGILITY_BUFF
 		meStat.AGILITY += gain
 		ConsequencesClass.RecordCastedEffect(meStat, EFFECT_RAW_BUFF_AGILITY, gain, Me, JUMP_AGILITY_TURNS, isCritical, CHIP_JUMP, EFFECT_MODIFIER_ON_CASTER)
@@ -110,7 +110,7 @@ class NodeClass {
 	 * multiplication de la valeur (State.java:768, EffectVitality.java:11).
 	 */
 	static applyTeleportCast(meStat, isCritical) {
-		if (isCritical && meStat.SPECIAL_WEAPON != null) ConsequencesClass.applyOnCriticalPassive(meStat)
+		if (isCritical && meStat.SPECIAL_WEAPON != 0) ConsequencesClass.applyOnCriticalPassive(meStat)
 		var raw = TELE_VITALITY * max(0, 1 + meStat.WISDOM / 100)
 		if (isCritical) raw = raw * CRITICAL_FACTOR
 		var gain = round(raw)

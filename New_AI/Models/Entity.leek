@@ -39,8 +39,11 @@ class EntityClass {
 			this.SUMMONER = getSummoner(id)
 			this.IS_SUMMON = isSummon(id)
 			this.INVENTORY = getWeapons(id) + getChips(id)
+			// Masque, et non plus la DERNIERE arme a passif trouvee : un poireau qui en porte
+			// deux voyait la seconde ecraser la premiere, et son passif disparaissait.
+			this.SPECIAL_WEAPON = 0
 			for (var i in this.INVENTORY) {
-				if (ItemClass.isSpecialWeap(i)) this.SPECIAL_WEAPON = i
+				if (i in SPECIAL_WEAPON_BIT) this.SPECIAL_WEAPON |= SPECIAL_WEAPON_BIT[i]
 			}
 			this.SIDE = getSide(id)
 			this.NAME = getName(id)

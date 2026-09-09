@@ -94,10 +94,10 @@ class ItemClass {
 				// masque, de profil ni ON_CASTER. Elle répond à « cet item peut-il compter
 				// dans une danger map ? » ; le filtrage fin vit dans les vues ci-dessous.
 				if (t == EFFECT_DAMAGE || t == EFFECT_LIFE_DAMAGE || t == EFFECT_POISON
-					|| t == EFFECT_DEBUFF || t == EFFECT_VULNERABILITY || t == EFFECT_ABSOLUTE_VULNERABILITY) {
+					|| t == EFFECT_DEBUFF || t == EFFECT_TOTAL_DEBUFF || t == EFFECT_VULNERABILITY || t == EFFECT_ABSOLUTE_VULNERABILITY) {
 					this.IS_DANGER_ITEM = true
 				}
-				if (t == EFFECT_DEBUFF || t == EFFECT_VULNERABILITY || t == EFFECT_ABSOLUTE_VULNERABILITY) {
+				if (t == EFFECT_DEBUFF || t == EFFECT_TOTAL_DEBUFF || t == EFFECT_VULNERABILITY || t == EFFECT_ABSOLUTE_VULNERABILITY) {
 					this.IS_VULNERABILITY = true
 					// Vues vulné : PAS de filtre ON_CASTER — la chaîne de vulnés ne
 					// discrimine que par masque de cible.
@@ -159,12 +159,6 @@ class ItemClass {
 		return ITEMINFO[id].IS_WEAPON ? 0 : getCooldown(id, entity)
 	}
     
-	static isSpecialWeap(item) {
-		for (var eff in ITEMINFO[item].PASSIVE_EFFECTS) {
-			return true
-		}
-	}
-
 	/* Distance d'AoE maximale couverte par le type de zone (3 pour un cercle 3). */
 	AreaMax(item, Area) {
 		var MapReturn = [

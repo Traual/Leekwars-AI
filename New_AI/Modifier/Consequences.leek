@@ -189,7 +189,14 @@ class ConsequencesClass {
 				}
 				break
 			case EFFECT_DEBUFF:
-				for (var targetId: var aoeDistance in RealTargets) getEntityDebuffConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster)
+				for (var targetId: var aoeDistance in RealTargets) getEntityDebuffConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster, false)
+				break
+			case EFFECT_TOTAL_DEBUFF:
+				// Meme reduction, mais Entity.reduceEffectsTotal n'a PAS l'exemption
+				// d'irreductibilite de son jumeau reduceEffects : a 100 % il efface aussi le
+				// POWER systeme de BR, le multiplicateur colossus et le RAW_AGILITY du Dark
+				// Katana. C'est la SEULE difference entre les deux cote moteur.
+				for (var targetId: var aoeDistance in RealTargets) getEntityDebuffConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster, true)
 				break
 			case EFFECT_RAW_BUFF_TP:
 				for (var targetId: var aoeDistance in RealTargets) {
@@ -287,7 +294,7 @@ class ConsequencesClass {
 					// Érosion immédiate -> proc nova (EffectAftereffect.java:27), qui reçoit
 					// l'entier. Les ticks FUTURS et leurs procs restent hors modèle — chantier
 					// ticks/ledger.
-					if (targetStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(targetStats, afterErosion)
+					if (targetStats.SPECIAL_WEAPON != 0) applyOnNovaDamagePassive(targetStats, afterErosion)
 					targetStats.AFTEREFFECT += calculatedValue
 					targetStats.AFTEREFFECT_OVER_TIME += calculatedValue * effectDuration
 					// La ligne enregistre la valeur des ticks FUTURS : son retrait déroule
@@ -319,7 +326,7 @@ class ConsequencesClass {
 					var damageAmount = min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
 					targetStats.TOTAL_LIFE -= damageAmount
 					// onNovaDamage moteur : seul test isDead, PAS d'exclusion self.
-					if (targetStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(targetStats, damageAmount)
+					if (targetStats.SPECIAL_WEAPON != 0) applyOnNovaDamagePassive(targetStats, damageAmount)
 					effectTotal += damageAmount
 				}
 				break
@@ -351,7 +358,7 @@ class ConsequencesClass {
 					occupied[newCell] = true
 					// Déplacement subi RÉEL (State.slideEntity -> onMoved seulement si la
 					// cellule change) : Explorer proc exactement une fois, sur la vraie arrivée.
-					if (targetStats.SPECIAL_WEAPON != null) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, newCell)
+					if (targetStats.SPECIAL_WEAPON != 0) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, newCell)
 				}
 				break
 			case EFFECT_REPEL:
@@ -377,7 +384,7 @@ class ConsequencesClass {
 						targetStats.CELL = newCell
 						repelOccupied[oldCell] = false
 						repelOccupied[newCell] = true
-						if (targetStats.SPECIAL_WEAPON != null) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, newCell)
+						if (targetStats.SPECIAL_WEAPON != 0) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, newCell)
 					}
 				}
 				break
@@ -409,7 +416,7 @@ class ConsequencesClass {
 					State[Caster].CELL = To
 					// La CIBLE subit le déplacement (invertEntities : target.onMoved(caster)) ;
 					// le caster s'auto-ignore (onMoved : by == this -> return).
-					if (targetStats.SPECIAL_WEAPON != null) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, From)
+					if (targetStats.SPECIAL_WEAPON != 0) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, From)
 				}
 				break
 			case EFFECT_RAW_BUFF_MP:
@@ -623,7 +630,7 @@ class ConsequencesClass {
 		CAST_IS_CRITICAL = CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT
 		// Unstable Destroyer : UN soin par cast critique, AVANT le premier effet (State.java
 		// appelle onCritical avant applyOnCell — armes, puces, summon, resurrect).
-		if (CAST_IS_CRITICAL && CastStats.SPECIAL_WEAPON != null) applyOnCriticalPassive(CastStats)
+		if (CAST_IS_CRITICAL && CastStats.SPECIAL_WEAPON != 0) applyOnCriticalPassive(CastStats)
 		for (var Effect in ITEMINFO[Item].EFFECTS) {
 			if (CastStats.LIFE <= 0) break   // caster mort en route (retour léthal) : le moteur saute les effets restants
 			var EffectType = Effect[0]
@@ -955,7 +962,7 @@ class ConsequencesClass {
 		if (!VictimStats.IS_SUMMON) {
 			var darkIds = []
 			for (var e: var stat in EveryStats) {
-				if (e != Killed && stat.LIFE > 0 && stat.SIDE == VictimStats.SIDE && stat.SPECIAL_WEAPON == WEAPON_DARK_KATANA) push(darkIds, e)
+				if (e != Killed && stat.LIFE > 0 && stat.SIDE == VictimStats.SIDE && (stat.SPECIAL_WEAPON & SPW_DARK_KATANA)) push(darkIds, e)
 			}
 			var darkRow = PASSIVE_INFO[WEAPON_DARK_KATANA][EFFECT_ALLY_KILLED_TO_AGILITY]
 			for (var e in darkIds) {
@@ -965,7 +972,7 @@ class ConsequencesClass {
 
 		// Enhanced Lightninger : le KILLER SEUL, s'il est VIVANT et porteur (Entity.onKill :
 		// isDead() return). Les autres porteurs ne gagnent rien.
-		if (killer != null && killer.LIFE > 0 && killer.SPECIAL_WEAPON == WEAPON_ENHANCED_LIGHTNINGER) {
+		if (killer != null && killer.LIFE > 0 && (killer.SPECIAL_WEAPON & SPW_ENHANCED_LIGHTNINGER)) {
 			var killRow = PASSIVE_INFO[WEAPON_ENHANCED_LIGHTNINGER][EFFECT_KILL_TO_TP]
 			// forceStackable : Entity.activateOnKillPassiveEffect crée le RAW TP stackable EN DUR.
 			applyPassiveRawEffect(killer, EFFECT_RAW_BUFF_TP, killRow[1], WEAPON_ENHANCED_LIGHTNINGER, killRow, true)
@@ -1003,7 +1010,7 @@ class ConsequencesClass {
 	/*
 	 * Passifs d'armes événementiels — calqués sur Entity.java (onDirectDamage, onNovaDamage,
 	 * onCritical, onMoved) : porteur VIVANT seulement, valeurs lues dans PASSIVE_INFO.
-	 * Les call sites gatent sur SPECIAL_WEAPON != null pour ne payer l'appel que chez les
+	 * Les call sites gatent sur un masque SPECIAL_WEAPON non nul pour ne payer l'appel que chez les
 	 * porteurs. Hors modèle (documenté) : les procs des ticks FUTURS de poison (Illicit
 	 * Grenade Launcher : POISON_TO_SCIENCE au tick) et d'aftereffect — chantier ticks/ledger.
 	 */
@@ -1056,13 +1063,18 @@ class ConsequencesClass {
 		// round((value1+jet·value2)·aoe·crit), jet=0/aoe=1/crit=false pour un passif.
 		// 12 dégâts × 4% -> 0, pas 0.48.
 		var dmg = appliedDamage
-		if (stats.SPECIAL_WEAPON == WEAPON_REVOKED_M_LASER) {
+		// Trois tests INDEPENDANTS, plus une cascade : le moteur declenche le passif de chaque
+		// arme portee, un poireau qui en porte deux les recoit tous les deux.
+		var spw = stats.SPECIAL_WEAPON
+		if (spw & SPW_REVOKED_M_LASER) {
 			var row = PASSIVE_INFO[WEAPON_REVOKED_M_LASER][EFFECT_DAMAGE_TO_STRENGTH]
 			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_STRENGTH, round(dmg * row[1] / 100), WEAPON_REVOKED_M_LASER, row, false)
-		} else if (stats.SPECIAL_WEAPON == WEAPON_MYSTERIOUS_ELECTRISOR) {
+		}
+		if (spw & SPW_MYSTERIOUS_ELECTRISOR) {
 			var row = PASSIVE_INFO[WEAPON_MYSTERIOUS_ELECTRISOR][EFFECT_DAMAGE_TO_ABSOLUTE_SHIELD]
 			applyPassiveRawEffect(stats, EFFECT_RAW_ABSOLUTE_SHIELD, round(dmg * row[1] / 100), WEAPON_MYSTERIOUS_ELECTRISOR, row, false)
-		} else if (stats.SPECIAL_WEAPON == WEAPON_PLUTONIUM_BAZOOKA) {
+		}
+		if (spw & SPW_PLUTONIUM_BAZOOKA) {
 			var row = PASSIVE_INFO[WEAPON_PLUTONIUM_BAZOOKA][EFFECT_DAMAGE_TO_RESISTANCE]
 			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_RESISTANCE, round(dmg * row[1] / 100), WEAPON_PLUTONIUM_BAZOOKA, row, false)
 		}
@@ -1074,7 +1086,7 @@ class ConsequencesClass {
 	 * pas onNovaDamage). */
 	static applyOnNovaDamagePassive(stats, appliedErosion) {
 		if (stats.LIFE <= 0 || appliedErosion <= 0) return;
-		if (stats.SPECIAL_WEAPON == WEAPON_UNBRIDLED_GAZOR) {
+		if (stats.SPECIAL_WEAPON & SPW_UNBRIDLED_GAZOR) {
 			// L'érosion reçue est déjà entière, seul le proc arrondit : érosion 3 -> 1 magie, 2 -> 0.
 			var row = PASSIVE_INFO[WEAPON_UNBRIDLED_GAZOR][EFFECT_NOVA_DAMAGE_TO_MAGIC]
 			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_MAGIC, round(appliedErosion * row[1] / 100), WEAPON_UNBRIDLED_GAZOR, row, false)
@@ -1087,7 +1099,7 @@ class ConsequencesClass {
 	 * DÉCLENCHE le passif, il ne le multiplie pas (pas de CRITICAL_FACTOR). */
 	static applyOnCriticalPassive(CastStats) {
 		if (CastStats.LIFE <= 0) return;
-		if (CastStats.SPECIAL_WEAPON == WEAPON_UNSTABLE_DESTROYER && CastStats.LIFE < CastStats.TOTAL_LIFE) {
+		if ((CastStats.SPECIAL_WEAPON & SPW_UNSTABLE_DESTROYER) && CastStats.LIFE < CastStats.TOTAL_LIFE) {
 			// RAW_HEAL instantané (durée 0) : JAMAIS enregistré au ledger, et refusé tel quel à
 			// un porteur d'UNHEALABLE — le passif passe par createEffect(TYPE_RAW_HEAL)
 			// (Entity.java:763), dont la garde sort avant tout calcul (EffectRawHeal.java:12).
@@ -1100,7 +1112,7 @@ class ConsequencesClass {
 	 * automouvements, donc jamais le caster de l'invert) : Explorer Rifle -> MP + TOTAL_MP. */
 	static applyOnMovedPassive(stats, movedId, moverId, oldCell, newCell) {
 		if (stats.LIFE <= 0 || movedId == moverId || oldCell == newCell) return;
-		if (stats.SPECIAL_WEAPON == WEAPON_EXPLORER_RIFLE) {
+		if (stats.SPECIAL_WEAPON & SPW_EXPLORER_RIFLE) {
 			var row = PASSIVE_INFO[WEAPON_EXPLORER_RIFLE][EFFECT_MOVED_TO_MP]
 			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_MP, row[1], WEAPON_EXPLORER_RIFLE, row, false)
 		}
@@ -1146,7 +1158,7 @@ class ConsequencesClass {
 		TarStats.TOTAL_LIFE -= directErosion
 		// Passifs de la cible (EffectDamage : onDirectDamage puis onNovaDamage APRÈS les
 		// dégâts, AVANT lifesteal et retour ; cible morte -> aucun proc).
-		if (TarStats.SPECIAL_WEAPON != null) {
+		if (TarStats.SPECIAL_WEAPON != 0) {
 			applyOnDirectDamagePassive(TarStats, Damage)
 			applyOnNovaDamagePassive(TarStats, directErosion)
 		}
@@ -1176,12 +1188,12 @@ class ConsequencesClass {
 			CastStats.TOTAL_LIFE -= returnErosion
 			// Érosion du retour -> proc nova du caster SURVIVANT (EffectDamage.java:75), qui
 			// reçoit l'entier.
-			if (CastStats.SPECIAL_WEAPON != null) applyOnNovaDamagePassive(CastStats, returnErosion)
+			if (CastStats.SPECIAL_WEAPON != 0) applyOnNovaDamagePassive(CastStats, returnErosion)
 		}
 		return Damage   // STEALS : les dégâts réellement infligés alimentent PrevEffectTotal
 	}
 
-	static getEntityDebuffConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
+	static getEntityDebuffConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster, Total) {
 		// EffectDebuff.apply : la puissance est un ENTIER positif — value = (int)((v1+jet·v2)
 		// ·aoe·crit·targetCount) — avant reduceEffects. DebuffPower = fraction CONSERVÉE,
 		// clampée à 0 (un débuff >= 100% efface tout le réductible).
@@ -1201,7 +1213,7 @@ class ConsequencesClass {
 		var newEffects = []
 		var statesDirty = false
 		for (var eff in TarStats.EFFECTS) {
-			if (eff[7] & EFFECT_MODIFIER_IRREDUCTIBLE) {
+			if (!Total && (eff[7] & EFFECT_MODIFIER_IRREDUCTIBLE)) {
 				push(newEffects, eff)
 				continue
 			}
@@ -1273,7 +1285,7 @@ class ConsequencesClass {
 		TarStats.TOTAL_LIFE -= lifeErosion
 		// Passifs de la cible (EffectLifeDamage : onDirectDamage puis onNovaDamage, comme
 		// les dégâts directs ; cible morte -> aucun proc).
-		if (TarStats.SPECIAL_WEAPON != null) {
+		if (TarStats.SPECIAL_WEAPON != 0) {
 			applyOnDirectDamagePassive(TarStats, Damage)
 			applyOnNovaDamagePassive(TarStats, lifeErosion)
 		}
