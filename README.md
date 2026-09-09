@@ -27,6 +27,14 @@ après chaque action. Entrée principale : [`New_AI/Main.leek`](New_AI/Main.leek
 - **Danger / Heal / Delta** projettent la pression future : ce que chaque ennemi peut infliger
   (Danger), ce que chaque allié peut soigner (Heal), agrégés en net séquencé par ordre de tour
   (Delta) — c'est la « pression » consommée par le TTK du scoring.
+- **Quatre PALIERS de déplacement**, dans Danger comme dans Heal. Un caster choisit une
+  position ET une panoplie : marcher ne coûte rien, sauter coûte 4 TP, se téléporter 9, les
+  deux 13. Chaque palier a donc sa propre géométrie de couverture, et le combo joué depuis une
+  cellule reçoit `TOTAL_TP` moins le prix du palier SUFFISANT pour l'atteindre — déduire un
+  coût uniforme de toute la couverture serait faux, une cible à portée de marche ne coûtant
+  rien. Saut posant `RAW_BUFF_AGILITY 100` dès le cast, les paliers sauteurs portent aussi
+  leur propre classe de critique. Les paliers étant emboîtés, ils sont dédoublonnés par hash
+  de CONTENU et par classe de critique : une seule évaluation de combo dans le cas courant.
 - **Gravity / FinalCell** choisissent le placement de fin de tour : meilleure gravity parmi les
   cellules à net nul, sinon net strictement minimal (sécurité d'abord).
 - **Caches et `BaseHash`** : les fonctions coûteuses sont cachées avec des clés qui encodent
@@ -142,10 +150,13 @@ Documentés comme des choix, pas des bugs à corriger immédiatement :
   `HEAL_COEF`).
 - La carte de danger réduit les boucliers d'un débuff sur leur AGRÉGAT, là où le moteur
   réduit et arrondit chaque LIGNE du registre séparément puis somme. `round(a·k) + round(b·k)`
-  n'est pas `round((a+b)·k)` : deux débuffs enchaînés sur une même cible peuvent laisser un
-  point d'écart, propagé au reste de la chaîne par le facteur de bouclier et par la clé de
-  couple. La chaîne ne transporte que deux scalaires — la corriger demanderait d'y porter les
-  lignes. Le chemin de simulation EXACTE (`getEntityDebuffConsequences`), lui, réduit bien
+  n'est pas `round((a+b)·k)`, et UNE seule Libération suffit à l'exposer : deux lignes de
+  bouclier absolu à 101 conservées à 60 % donnent 61 + 61 = 122 côté moteur, contre
+  `round(202·0,6) = 121` côté agrégat. L'échéance, elle, retire bien 122 ligne à ligne, donc
+  le bouclier tombe à −1 au lieu de 0 et le coup suivant est sur-crédité d'autant. La chaîne
+  ne transportant que deux scalaires, corriger demanderait d'y porter les lignes et de faire
+  expirer un CRÉNEAU plutôt qu'un montant. Écart connu et ASSUMÉ, pas une approximation
+  neutre. Le chemin de simulation EXACTE (`getEntityDebuffConsequences`), lui, réduit bien
   ligne par ligne.
 - `UNHEALABLE` est simulé (refus du vol de vie au lanceur, soins et ticks de soin annulés chez
   le porteur), mais aucun item actuel ne le pose : le chemin ne s'exerce qu'en forçant l'état.
@@ -164,5 +175,8 @@ Documentés comme des choix, pas des bugs à corriger immédiatement :
 ## Travaux reportés après la Bêta
 
 1. Auditer puis corriger la complétude de `ScoredCache`.
-2. Mesurer le gain d'un sac à dos exact contre les combos gloutons Danger/Heal.
+2. ~~Mesurer le gain d'un sac à dos exact contre les combos gloutons Danger/Heal.~~ MESURÉ :
+   un sac à dos borné exact coûte 1 522 opérations par appel contre 165 au glouton, soit
+   **+39,2 % des opérations de toute l'IA**. Rejeté. Le glouton n'est pas monotone en l'ensemble
+   d'items (ajouter un item peut dégrader la pile retenue), ce qui reste le vrai résidu.
 3. Instrumenter les composantes du scoring si un réglage des poids devient nécessaire.
