@@ -89,8 +89,15 @@ class BulbState {
 		this.ITEM_STATE_PARENT = null   // racine : maps complètes
 		this.COOLDOWNS = [: ]
 		this.USES = [: ]
+		// Cooldowns INITIAUX (State.applyInitialCooldowns) : une puce dont le cooldown initial
+		// n'est pas encore echu en pose un de (initial + 2 - tour) sur toute invocation qui
+		// nait. Trois puces seulement ont un cooldown initial, toutes a 1 et aucune partagee
+		// par l'equipe : Inversion, Teleportation et Foudre. La condition `initial >= tour` ne
+		// tient donc qu'au tour 1, ou elles naissent a 2. Le bulbe tacticien porte les deux
+		// premieres : sans cela l'IA lui creditait une Telepo et une Inversion injouables.
+		var initialCd = getTurn() == 1 ? 2 : 0
 		for (var i in this.INVENTORY) {
-			this.COOLDOWNS[i] = 0
+			this.COOLDOWNS[i] = (initialCd > 0 && (i == CHIP_TELEPORTATION || i == CHIP_INVERSION || i == CHIP_THUNDER)) ? initialCd : 0
 			this.USES[i] = 0
 		}
 		this.SIDE = SummonerStats.SIDE
