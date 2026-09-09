@@ -174,7 +174,13 @@ class EntityStateClass extends EntityClass {
 		// eff[3] surestime donc d'UN tick toute ligne dont le prochain tour du lanceur précède
 		// celui du porteur. Une ligne auto-lancée garde bien eff[3], le tick précédant la
 		// décrémentation dans le même startTurn.
+		// Colosse : le moteur MULTIPLIE les caracteristiques de base par un facteur
+		// (EffectMultiplyStats), donc la valeur lue les porte deja multipliees. Le facteur est
+		// retenu ici et deplie APRES la passe : les buffs additifs doivent avoir ete retires
+		// d'abord, car le moteur calcule son bonus depuis les stats de BASE.
+		var colossusFactor = 0
 		for (var eff in this.EFFECTS) {
+			if (eff[0] == EFFECT_MULTIPLY_STATS) colossusFactor = eff[1]
 			switch (eff[0]) {
 				// --- AGILITY ---
 				case EFFECT_BUFF_STRENGTH:
@@ -261,6 +267,18 @@ class EntityStateClass extends EntityClass {
 
 					// --- SCIENCE ---
 			}
+		}
+		// Depliage du multiplicateur, une fois les additifs retires : ce qui reste vaut
+		// base x facteur, la division est donc exacte (le moteur ajoute base x (facteur - 1)).
+		if (colossusFactor > 1) {
+			this.BASE_STATS[STAT_STRENGTH]   /= colossusFactor
+			this.BASE_STATS[STAT_WISDOM]     /= colossusFactor
+			this.BASE_STATS[STAT_AGILITY]    /= colossusFactor
+			this.BASE_STATS[STAT_RESISTANCE] /= colossusFactor
+			this.BASE_STATS[STAT_SCIENCE]    /= colossusFactor
+			this.BASE_STATS[STAT_MAGIC]      /= colossusFactor
+			this.BASE_STATS[STAT_MP]         /= colossusFactor
+			this.BASE_STATS[STAT_TP]         /= colossusFactor
 		}
 
 		this.CELL = getCell(id)

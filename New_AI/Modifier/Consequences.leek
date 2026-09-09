@@ -1237,6 +1237,40 @@ class ConsequencesClass {
 				}
 				continue
 			}
+			// Colosse : le moteur ne reduit pas le FACTEUR, il reduit le VECTEUR de bonus qu'il
+			// avait pose — base x (facteur - 1) par caracteristique — puis reconstruit les stats
+			// depuis les lignes restantes. Retirer la ligne sans rendre le bonus laissait la
+			// force a 500 la ou le moteur revient a 100. La vie max, elle, ne se retire PAS :
+			// addTotalLife est irreversible cote moteur, comme pour BOOST_MAX_LIFE.
+			if (eff[0] == EFFECT_MULTIPLY_STATS) {
+				var f = eff[1]
+				if (f > 1) {
+					var bStr = TarStats.BASE_STATS[STAT_STRENGTH] * (f - 1)
+					var bWis = TarStats.BASE_STATS[STAT_WISDOM] * (f - 1)
+					var bAgi = TarStats.BASE_STATS[STAT_AGILITY] * (f - 1)
+					var bRes = TarStats.BASE_STATS[STAT_RESISTANCE] * (f - 1)
+					var bSci = TarStats.BASE_STATS[STAT_SCIENCE] * (f - 1)
+					var bMag = TarStats.BASE_STATS[STAT_MAGIC] * (f - 1)
+					var bMp  = TarStats.BASE_STATS[STAT_MP] * (f - 1)
+					var bTp  = TarStats.BASE_STATS[STAT_TP] * (f - 1)
+					TarStats.STRENGTH   -= bStr - round(bStr * DebuffPower)
+					TarStats.WISDOM     -= bWis - round(bWis * DebuffPower)
+					TarStats.AGILITY    -= bAgi - round(bAgi * DebuffPower)
+					TarStats.RESISTANCE -= bRes - round(bRes * DebuffPower)
+					TarStats.SCIENCE    -= bSci - round(bSci * DebuffPower)
+					TarStats.MAGIC      -= bMag - round(bMag * DebuffPower)
+					var dMp = bMp - round(bMp * DebuffPower)
+					TarStats.MP -= dMp
+					TarStats.TOTAL_MP -= dMp
+					var dTp = bTp - round(bTp * DebuffPower)
+					TarStats.TP -= dTp
+					TarStats.TOTAL_TP -= dTp
+					TarStats.CAP_DIRTY = true
+				}
+				var keptFactor = round(f * DebuffPower)
+				if (keptFactor > 0) push(newEffects, [eff[0], keptFactor, eff[2], eff[3], eff[4], eff[5], eff[6], eff[7], eff[8]])
+				continue
+			}
 			var newValue = round(eff[1] * DebuffPower)
 			var removedValue = eff[1] - newValue
 			if (removedValue != 0) removeCastedEffect(eff[0], TarStats, removedValue, eff[8])
