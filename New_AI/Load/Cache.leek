@@ -355,6 +355,8 @@ global OBSTACLE_BOARD_CACHE = [: ]
 // le combat (clé (cell << 32) | mp, aucune dépendance au board).
 global WALKABLE_CACHE_NOENT = [: ]
 global JUMP_CACHE_NOENT = [: ]
+global TELE_CACHE_NOENT = [: ]
+global TELE_JUMP_CACHE_NOENT = [: ]
 
 // ACTIONS
 

@@ -137,13 +137,13 @@ class HealClass {
         // Couche marche/saut FUTURE du caster (source unique canJumpNextTurn), calculée UNE
         // fois par appel froid : la géométrie dépend de (id, cellule, MP, couche) — un
         // buff/shackle TP franchissant le coût de Jump change la couche sans toucher le reste.
-        var usesJumpLayer = WalkCellsClass.canJumpNextTurn(casterStats) ? 1 : 0
+        var layer = WalkCellsClass.dangerLayerOf(casterStats)
         // movementKey (21 bits, sans ID) : le contexte de déplacement partagé avec Danger —
         // clé des géométries persistantes du builder commun.
         // Meme allonge de telepo que le danger : la geometrie vient des memes fetchers, la cle
         // doit donc porter le meme budget de deplacement, sinon deux soigneurs de meme TOTAL_MP
         // mais d'accessibilite differente partageraient une couverture.
-        var movementKey = (usesJumpLayer << 20) | (casterStats.CELL << 10) | WalkCellsClass.dangerMpOf(casterStats)
+        var movementKey = (layer << 20) | (casterStats.CELL << 10) | WalkCellsClass.dangerMpOf(casterStats)
         var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, movementKey)
         key = addValueToBinHash(key, ((critFactor > 1 ? 1 : 0) << 30) | (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
         if (key in HEAL_COVERAGE_CACHE) return HEAL_COVERAGE_CACHE[key]
@@ -152,14 +152,14 @@ class HealClass {
         // PARESSEUSE : le déroulé du net n'interroge qu'une cellule par appel, alors que le
         // caster en atteint quelques centaines. Partagée par toutes les couvertures de même
         // déplacement (stats de soin différentes), avec ses hashs de contenu.
-        var geomKey = (casterStats.ID << 21) | movementKey
+        var geomKey = (casterStats.ID << 22) | movementKey
         var geometry
         if (geomKey in HEAL_CELL_ITEM_AOE_CACHE) {
             geometry = HEAL_CELL_ITEM_AOE_CACHE[geomKey]
         } else {
-            // Le booléen déjà calculé choisit la couche directement — pas de second
-            // canJumpNextTurn via getMaxWalkOrJumpNoEntitiesFull.
-            var walkCells = usesJumpLayer ? WalkCellsClass.getJumpNoEntitiesFull(casterStats) : WalkCellsClass.getWalkNoEntitiesFull(casterStats)
+            // La couche déjà résolue choisit le fetcher directement — pas de seconde
+            // cascade de cooldowns via getMaxWalkOrJumpNoEntitiesFull.
+            var walkCells = WalkCellsClass.getDangerLayerCells(casterStats, layer)
             geometry = ItemCoverageClass.buildLazyCellItemAoe(getHealItemsList(casterStats), walkCells, movementKey)
             HEAL_CELL_ITEM_AOE_CACHE[geomKey] = geometry
         }

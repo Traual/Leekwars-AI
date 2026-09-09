@@ -11,22 +11,21 @@ include("../../includes.leek")
 
 class DangerPlanClass {
 
-	static MOVEMENT_KEY_MASK = 2097151   // (1 << 21) - 1 : isole movementKey dans la clé
+	static MOVEMENT_KEY_MASK = 4194303   // (1 << 22) - 1 : isole movementKey dans la clé
 
 	/* Clé de MAP_CELL_ITEM_AOE_CACHE — SOURCE UNIQUE, aussi utilisée comme préfixe EXACT des
 	 * clés de DANGER_ITEM_AOE_HASH_CACHE (un hash de contenu ne doit jamais survivre au
 	 * changement de map qui l'a produit).
 	 * L'ID est OBLIGATOIRE : la valeur embarque la liste d'items du caster, deux ennemis
 	 * déplacés sur la même cellule (attract/push) avec le même MP ne doivent pas partager
-	 * d'entrée. usesJumpLayer = canJumpNextTurn (source unique) : un buff/shackle TP
-	 * franchissant le coût de Jump change la couche sans toucher ID/cellule/MP, le bit
-	 * garantit que la map reçue et la clé décrivent la même couche. Pack direct injectif :
-	 * cellule <= 612 (10 bits), MP < 1024 (10 bits), mp clampé (shacklé négatif == 0). */
+	 * d'entrée. La COUCHE (dangerLayerOf, source unique) tient sur deux bits : un buff ou un
+	 * shackle de TP franchissant le coût de Saut ou de Télépo la change sans toucher
+	 * ID/cellule/MP, et ils garantissent que la map reçue et la clé décrivent la même.
+	 * Pack direct injectif : cellule <= 612 (10 bits), MP < 1024 (10 bits), mp clampé
+	 * (shacklé négatif == 0). */
 	static mapCellItemAoeKeyOf(EntityStats) {
-		var usesJumpLayer = WalkCellsClass.canJumpNextTurn(EntityStats) ? 1 : 0
-		// L'allonge de telepo entre dans la cle : sans elle, le meme caster avec et sans telepo
-		// prete partagerait une geometrie, donc une menace fausse dans un cas sur deux.
-		return (EntityStats.ID << 21) | (usesJumpLayer << 20) | (EntityStats.CELL << 10) | WalkCellsClass.dangerMpOf(EntityStats)
+		var layer = WalkCellsClass.dangerLayerOf(EntityStats)
+		return (EntityStats.ID << 22) | (layer << 20) | (EntityStats.CELL << 10) | WalkCellsClass.dangerMpOf(EntityStats)
 	}
 
 	/* [cellule -> [item -> plus petite distance d'AoE]] : ce que le caster peut atteindre.

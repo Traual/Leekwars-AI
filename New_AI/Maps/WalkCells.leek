@@ -152,27 +152,59 @@ class WalkCellsClass {
 		return r
 	}
 
+	static getTeleNoEntitiesFull(stats) {
+		var mp = dangerMpOf(stats) // clampé : voir getWalkNoEntitiesFull
+		var key = (stats.CELL << 32) | mp
+		if (key in TELE_CACHE_NOENT) return TELE_CACHE_NOENT[key]
+		BenchOps.Start("WalkCells")
+		var r = WalkableCellsWithTeleportation(stats.CELL, MAP_OBSTACLES_CACHE, mp)
+		TELE_CACHE_NOENT[key] = r
+		BenchOps.Stop("WalkCells")
+		return r
+	}
+
+	static getTeleJumpNoEntitiesFull(stats) {
+		var mp = dangerMpOf(stats) // clampé : voir getWalkNoEntitiesFull
+		var key = (stats.CELL << 32) | mp
+		if (key in TELE_JUMP_CACHE_NOENT) return TELE_JUMP_CACHE_NOENT[key]
+		BenchOps.Start("WalkCells")
+		var r = WalkableCellsWithTeleportationAndJump(stats.CELL, MAP_OBSTACLES_CACHE, mp)
+		TELE_JUMP_CACHE_NOENT[key] = r
+		BenchOps.Stop("WalkCells")
+		return r
+	}
+
 	/* Jump FUTUR d'une entité non-Me (potentiel de déplacement à son prochain tour) : ses TP
 	 * seront rechargés -> TOTAL_TP, cooldown <= 1 (il aura tourné d'ici là). Ne pas confondre
 	 * avec canJump (TP réellement restants), qui reste le filtre du BFS de Me. */
-	/* Allonge de TELEPORTATION du prochain tour d'une entite non-Me, exprimee en points de
-	 * mouvement. La telepo n'etait dans AUCUNE couche du domaine de danger : un ennemi qui la
-	 * porte etait donc juge incapable de franchir douze cases, et une cellule declaree sure ne
-	 * l'etait pas. C'est ce defaut qui a decide le combat miroir du 2026-09-02.
-	 * La compter comme de la marche SURESTIME la portee reelle (elle ignore les obstacles),
-	 * ce qui est le bon sens de l'erreur pour une menace. */
-	static teleReachNextTurn(stats) {
+	/* La TELEPORTATION sera-t-elle disponible au prochain tour d'une entite non-Me ? Ses TP
+	 * seront recharges -> TOTAL_TP, et son cooldown aura tourne d'ici la -> <= 1.
+	 * Elle a longtemps ete convertie en points de MARCHE, ce qui SOUS-estime son domaine :
+	 * la marche contourne les obstacles, la telepo les traverse (portee 12, sans ligne de
+	 * vue). Une cellule a douze cases derriere un mur etait declaree hors de portee alors
+	 * qu'elle est atteinte d'un pas. Elle a donc sa propre couche, comme pour Me. */
+	static teleNextTurn(stats) {
 		var cd = teleCdOf(stats)
-		if (cd < 0 || cd > 1) return 0
-		if (stats.TOTAL_TP < TELE_COST) return 0
-		return ITEMINFO[CHIP_TELEPORTATION].MAXRANGE
+		return cd >= 0 && cd <= 1 && stats.TOTAL_TP >= TELE_COST
 	}
 
-	/* Budget de deplacement du prochain tour, allonge de telepo comprise. Il traverse TOUTES
-	 * les cles concernees (caches NoEntities et geometrie par caster) pour qu'un ennemi
-	 * telepo-pret et le meme sans telepo ne partagent jamais une entree. */
+	/* Budget de MARCHE du prochain tour. Les capacites de franchissement n'y entrent plus :
+	 * elles choisissent la couche, elles n'allongent pas le pas. */
 	static dangerMpOf(stats) {
-		return max(0, stats.TOTAL_MP) + teleReachNextTurn(stats)
+		return max(0, stats.TOTAL_MP)
+	}
+
+	/* Couche de deplacement du prochain tour : 0 marche, 1 saut, 2 telepo, 3 les deux.
+	 * Meme cascade que getMaxLayer pour Me, avec les gardes du prochain tour. Elle entre
+	 * dans toutes les cles de geometrie : deux entites de meme cellule et meme MP mais de
+	 * couches differentes ne partagent jamais une entree. */
+	static dangerLayerOf(stats) {
+		var t = teleNextTurn(stats)
+		var j = canJumpNextTurn(stats)
+		if (t && j && stats.TOTAL_TP >= JUMP_TELE_COST) return 3
+		if (t) return 2
+		if (j) return 1
+		return 0
 	}
 
 	static canJumpNextTurn(stats) {
@@ -181,7 +213,16 @@ class WalkCellsClass {
 	}
 
 	static getMaxWalkOrJumpNoEntitiesFull(stats) {
-		return canJumpNextTurn(stats) ? getJumpNoEntitiesFull(stats) : getWalkNoEntitiesFull(stats)
+		return getDangerLayerCells(stats, dangerLayerOf(stats))
+	}
+
+	/* Cellules de la couche demandee. L'appelant qui a deja calcule la couche pour sa cle la
+	 * passe telle quelle, plutot que de refaire la cascade de cooldowns. */
+	static getDangerLayerCells(stats, layer) {
+		if (layer == 3) return getTeleJumpNoEntitiesFull(stats)
+		if (layer == 2) return getTeleNoEntitiesFull(stats)
+		if (layer == 1) return getJumpNoEntitiesFull(stats)
+		return getWalkNoEntitiesFull(stats)
 	}
 
 	// ============================================================================
