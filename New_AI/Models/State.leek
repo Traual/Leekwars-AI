@@ -292,6 +292,13 @@ class StateClass {
 			|| parentStat.AFTEREFFECT_OVER_TIME != childStat.AFTEREFFECT_OVER_TIME
 			|| parentStat.HEAL != childStat.HEAL
 			|| parentStat.HEAL_OVER_TIME != childStat.HEAL_OVER_TIME
+			// Le digest des ECHEANCES de bouclier est un input du net projete
+			// (targetDangerSeedOf, Delta.leek:70) : remplacer une ligne de bouclier par une de
+			// meme valeur mais d'echeance differente ne change AUCUNE caracteristique finale,
+			// donc ni capChanged ni aucun autre test ci-dessus — et pourtant le danger subi
+			// change, parce que l'ancienne ligne expirait avant l'attaque projetee et que la
+			// neuve tient. Une comparaison d'entier, pas un parcours du ledger.
+			|| parentStat.SHIELD_EXPIRY_HASH != childStat.SHIELD_EXPIRY_HASH
 			// Le masque d'états décide lesquels des six flux comptent vraiment : UNHEALABLE éteint
 			// les deux flux de soin, INVINCIBLE annule les deux flux de poison au tick. Les lignes,
 			// elles, restent PLEINES au ledger — quand un état apparaît ou tombe, aucun autre champ
