@@ -27,6 +27,8 @@ class ItemClass {
 	STACKABLE
 	IS_BOUNDABLE_DAMAGE                // tous ses effets sont des degats directs sur ennemi : majorable sans simuler
 	IS_VULNERABILITY
+	SELF_TP_NET                        // TP nets qu'un auto-buff de TP PLAT rapporte, 0 sinon
+	SELF_TP_COST                       // ce que le caster doit avancer pour les obtenir
 	LAUNCH_GEOMETRY_KEY
 	FULL_GEOMETRY_KEY
 	// Vues d'effets PRÉCOMPILÉES (immuables, paresseuses : null = aucune ligne) — les LIGNES
@@ -78,6 +80,7 @@ class ItemClass {
 			// Item dont TOUS les effets sont des dégâts directs sur ennemi, sans multiplicateur par
 			// nombre de cibles : le seul cas que ScoringClass.actionUpperBound sait majorer.
 			this.IS_VULNERABILITY = false
+			var selfTpRaw = 0
 			this.IS_HEAL_ITEM = false
 			this.IS_DANGER_ITEM = false
 			this.HEAL_EFFECTS_ALLY_LEEK = null
@@ -97,6 +100,10 @@ class ItemClass {
 					|| t == EFFECT_DEBUFF || t == EFFECT_TOTAL_DEBUFF || t == EFFECT_VULNERABILITY || t == EFFECT_ABSOLUTE_VULNERABILITY) {
 					this.IS_DANGER_ITEM = true
 				}
+				// Auto-buff de TP PLAT : l'effet doit pouvoir viser son propre lanceur, par le bit
+				// CASTER du masque ou par le modificateur ON_CASTER. Jet minimal (value1 seul) et
+				// aucun facteur critique, comme tous les jets du danger.
+				if (t == EFFECT_RAW_BUFF_TP && ((mask & EFFECT_TARGET_CASTER) || onCaster)) selfTpRaw += eff[1]
 				if (t == EFFECT_DEBUFF || t == EFFECT_TOTAL_DEBUFF || t == EFFECT_VULNERABILITY || t == EFFECT_ABSOLUTE_VULNERABILITY) {
 					this.IS_VULNERABILITY = true
 					// Vues vulné : PAS de filtre ON_CASTER — la chaîne de vulnés ne
@@ -143,6 +150,11 @@ class ItemClass {
 			// clé de lancement -> mêmes cellules directement lançables, même clé complète ->
 			// même expansion d'AoE. Packs injectifs : launch types 1..7 (4 bits), portées
 			// < 1024 (10 bits), AREA 1..15 (5 bits).
+			// L'item ne compte que s'il rend PLUS de TP qu'il n'en coute. Les seuls a passer
+			// aujourd'hui : adrenaline, 5 TP pour 1. Manumission (2 pour 6) et convoitise (1 pour
+			// 2) sont ecartees ici, sans test a l'execution.
+			this.SELF_TP_NET = (selfTpRaw > this.COST) ? selfTpRaw - this.COST : 0
+			this.SELF_TP_COST = (this.SELF_TP_NET > 0) ? this.COST : 0
 			this.LAUNCH_GEOMETRY_KEY = ((this.NEEDLOS ? 1 : 0) << 24) | (this.LAUNCHTYPE << 20) | (this.MINRANGE << 10) | this.MAXRANGE
 			this.FULL_GEOMETRY_KEY = (this.LAUNCH_GEOMETRY_KEY << 5) | this.AREA
 		}

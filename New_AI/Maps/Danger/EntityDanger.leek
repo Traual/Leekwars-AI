@@ -192,6 +192,55 @@ class EntityDangerClass {
 	 * SOURCE UNIQUE de la qualification « ce caster menace-t-il ? » : une liste vide signifie
 	 * qu'il ne compte dans aucune danger map.
 	 * Parcourt INVENTORY (l'ordre d'insertion des items en dépend) + cooldown effectif. */
+	/*
+	 * TP que le caster gagnera EN NET a s'auto-buffer, et ce qu'il doit avancer pour cela,
+	 * packes en (cout << 16) | net. Un auto-buff rentable n'est pas un arbitrage : personne
+	 * ne refuse quatre TP contre un, donc il n'a rien a faire dans la chaine de candidats,
+	 * ou il couterait un combo de plus par cellule et par pas.
+	 *
+	 * Constante du tour pour un non-Me : son inventaire ne bouge pas, et ses cooldowns non
+	 * plus tant qu'il n'a pas rejoue. D'ou le cache par identifiant, sans autre cle.
+	 *
+	 * NE SONT PAS COMPTES, et c'est deliberé :
+	 *  - les buffs de TP a l'ECHELLE (rage, fouet) : le moteur les multiplie par la SCIENCE
+	 *    du lanceur (EffectBuffTP.java:11), or la science n'est dans aucune cle du danger et
+	 *    prisme peut la changer en branche. Les compter demanderait de replier le gain dans
+	 *    le TP EFFECTIF partout — pack offensif, empreinte de contexte et detection de
+	 *    changement. Faisable, mais ce n'est plus une ligne. 24 des 56 porteurs de rage du
+	 *    meta y gagneraient quelque chose sous la doctrine de critique adverse.
+	 *  - les buffs de FORCE et de MAGIE (proteine, steroide, sorcellerie, prisme) : eux
+	 *    changent le pack offensif du caster, donc la cle du gabarit de degats, que la chaine
+	 *    tient pour invariante. Il faudrait reconstruire et retrier un gabarit par candidat.
+	 *    Chiffre sur douze combats a jeu identique : +2,53 % des operations de toute l'IA,
+	 *    contre +0,59 % pour la seule voie des TP. Faisable aussi, si le budget le permet.
+	 */
+	static selfTpPackOf(EntityStats) {
+		var h = EntityStats.ID
+		if (h in DANGER_SELF_TP_CACHE) return DANGER_SELF_TP_CACHE[h]
+		var net = 0
+		var cost = 0
+		for (var i in EntityStats.INVENTORY) {
+			var inf = ITEMINFO[i]
+			// Test le plus selectif d'abord : un seul item du jeu passe, inutile de remonter la
+			// chaine de cooldowns pour tous les autres.
+			if (inf.SELF_TP_NET == 0) continue
+			if (StateClass.cooldownOf(EntityStats, i) > 1) continue
+			net += inf.SELF_TP_NET
+			cost += inf.SELF_TP_COST
+		}
+		var _final = (cost << 16) | net
+		DANGER_SELF_TP_CACHE[h] = _final
+		return _final
+	}
+
+	/* Ce que ce caster gagne vraiment, une fois son franchissement paye : le buff se lance
+	 * AVANT d'attaquer, il lui faut donc de quoi l'avancer. */
+	static selfTpGainAfter(EntityStats, TpCost) {
+		var pack = selfTpPackOf(EntityStats)
+		if (pack == 0) return 0
+		return (EntityStats.TOTAL_TP - TpCost >= (pack >> 16)) ? (pack & 65535) : 0
+	}
+
 	static getItemsList(EntityStats) {
 		var Hash = EntityStats.ID
 		if (Hash in DANGER_ENTITY_INVENTORY) return DANGER_ENTITY_INVENTORY[Hash]

@@ -39,6 +39,7 @@ function ReloadCacheNewTurn() {
     // le combat (danger sous-estimé). Les listes triées de DANGER_ENTITY_CACHE en dérivent
     // et leur clé ne porte pas les cooldowns : les deux se rafraîchissent ensemble.
     DANGER_ENTITY_INVENTORY = [: ]
+    DANGER_SELF_TP_CACHE = [: ]
     DANGER_ENTITY_CACHE = [: ]
     DANGER_TEMPLATE_CACHE = [: ]
 
@@ -302,6 +303,9 @@ global DANGER_ENTITY_CACHE = [: ]
 // filtrée par cooldown au moment du calcul.
 global DANGER_TEMPLATE_CACHE = [: ]
 global DANGER_ENTITY_INVENTORY = [: ]
+// [id -> (cout << 16) | gain net] des auto-buffs de TP rentables du porteur. Constante du
+// tour : ni l'inventaire ni les cooldowns d'un non-Me ne bougent pendant le mien.
+global DANGER_SELF_TP_CACHE = [: ]
 
 // Résultat ENTIER de l'évaluation terminale [cellule, pénalité, net], clé = la signature
 // complète des entrées de FinalCell.evaluate. Le reclassement rouvre deux fois sur trois un
