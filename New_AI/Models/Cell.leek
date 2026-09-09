@@ -467,6 +467,28 @@ class CellClass {
 		return current
 	}
 
+	/* Destination d'un RECUL (Map.getRepelLastAvailableCell) : l'entité s'éloigne du lanceur
+	 * d'un nombre de cases FIXE, en s'arrêtant à la première case indisponible. Contrairement
+	 * à la poussée et à l'attraction, aucune cellule visée n'entre dans la direction : elle
+	 * vient du seul couple (lanceur, entité). Même case que le lanceur : pas de direction,
+	 * donc pas de recul. */
+	static repelDestination(fromCell, casterCell, distance, occupied) {
+		var cx = CELL_X[fromCell]
+		var cy = CELL_Y[fromCell]
+		var dx = signOf(cx - CELL_X[casterCell])
+		var dy = signOf(cy - CELL_Y[casterCell])
+		if (dx == 0 && dy == 0) return fromCell
+		var current = fromCell
+		for (var i = 0; i < distance; i++) {
+			cx += dx
+			cy += dy
+			var next = XY_FREE[cx * 1024 + cy]
+			if (next == null || occupied[next]) return current   // null = hors carte ou obstacle
+			current = next
+		}
+		return current
+	}
+
 	/* LoS STATIQUE : le 3e argument de lineOfSight est la liste des entités IGNORÉES —
 	 * EVERYONE (rafraîchi à chaque Virtualize) les ignore toutes, le cache persistant ne
 	 * dépend donc que des obstacles de la carte. Obstacles dynamiques du State (summons

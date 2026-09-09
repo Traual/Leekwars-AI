@@ -354,6 +354,33 @@ class ConsequencesClass {
 					if (targetStats.SPECIAL_WEAPON != null) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, newCell)
 				}
 				break
+			case EFFECT_REPEL:
+				// Recul d'un nombre de cases FIXE, loin du lanceur (Attack.java:206-217). Trois
+				// differences avec la poussee : la distance est la VALEUR de l'effet et non la
+				// cellule visee, le critique porte sur cette distance avec l'arrondi des autres
+				// effets, et le lanceur est explicitement epargne — la lance du soleil porte
+				// pourtant le bit de cible CASTER, elle se repousserait donc elle-meme.
+				// Ni la zone ni le nombre de cibles n'entrent dans la distance : le moteur ne lit
+				// que value1.
+				var repelDistance = round(Effect[1] * (CAST_IS_CRITICAL ? CRITICAL_FACTOR : 1))
+				if (repelDistance > 0) {
+					var repelOccupied = [: ]
+					for (var oid: var ostat in State) if (ostat.LIFE > 0) repelOccupied[ostat.CELL] = true
+					var repelCasterCell = State[Caster].CELL
+					for (var targetId: var aoeDistance in RealTargets) {
+						if (targetId == Caster) continue
+						var targetStats = State[targetId]
+						if (targetStats.STATIC) continue
+						var oldCell = targetStats.CELL
+						var newCell = CellClass.repelDestination(oldCell, repelCasterCell, repelDistance, repelOccupied)
+						if (newCell == oldCell) continue
+						targetStats.CELL = newCell
+						repelOccupied[oldCell] = false
+						repelOccupied[newCell] = true
+						if (targetStats.SPECIAL_WEAPON != null) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, newCell)
+					}
+				}
+				break
 			case EFFECT_SHACKLE_AGILITY:
 				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
 				for (var targetId: var aoeDistance in RealTargets) {
