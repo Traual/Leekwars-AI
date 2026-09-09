@@ -119,7 +119,6 @@ class Target {
 		EFFECT_ATTRACT: Target.ALL,
 		EFFECT_INVERT: Target.ALL,
 		EFFECT_PUSH: Target.ALL,
-		EFFECT_REPEL: Target.ALL,
 		EFFECT_STEAL_ABSOLUTE_SHIELD: Target.ALL,
 
 		EFFECT_AFTEREFFECT: Target.NONE, // néfaste mais castable seulement sur les alliés

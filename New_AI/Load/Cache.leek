@@ -174,7 +174,7 @@ global AREA_DIST_CACHE = [: ]
 
 // Géométries d'items PERSISTANTES, communes à Danger et Heal (buildMapCellItemAoe) — ne
 // dépendent QUE de la map de déplacement statique sans entités (movementKey =
-// (coucheJump << 20) | (cellule << 10) | max(0, MP) — 21 bits, sans ID/camp/cooldowns/stats),
+// (couche << 20) | (cellule << 10) | max(0, MP) — 22 bits, sans ID/camp/cooldowns/stats),
 // de la signature de lancement et de la zone. Read-only, jamais vidées au tour :
 //  - ITEM_LAUNCH_GEOMETRY_CACHE [(movementKey << 25) | LAUNCH_GEOMETRY_KEY -> cellules
 //    directement lançables] ;
@@ -397,10 +397,10 @@ global CAPABILITY_COMBO_CACHE = [: ]
 // HEAL MAP — trois couches, miroir de la danger map :
 //  - HEAL_COVERAGE_CACHE : la couverture d'un caster, résolue PAR CELLULE À LA DEMANDE et par
 //    profil de cible (pas de SELF : le séquenceur exclut la cible de sa liste de casters),
-//    clé (id, couche marche/saut, cell, mp, wis, tp) — le fast path. Le déroulé du net
+//    clé (id, couche de deplacement, cell, mp, wis, tp) — le fast path. Le déroulé du net
 //    n'interroge qu'une cellule par appel : tout assembler serait du travail jeté.
 //  - HEAL_CELL_ITEM_AOE_CACHE : la GÉOMÉTRIE paresseuse par item, clé
-//    (id<<21)|(coucheJump<<20)|(cell<<10)|max(0,mp) — position + couche marche/saut future
+//    (id<<22)|(couche<<20)|(cell<<10)|max(0,mp) — position + couche de deplacement future
 //    (canJumpNextTurn), COMMUNE aux deux profils ; elle porte aussi les hashs de contenu des
 //    cellules déjà assemblées. Un buff/shackle WIS/TP ne reconstruit que la couche valeur,
 //    SAUF franchissement du coût de Jump (couche géométrique).

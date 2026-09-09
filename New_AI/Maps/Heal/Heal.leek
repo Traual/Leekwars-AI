@@ -120,10 +120,10 @@ class HealClass {
 
     /*
      * [ALLY_LEEK | ALLY_SUMMON -> [cell -> [heal, vitalité]]] : ce que ce caster peut poser
-     * sur chaque cellule, par profil de cible. Clé (id, couche marche/saut, cell, mp, wis,
+     * sur chaque cellule, par profil de cible. Clé (id, couche de deplacement, cell, mp, wis,
      * tp). En dessous, split géométrie / valeur (miroir de la danger map) : la GÉOMÉTRIE
      * (quelles cellules chaque item atteint — le gros d'un build froid) ne dépend que de
-     * (id, cell, mp, couche marche/saut future), est COMMUNE aux deux profils et se cache à
+     * (id, cell, mp, couche de deplacement future), est COMMUNE aux deux profils et se cache à
      * part ; un buff/shackle WIS ou TP ne reconstruit que la couche combo (sauf
      * franchissement du coût de Jump, qui change la couche géométrique).
      */
@@ -134,15 +134,13 @@ class HealClass {
         // couverture (l'ordre du combo ne change pas), les combos restent crit-free.
         var critAt = (casterStats.SIDE != getSide(Me)) ? MIN_AGILITY_ENEMY_CRIT : MIN_AGILITY_TO_FULLY_CRIT
         var critFactor = (casterStats.AGILITY >= critAt) ? CRITICAL_FACTOR : 1
-        // Couche marche/saut FUTURE du caster (source unique canJumpNextTurn), calculée UNE
+        // Couche de déplacement FUTURE du caster (source unique dangerLayerOf), calculée UNE
         // fois par appel froid : la géométrie dépend de (id, cellule, MP, couche) — un
-        // buff/shackle TP franchissant le coût de Jump change la couche sans toucher le reste.
+        // buff ou shackle de TP franchissant le coût de Saut ou de Télépo change la couche.
         var layer = WalkCellsClass.dangerLayerOf(casterStats)
-        // movementKey (21 bits, sans ID) : le contexte de déplacement partagé avec Danger —
-        // clé des géométries persistantes du builder commun.
-        // Meme allonge de telepo que le danger : la geometrie vient des memes fetchers, la cle
-        // doit donc porter le meme budget de deplacement, sinon deux soigneurs de meme TOTAL_MP
-        // mais d'accessibilite differente partageraient une couverture.
+        // movementKey (22 bits, sans ID) : le contexte de déplacement partagé avec Danger —
+        // clé des géométries persistantes du builder commun. La géométrie venant des mêmes
+        // fetchers, la clé doit porter la même couche.
         var movementKey = (layer << 20) | (casterStats.CELL << 10) | WalkCellsClass.dangerMpOf(casterStats)
         var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, movementKey)
         key = addValueToBinHash(key, ((critFactor > 1 ? 1 : 0) << 30) | (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
