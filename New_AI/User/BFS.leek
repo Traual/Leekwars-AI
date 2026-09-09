@@ -400,7 +400,12 @@ class ActionSuite {
 			// actions de dégâts sous la coupure coûte 64 % de simulations en plus pour 0,8 %
 			// de décisions changées — mesuré, et c'est ce qui rendait le lot perdant.
 			if (!entry[6]) continue
-			if (entry[1] > BestPriority) continue   // déjà examinée par la boucle ci-dessus
+			// Déjà examinée par la boucle ci-dessus. Le cas où elle ne l'aurait PAS été — la
+			// première passe cassée sur OPS_DEADLINE avant de l'atteindre — ne peut pas se
+			// produire ici : une entrée DIFFÉRÉE a un delta sous epsilon, donc une priorité
+			// stockée quasi nulle, qui ne dépasse jamais BestPriority. Mesuré sur le banc :
+			// 9 cassures sur la deadline, ZÉRO déclenchement de ce garde.
+			if (entry[1] > BestPriority) continue
 			var item2 = entry[5]
 			var cost2 = baseCosts[item2]
 			if (cost2 == null) {
