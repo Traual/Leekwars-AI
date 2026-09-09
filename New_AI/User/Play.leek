@@ -112,10 +112,15 @@ class Play {
 	 * cet ecart AVANT de virtualiser, avec la marge du pire pas deja mesure.
 	 */
 	drainChain(livingSummons) {
+		// La chaine ne contient QUE des actions non jouees : BFS l'arrete avant la racine
+		// (`while (ancestor.PARENT != null)`), et cette racine a deja ete executee par la
+		// boucle de Play au tour de planification precedent. L'indice 0 est donc la prochaine
+		// action a jouer, pas une action deja passee : partir de 1 en sautait une a chaque
+		// vidange, et s'arreter sous deux n'en jouait aucune quand il n'en restait qu'une.
 		var n = count(BFS_LAST_CHAIN)
-		if (n < 2) return;
+		if (n < 1) return;
 		var limit = OPS_CAP - OPS_RESERVE_PLACEMENT - livingSummons * OPS_RESERVE_PER_BULB
-		for (var i = 1; i < n; i++) {
+		for (var i = 0; i < n; i++) {
 			var opsBefore = getOperations()
 			if (opsBefore + OPS_EXEC_MAX > limit) return;
 			var State = StateClass.Virtualize()
