@@ -140,6 +140,13 @@ Documentés comme des choix, pas des bugs à corriger immédiatement :
   nœuds pour être rentable.
 - Valeurs pessimistes/minimales dans Danger et Heal (jets minimaux, heal amorti par
   `HEAL_COEF`).
+- La carte de danger réduit les boucliers d'un débuff sur leur AGRÉGAT, là où le moteur
+  réduit et arrondit chaque LIGNE du registre séparément puis somme. `round(a·k) + round(b·k)`
+  n'est pas `round((a+b)·k)` : deux débuffs enchaînés sur une même cible peuvent laisser un
+  point d'écart, propagé au reste de la chaîne par le facteur de bouclier et par la clé de
+  couple. La chaîne ne transporte que deux scalaires — la corriger demanderait d'y porter les
+  lignes. Le chemin de simulation EXACTE (`getEntityDebuffConsequences`), lui, réduit bien
+  ligne par ligne.
 - `UNHEALABLE` est simulé (refus du vol de vie au lanceur, soins et ticks de soin annulés chez
   le porteur), mais aucun item actuel ne le pose : le chemin ne s'exerce qu'en forçant l'état.
 - Ordre de tour approximatif (fin de liste) pour une entité déjà morte et inconnue lors de la
