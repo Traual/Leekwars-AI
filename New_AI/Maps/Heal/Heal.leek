@@ -155,6 +155,13 @@ class HealClass {
         var mp = WalkCellsClass.dangerMpOf(casterStats)
         var key = addValueToBinHash(OFFSET_BASIS ^ casterStats.ID, (availMask << 20) | (casterStats.CELL << 10) | mp)
         key = addValueToBinHash(key, ((crits[1] > 1 ? 1 : 0) << 31) | ((crits[0] > 1 ? 1 : 0) << 30) | (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP))   // WIS encodée max(0, WIS+100), voir healerContribution
+        // La couverture porte le coût NET des paliers depuis que le soin compte Adrénaline,
+        // et ce coût ne se déduit PAS du TP total : deux soigneurs de même total mais dont
+        // l'un tient déjà sa ligne et l'autre pas ne posent pas le même soin. L'empreinte de
+        // camp le distingue déjà ; ce cache-ci, un cran plus bas, l'oubliait — et servait
+        // alors la couverture de la première lecture à la seconde. Nul, donc clé inchangée
+        // au bit près, pour qui ne porte aucun de ces items.
+        key = addValueToBinHash(key, EntityDangerClass.selfTpHeldOf(casterStats))
         if (key in HEAL_COVERAGE_CACHE) return HEAL_COVERAGE_CACHE[key]
 
         // UNE géométrie par palier jouable, clé (id, palier, cellule, MP) — même pack que la

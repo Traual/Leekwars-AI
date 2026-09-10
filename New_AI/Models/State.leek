@@ -326,8 +326,23 @@ class StateClass {
 		// Court-circuit exact : les dix inputs de capability contiennent AGI, STR, MAG, WIS,
 		// TOTAL_TP et TOTAL_MP — capChanged faux => classes critiques et valeurs clampées
 		// forcément identiques, seules la cellule et POWER peuvent encore bouger.
-		var contextStatsChanged = false
-		var healStatsChanged = false
+		// Le montant d'auto-buff de TP porte et ce qui en TOMBE avant l'action sont DEUX entrees
+		// independantes des cartes de danger et de soin, et leur somme ne les resume pas :
+		// renouveler une ligne de +5 qui allait expirer par une +5 neuve laisse TOTAL_TP et
+		// toutes les caracteristiques identiques, alors que le budget projete monte — la ligne
+		// ne tombera plus. Aucun autre test ci-dessus ne bouge, et les empreintes resteraient
+		// celles d'avant.
+		// Garde CAP_DIRTY : la marque est posee par le ledger et remise a faux a chaque clone,
+		// donc seules les entites qu'un effet a touchees DANS CE NŒUD paient la lecture.
+		// Court-circuit hisse d'un cran : l'entite ne porte-t-elle AUCUN de ces items ? La
+		// reponse est cachee par identifiant et invariante du tour, donc une seule lecture de
+		// map suffit a sortir — au lieu des deux que couterait la comparaison des montants.
+		var tpBuffChanged = false
+		if (childStat.CAP_DIRTY && EntityDangerClass.selfTpItemsOf(childStat) != null) {
+			tpBuffChanged = EntityDangerClass.selfTpHeldOf(parentStat) != EntityDangerClass.selfTpHeldOf(childStat)
+		}
+		var contextStatsChanged = tpBuffChanged
+		var healStatsChanged = tpBuffChanged
 		if (capChanged) {
 			// La MEME classe que celle des empreintes (critClassOf, source unique) : elle porte
 			// les seuils de crit ET les memes diminues des 100 AGI que Saut pose, puisqu'un
@@ -336,10 +351,10 @@ class StateClass {
 			var critChanged = DangerComboClass.critClassOf(parentStat.AGILITY) != DangerComboClass.critClassOf(childStat.AGILITY)
 			var effectiveTotalMpChanged = max(0, parentStat.TOTAL_MP) != max(0, childStat.TOTAL_MP)
 			var effectiveTotalTpChanged = max(0, parentStat.TOTAL_TP) != max(0, childStat.TOTAL_TP)
-			contextStatsChanged = critChanged || effectiveTotalMpChanged || effectiveTotalTpChanged
+			contextStatsChanged = contextStatsChanged || critChanged || effectiveTotalMpChanged || effectiveTotalTpChanged
 				|| max(0, parentStat.STRENGTH) != max(0, childStat.STRENGTH)
 				|| max(0, parentStat.MAGIC) != max(0, childStat.MAGIC)
-			healStatsChanged = critChanged || effectiveTotalTpChanged || effectiveTotalMpChanged
+			healStatsChanged = healStatsChanged || critChanged || effectiveTotalTpChanged || effectiveTotalMpChanged
 				|| max(0, parentStat.WISDOM + 100) != max(0, childStat.WISDOM + 100)
 		}
 
