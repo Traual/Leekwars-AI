@@ -61,7 +61,10 @@ class HealClass {
         // soigneurs qui echangent leurs stats rendent le meme fingerprint, et HEAL_MAP_CACHE
         // sert alors la map d'une AUTRE configuration. Mesure avant correctif : 2 245 hits
         // faux sur 59 812 (3,75 %). Meme forme que contextContribution ; (id + 1) car mix64(0) = 0.
-        return mix64(mix64Memo(id + 1) ^ ((critClass << 44) | (max(0, stat.WISDOM + 100) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | stat.CELL))
+        // Le soin dépend lui aussi de l'ORIGINE des TP depuis qu'Adrénaline lui est comptée :
+        // même terme que l'empreinte de contexte offensif, même source unique, et nul pour qui
+        // ne porte aucun de ces items.
+        return mix64(mix64Memo(id + 1) ^ EntityDangerClass.selfTpHeldTermOf(stat) ^ ((critClass << 44) | (max(0, stat.WISDOM + 100) << 32) | (max(0, stat.TOTAL_TP) << 22) | (max(0, stat.TOTAL_MP) << 12) | stat.CELL))
     }
 
     /*
@@ -177,11 +180,36 @@ class HealClass {
             }
         }
 
+        // Coût NET de chaque palier : son prix de franchissement moins ce qu'un auto-buff de
+        // TP rentable rapporte au soigneur, exactement comme la carte de danger — les deux
+        // ordres de cast, chacun avec sa condition de paiement et son facteur critique.
+        // Résolu ICI, une fois par couverture, jamais par cellule.
+        var tierTp = [0, 0, 0, 0]
+        var prof = EntityDangerClass.selfTpProfileOf(casterStats)
+        var totTp = casterStats.TOTAL_TP
+        for (var t = 0; t < 4; t++) {
+            var moveCost = WalkCellsClass.dangerLayerTpCost(t)
+            tierTp[t] = moveCost
+            if (prof == null) continue
+            var best = 0
+            var vA = EntityDangerClass.selfTpValueAt(prof, crits[0])
+            if (totTp >= prof[1] && totTp - prof[1] + vA >= moveCost) {
+                var gA = vA - prof[2] - prof[1]
+                if (gA > best) best = gA
+            }
+            if (totTp - moveCost >= prof[1]) {
+                var gB = EntityDangerClass.selfTpValueAt(prof, crits[t]) - prof[2] - prof[1]
+                if (gB > best) best = gB
+            }
+                tierTp[t] = moveCost - best
+        }
+
         // Part du caster dans la clé de combo : INVARIANTE sur toutes les cellules et sur les
         // deux profils au bit de profil près. Packée une fois ici, plus jamais par cellule.
         var statPack = (max(0, casterStats.WISDOM + 100) << 15) | max(0, casterStats.TOTAL_TP)   // WIS encodée max(0, WIS+100), voir healerContribution
         var _final = new HealCoverageClass(geoms, casterStats, crits,
-            (HEAL_PROFILE_ALLY_LEEK << 34) | statPack, (HEAL_PROFILE_ALLY_SUMMON << 34) | statPack)
+            (HEAL_PROFILE_ALLY_LEEK << 34) | statPack, (HEAL_PROFILE_ALLY_SUMMON << 34) | statPack,
+            tierTp)
         HEAL_COVERAGE_CACHE[key] = _final
         return _final
     }
@@ -199,6 +227,7 @@ class HealClass {
         var pack = (Profile == HEAL_PROFILE_ALLY_SUMMON) ? Coverage.PACK_SUMMON : Coverage.PACK_LEEK
         var geoms = Coverage.GEOMS
         var crits = Coverage.CRITS
+        var tierTp = Coverage.TIER_TP
         var totalTp = Coverage.STATS.TOTAL_TP
         // Le soigneur choisit son palier : franchir lui ouvre des cibles mais lui prend les TP
         // qu'il aurait dépensés en soins. Les paliers sont emboîtés, donc plusieurs rendent
@@ -223,7 +252,7 @@ class HealClass {
             var sm = (contentHash in seen) ? seen[contentHash] : 0
             if ((sm & cb) != 0) continue
             seen[contentHash] = sm | cb
-            var budget = totalTp - WalkCellsClass.dangerLayerTpCost(t)
+            var budget = totalTp - tierTp[t]
             if (budget <= 0) continue
             var c = comboAtCell(itemAoeMap, Coverage.STATS, Profile, pack, contentHash, budget)
             if (combo == null || (c[0] + c[1]) * crit > (combo[0] + combo[1]) * critFactor) {
@@ -362,15 +391,18 @@ class HealCoverageClass {
     STATS         // stats du caster, relues par le combo
     CRITS         // [facteur critique du palier 0..3], appliqué APRÈS le combo (les combos
                   // restent crit-free) ; les paliers sauteurs portent les +100 AGI de Saut
+    TIER_TP       // [coût NET du palier 0..3] : son prix moins ce qu'un auto-buff de TP
+                  // rentable rapporte, donc parfois négatif
     PACK_LEEK     // part caster de la clé de combo, profil poireau
     PACK_SUMMON   // idem, profil summon
     LEEK          // [cellule -> [heal, vitalité]] résolues, null quand rien n'est posé
     SUMMON
 
-    constructor(ThisGeoms, ThisStats, ThisCrits, ThisPackLeek, ThisPackSummon) {
+    constructor(ThisGeoms, ThisStats, ThisCrits, ThisPackLeek, ThisPackSummon, ThisTierTp) {
         this.GEOMS = ThisGeoms
         this.STATS = ThisStats
         this.CRITS = ThisCrits
+        this.TIER_TP = ThisTierTp
         this.PACK_LEEK = ThisPackLeek
         this.PACK_SUMMON = ThisPackSummon
         this.LEEK = [: ]
