@@ -3,121 +3,133 @@
 Laboratoire local : proposer un changement de scoring, le tester par étapes, garder les
 résultats, et promouvoir un champion seulement quand une règle figée d'avance le permet.
 
-**Ce dépôt-ci ne lance aucune boucle.** `run-loop` refuse de démarrer sans un drapeau
-explicite, et la commande n'est de toute façon pas implémentée : la livraison porte sur le
-harnais, pas sur son exécution.
-
-## Ce qui est construit, et ce qui ne l'est pas
-
-| Élément | État |
-|---|---|
-| Branche `scoring`, commit de traçabilité, tag `scoring/champion-000` | fait |
-| `bundle.py` — empreinte reproductible, matérialisation en lecture seule | fait |
-| `scenarios.py` — formats, compositions, blocs de quatre combats, plans de graines | fait |
-| `evaluator.py` — JVM par worker, clé de cache complète, classement des erreurs | fait |
-| `statistics_lab.py` — agrégats par blocs, Welch–Satterthwaite, décision figée | fait |
-| `registry.py` — SQLite, journal de publication, garde du champion attendu | fait |
-| `optimizer.py` — contrat d'optimiseur, mode manuel, contrôle de périmètre | fait |
-| `cli.py doctor` et `cli.py calibrate` | fait, mesuré |
-| `cli.py init-campaign / register-candidate / evaluate / report / resume` | **non fait** |
-| Orchestration des blocs et remplissage du cache C/O et H/O | **non fait** |
-| Écriture Git d'une promotion (commit, tag, pointeur) | **non fait**, le journal SQLite l'attend |
-| Audit BR | **non fait** |
-
-Les tests de réception couvrent ce qui existe. Ceux qui exigent `evaluate` — rejeu à
-l'identique, reprise après interruption, invalidation d'un cache de combats réel — ne sont pas
-simulés : un test qui ne joue aucun combat ne prouverait rien sur le cache de combats.
+**Aucune campagne autonome n'est lancée.** `run-loop` crible sous trois budgets obligatoires ;
+la confirmation et la promotion restent des commandes explicites.
 
 ## Commandes
 
 ```bash
 python training/cli.py doctor
-python training/cli.py calibrate --time-budget 540 --formats solo,farmer --par-format 6
+python training/cli.py init-campaign
+python training/cli.py calibrate --time-budget 600 --formats solo,farmer --par-format 8 --workers 2
+python training/cli.py register-candidate --id cand-001 --patch chemin/vers.patch --hypothese "..."
+python training/cli.py evaluate --id cand-001 --stage s1 --blocs '{"farmer":2,"solo":1}'
+python training/cli.py evaluate --id cand-001 --stage confirm --promouvoir
+python training/cli.py report --id cand-001
+python training/cli.py audit-br --id cand-001 --lobbies 12
+python training/cli.py resume
 ```
 
-`doctor` vérifie le moteur, le JDK, la concordance du champion avec son manifeste, les builds,
-les formats et la ligue. `calibrate` joue de vrais combats aux cœurs réels et écrit
-`runs/rapport-debit.json`.
-
-La commande d'une première campagne bornée, quand l'orchestration existera :
+Première campagne bornée, la commande complète :
 
 ```bash
-python training/cli.py init-campaign --config training/config/loop.yaml \
-  && python training/cli.py evaluate --stage screen --wave 1 \
-  && python training/cli.py report --wave 1
+python training/cli.py init-campaign && python training/cli.py run-loop \
+  --patches training/runs/patches --max-candidats 4 --max-confirmations 1 \
+  --budget-minutes 60 --workers 2
 ```
+
+## Ce que fait chaque étage
+
+**Le bloc** est l'unité statistique : quatre combats contre le même adversaire, mêmes builds
+attachés aux mêmes créneaux, seule l'affectation des politiques change. `d = x(C) − x(H)`, un
+par bloc. Les deux miroirs d'une même graine sont corrélés et ne font jamais deux observations.
+
+**Le cache** porte les bundles complets de toutes les politiques, le scénario résolu, le
+moteur, le runner et la version du parseur. Les deux combats champion contre adversaire n'ont
+pas le bundle du candidat dans leur clé : ils se partagent entre tous les candidats évalués sur
+le bloc. Mesuré sur un parcours réel : le premier candidat coûte 12 combats, le second n'en
+ajoute que 6, et le temps passe de 63 à 29 secondes.
+
+**La confirmation** tire des graines neuves après le gel du candidat, à taille figée, une seule
+décision. Les bornes sont des approximations de Student avec des degrés de liberté de
+Welch–Satterthwaite. Une variance nulle ou un effectif sous deux blocs donne NON CONCLUSIF, pas
+une certitude : des résultats identiques ne prouvent pas l'équivalence de deux politiques.
+
+**La promotion** vérifie que le champion attendu est toujours courant, écrit le manifeste, le
+commit et le tag annoté, puis contrôle que l'arbre `New_AI` du commit est exactement le bundle
+mesuré. Un écart annule la promotion.
+
+**La reprise** lit l'état réel de Git plutôt que de croire le journal SQLite, parce que les deux
+systèmes ne partagent pas de transaction. Chaque étape est idempotente, et une publication
+interrompue est terminée ou constatée, jamais refaite.
+
+**L'audit BR** remplace une politique focale dans un lobby autrement figé, C puis H. Aucun veto :
+c'est un rapport. Le rang normalisé demande le classement officiel du moteur, que la sortie du
+runner ne porte pas encore ; seule la fréquence de victoire est rapportée, plutôt qu'un rang
+reconstruit sans validation.
 
 ## Débit mesuré
 
-Un worker, cœurs réels des builds, combats jusqu'à la limite normale de 64 tours.
+Cœurs réels des builds, combats complets jusqu'à la limite normale de 64 tours, huit combats
+par format.
 
-| format | combats | exécution médiane | p90 | max | combats/minute |
-|---|---:|---:|---:|---:|---:|
-| solo | 6 | 2,31 s | 3,59 s | 4,70 s | 21,6 |
-| farmer | 6 | 7,25 s | 11,03 s | 20,44 s | 6,6 |
+| workers | format | exécution médiane | p90 | combats/minute |
+|---:|---|---:|---:|---:|
+| 1 | solo | 2,16 s | 4,00 s | 24,1 |
+| 1 | farmer | 6,15 s | 12,53 s | 7,5 |
+| 2 | solo | 3,01 s | 5,13 s | 28,9 |
+| 2 | farmer | 8,28 s | 15,20 s | 9,4 |
 
-Le premier lot paie une compilation froide d'environ 2,2 s, mesurée lors d'un essai antérieur ;
-les lots suivants réutilisent le cache du générateur et affichent zéro. Le débit à deux workers
-n'est pas mesuré. Les combats éleveur portent des tours avortés, ce qui est le comportement
-réel du moteur au plafond d'opérations et reste dans l'échantillon.
+Deux workers rendent environ **+23 %** de débit, pas le double : les JVM se disputent la
+machine, et le temps par combat monte. Les résultats, eux, sont **identiques** aux exécutions
+séquentielles, vérifié sur huit combats, vainqueur et durée compris. C'est ce test qui autorise
+le parallélisme, pas l'espoir.
 
-Ordre de grandeur avec ces chiffres : une vague de quatre candidats jusqu'au finaliste
-représente environ 300 combats candidats, soit à peu près 45 minutes en éleveur à un worker,
-références déjà en cache. Une confirmation de 280 blocs représente 1 120 combats. Ce sont des
-dépenses rendues visibles, pas des prédictions de durée.
+## Deux pièges devenus des tests
 
-## Deux pièges rencontrés pendant la construction
+**Un bundle hors de la racine du générateur ne se charge pas.** Le `NativeFileSystem` du
+compilateur résout depuis sa propre racine. Le combat se lance quand même, l'IA lève à chaque
+tour, et le combat se termine en une fraction de seconde parce qu'il n'a rien calculé : 128
+erreurs par combat pris pour un débit exceptionnel. Nuance apprise en écrivant le test : ce
+n'est pas l'absolu qui casse, un chemin absolu sous la racine fonctionne. La mesure de débit ne
+compte donc que les combats valides, et `test_un_combat_sans_ia_ne_compte_pas` le vérifie.
 
-**Le chemin d'IA doit être relatif à la racine du générateur.** Le `NativeFileSystem` du
-compilateur LeekScript résout depuis sa propre racine. Un chemin absolu ne provoque aucune
-erreur de lancement : le combat se joue et l'IA lève à chaque tour. Symptôme mesuré, 128
-erreurs par combat, 65 tours, quatre dixièmes de seconde. Sans regarder le détail, on prend ça
-pour un débit exceptionnel. Les bundles sont donc matérialisés sous
-`<générateur>/test/ai/bundles/<empreinte>/`.
-
-**Le nom du répertoire d'un bundle est son empreinte.** Le générateur ressert un binaire
-compilé quand un nom a déjà servi. Nommer par l'empreinte rend ce comportement correct : un nom
+**Le nom du répertoire d'un bundle est son empreinte.** Le générateur ressert un binaire compilé
+quand un nom a déjà servi. Nommer par l'empreinte rend ce comportement correct : un nom
 identique signifie un contenu identique.
+
+## Tests
+
+```bash
+python training/tests/test_harnais.py       # 22 tests, instantanés
+python training/tests/test_publication.py   #  3 tests, dépôt git temporaire
+python training/tests/test_reels.py         #  2 tests, joue de vrais combats
+```
+
+Les tests de publication travaillent dans un dépôt jetable avec des résultats **synthétiques
+explicitement étiquetés**, et un garde-fou vérifie qu'aucun d'eux n'a promu quoi que ce soit
+dans le vrai registre.
 
 ## Ce qui vient de l'ancien harnais
 
-Repris de `agent/training-harness-meta-builds` (`f7804cf`) :
+Repris de `agent/training-harness-meta-builds` (`f7804cf`) : `tools/BatchRunner.java` pour sa
+JVM réutilisée et son injection explicite de `fight_type` / `fight_context`, que
+`Scenario.fromFile` ne désérialise pas ; le snapshot de builds ; `RESULTS-2026-08.md` comme
+trace datée, dont les scores **ne sont pas** des mesures du champion actuel. De
+`agent/hybrid-transition-scoring` (`7194277`) : la normalisation des chemins et l'export
+atomique. Son architecture de score de première transition n'est pas importée, et sa branche
+n'est pas touchée.
 
-- `tools/BatchRunner.java` — une JVM pour plusieurs scénarios, et surtout l'injection explicite
-  de `fight_type` / `fight_context`, que `Scenario.fromFile` ne désérialise pas.
-- `data/meta_builds.jsonl` et `collect_meta_builds.py` — le snapshot de builds.
-- `RESULTS-2026-08.md` — journal historique, conservé comme trace datée. **Ses scores ne sont
-  pas des mesures du champion actuel** et ne doivent pas être recyclés comme telles.
+Remplacé : l'ancien contrôle de fraîcheur regardait le mode, le nombre de paires, les tours et
+le fichier de vecteur. Une modification de `Scoring.leek` ne l'invalidait pas.
 
-Repris de `agent/hybrid-transition-scoring` (`7194277`) : la normalisation des chemins en
-absolu, et l'export JSON atomique. Son architecture de score de première transition
-(`TransitionScore.leek`, `TransitionModel.leek`, ses modifications de BFS) **n'est pas
-importée** : c'est une hypothèse de scoring à tester séparément, pas un composant du harnais.
-Cette branche est conservée, rien n'y est supprimé.
+Abandonné : le plancher de cœurs, les combats tronqués, les seuils de coût, et la fitness fondée
+sur la vie restante. Le critère est l'issue officielle du moteur.
 
-Remplacés, et pourquoi : `report_is_current()` vérifiait le mode, le nombre de paires, les
-tours et le fichier de vecteur, mais pas l'intégralité du code. Une modification de
-`Scoring.leek` ne l'invalidait pas. La clé de match porte désormais les bundles complets de
-toutes les politiques, le scénario résolu, le moteur, le runner et la version du parseur.
-
-Abandonnés de l'ancien protocole : le plancher de cœurs, les combats tronqués à trois tours,
-les seuils de coût ×2/×3, et la fitness fondée sur la vie restante. Le critère est l'issue
-officielle du moteur ; la vie restante ne sert qu'au diagnostic.
-
-## Décisions structurantes
+## Décisions structurantes, et ce qu'elles coûtent
 
 **Aucun audit de coupe, aucun veto sur le coût en opérations.** Le harnais sélectionne la
-performance de l'ensemble scoring plus élagage sous budget réel. Conséquence assumée : il ne
-certifie pas l'admissibilité mathématique de la borne, et il ne distinguera pas toujours une
-mauvaise idée de scoring d'une coupe qui la pénalise.
-
-**Cœurs réels dès la sélection.** Un scoring plus cher perd de la recherche, et c'est le
-combat qui doit le facturer.
+performance de l'ensemble scoring plus élagage sous budget réel. Il ne certifie pas
+l'admissibilité de la borne, et il ne distinguera pas toujours une mauvaise idée de scoring
+d'une coupe qui la pénalise.
 
 **La team est synthétique.** Deux éleveurs de deux poireaux par camp, composés depuis le
-snapshot du méta. Aucune donnée de la team réellement jouée n'existe ici, et le format le
-déclare. Ne pas présenter ses résultats comme représentatifs de la vraie team.
+snapshot. Aucune donnée de la team réellement jouée n'existe ici.
 
-**Les dix politiques de la ligue sont un ensemble de validation, pas un test éternel.** Des
-graines neuves limitent la spécialisation aux scénarios, pas aux adversaires eux-mêmes. Dès
-qu'un audit informe une retouche, il participe à la sélection.
+**Les empreintes de répertoire et de commit vivent dans des domaines séparés.** Un même code
+matérialisé sur disque et lu depuis Git ne donne pas la même empreinte, les fins de ligne
+différant. La détection de doublons ne rapproche donc pas une politique de la ligue de l'ancre
+historique, même si leur code est identique.
+
+**Les dix politiques sont un ensemble de validation, pas un test éternel.** Des graines neuves
+limitent la spécialisation aux scénarios, pas aux adversaires eux-mêmes.
