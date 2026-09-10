@@ -1,0 +1,228 @@
+{
+  "_avertissement": "EXEMPLE DE FORME. Les nombres sont tires au hasard pour montrer la structure d'un rapport ; aucun combat ne les a produits.",
+  "candidat": {
+    "id": "cand-0001",
+    "parent": "champion-000",
+    "commit_code": "(a remplir par register-candidate)",
+    "bundle_sha256": "(a remplir)",
+    "hypothese": "Rendre le canal d'horizon plus sensible aux morts imminentes.",
+    "portee": [
+      "New_AI/Scoring/Weights.leek"
+    ],
+    "verdict_portee": "DANS_PORTEE"
+  },
+  "protocole": {
+    "etape": "confirmation",
+    "champion_compare": "champion-000",
+    "alpha_par_confirmation": 0.005,
+    "seuil_pratique_farmer": 0.01,
+    "poids": {
+      "farmer": 0.8,
+      "solo": 0.15,
+      "team": 0.05
+    },
+    "planchers_empiriques": {
+      "solo": -0.05,
+      "team": -0.05
+    },
+    "graines": "neuves, tirees apres le gel du candidat",
+    "coeurs": "reels",
+    "tours_max": 64,
+    "note": "Taille figee AVANT les resultats. Une seule decision, aucune prolongation."
+  },
+  "comptes": {
+    "propositions_generees": 4,
+    "candidats_compiles": 4,
+    "candidats_cribles": 1,
+    "confirmations_lancees": 1,
+    "confirmations_inconclusives": 0,
+    "promotions": 0
+  },
+  "resultats": {
+    "farmer": {
+      "blocs_total": 160,
+      "adversaires": 10,
+      "delta_moyen": 0.062,
+      "borne_basse_unilaterale": 0.0001,
+      "degres_de_liberte_welch": 137.6,
+      "par_adversaire": {
+        "v01": {
+          "n": 16,
+          "moyenne": 0.0659,
+          "ecart_type": 0.2129
+        },
+        "v02": {
+          "n": 16,
+          "moyenne": 0.0159,
+          "ecart_type": 0.2322
+        },
+        "v03": {
+          "n": 16,
+          "moyenne": 0.1421,
+          "ecart_type": 0.349
+        },
+        "v04": {
+          "n": 16,
+          "moyenne": 0.0199,
+          "ecart_type": 0.3543
+        },
+        "v05": {
+          "n": 16,
+          "moyenne": -0.0138,
+          "ecart_type": 0.301
+        },
+        "v06": {
+          "n": 16,
+          "moyenne": 0.1797,
+          "ecart_type": 0.3063
+        },
+        "v07": {
+          "n": 16,
+          "moyenne": -0.0039,
+          "ecart_type": 0.2428
+        },
+        "v08": {
+          "n": 16,
+          "moyenne": 0.1402,
+          "ecart_type": 0.3091
+        },
+        "v09": {
+          "n": 16,
+          "moyenne": 0.0931,
+          "ecart_type": 0.3127
+        },
+        "v10": {
+          "n": 16,
+          "moyenne": -0.0189,
+          "ecart_type": 0.3393
+        }
+      }
+    },
+    "solo": {
+      "blocs_total": 60,
+      "adversaires": 10,
+      "delta_moyen": 0.0189,
+      "borne_basse_unilaterale": -0.095,
+      "degres_de_liberte_welch": 41.6,
+      "par_adversaire": {
+        "v01": {
+          "n": 6,
+          "moyenne": -0.0018,
+          "ecart_type": 0.2768
+        },
+        "v02": {
+          "n": 6,
+          "moyenne": -0.1028,
+          "ecart_type": 0.4072
+        },
+        "v03": {
+          "n": 6,
+          "moyenne": 0.1105,
+          "ecart_type": 0.3422
+        },
+        "v04": {
+          "n": 6,
+          "moyenne": 0.1013,
+          "ecart_type": 0.3103
+        },
+        "v05": {
+          "n": 6,
+          "moyenne": -0.0992,
+          "ecart_type": 0.4039
+        },
+        "v06": {
+          "n": 6,
+          "moyenne": 0.0133,
+          "ecart_type": 0.2939
+        },
+        "v07": {
+          "n": 6,
+          "moyenne": -0.0075,
+          "ecart_type": 0.3031
+        },
+        "v08": {
+          "n": 6,
+          "moyenne": -0.0128,
+          "ecart_type": 0.1718
+        },
+        "v09": {
+          "n": 6,
+          "moyenne": 0.0777,
+          "ecart_type": 0.2367
+        },
+        "v10": {
+          "n": 6,
+          "moyenne": 0.1103,
+          "ecart_type": 0.4299
+        }
+      }
+    },
+    "team": {
+      "blocs_total": 60,
+      "adversaires": 10,
+      "delta_moyen": 0.039,
+      "borne_basse_unilaterale": -0.0705,
+      "degres_de_liberte_welch": 33.2,
+      "par_adversaire": {
+        "v01": {
+          "n": 6,
+          "moyenne": 0.112,
+          "ecart_type": 0.329
+        },
+        "v02": {
+          "n": 6,
+          "moyenne": 0.0392,
+          "ecart_type": 0.2697
+        },
+        "v03": {
+          "n": 6,
+          "moyenne": 0.0858,
+          "ecart_type": 0.2713
+        },
+        "v04": {
+          "n": 6,
+          "moyenne": 0.069,
+          "ecart_type": 0.3365
+        },
+        "v05": {
+          "n": 6,
+          "moyenne": 0.3357,
+          "ecart_type": 0.3092
+        },
+        "v06": {
+          "n": 6,
+          "moyenne": -0.1953,
+          "ecart_type": 0.1449
+        },
+        "v07": {
+          "n": 6,
+          "moyenne": 0.0067,
+          "ecart_type": 0.2238
+        },
+        "v08": {
+          "n": 6,
+          "moyenne": 0.125,
+          "ecart_type": 0.5309
+        },
+        "v09": {
+          "n": 6,
+          "moyenne": -0.1422,
+          "ecart_type": 0.3245
+        },
+        "v10": {
+          "n": 6,
+          "moyenne": -0.0457,
+          "ecart_type": 0.2029
+        }
+      }
+    }
+  },
+  "decision": {
+    "verdict": "PROMOUVOIR",
+    "raisons": [
+      "toutes les conditions sont remplies ; la borne reste une approximation de Student et ne certifie pas une superiorite sur tout le jeu."
+    ],
+    "objectif_pondere": 0.0544,
+    "borne_basse_objectif": 0.0021
+  }
+}
