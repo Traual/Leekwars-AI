@@ -91,6 +91,47 @@ def materialiser(commit: str, destination: Path) -> Path:
     return destination
 
 
+# --------------------------------------------------------------------------------------
+# Bundles qui ne viennent pas de Git
+# --------------------------------------------------------------------------------------
+
+def empreinte_repertoire(racine: Path) -> dict:
+    """Empreinte d'un arbre d'IA present sur disque, meme forme que celle d'un commit.
+
+    Les dix politiques de la ligue sont des repertoires materialises, pas des commits. On hache
+    donc les OCTETS des fichiers tels qu'ils sont : ces arbres ne passent pas par un checkout
+    Git, donc aucune reecriture de fin de ligne ne peut les faire varier d'une machine a
+    l'autre. La forme du resultat est identique a celle d'`empreinte`, pour que les deux
+    origines se melangent sans cas particulier en aval.
+    """
+    racine = Path(racine)
+    fichiers = sorted(p for p in racine.rglob("*") if p.is_file())
+    if not fichiers:
+        raise ValueError("repertoire de bundle vide : %s" % racine)
+    h = hashlib.sha256()
+    for p in fichiers:
+        rel = str(p.relative_to(racine)).replace("\\", "/")
+        h.update(rel.encode("utf-8") + b"\0"
+                 + hashlib.sha256(p.read_bytes()).hexdigest().encode() + b"\n")
+    return {"commit": None, "arbre_git": None, "source": str(racine),
+            "sha256": h.hexdigest(), "nb_fichiers": len(fichiers)}
+
+
+def copier(racine_source: Path, destination: Path) -> Path:
+    """Copie un arbre sur disque, avec la meme discipline que `materialiser` : rien n'est
+    ecrit sous un chemin deja complet, et la destination n'apparait qu'une fois entiere."""
+    import shutil
+    destination = Path(destination)
+    if destination.exists():
+        return destination
+    provisoire = destination.with_name(destination.name + ".partiel")
+    if provisoire.exists():
+        shutil.rmtree(provisoire)
+    shutil.copytree(Path(racine_source), provisoire)
+    provisoire.rename(destination)
+    return destination
+
+
 if __name__ == "__main__":
     import json
     import sys
