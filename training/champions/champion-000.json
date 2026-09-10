@@ -1,0 +1,36 @@
+{
+  "id": "champion-000",
+  "statut": "baseline",
+  "_statut_explique": "Point de depart du laboratoire. N'a gagne aucun tournoi : aucune comparaison n'a encore ete jouee.",
+  "enregistre_le": "2026-09-10T21:17:49+02:00",
+  "code": {
+    "commit_source": "3b3b0fd862b1829b08ea624b2fee17bbdd040fa0",
+    "branche_source": "main",
+    "sujet_du_commit": "caches: la couverture de soin et l'invalidation portent le montant d'Adrenaline",
+    "date_du_commit": "2026-09-10T12:39:18+02:00",
+    "arbre_git_New_AI": "203028d94d9ac068f8171de0d6bca51ac5d9abc4",
+    "bundle_sha256": "f74673365897f79c88aee94843069e8dc3971a8a96a98ae2e2632accc8176935",
+    "nb_fichiers": 39,
+    "methode_empreinte": "sha256 sur la concatenation, triee par chemin, de '<chemin>\u0000<sha256 du contenu du blob>\n'. Les contenus viennent des OBJETS GIT (git cat-file), pas de l'arbre de travail : le resultat est donc insensible a core.autocrlf et reproductible sur n'importe quel clone. Le chemin est relatif a la racine du depot, separateurs '/'. Recalculable par training/bundle.py.",
+    "_note_reference": "Ce manifeste designe le commit du CODE, pas le commit qui le contient : un manifeste ne peut pas porter sa propre empreinte. Le tag annote scoring/champion-000 marque le commit de tracabilite."
+  },
+  "provenance": {
+    "origine": "Contenu exact de New_AI/ sur main apres la fusion de recherche-majorant, faite le 2026-09-10. Aucune adaptation du harnais n'est presente dans ce commit.",
+    "sha_attendu_par_le_cahier_des_charges": "3b3b0fd862b1829b08ea624b2fee17bbdd040fa0",
+    "main_a_t_il_avance_depuis": false
+  },
+  "environnement": {
+    "_pourquoi_vide": "Un champion est une politique, pas une campagne. Le moteur, les builds, les cœurs et les graines sont verrouilles par le manifeste de campagne, qui seul les mesure. Les renseigner ici donnerait l'illusion que ce champion a ete evalue dans ces conditions.",
+    "commit_generateur": null,
+    "revision_leekscript": null,
+    "empreinte_jar_moteur": null,
+    "version_jdk": null,
+    "snapshot_builds": null
+  },
+  "resultats": {
+    "_pourquoi_vide": "Aucun combat n'a ete joue pour etablir ce champion. Il est la reference initiale par construction, pas par mesure.",
+    "par_format": null,
+    "protocole": null,
+    "champion_precedent": null
+  }
+}
