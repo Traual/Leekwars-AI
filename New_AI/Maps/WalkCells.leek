@@ -192,13 +192,14 @@ class WalkCellsClass {
 	 * exclu ici, et aucun gain ajoute plus bas ne pouvait le rouvrir.
 	 * Facteur critique d'AVANT deplacement : c'est l'ordre qui maximise le budget de marche. */
 	static dangerTpOf(stats) {
-		var crit = DangerComboClass.critFactorOf(stats)
-		var key = (stats.ID << 13) | ((crit > 1 ? 1 : 0) << 12) | max(0, stats.TOTAL_TP)
-		if (key in DANGER_MOVE_TP_CACHE) return DANGER_MOVE_TP_CACHE[key]
-		var tp = stats.TOTAL_TP
+		// Sans cache, DELIBEREMENT : la seule cle exacte porterait le montant deja au ledger,
+		// qu'il faudrait lire pour la construire — le cache couterait alors sa propre cle plus
+		// une lecture de map. Ce qui est cher, la remontee des cooldowns, est cache un cran
+		// plus bas, et ce qui reste ici est nul pour qui ne porte aucun de ces items.
 		var prof = EntityDangerClass.selfTpProfileOf(stats)
-		if (prof != null && tp >= prof[1]) tp += EntityDangerClass.selfTpGainAt(prof, crit)
-		DANGER_MOVE_TP_CACHE[key] = tp
+		if (prof == null) return stats.TOTAL_TP
+		var tp = stats.TOTAL_TP
+		if (tp >= prof[1]) tp += EntityDangerClass.selfTpGainAt(prof, DangerComboClass.critFactorOf(stats))
 		return tp
 	}
 

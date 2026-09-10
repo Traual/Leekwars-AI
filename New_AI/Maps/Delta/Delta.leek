@@ -270,6 +270,10 @@ class DeltaClass {
         // désormais sa propre classe. Sans elle, un buff/shackle d'AGI traversant un seuil en
         // branche servirait du danger stale.
         var critClass = DangerComboClass.critClassOf(stat.AGILITY)
-        return mix64(mix64Memo((id << 10) | stat.CELL) ^ ((critClass << 60) | (max(0, stat.STRENGTH) << 48) | (max(0, stat.MAGIC) << 36) | (max(0, stat.TOTAL_MP) << 24) | (max(0, stat.TOTAL_TP) << 12) | stat.POWER))
+        // Le TP total ne dit pas D'OU viennent les TP, et le danger en depend : une Adrénaline
+        // déjà posée ne se relance pas, un autre buff de même valeur si. Sans ce terme, deux
+        // branches de même total partagent plan et danger, et la première lue sert la seconde.
+        // Nul — donc empreinte inchangée au bit près — pour qui ne porte aucun de ces items.
+        return mix64(mix64Memo((id << 10) | stat.CELL) ^ EntityDangerClass.selfTpHeldTermOf(stat) ^ ((critClass << 60) | (max(0, stat.STRENGTH) << 48) | (max(0, stat.MAGIC) << 36) | (max(0, stat.TOTAL_MP) << 24) | (max(0, stat.TOTAL_TP) << 12) | stat.POWER))
     }
 }

@@ -214,12 +214,13 @@ class EntityDangerClass {
 	 *    Chiffre sur douze combats a jeu identique : +2,53 % des operations de toute l'IA,
 	 *    contre +0,59 % pour la seule voie des TP. Faisable aussi, si le budget le permet.
 	 */
-	static selfTpProfileOf(EntityStats) {
-		// Cle (id, TP total) : le seul champ qui bouge est ce que le porteur a DEJA au ledger,
-		// et poser une ligne d'auto-buff chez lui change forcement son TP total. Ni son
-		// inventaire ni ses cooldowns ne bougent pendant mon tour.
-		var key = (EntityStats.ID << 12) | max(0, EntityStats.TOTAL_TP)
-		if (key in DANGER_SELF_TP_CACHE) return DANGER_SELF_TP_CACHE[key]
+	/* La partie INVARIANTE du tour : ce que l'inventaire du porteur peut lui rapporter, et ce
+	 * qu'il doit avancer. Ni son inventaire ni ses cooldowns ne bougent pendant mon tour, d'ou
+	 * le cache par identifiant seul — c'est aussi la partie chere, une remontee de cooldown
+	 * par item. Rend null pour qui ne porte aucun auto-buff de TP, soit presque tout le monde. */
+	static selfTpItemsOf(EntityStats) {
+		var h = EntityStats.ID
+		if (h in DANGER_SELF_TP_CACHE) return DANGER_SELF_TP_CACHE[h]
 		var raw = 0
 		var cost = 0
 		var items = null
@@ -234,24 +235,57 @@ class EntityDangerClass {
 			if (items == null) items = [: ]
 			items[i] = true
 		}
-		var _final = null
-		if (raw > 0) {
-			// Ce que le porteur touche DEJA de ces memes items. L'auto-buff n'est pas cumulable :
-			// le moteur retire la ligne de meme type et meme item, quel qu'en soit le lanceur,
-			// avant de poser la neuve (Effect.createEffect:240). Relancer ne rapporte donc que la
-			// DIFFERENCE, et le cast se paie quand meme.
-			// Une ligne mourante est comptee comme vivante : son porteur garde alors son TP total
-			// gonfle, et le net rendu est trop bas d'exactement le cout du cast. Un tour d'ecart
-			// dans le sens PRUDENT, contre un suivi d'echeance qu'aucune cle ne porte.
-			var held = 0
-			for (var eff in EntityStats.EFFECTS) {
-				if (eff[0] != EFFECT_RAW_BUFF_TP) continue
-				if (eff[5] in items) held += eff[1]
-			}
-			_final = [raw, cost, held]
-		}
-		DANGER_SELF_TP_CACHE[key] = _final
+		var _final = (raw > 0) ? [raw, cost, items] : null
+		DANGER_SELF_TP_CACHE[h] = _final
 		return _final
+	}
+
+	/*
+	 * Ce que le porteur touche DEJA de ces memes items — SOURCE UNIQUE, et une ENTREE a part
+	 * entiere de tout ce qui en depend.
+	 *
+	 * L'auto-buff n'est pas cumulable : le moteur retire la ligne de meme type et meme item,
+	 * quel qu'en soit le lanceur, avant de poser la neuve (Effect.createEffect:240). Relancer
+	 * ne rapporte donc que la DIFFERENCE, et le cast se paie quand meme.
+	 *
+	 * Ce montant NE SE DEDUIT PAS du TP total : Adrenaline +5 et Rage +5 donnent le meme total
+	 * et des budgets differents — 17 en gardant sa ligne, 21 en lancant la sienne. Il entre
+	 * donc dans les cles ET dans les empreintes, sans quoi deux branches se servent l'une
+	 * l'autre selon l'ordre de lecture.
+	 *
+	 * Le ledger est relu ICI et nulle part ailleurs : la lecture est courte, elle est NULLE
+	 * pour qui ne porte aucun de ces items, et aucun combo ne la paie.
+	 *
+	 * Une ligne MOURANTE est comptee comme vivante — arbitrage assume, pas de suivi
+	 * d'echeance. L'ecart n'est pas borne et n'est pas toujours prudent : une ligne critique de
+	 * +7 qui tombe avant le tour projete fait garder 19 la ou le moteur donnera 16.
+	 */
+	static selfTpHeldOf(EntityStats) {
+		var it = selfTpItemsOf(EntityStats)
+		if (it == null) return 0
+		var items = it[2]
+		var held = 0
+		for (var eff in EntityStats.EFFECTS) {
+			if (eff[0] != EFFECT_RAW_BUFF_TP) continue
+			if (eff[5] in items) held += eff[1]
+		}
+		return held
+	}
+
+	/* Terme d'empreinte du montant deja porte : zero quand il n'y en a pas, donc les
+	 * empreintes du cas courant restent bit pour bit celles d'avant. Multiplie et non
+	 * concatene : il n'y a plus de bit libre dans ces packs, et le produit entre de toute
+	 * facon dans un mix64 derriere. */
+	static selfTpHeldTermOf(EntityStats) {
+		var held = selfTpHeldOf(EntityStats)
+		return held == 0 ? 0 : held * MIX_B
+	}
+
+	/* [brut, cout, deja porte] du porteur, ou null s'il n'a aucun auto-buff de TP jouable. */
+	static selfTpProfileOf(EntityStats) {
+		var it = selfTpItemsOf(EntityStats)
+		if (it == null) return null
+		return [it[0], it[1], selfTpHeldOf(EntityStats)]
 	}
 
 	/* TP REELLEMENT recus si le buff part avec ce facteur critique (EffectRawBuffTP :

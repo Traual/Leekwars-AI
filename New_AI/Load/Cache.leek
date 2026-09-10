@@ -40,7 +40,6 @@ function ReloadCacheNewTurn() {
     // et leur clé ne porte pas les cooldowns : les deux se rafraîchissent ensemble.
     DANGER_ENTITY_INVENTORY = [: ]
     DANGER_SELF_TP_CACHE = [: ]
-    DANGER_MOVE_TP_CACHE = [: ]
     DANGER_ENTITY_CACHE = [: ]
     DANGER_TEMPLATE_CACHE = [: ]
 
@@ -304,12 +303,11 @@ global DANGER_ENTITY_CACHE = [: ]
 // filtrée par cooldown au moment du calcul.
 global DANGER_TEMPLATE_CACHE = [: ]
 global DANGER_ENTITY_INVENTORY = [: ]
-// [(id, TP total) -> [brut, cout, deja porte]] des auto-buffs de TP du porteur, null quand
-// il n'en a aucun. Ni son inventaire ni ses cooldowns ne bougent pendant mon tour ; ce qu'il
-// porte deja, si, mais poser une de ces lignes change forcement son TP total.
+// [id -> [brut, cout, items]] des auto-buffs de TP JOUABLES du porteur, null quand il n'en a
+// aucun. Partie INVARIANTE du tour : ni son inventaire ni ses cooldowns ne bougent pendant
+// le mien. Ce qu'il PORTE deja, lui, bouge en branche et se relit au ledger — il ne se
+// deduit pas du TP total, deux buffs de meme valeur ne donnant pas le meme budget.
 global DANGER_SELF_TP_CACHE = [: ]
-// [(id, classe de critique, TP total) -> TP disponibles pour SE DEPLACER]
-global DANGER_MOVE_TP_CACHE = [: ]
 
 // Résultat ENTIER de l'évaluation terminale [cellule, pénalité, net], clé = la signature
 // complète des entrées de FinalCell.evaluate. Le reclassement rouvre deux fois sur trois un
