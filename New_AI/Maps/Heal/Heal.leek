@@ -47,6 +47,12 @@ class HealClass {
         // son AGI par seuils, et un palier sauteur y ajoute les 100 AGI de Saut — d'où les
         // cinq classes. Sans ces bits, un buff/shackle d'AGI traversant un seuil en branche
         // servirait une couverture stale.
+        // LIMITE ASSUMÉE : WIS + 100 occupe douze bits, donc à partir de 3996 de sagesse il
+        // déborde sur la classe critique et deux soigneurs de classes différentes rendent la
+        // MÊME empreinte. Ce n'est pas une collision probabiliste, c'est un recouvrement exact.
+        // Aucun build ne s'en approche aujourd'hui. Le jour où ces valeurs deviennent jouables,
+        // il faudra séparer les deux champs : écraser ou plafonner la sagesse encodée ne
+        // suffirait pas, deux sagesses distinctes soignant vraiment différemment.
         var critClass = DangerComboClass.critClassOf(stat.AGILITY)
         // Clé WIS = max(0, WIS + 100) : le facteur moteur est max(0, 1 + WIS/100), donc -50
         // (soigne 50%) doit se distinguer de 0 (100%) ; -100 et -150 partagent 0 (facteur nul).
