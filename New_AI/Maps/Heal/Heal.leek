@@ -186,7 +186,9 @@ class HealClass {
         // Résolu ICI, une fois par couverture, jamais par cellule.
         var tierTp = [0, 0, 0, 0]
         var prof = EntityDangerClass.selfTpProfileOf(casterStats)
-        var totTp = casterStats.TOTAL_TP
+        // Même règle que le danger : ce qu'une ligne mourante ajoute au TP capturé aura
+        // disparu quand ce soigneur agira.
+        var totTp = (prof == null) ? casterStats.TOTAL_TP : casterStats.TOTAL_TP - prof[3]
         for (var t = 0; t < 4; t++) {
             var moveCost = WalkCellsClass.dangerLayerTpCost(t)
             tierTp[t] = moveCost
@@ -201,7 +203,7 @@ class HealClass {
                 var gB = EntityDangerClass.selfTpValueAt(prof, crits[t]) - prof[2] - prof[1]
                 if (gB > best) best = gB
             }
-                tierTp[t] = moveCost - best
+                tierTp[t] = moveCost - best + prof[3]
         }
 
         // Part du caster dans la clé de combo : INVARIANTE sur toutes les cellules et sur les

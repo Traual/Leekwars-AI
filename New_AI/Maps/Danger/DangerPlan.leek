@@ -264,7 +264,9 @@ class DangerPlanClass {
 				// Chacun a sa condition de paiement, et on garde le meilleur RÉELLEMENT payable.
 				tierTp = [0, 0, 0, 0]
 				var prof = EntityDangerClass.selfTpProfileOf(stat)
-				var totTp = stat.TOTAL_TP
+				// Le budget de depart n'est pas le TP capture : ce qu'une ligne mourante y ajoute
+				// aura disparu quand ce caster agira, et il repart donc dans le cout du palier.
+				var totTp = (prof == null) ? stat.TOTAL_TP : stat.TOTAL_TP - prof[3]
 				for (var t = 0; t < 4; t++) {
 					var moveCost = WalkCellsClass.dangerLayerTpCost(t)
 					tierTp[t] = moveCost
@@ -281,7 +283,7 @@ class DangerPlanClass {
 						var gB = EntityDangerClass.selfTpValueAt(prof, tierCrit[t]) - prof[2] - prof[1]
 						if (gB > best) best = gB
 					}
-					tierTp[t] = moveCost - best
+					tierTp[t] = moveCost - best + prof[3]
 				}
 				for (var t = 0; t < 4; t++) {
 					if (!WalkCellsClass.dangerTierAvailable(stat, t)) continue

@@ -198,7 +198,8 @@ class WalkCellsClass {
 		// plus bas, et ce qui reste ici est nul pour qui ne porte aucun de ces items.
 		var prof = EntityDangerClass.selfTpProfileOf(stats)
 		if (prof == null) return stats.TOTAL_TP
-		var tp = stats.TOTAL_TP
+		// Ce qui TOMBE est encore dans le TP total capture et n'y sera plus quand il agira.
+		var tp = stats.TOTAL_TP - prof[3]
 		if (tp >= prof[1]) tp += EntityDangerClass.selfTpGainAt(prof, DangerComboClass.critFactorOf(stats))
 		return tp
 	}

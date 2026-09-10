@@ -256,20 +256,35 @@ class EntityDangerClass {
 	 * Le ledger est relu ICI et nulle part ailleurs : la lecture est courte, elle est NULLE
 	 * pour qui ne porte aucun de ces items, et aucun combo ne la paie.
 	 *
-	 * Une ligne MOURANTE est comptee comme vivante — arbitrage assume, pas de suivi
-	 * d'echeance. L'ecart n'est pas borne et n'est pas toujours prudent : une ligne critique de
-	 * +7 qui tombe avant le tour projete fait garder 19 la ou le moteur donnera 16.
+	 * Une ligne qui ne sera PLUS LA quand le porteur agit est comptee a part : elle ne se
+	 * remplace pas, et son montant quitte le budget. La datation n'est pas celle des
+	 * echeances de bouclier, qui demandent si la ligne tombe PENDANT la fenetre ; ici la
+	 * question est si elle tient jusqu'a l'ACTION. Le lanceur la decremente une fois d'ici la
+	 * s'il rejoue avant le porteur, ou s'il EST le porteur — dans un meme debut de tour, le
+	 * retrait precede l'action. Lanceur hors de l'ordre de tour : personne ne la decremente,
+	 * elle tient.
+	 *
+	 * Rend (ce qui tombe << 16) | ce qui tient. Packe et non alloue : les deux empreintes
+	 * appellent cette fonction.
 	 */
 	static selfTpHeldOf(EntityStats) {
 		var it = selfTpItemsOf(EntityStats)
 		if (it == null) return 0
 		var items = it[2]
-		var held = 0
+		var alive = 0
+		var dying = 0
+		var bearerOrder = EntityStats.TURN_ORDER
+		var myOrder = MY_TURN_ORDER
 		for (var eff in EntityStats.EFFECTS) {
 			if (eff[0] != EFFECT_RAW_BUFF_TP) continue
-			if (eff[5] in items) held += eff[1]
+			if (!(eff[5] in items)) continue
+			var co = (eff[2] in TURN_ORDER_BY_ID) ? TURN_ORDER_BY_ID[eff[2]] : 0
+			var tours = 0
+			if (co > 0) tours = (co == bearerOrder || EntityStateClass.nextTurnBefore(co, bearerOrder, myOrder)) ? 1 : 0
+			if (eff[3] <= tours) dying += eff[1]
+			else alive += eff[1]
 		}
-		return held
+		return (dying << 16) | alive
 	}
 
 	/* Terme d'empreinte du montant deja porte : zero quand il n'y en a pas, donc les
@@ -277,15 +292,18 @@ class EntityDangerClass {
 	 * concatene : il n'y a plus de bit libre dans ces packs, et le produit entre de toute
 	 * facon dans un mix64 derriere. */
 	static selfTpHeldTermOf(EntityStats) {
-		var held = selfTpHeldOf(EntityStats)
-		return held == 0 ? 0 : held * MIX_B
+		var pack = selfTpHeldOf(EntityStats)
+		return pack == 0 ? 0 : pack * MIX_B
 	}
 
-	/* [brut, cout, deja porte] du porteur, ou null s'il n'a aucun auto-buff de TP jouable. */
+	/* [brut, cout, ce qui TIENT, ce qui TOMBE] du porteur, null s'il n'a aucun auto-buff de
+	 * TP jouable. Ce qui tombe est deja compte dans son TP total et n'y sera plus : tout
+	 * consommateur doit le retirer du budget avant de raisonner. */
 	static selfTpProfileOf(EntityStats) {
 		var it = selfTpItemsOf(EntityStats)
 		if (it == null) return null
-		return [it[0], it[1], selfTpHeldOf(EntityStats)]
+		var pack = selfTpHeldOf(EntityStats)
+		return [it[0], it[1], pack & 65535, pack >> 16]
 	}
 
 	/* TP REELLEMENT recus si le buff part avec ce facteur critique (EffectRawBuffTP :
@@ -294,9 +312,9 @@ class EntityDangerClass {
 		return round(Profile[0] * Crit)
 	}
 
-	/* Gain NET du cast : ce qu'il recoit, moins ce qu'il perd en remplacant sa ligne, moins
-	 * son cout. Planche a zero — ne PAS le lancer reste une option, et c'est la bonne des
-	 * que la ligne en place vaut deja autant. */
+	/* Gain NET du cast : ce qu'il recoit, moins ce qu'il perd en remplacant la ligne qui TIENT
+	 * (une ligne qui tombe ne se remplace pas), moins son cout. Planche a zero — ne PAS le
+	 * lancer reste une option, et c'est la bonne des que la ligne en place vaut deja autant. */
 	static selfTpGainAt(Profile, Crit) {
 		var g = selfTpValueAt(Profile, Crit) - Profile[2] - Profile[1]
 		return g > 0 ? g : 0
