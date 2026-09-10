@@ -182,7 +182,24 @@ class WalkCellsClass {
 	 * qu'elle est atteinte d'un pas. Elle a donc sa propre couche, comme pour Me. */
 	static teleNextTurn(stats) {
 		var cd = teleCdOf(stats)
-		return cd >= 0 && cd <= 1 && stats.TOTAL_TP >= TELE_COST
+		return cd >= 0 && cd <= 1 && dangerTpOf(stats) >= TELE_COST
+	}
+
+	/* TP dont l'entite dispose pour SE DEPLACER au prochain tour : ses TP rechargés, plus ce
+	 * qu'un auto-buff de TP rentable lui rapporte net. Le buff se lance AVANT le
+	 * franchissement — le moteur ne l'interdit pas — donc il peut le financer : a 8 TP,
+	 * Adrenaline en rend 12 et la Teleportation devient jouable. Sans cela le palier etait
+	 * exclu ici, et aucun gain ajoute plus bas ne pouvait le rouvrir.
+	 * Facteur critique d'AVANT deplacement : c'est l'ordre qui maximise le budget de marche. */
+	static dangerTpOf(stats) {
+		var crit = DangerComboClass.critFactorOf(stats)
+		var key = (stats.ID << 13) | ((crit > 1 ? 1 : 0) << 12) | max(0, stats.TOTAL_TP)
+		if (key in DANGER_MOVE_TP_CACHE) return DANGER_MOVE_TP_CACHE[key]
+		var tp = stats.TOTAL_TP
+		var prof = EntityDangerClass.selfTpProfileOf(stats)
+		if (prof != null && tp >= prof[1]) tp += EntityDangerClass.selfTpGainAt(prof, crit)
+		DANGER_MOVE_TP_CACHE[key] = tp
+		return tp
 	}
 
 	/* Budget de MARCHE du prochain tour. Les capacites de franchissement n'y entrent plus :
@@ -198,7 +215,7 @@ class WalkCellsClass {
 	static dangerLayerOf(stats) {
 		var t = teleNextTurn(stats)
 		var j = canJumpNextTurn(stats)
-		if (t && j && stats.TOTAL_TP >= JUMP_TELE_COST) return 3
+		if (t && j && dangerTpOf(stats) >= JUMP_TELE_COST) return 3
 		if (t) return 2
 		if (j) return 1
 		return 0
@@ -209,7 +226,7 @@ class WalkCellsClass {
 	 * avec canJump (TP réellement restants), qui reste le filtre du BFS de Me. */
 	static canJumpNextTurn(stats) {
 		var cd = jumpCdOf(stats)
-		return cd >= 0 && cd <= 1 && stats.TOTAL_TP >= JUMP_COST
+		return cd >= 0 && cd <= 1 && dangerTpOf(stats) >= JUMP_COST
 	}
 
 	static getMaxWalkOrJumpNoEntitiesFull(stats) {
@@ -233,7 +250,7 @@ class WalkCellsClass {
 		if (tier == 0) return true
 		if (tier == 1) return canJumpNextTurn(stats)
 		if (tier == 2) return teleNextTurn(stats)
-		return teleNextTurn(stats) && canJumpNextTurn(stats) && stats.TOTAL_TP >= JUMP_TELE_COST
+		return teleNextTurn(stats) && canJumpNextTurn(stats) && dangerTpOf(stats) >= JUMP_TELE_COST
 	}
 
 	static getDangerLayerCells(stats, layer) {

@@ -214,31 +214,58 @@ class EntityDangerClass {
 	 *    Chiffre sur douze combats a jeu identique : +2,53 % des operations de toute l'IA,
 	 *    contre +0,59 % pour la seule voie des TP. Faisable aussi, si le budget le permet.
 	 */
-	static selfTpPackOf(EntityStats) {
-		var h = EntityStats.ID
-		if (h in DANGER_SELF_TP_CACHE) return DANGER_SELF_TP_CACHE[h]
-		var net = 0
+	static selfTpProfileOf(EntityStats) {
+		// Cle (id, TP total) : le seul champ qui bouge est ce que le porteur a DEJA au ledger,
+		// et poser une ligne d'auto-buff chez lui change forcement son TP total. Ni son
+		// inventaire ni ses cooldowns ne bougent pendant mon tour.
+		var key = (EntityStats.ID << 12) | max(0, EntityStats.TOTAL_TP)
+		if (key in DANGER_SELF_TP_CACHE) return DANGER_SELF_TP_CACHE[key]
+		var raw = 0
 		var cost = 0
+		var items = null
 		for (var i in EntityStats.INVENTORY) {
 			var inf = ITEMINFO[i]
 			// Test le plus selectif d'abord : un seul item du jeu passe, inutile de remonter la
 			// chaine de cooldowns pour tous les autres.
-			if (inf.SELF_TP_NET == 0) continue
+			if (inf.SELF_TP_RAW == 0) continue
 			if (StateClass.cooldownOf(EntityStats, i) > 1) continue
-			net += inf.SELF_TP_NET
+			raw += inf.SELF_TP_RAW
 			cost += inf.SELF_TP_COST
+			if (items == null) items = [: ]
+			items[i] = true
 		}
-		var _final = (cost << 16) | net
-		DANGER_SELF_TP_CACHE[h] = _final
+		var _final = null
+		if (raw > 0) {
+			// Ce que le porteur touche DEJA de ces memes items. L'auto-buff n'est pas cumulable :
+			// le moteur retire la ligne de meme type et meme item, quel qu'en soit le lanceur,
+			// avant de poser la neuve (Effect.createEffect:240). Relancer ne rapporte donc que la
+			// DIFFERENCE, et le cast se paie quand meme.
+			// Une ligne mourante est comptee comme vivante : son porteur garde alors son TP total
+			// gonfle, et le net rendu est trop bas d'exactement le cout du cast. Un tour d'ecart
+			// dans le sens PRUDENT, contre un suivi d'echeance qu'aucune cle ne porte.
+			var held = 0
+			for (var eff in EntityStats.EFFECTS) {
+				if (eff[0] != EFFECT_RAW_BUFF_TP) continue
+				if (eff[5] in items) held += eff[1]
+			}
+			_final = [raw, cost, held]
+		}
+		DANGER_SELF_TP_CACHE[key] = _final
 		return _final
 	}
 
-	/* Ce que ce caster gagne vraiment, une fois son franchissement paye : le buff se lance
-	 * AVANT d'attaquer, il lui faut donc de quoi l'avancer. */
-	static selfTpGainAfter(EntityStats, TpCost) {
-		var pack = selfTpPackOf(EntityStats)
-		if (pack == 0) return 0
-		return (EntityStats.TOTAL_TP - TpCost >= (pack >> 16)) ? (pack & 65535) : 0
+	/* TP REELLEMENT recus si le buff part avec ce facteur critique (EffectRawBuffTP :
+	 * round((v1 + v2 x jet) x cibles x critique), jet minimal). */
+	static selfTpValueAt(Profile, Crit) {
+		return round(Profile[0] * Crit)
+	}
+
+	/* Gain NET du cast : ce qu'il recoit, moins ce qu'il perd en remplacant sa ligne, moins
+	 * son cout. Planche a zero — ne PAS le lancer reste une option, et c'est la bonne des
+	 * que la ligne en place vaut deja autant. */
+	static selfTpGainAt(Profile, Crit) {
+		var g = selfTpValueAt(Profile, Crit) - Profile[2] - Profile[1]
+		return g > 0 ? g : 0
 	}
 
 	static getItemsList(EntityStats) {

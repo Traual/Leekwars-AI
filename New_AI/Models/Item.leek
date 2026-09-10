@@ -27,7 +27,7 @@ class ItemClass {
 	STACKABLE
 	IS_BOUNDABLE_DAMAGE                // tous ses effets sont des degats directs sur ennemi : majorable sans simuler
 	IS_VULNERABILITY
-	SELF_TP_NET                        // TP nets qu'un auto-buff de TP PLAT rapporte, 0 sinon
+	SELF_TP_RAW                        // TP BRUTS qu'un auto-buff de TP plat pose, 0 sinon
 	SELF_TP_COST                       // ce que le caster doit avancer pour les obtenir
 	LAUNCH_GEOMETRY_KEY
 	FULL_GEOMETRY_KEY
@@ -150,11 +150,13 @@ class ItemClass {
 			// clé de lancement -> mêmes cellules directement lançables, même clé complète ->
 			// même expansion d'AoE. Packs injectifs : launch types 1..7 (4 bits), portées
 			// < 1024 (10 bits), AREA 1..15 (5 bits).
-			// L'item ne compte que s'il rend PLUS de TP qu'il n'en coute. Les seuls a passer
-			// aujourd'hui : adrenaline, 5 TP pour 1. Manumission (2 pour 6) et convoitise (1 pour
-			// 2) sont ecartees ici, sans test a l'execution.
-			this.SELF_TP_NET = (selfTpRaw > this.COST) ? selfTpRaw - this.COST : 0
-			this.SELF_TP_COST = (this.SELF_TP_NET > 0) ? this.COST : 0
+			// L'item ne compte que s'il PEUT rendre plus de TP qu'il n'en coute, critique compris
+			// — le net reel, lui, depend du critique du caster et de ce qu'il porte deja, donc il
+			// se calcule au tour. Seule adrenaline (5 TP pour 1) passe aujourd'hui : manumission
+			// (2 pour 6) et convoitise (1 pour 2) restent perdantes meme critiques.
+			var selfTpMax = round(selfTpRaw * CRITICAL_FACTOR)
+			this.SELF_TP_RAW = (selfTpMax > this.COST) ? selfTpRaw : 0
+			this.SELF_TP_COST = (this.SELF_TP_RAW > 0) ? this.COST : 0
 			this.LAUNCH_GEOMETRY_KEY = ((this.NEEDLOS ? 1 : 0) << 24) | (this.LAUNCHTYPE << 20) | (this.MINRANGE << 10) | this.MAXRANGE
 			this.FULL_GEOMETRY_KEY = (this.LAUNCH_GEOMETRY_KEY << 5) | this.AREA
 		}

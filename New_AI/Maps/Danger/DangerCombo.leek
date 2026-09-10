@@ -184,11 +184,11 @@ class DangerComboClass {
 		var templateKey = dangerPairKey(CasterSeed, CasterPack, targetPairPackWith(0, 0, TargetFixed))
 		// Ce que le franchissement lui prend n'est plus disponible pour attaquer. Planché à
 		// zéro : un budget négatif ne joue rien, comme un budget nul.
-		// S'y ajoute ce que ses auto-buffs de TP lui RAPPORTENT net — adrénaline rend cinq TP
-		// pour un. Aucune clé à élargir : le gain ne dépend que du caster, de ses cooldowns et
-		// de son TOTAL_TP, tous déjà portés par CasterSeed et CasterPack, plus de TpCost qui
-		// est déjà dans comboKey.
-		var baseTp = max(0, CasterStats.TOTAL_TP - TpCost + EntityDangerClass.selfTpGainAfter(CasterStats, TpCost))
+		// TpCost est le coût NET du palier retenu : son prix de franchissement moins ce qu'un
+		// auto-buff de TP rentable rapporte au caster. Il est donc parfois négatif, et le
+		// budget dépasse alors les TP rechargés — c'est exactement ce qu'adrénaline fait.
+		// Le plan l'a résolu une fois par caster et par palier, ordre de cast compris.
+		var baseTp = max(0, CasterStats.TOTAL_TP - TpCost)
 		// Uses : racine TOUJOURS zéro (caster jamais Me, EntityState initialise à 0 et le
 		// danger est son prochain tour) — playedUses est l'overlay SPARSE des seuls items
 		// consommés par la chaîne, null tant qu'aucun ne l'est.

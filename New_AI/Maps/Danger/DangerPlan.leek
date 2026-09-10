@@ -217,6 +217,7 @@ class DangerPlanClass {
 		var tierKeys = []
 		var tierCrits = []
 		var tierPacks = []
+		var tierTps = []
 		var activeMask = 0
 		var mapsMask = 0
 		for (var i: var id in order) {
@@ -231,6 +232,7 @@ class DangerPlanClass {
 			var tierKey = null
 			var tierCrit = null
 			var tierPack = null
+			var tierTp = null
 			// Exclusions : Me (ma menace est le travail du BFS, jamais le danger ambiant),
 			// le camp de la cible, les morts, et les casters sans item menaçant — la liste
 			// d'items EST la qualification, aucun second scan d'inventaire.
@@ -255,6 +257,32 @@ class DangerPlanClass {
 				tiers = [null, null, null, null]
 				tierKey = [0, 0, 0, 0]
 				tierPack = [pack, jPack, pack, jPack]
+				// Coût NET de chaque palier : son prix, moins ce qu'un auto-buff de TP rentable
+				// rapporte au caster. Les deux ORDRES sont essayés — le moteur laisse le choix — et
+				// ils ne portent pas le même critique : buffer d'abord se joue sur l'agilité
+				// d'avant déplacement, franchir d'abord sur celle du palier, Saut posant +100.
+				// Chacun a sa condition de paiement, et on garde le meilleur RÉELLEMENT payable.
+				tierTp = [0, 0, 0, 0]
+				var prof = EntityDangerClass.selfTpProfileOf(stat)
+				var totTp = stat.TOTAL_TP
+				for (var t = 0; t < 4; t++) {
+					var moveCost = WalkCellsClass.dangerLayerTpCost(t)
+					tierTp[t] = moveCost
+					if (prof == null) continue
+					var best = 0
+					// Buff puis franchissement : il faut pouvoir l'avancer, et le franchir ensuite.
+					var vA = EntityDangerClass.selfTpValueAt(prof, tierCrit[0])
+					if (totTp >= prof[1] && totTp - prof[1] + vA >= moveCost) {
+						var gA = vA - prof[2] - prof[1]
+						if (gA > best) best = gA
+					}
+					// Franchissement puis buff : le palier est deja paye, le critique est le sien.
+					if (totTp - moveCost >= prof[1]) {
+						var gB = EntityDangerClass.selfTpValueAt(prof, tierCrit[t]) - prof[2] - prof[1]
+						if (gB > best) best = gB
+					}
+					tierTp[t] = moveCost - best
+				}
 				for (var t = 0; t < 4; t++) {
 					if (!WalkCellsClass.dangerTierAvailable(stat, t)) continue
 					var tk = mapCellItemAoeKeyForLayer(stat, t)
@@ -269,6 +297,7 @@ class DangerPlanClass {
 			push(tierKeys, tierKey)
 			push(tierCrits, tierCrit)
 			push(tierPacks, tierPack)
+			push(tierTps, tierTp)
 			push(seeds, DangerComboClass.casterSeedOf(id))
 			// Peut-il changer le net d'une cible de ce camp ? Menace, ou soigneur éligible à la
 			// heal map (mêmes conditions que healerContributionOf).
@@ -282,7 +311,7 @@ class DangerPlanClass {
 			// chaque cellule et à chaque nœud dans le déroulé du net.
 			push(sameSides, stat != null && stat.SIDE == TargetSide)
 		}
-		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, seeds, actives, sameSides, tierMaps, tierKeys, tierCrits, tierPacks)
+		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, seeds, actives, sameSides, tierMaps, tierKeys, tierCrits, tierPacks, tierTps)
 		// Les séquences de jeu ne dépendent QUE de l'ordre de tour (donc du set des vivants, qui
 		// pinne le tri), du camp visé, de qui menace et de qui peut changer un net. La clé du plan,
 		// elle, porte le BaseHash : un ennemi poussé fabrique un plan neuf dont les séquences
@@ -327,8 +356,10 @@ class DangerTeamPlanClass {
 	TIER_CRITS      // [i] = [facteur critique du palier 0..3] : les paliers sauteurs portent
 	                // les +100 AGI que Saut pose, et ne jouent donc pas la même classe
 	TIER_PACKS      // [i] = [pack offensif du palier 0..3], aligné sur TIER_CRITS
+	TIER_TP         // [i] = [coût NET du palier 0..3] : son prix de franchissement moins ce
+	                // qu'un auto-buff de TP rentable rapporte, donc parfois négatif
 	CASTER_SEEDS    // [i] = premier pas de la chaîne de clé, fonction du seul identifiant
-	constructor(ThisOrder, ThisOrderById, ThisTurnOrders, ThisMaps, ThisMapKeys, ThisSeeds, ThisActives, ThisSameSides, ThisTierMaps, ThisTierKeys, ThisTierCrits, ThisTierPacks) {
+	constructor(ThisOrder, ThisOrderById, ThisTurnOrders, ThisMaps, ThisMapKeys, ThisSeeds, ThisActives, ThisSameSides, ThisTierMaps, ThisTierKeys, ThisTierCrits, ThisTierPacks, ThisTierTp) {
 		this.ORDER = ThisOrder
 		this.ORDER_BY_ID = ThisOrderById
 		this.TURN_ORDERS = ThisTurnOrders
@@ -343,6 +374,7 @@ class DangerTeamPlanClass {
 		this.TIER_KEYS = ThisTierKeys
 		this.TIER_CRITS = ThisTierCrits
 		this.TIER_PACKS = ThisTierPacks
+		this.TIER_TP = ThisTierTp
 		this.CASTER_SEEDS = ThisSeeds
 	}
 }

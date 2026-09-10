@@ -107,6 +107,7 @@ class DangerClass {
 		var tierKeys = Plan.TIER_KEYS
 		var tierCrits = Plan.TIER_CRITS
 		var tierPacks = Plan.TIER_PACKS
+		var tierTps = Plan.TIER_TP
 		var hash = 0
 		for (var idx in CovSeq) {
 			// CONTRAT : CovSeq ne retient que les casters à map offensive non nulle.
@@ -121,9 +122,11 @@ class DangerClass {
 			var tk = tierKeys[idx]
 			var tc = tierCrits[idx]
 			var tp = tierPacks[idx]
+			var ttp = tierTps[idx]
 			var vMap = null
 			var vHash = 0
 			var vTp = 0
+			var vTier = 0
 			var vCrit = 1
 			var vPack = 0
 			var alts = null
@@ -145,12 +148,13 @@ class DangerClass {
 				if (vMap == null) {
 					vMap = im
 					vHash = h
-					vTp = WalkCellsClass.dangerLayerTpCost(t)
+					vTp = ttp[t]
+					vTier = t
 					vCrit = crt
 					vPack = tp[t]
 				} else {
 					if (alts == null) alts = []
-					push(alts, [im, h, WalkCellsClass.dangerLayerTpCost(t), crt, tp[t]])
+					push(alts, [im, h, ttp[t], crt, tp[t], t])
 				}
 			}
 			var contentHash = vHash
@@ -170,10 +174,14 @@ class DangerClass {
 			// l'autre en sautant ne jouent pas le même combo, et sans lui elles partageraient un
 			// bucket — la première lue servirait sa valeur à la seconde, dans un sens ou dans
 			// l'autre selon l'ordre de balayage.
-			hash = (hash ^ (contentHash ^ (idx << 56) ^ (vTp << 48))) * MIX_A
+			// C'est le PALIER qui entre dans le digest, pas son prix : le prix peut etre negatif
+			// quand un auto-buff rapporte plus que le franchissement ne coute, et un decalage de
+			// nombre negatif etend son signe sur le champ voisin. Le palier dit exactement la
+			// meme chose — a caster fixe, et l'index du caster est deja dans le digest.
+			hash = (hash ^ (contentHash ^ (idx << 56) ^ (vTier << 48))) * MIX_A
 			// Les variantes entrent aussi dans le digest : deux cellules de même panoplie la
 			// moins chère mais d'alternatives différentes ne jouent pas la même chaîne.
-			if (alts != null) for (var av in alts) hash = (hash ^ (av[1] ^ (av[2] << 48))) * MIX_A
+			if (alts != null) for (var av in alts) hash = (hash ^ (av[1] ^ (av[5] << 48))) * MIX_A
 		}
 		LAST_COVERAGE_HASH = hash
 		var cov = [covIdx, covMap, covHash, covTp, covAlt, covCrit, covPack]
