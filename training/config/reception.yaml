@@ -1,9 +1,10 @@
 # PROTOCOLE DE RECEPTION, pas un protocole de decision.
 #
-# Tailles minuscules et risque non controle : il sert uniquement a exercer la machinerie
-# de confirmation — tentative enregistree, plan de graines fige, vague neuve a chaque
-# nouvelle tentative, plafond de campagne impose — sur de vrais combats et en un temps
-# borne. Aucune promotion ne doit sortir d'ici.
+# Tailles minuscules et risque non controle : il sert uniquement a exercer la
+# machinerie — tentative de confirmation enregistree, plan de graines fige, vague
+# neuve a chaque nouvelle tentative, reprise d'une tentative coupee, plafond de
+# campagne impose — sur de vrais combats et en un temps borne. Aucune promotion ne
+# doit sortir d'ici.
 #
 # Configuration du harnais d'amelioration du scoring.
 #
@@ -17,8 +18,10 @@ campagne:
   # NOUVELLE campagne. `init-campaign` refuse de reecrire une campagne existante sous un autre
   # protocole : des resultats deja lus ne doivent pas changer de sens en silence.
   # campagne-002 : premiere campagne avec les deux camps reels du format team, les blocs
-  # emboites entre etapes et le diagnostic de chargement d'IA.
-  id: "reception-2026-09-11"
+  # emboites entre etapes et le diagnostic de chargement d'IA. FIGEE.
+  # campagne-003 : S2 passe a cinq blocs team, faute de quoi le cinquieme adversaire n'avait
+  # aucun bloc et la couverture rendait INCOMPLET quoi qu'il arrive.
+  id: "reception-b"
   # Plafond de promotions automatiques. Au-dela, la boucle s'arrete et rend un bilan ; la
   # campagne suivante est un nouveau choix explicite de budget. Le risque nominal ci-dessous
   # vaut pour CE budget, pas pour une suite illimitee de campagnes.
@@ -54,23 +57,27 @@ objectif:
 # croissent : les blocs de S1 sont donc reellement contenus dans ceux de S2, et ceux de S2 dans
 # ceux de S3. Le cout annonce entre etapes est cumulatif parce que le plan de blocs le garantit,
 # pas parce qu'on l'espere.
+#
+# REGLE DURE : un bloc porte UN adversaire, donc chaque format actif doit avoir AU MOINS autant
+# de blocs que l'etape a d'adversaires. `init-campaign` refuse un plan qui ne la respecte pas,
+# et verifie aussi l'emboitement sur les tailles retenues.
 etapes:
   s1:
-    candidats: 4
-    blocs: { farmer: 8,  solo: 4,  team: 0 }
-    adversaires: 3                  # prefixe du panel
-    garder: 2
+    candidats: 1
+    blocs: { farmer: 2,  solo: 2 }
+    adversaires: 2
+    garder: 1
   s2:
-    blocs: { farmer: 24, solo: 8,  team: 4 }
-    adversaires: 5
+    blocs: { farmer: 4,  solo: 4,  team: 2 }
+    adversaires: 2
     garder: 1
   s3:
-    blocs: { farmer: 60, solo: 20, team: 10 }
-    adversaires: 10
+    blocs: { farmer: 4,  solo: 4,  team: 2 }
+    adversaires: 2
     garder: 1
   confirmation:
-    blocs: { farmer: 3, solo: 3, team: 3 }
-    adversaires: 3
+    blocs: { farmer: 2,  solo: 2,  team: 2 }
+    adversaires: 2
     graines_neuves: true
     # Formats dont la couverture COMPLETE est exigee pour une promotion. Un format prevu dont
     # les blocs ou les adversaires manquent donne INCOMPLET, jamais un verdict statistique sur
