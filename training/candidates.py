@@ -48,12 +48,71 @@ def contenu_au_commit(commit: str, chemin: str) -> str | None:
     return r.stdout if r.returncode == 0 else None
 
 
+MARQUE_SOURCE = "Empreinte-source: "
+
+
+def branche_de(ident: str) -> str:
+    return "%s/%s" % (PREFIXE_BRANCHE, ident)
+
+
+def branche_existe(ident: str) -> bool:
+    return bool(_git("branch", "--list", branche_de(ident)).strip())
+
+
+def _empreinte_du_commit(commit: str) -> str:
+    """L'empreinte de la source, telle que le commit du candidat la porte.
+
+    Elle est inscrite dans le message parce que Git est le seul des deux systemes qui survive
+    a une coupure entre la creation du commit et l'insertion SQLite : sans elle, une branche
+    orpheline ne pouvait plus etre reliee a la proposition qui l'avait produite.
+    """
+    message = _git("log", "-1", "--format=%B", commit)
+    for ligne in message.split("\n"):
+        if ligne.startswith(MARQUE_SOURCE):
+            return ligne[len(MARQUE_SOURCE):].strip()
+    return ""
+
+
+def retrouver(ident: str, parent: str, empreinte_source: str = "") -> dict[str, Any] | None:
+    """Le candidat deja COMMITE dont l'inscription au registre a ete interrompue.
+
+    Le commit et la branche sont crees avant l'insertion SQLite. Si celle-ci echoue, le
+    nettoyage d'`enregistrer` ne s'applique pas — la fonction a reussi — et la relance se
+    heurtait a « la branche existe deja » sans jamais retrouver le candidat. On le reconstruit
+    ici depuis Git, apres avoir verifie son parent et l'identite de sa proposition.
+    """
+    branche = branche_de(ident)
+    if not branche_existe(ident):
+        return None
+    tete = _git("rev-parse", branche).strip()
+    parent_resolu = _git("rev-parse", parent).strip()
+    parents = _git("log", "-1", "--format=%P", tete).split()
+    if not parents or parents[0] != parent_resolu:
+        raise RuntimeError(
+            "la branche %s existe mais part de %s, pas de %s : ce n'est pas une reprise du "
+            "meme essai." % (branche, (parents[0] if parents else "?")[:12],
+                             parent_resolu[:12]))
+    portee_commit = _empreinte_du_commit(tete)
+    if empreinte_source and portee_commit and portee_commit != empreinte_source:
+        raise RuntimeError(
+            "la branche %s porte une autre proposition (%s au lieu de %s) : un candidat est "
+            "immuable, choisir un identifiant neuf." % (branche, portee_commit[:12],
+                                                        empreinte_source[:12]))
+    modifies = fichiers_du_diff(parent_resolu, tete)
+    emp = mod_bundle.empreinte(tete)
+    return {"id": ident, "branche": branche, "commit": tete, "parent": parent_resolu,
+            "bundle_sha256": emp["sha256"], "arbre_git": emp["arbre_git"],
+            "nb_fichiers": emp["nb_fichiers"], "fichiers_modifies": modifies,
+            "empreinte_source": portee_commit or empreinte_source,
+            "reconstruit_depuis_git": True}
+
+
 def enregistrer(ident: str, parent: str, patch: Path | None = None,
                 bundle_dir: Path | None = None, hypothese: str = "",
                 portee: list[str] | None = None, hors_portee: list[str] | None = None,
                 dependances: list[str] | None = None,
                 invariants: dict[str, list[dict[str, Any]]] | None = None,
-                autorisation: str = "") -> dict[str, Any]:
+                autorisation: str = "", empreinte_source: str = "") -> dict[str, Any]:
     """Cree `scoring-candidates/<id>` depuis `parent`, y pose le changement, et commite.
 
     Deux entrees possibles, et une seule sortie : un commit. `patch` applique un diff unifie ;
@@ -102,6 +161,11 @@ def enregistrer(ident: str, parent: str, patch: Path | None = None,
                       ", ".join(dependances or []) or "aucune"))
         if autorisation:
             message += "Extension autorisee : %s\n" % autorisation
+        # L'empreinte de la SOURCE voyage dans le commit : c'est le seul endroit qui survive a
+        # une coupure entre Git et SQLite, et c'est elle qui permet de reconnaitre la meme
+        # proposition a la reprise.
+        if empreinte_source:
+            message += "%s%s\n" % (MARQUE_SOURCE, empreinte_source)
         _git("commit", "-q", "-m", message)
         tete = _git("rev-parse", "HEAD").strip()
 
@@ -122,6 +186,7 @@ def enregistrer(ident: str, parent: str, patch: Path | None = None,
             "nb_fichiers": emp["nb_fichiers"], "fichiers_modifies": modifies,
             "verdict_portee": verdict, "hors_portee": fautifs,
             "invariants_rompus": ruptures, "autorisation": autorisation,
+            "empreinte_source": empreinte_source,
             "hypothese": hypothese, "dependances": list(dependances or []),
         }
     finally:

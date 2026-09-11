@@ -44,6 +44,10 @@ DEPOT = Path(__file__).resolve().parents[1]
 CHAMPIONS = Path(__file__).resolve().parent / "champions"
 BRANCHE = "scoring"
 
+# La ZONE de publication : les seuls chemins que cette operation ecrit, et les seuls
+# qu'un abandon a le droit de nettoyer. Rien ailleurs dans le depot n'est touche.
+ZONE = ("New_AI", "training/champions")
+
 ETAPES = ("ouverte", "code_prepare", "bundle_verifie", "commit_ecrit",
           "commit_enregistre", "tag_ecrit", "pointeur_ecrit", "terminee")
 
@@ -101,6 +105,10 @@ def _preparer_sous_arbre(depot: Path, commit: str, sous_arbre: str) -> None:
 
     On vide donc d'abord l'index et le disque du sous-arbre, puis on le repose depuis le
     candidat. Les suppressions passent ainsi comme le reste.
+
+    Consequence assumee : `New_AI` appartient entierement a l'operation. Un fichier etranger
+    qui y trainait ne survit pas — et c'est necessaire, puisqu'un `git add -A` le ferait
+    autrement entrer dans le commit de champion et changerait l'arbre publie.
     """
     _git("rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", sous_arbre, depot=depot)
     cible = Path(depot) / sous_arbre
@@ -170,6 +178,9 @@ def publier(reg, candidat: dict[str, Any], champion_attendu: str, decision: dict
     depart = _git("rev-parse", "--abbrev-ref", "HEAD", depot=depot).strip()
     try:
         _git("checkout", "-q", BRANCHE, depot=depot)
+        # Ce qui trainait DEJA dans la zone avant qu'on y touche. Un abandon n'effacera que ce
+        # que la publication aura cree, jamais ces fichiers-la.
+        reg.etrangers_publication(pub, non_suivis(depot))
 
         # 1. Le CODE du candidat et son manifeste, dans l'arbre de travail. Le pointeur du
         #    champion actif n'est PAS touche ici.
@@ -246,6 +257,8 @@ def publier(reg, candidat: dict[str, Any], champion_attendu: str, decision: dict
                                        "bundle_sha256": candidat["bundle_sha256"], "tag": tag,
                                        "precedent": champion_attendu,
                                        "manifeste": str(chemin_manifeste)})
+        if confirmation:
+            reg.marquer_publication_confirmation(int(confirmation), "publiee", nouveau)
         _git("checkout", "-q", depart, depot=depot, verifier=False)
         return {"champion": nouveau, "tag": tag, "commit_champion": commit_champion,
                 "manifeste": str(chemin_manifeste), "precedent": champion_attendu}
@@ -279,7 +292,7 @@ def _commit_de_champion(depot: Path, tag: str, enregistre: str, nouveau: str) ->
 
 
 def _controler_publication(depot: Path, champions: Path, nouveau: str, tag: str,
-                           bundle: str) -> list[str]:
+                           bundle: str, etrangers: list[str] | None = None) -> list[str]:
     """Ce qui manquerait encore pour qu'une publication soit vraiment terminee."""
     manques = []
     if not tag_existe(tag, depot=depot):
@@ -303,32 +316,54 @@ def _controler_publication(depot: Path, champions: Path, nouveau: str, tag: str,
     return manques
 
 
+def non_suivis(depot: Path) -> list[str]:
+    """Les fichiers NON SUIVIS de la zone de publication, un par ligne."""
+    sortie = _git("ls-files", "--others", "--exclude-standard", "--", *ZONE,
+                  depot=depot, verifier=False).strip()
+    return sorted(l.strip() for l in sortie.split("\n") if l.strip())
+
+
 def _nettoyer_arbre(champions: Path, depot: Path, nouveau: str,
-                    pointeur_precedent: dict[str, Any] | None) -> list[str]:
-    """Remet l'arbre de travail et le pointeur dans l'etat d'avant la publication."""
+                    pointeur_precedent: dict[str, Any] | None,
+                    etrangers: list[str] | None = None) -> tuple[list[str], list[str]]:
+    """Remet la zone de publication dans l'etat d'avant. Rend (ce qui a ete fait, ce qui reste).
+
+    Le `reset` puis le `checkout` restaurent les fichiers SUIVIS, mais un fichier AJOUTE par le
+    candidat redevient simplement non suivi : le checkout ne l'efface pas. Un candidat qui
+    ajoutait un helper laissait donc le depot sale apres un abandon, ce qui bloquait ensuite
+    l'inscription de tout nouveau candidat.
+
+    On retire donc les non-suivis de la zone que la publication a CREES, c'est-a-dire ceux qui
+    n'existaient pas a son ouverture. `etrangers` porte cette liste d'avant ; ces fichiers-la
+    sont preserves. Aucun autre endroit du depot n'est touche.
+    """
     faits = []
-    sale = _git("status", "--porcelain", "New_AI", "training/champions",
-                depot=depot, verifier=False).strip()
+    etrangers = set(etrangers or [])
+    sale = _git("status", "--porcelain", "--", *ZONE, depot=depot, verifier=False).strip()
     if sale:
-        _git("reset", "-q", "HEAD", "--", "New_AI", "training/champions",
-             depot=depot, verifier=False)
-        _git("checkout", "-q", "--", "New_AI", "training/champions",
-             depot=depot, verifier=False)
-        faits.append("arbre de travail restaure")
-    orphelin = Path(champions) / ("%s.json" % nouveau)
-    if orphelin.exists():
-        suivi = _git("ls-files", "--error-unmatch", "training/champions/%s.json" % nouveau,
-                     depot=depot, verifier=False).strip()
-        if not suivi:
-            orphelin.unlink()
-            faits.append("manifeste orphelin %s retire" % nouveau)
+        _git("reset", "-q", "HEAD", "--", *ZONE, depot=depot, verifier=False)
+        _git("checkout", "-q", "--", *ZONE, depot=depot, verifier=False)
+        faits.append("fichiers suivis restaures")
+    crees = [c for c in non_suivis(depot) if c not in etrangers]
+    for relatif in crees:
+        cible = Path(depot) / relatif
+        if cible.is_file():
+            cible.unlink()
+            faits.append("fichier cree par la publication retire : %s" % relatif)
     if pointeur_precedent:
         actuel = Path(champions) / "current.json"
         if not actuel.exists() or json.loads(actuel.read_text(encoding="utf-8")) \
                 .get("champion_courant") != pointeur_precedent.get("champion_courant"):
             _ecrire_json(actuel, pointeur_precedent)
             faits.append("pointeur restaure sur %s" % pointeur_precedent.get("champion_courant"))
-    return faits
+
+    # La proprete est CONSTATEE, pas supposee : un abandon annonce termine doit laisser un
+    # depot ou l'inscription du candidat suivant est possible.
+    reste = [l.strip() for l in
+             _git("status", "--porcelain", "--", *ZONE, depot=depot, verifier=False)
+             .strip().split("\n") if l.strip()]
+    reste = [l for l in reste if l.split(" ", 1)[-1].strip().strip('"') not in etrangers]
+    return faits, reste
 
 
 def reconcilier(reg, champions: Path | None = None, depot: Path | None = None) -> dict[str, Any]:
@@ -352,21 +387,27 @@ def reconcilier(reg, champions: Path | None = None, depot: Path | None = None) -
     tag = "scoring/%s" % nouveau
     precedent = json.loads(en_cours["pointeur_precedent"]) if en_cours["pointeur_precedent"] \
         else None
+    etrangers = json.loads(en_cours["non_suivis_json"] or "[]")
     depart = _git("rev-parse", "--abbrev-ref", "HEAD", depot=depot).strip()
     _git("checkout", "-q", BRANCHE, depot=depot, verifier=False)
     try:
         commit = _commit_de_champion(depot, tag, en_cours["commit_champion"] or "", nouveau)
 
         if not commit:
-            faits = _nettoyer_arbre(champions, depot, nouveau, precedent)
+            faits, reste = _nettoyer_arbre(champions, depot, nouveau, precedent, etrangers)
             reg.abandonner_publication(
                 en_cours["id"],
                 "interrompue avant le commit de champion (etape %s)" % en_cours["etape"])
-            return {"etat": "abandonnee", "champion_actif": reg.champion_courant()
-                    ["champion_courant"], "champion_abandonne": nouveau,
+            # INTERRUPTION TECHNIQUE, pas renoncement : la decision de confirmation reste
+            # valable et sa promotion sera terminee au prochain passage.
+            return {"etat": "abandonnee", "recuperable": True,
+                    "champion_actif": reg.champion_courant()["champion_courant"],
+                    "champion_abandonne": nouveau,
                     "etape_atteinte": en_cours["etape"], "remises_en_etat": faits,
+                    "reste_a_nettoyer": reste,
                     "detail": ("Rien n'a ete promu : aucun commit de champion n'existait. Le "
-                               "champion actif est reellement le precedent.")}
+                               "champion actif est reellement le precedent, et la decision de "
+                               "confirmation reste publiable.")}
 
         emp = mod_bundle.empreinte(commit)
         brut = _git("show", "%s:training/champions/%s.json" % (commit, nouveau),
@@ -374,12 +415,18 @@ def reconcilier(reg, champions: Path | None = None, depot: Path | None = None) -
         manifeste = json.loads(brut) if brut.strip() else None
         attendu = (manifeste or {}).get("code", {}).get("bundle_sha256")
         if manifeste is None or emp["sha256"] != attendu:
-            faits = _nettoyer_arbre(champions, depot, nouveau, precedent)
+            faits, reste = _nettoyer_arbre(champions, depot, nouveau, precedent, etrangers)
             reg.abandonner_publication(
                 en_cours["id"], "bundle du commit %s incoherent avec le manifeste" % commit[:12])
-            return {"etat": "incoherente", "champion_abandonne": nouveau,
+            # DEFINITIF : le code publie ne correspond pas a ce qui a ete mesure, donc la
+            # decision n'est plus publiable telle quelle.
+            if en_cours["confirmation"]:
+                reg.marquer_publication_confirmation(int(en_cours["confirmation"]),
+                                                     "caduque")
+            return {"etat": "incoherente", "recuperable": False,
+                    "champion_abandonne": nouveau,
                     "champion_actif": reg.champion_courant()["champion_courant"],
-                    "remises_en_etat": faits,
+                    "remises_en_etat": faits, "reste_a_nettoyer": reste,
                     "detail": ("Le bundle du commit de champion ne correspond pas au manifeste : "
                                "rien n'est promu, une nouvelle evaluation est necessaire.")}
 
@@ -411,7 +458,7 @@ def reconcilier(reg, champions: Path | None = None, depot: Path | None = None) -
         # Verifications FINALES avant cloture : tag, manifeste et pointeur, tous commites et
         # coherents. Une seconde reprise n'aura alors plus rien a faire.
         manques = _controler_publication(depot, champions, nouveau, tag,
-                                         manifeste["code"]["bundle_sha256"])
+                                         manifeste["code"]["bundle_sha256"], etrangers)
         if manques:
             return {"etat": "incomplete", "champion": nouveau, "controles_en_echec": manques,
                     "remises_en_etat": faits,
@@ -422,6 +469,9 @@ def reconcilier(reg, champions: Path | None = None, depot: Path | None = None) -
                                   "bundle_sha256": manifeste["code"]["bundle_sha256"], "tag": tag,
                                   "precedent": en_cours["champion_attendu"],
                                   "manifeste": str(chemin_manifeste)})
+        if en_cours["confirmation"]:
+            reg.marquer_publication_confirmation(int(en_cours["confirmation"]),
+                                                 "publiee", nouveau)
         return {"etat": "terminee_par_reprise", "champion": nouveau, "tag": tag,
                 "commit_champion": commit, "remises_en_etat": faits}
     finally:

@@ -37,11 +37,26 @@ processus de combat, qui coupe son lot en gardant les combats déjà terminés. 
 laissée en vol est reprise avant toute autre chose.
 
 **La boucle se relance.** Un candidat déjà enregistré est repris, pas réinscrit : même
-identifiant, même branche, même commit, et son avancement revient du registre. Les étapes déjà
-franchies ne sont pas rejouées, et une confirmation coupée reprend sa tentative — même plan de
-graines, même champion comparé, sans consommer une unité de budget de plus. Seuls les combats
-manquants sont joués. Chaque étape garde son rapport complet dans `runs/rapports`, et chaque
-lancement son journal dans `runs/boucles`.
+identifiant, même branche, même commit, et son avancement revient du registre. Un commit de
+candidat créé avant une panne de stockage est même reconstruit depuis Git, après vérification
+de son parent et de l'empreinte de sa proposition, inscrite dans son message de commit. Les
+étapes déjà franchies ne sont pas rejouées, et une confirmation coupée reprend sa tentative —
+même plan de graines, même champion comparé, sans consommer une unité de budget de plus. Seuls
+les combats manquants sont joués. Chaque étape garde son rapport complet dans `runs/rapports`,
+et chaque lancement son journal dans `runs/boucles`.
+
+**La décision de confirmation et sa promotion forment une seule opération récupérable.** La
+décision complète est écrite avec sa tentative, dans la transaction qui la clôt, avec
+l'intention de publication qui en découle. Une décision positive dont la promotion n'a pas
+abouti est terminée à la relance, après contrôle du candidat, du protocole et du champion
+attendu — jamais rejouée, jamais oubliée. Une publication interrompue pour raison technique
+laisse la décision publiable ; un bundle incohérent la rend caduque, et le journal distingue
+les deux.
+
+**Les budgets se vérifient avant de demander une proposition.** Un plafond atteint ou un temps
+épuisé ne produit ni appel à l'optimiseur, ni commit, ni inscription. L'échéance restante
+voyage avec la demande, pour qu'un fournisseur externe puisse la respecter : un contrôle entre
+deux étapes ne borne pas un appel bloquant.
 
 `config/reception.yaml` est un protocole de RECEPTION, pas de décision : tailles minuscules et
 risque non contrôlé, pour exercer la machinerie de confirmation sur de vrais combats en un
@@ -90,8 +105,10 @@ systèmes ne partagent pas de transaction — et parce qu'une coupure tombe auss
 trois faits successifs, le tag, le SHA enregistré, puis le manifeste versionné sur la branche,
 et elle lit le pointeur tel qu'il est **commité**, pas tel qu'il traîne dans l'arbre de travail.
 Deux issues, jamais d'état intermédiaire : la publication est terminée et contrôlée — tag,
-manifeste versionné, pointeur commité, arbre propre — ou elle est abandonnée, pointeur restauré,
-arbre nettoyé, manifeste orphelin retiré. Tant qu'une publication n'est pas close,
+manifeste versionné, pointeur commité, arbre propre — ou elle est abandonnée, pointeur restauré
+et zone de publication remise en état. Le nettoyage retire ce que la publication a **créé**, y
+compris les fichiers qu'un candidat ajoute, et préserve ce qui traînait déjà ; la propreté est
+ensuite constatée, pas supposée. Tant qu'une publication n'est pas close,
 `champion_courant` rend le champion précédent, conservé dans la ligne de publication.
 
 **L'audit BR** remplace une politique focale dans un lobby autrement figé, C puis H, sur la
@@ -149,8 +166,8 @@ identique signifie un contenu identique.
 
 ```bash
 python training/tests/test_harnais.py       # 32 tests, instantanés
-python training/tests/test_boucle.py        # 13 tests, moteur synthétique, ~40 s
-python training/tests/test_publication.py   #  6 tests, dépôt git temporaire
+python training/tests/test_boucle.py        # 17 tests, moteur synthétique, ~70 s
+python training/tests/test_publication.py   #  7 tests, dépôt git temporaire
 python training/tests/test_reels.py         #  3 tests, joue de vrais combats
 ```
 

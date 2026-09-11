@@ -444,43 +444,75 @@ def _empreinte_source(patch=None, bundle_dir=None) -> str:
     return ""
 
 
-def _candidat_existant(reg, ident: str, parent: str, empreinte: str) -> dict | None:
-    """Le candidat deja enregistre, s'il porte la MEME idee sur le MEME parent.
-
-    La boucle donnait le meme identifiant au meme patch a chaque lancement puis tentait de le
-    reenregistrer : la branche existait deja, le candidat etait rejete, et l'avancement deja
-    paye devenait inaccessible. Un candidat est immuable — s'il est le meme, on le REPREND.
-    """
-    ligne = reg.candidat(ident)
-    if ligne is None:
-        return None
+def _depuis_le_registre(ligne) -> dict:
     portee = json.loads(ligne["portee_json"] or "{}")
-    if ligne["parent"] != parent or portee.get("empreinte_source", "") != empreinte:
-        raise CandidatDivergent(
-            "le candidat %s existe deja pour une autre idee ou un autre parent. Un candidat est "
-            "immuable : choisir un identifiant neuf plutot que d'ecraser un essai deja mesure."
-            % ident)
     return {"id": ligne["id"], "commit": ligne["commit_code"], "parent": ligne["parent"],
             "bundle_sha256": ligne["bundle_sha256"], "hypothese": ligne["hypothese"],
-            "branche": "%s/%s" % (mod_cand.PREFIXE_BRANCHE, ligne["id"]),
+            "branche": mod_cand.branche_de(ligne["id"]),
             "verdict_portee": portee.get("verdict", mod_opt.DANS_PORTEE),
             "hors_portee": portee.get("hors_portee", []),
             "invariants_rompus": portee.get("invariants_rompus", []),
             "autorisation": portee.get("autorisation", ""),
+            "empreinte_source": portee.get("empreinte_source", ""),
             "fichiers_modifies": portee.get("fichiers", []),
             "dependances": portee.get("dependances", [])}
 
 
-def _enregistrer_candidat(cfg, reg, ident: str, parent: str, patch=None, bundle_dir=None,
-                          hypothese: str = "", dependances=None,
-                          autorisation: str = "") -> dict:
-    info = mod_cand.enregistrer(
-        ident, parent, patch=patch, bundle_dir=bundle_dir, hypothese=hypothese,
-        portee=cfg["optimiseur"]["portee"], hors_portee=cfg["optimiseur"]["hors_portee"],
-        dependances=dependances or [],
-        invariants=cfg["optimiseur"].get("invariants") or {},
-        autorisation=autorisation)
-    info["empreinte_source"] = _empreinte_source(patch, bundle_dir)
+def _retrouver_candidat(cfg, reg, ident: str, parent: str, empreinte: str | None) -> dict | None:
+    """Le candidat deja constitue, qu'il soit au registre ou seulement dans Git.
+
+    La boucle donnait le meme identifiant au meme patch a chaque lancement puis tentait de le
+    reenregistrer : la branche existait deja, le candidat etait rejete, et l'avancement deja
+    paye devenait inaccessible. Un candidat est immuable — s'il est le meme, on le REPREND.
+
+    Deuxieme cas, plus sournois : le commit et la branche sont crees AVANT l'insertion SQLite.
+    Une coupure entre les deux laissait une branche que le registre ignorait, et toute relance
+    butait sur « la branche existe deja ». On reconstruit alors le candidat depuis Git et on
+    l'inscrit, apres verification de son parent et de l'identite de sa proposition.
+
+    `empreinte` vaut None quand la source n'est pas connue d'avance (fournisseur qu'il faudrait
+    appeler pour la connaitre) : seul le parent est alors verifie.
+    """
+    ligne = reg.candidat(ident)
+    if ligne is not None:
+        info = _depuis_le_registre(ligne)
+        meme_source = empreinte is None or info["empreinte_source"] == empreinte
+        if info["parent"] != parent or not meme_source:
+            raise CandidatDivergent(
+                "le candidat %s existe deja pour une autre idee ou un autre parent. Un candidat "
+                "est immuable : choisir un identifiant neuf plutot que d'ecraser un essai deja "
+                "mesure." % ident)
+        return info
+
+    if not mod_cand.branche_existe(ident):
+        return None
+    try:
+        recupere = mod_cand.retrouver(ident, parent, empreinte or "")
+    except RuntimeError as e:
+        raise CandidatDivergent(str(e))
+    # Inscription interrompue : le commit existe, le registre l'ignorait. On le reinscrit tel
+    # quel, sans toucher au commit deja cree.
+    verdict, fautifs = mod_opt.classer_portee(recupere["fichiers_modifies"],
+                                              cfg["optimiseur"]["portee"],
+                                              cfg["optimiseur"]["hors_portee"])
+    ruptures = mod_opt.verifier_invariants(
+        lambda chemin: mod_cand.contenu_au_commit(recupere["commit"], chemin),
+        cfg["optimiseur"].get("invariants") or {})
+    if ruptures:
+        verdict = mod_opt.INVARIANT_ROMPU
+    recupere.update({"verdict_portee": verdict, "hors_portee": fautifs,
+                     "invariants_rompus": ruptures, "autorisation": "",
+                     "hypothese": "(reconstruit depuis Git apres une inscription interrompue)",
+                     "dependances": []})
+    _inscrire_candidat(cfg, reg, recupere)
+    reg.note("candidat", "inscription de %s reconstruite depuis Git : le commit existait, le "
+                         "registre l'ignorait." % ident)
+    return recupere
+
+
+def _inscrire_candidat(cfg, reg, info: dict) -> None:
+    """L'inscription SQLite, separee de la creation du commit : c'est la seule des deux qui
+    puisse manquer apres une coupure, et une reprise doit pouvoir la refaire seule."""
     etat = ("bloque:%s" % info["verdict_portee"]
             if info["verdict_portee"] in mod_opt.VERDICTS_BLOQUANTS else "enregistre")
     reg.enregistrer_candidat(info["id"], cfg["campagne"]["id"], info["commit"], info["parent"],
@@ -489,9 +521,22 @@ def _enregistrer_candidat(cfg, reg, ident: str, parent: str, patch=None, bundle_
                               "verdict": info["verdict_portee"],
                               "hors_portee": info["hors_portee"],
                               "invariants_rompus": info["invariants_rompus"],
-                              "autorisation": info["autorisation"],
-                              "empreinte_source": info["empreinte_source"],
-                              "dependances": info["dependances"]}, etat)
+                              "autorisation": info.get("autorisation", ""),
+                              "empreinte_source": info.get("empreinte_source", ""),
+                              "dependances": info.get("dependances", [])}, etat)
+
+
+def _enregistrer_candidat(cfg, reg, ident: str, parent: str, patch=None, bundle_dir=None,
+                          hypothese: str = "", dependances=None,
+                          autorisation: str = "") -> dict:
+    empreinte = _empreinte_source(patch, bundle_dir)
+    info = mod_cand.enregistrer(
+        ident, parent, patch=patch, bundle_dir=bundle_dir, hypothese=hypothese,
+        portee=cfg["optimiseur"]["portee"], hors_portee=cfg["optimiseur"]["hors_portee"],
+        dependances=dependances or [],
+        invariants=cfg["optimiseur"].get("invariants") or {},
+        autorisation=autorisation, empreinte_source=empreinte)
+    _inscrire_candidat(cfg, reg, info)
     if info["autorisation"]:
         reg.note("portee", "candidat %s : extension autorisee — %s (fichiers : %s)"
                  % (info["id"], info["autorisation"], ", ".join(info["hors_portee"]) or "-"))
@@ -632,12 +677,66 @@ def _ouvrir_tentative(cfg, moteur, reg, ident: str, panel, builds):
         cfg["campagne"]["confirmations_max"])
 
 
-def _cloturer_tentative(reg, tentative, verdict: str) -> None:
-    """Un verdict INCOMPLET laisse la tentative PARTIELLE : son plan est a moitie paye et se
+def _cloturer_tentative(reg, tentative, verdict: str, rapport: dict | None = None,
+                        candidat: dict | None = None) -> None:
+    """Clot la tentative AVEC sa decision et l'intention de publication, en une transaction.
+
+    Un verdict INCOMPLET laisse la tentative PARTIELLE : son plan est a moitie paye et se
     reprend. La marquer terminee faisait rouvrir une tentative neuve a chaque coupure, avec
-    d'autres graines et une unite de budget en moins."""
-    reg.cloturer_confirmation(tentative["id"],
-                              "close" if verdict != "INCOMPLET" else "partielle", verdict)
+    d'autres graines et une unite de budget en moins.
+
+    Un verdict PROMOUVOIR laisse une intention `a_publier` : tant que la promotion n'a pas
+    abouti, une relance la termine au lieu de rejouer la confirmation ou d'oublier le gagnant.
+    """
+    etat = "close" if verdict != "INCOMPLET" else "partielle"
+    if verdict == "PROMOUVOIR":
+        suite = mod_reg.PUBLICATION_A_PUBLIER
+    elif etat == "close":
+        suite = mod_reg.PUBLICATION_SANS_OBJET
+    else:
+        suite = None
+    decision = None
+    if rapport is not None:
+        decision = {"champion_attendu": rapport["champion"],
+                    "decision": rapport["decision"], "protocole": rapport["protocole"],
+                    "candidat": candidat}
+    reg.cloturer_confirmation(tentative["id"], etat, verdict, decision, rapport, suite)
+
+
+def _terminer_publication(cfg, moteur, reg, info: dict, tentative, panel, builds):
+    """Termine une promotion AUTORISEE mais restee en plan. Rend (etat, promotion ou None).
+
+    La decision complete est relue depuis la tentative, pas depuis un fichier : c'est elle qui
+    a ete ecrite dans la meme transaction que la cloture. Avant de publier, on re-verifie les
+    trois choses qui pourraient l'avoir perimee — le candidat, le protocole et le champion
+    attendu. Une decision perimee est marquee caduque et journalisee, jamais publiee en
+    silence sur une autre reference.
+    """
+    stockee = json.loads(tentative["decision_json"] or "null")
+    rapport = json.loads(tentative["rapport_json"] or "null")
+    if not stockee or not rapport:
+        reg.marquer_publication_confirmation(tentative["id"], mod_reg.PUBLICATION_CADUQUE)
+        return "decision_illisible", None
+
+    emp_proto, _d = empreinte_protocole(cfg, moteur, builds, panel)
+    if (tentative["empreinte_protocole"] or "") != emp_proto:
+        reg.marquer_publication_confirmation(tentative["id"], mod_reg.PUBLICATION_CADUQUE)
+        return "protocole_change", None
+    courant = reg.champion_courant()["champion_courant"]
+    if stockee["champion_attendu"] != courant:
+        reg.marquer_publication_confirmation(tentative["id"], mod_reg.PUBLICATION_CADUQUE)
+        return "champion_change", None
+    candidat = stockee.get("candidat") or info
+    if candidat.get("commit") != info.get("commit"):
+        reg.marquer_publication_confirmation(tentative["id"], mod_reg.PUBLICATION_CADUQUE)
+        return "candidat_different", None
+
+    # Le fichier de rapport est reconstruit depuis l'etat conserve : la coupure a pu tomber
+    # avant son ecriture.
+    _conserver(reg, cfg, info["id"], "confirmation", rapport, tentative)
+    promu = mod_pub.publier(reg, candidat, stockee["champion_attendu"], stockee["decision"],
+                            stockee["protocole"], confirmation=tentative["id"])
+    return "publiee_par_reprise", promu
 
 
 def _chemin_rapport(ident: str, etape: str, tentative=None) -> Path:
@@ -715,7 +814,7 @@ def cmd_evaluate(args) -> int:
                               encoding="utf-8")
 
         if tentative is not None:
-            _cloturer_tentative(reg, tentative, rapport["decision"]["verdict"])
+            _cloturer_tentative(reg, tentative, rapport["decision"]["verdict"], rapport, cand)
         if etape == "confirmation" and rapport["decision"]["verdict"] == "PROMOUVOIR" \
                 and args.promouvoir:
             promu = mod_pub.publier(reg, cand, rapport["champion"], rapport["decision"],
@@ -912,37 +1011,51 @@ def cmd_run_loop(args) -> int:
         for ident_court, optimiseur in propositions:
             champion = reg.champion_courant()
             ident = "%s-%s" % (cfg["campagne"]["id"], ident_court)
-            proposition = optimiseur.proposer({
-                "champion": champion["champion_courant"],
-                "commit_champion": champion["commit_code"],
-                "portee": cfg["optimiseur"]["portee"],
-                "hors_portee": cfg["optimiseur"]["hors_portee"],
-                "invariants": cfg["optimiseur"].get("invariants") or {},
-                "objectif": cfg["objectif"],
-                "resultats_precedents": _resultats_connus(reg, cfg),
-            })
-            fichier = RUNS / "propositions" / ("%s.patch" % ident)
-            fichier.parent.mkdir(parents=True, exist_ok=True)
-            # En OCTETS : l'ecriture texte de Python traduit les fins de ligne sous Windows, et
-            # un diff aux fins de ligne reecrites ne s'applique sur aucun fichier du depot.
-            fichier.write_bytes(proposition["patch"].encode("utf-8"))
+            # L'empreinte de la source AVANT d'appeler l'optimiseur : le mode manuel connait
+            # deja son patch, donc reconnaitre un candidat existant ne coute aucun appel.
+            prevue = getattr(optimiseur, "empreinte_prevue", lambda: None)()
             try:
-                info = _candidat_existant(reg, ident, champion["commit_code"],
-                                          _empreinte_source(patch=fichier))
+                info = _retrouver_candidat(cfg, reg, ident, champion["commit_code"], prevue)
             except CandidatDivergent as e:
                 journal.append({"proposition": ident_court, "etat": "rejete",
                                 "detail": str(e)[:200]})
                 continue
             if info is not None:
-                # Candidat IMMUABLE deja enregistre : on le reprend avec son avancement, sans
-                # consommer une unite de budget pour un travail deja paye.
+                # Candidat IMMUABLE deja constitue : on le reprend avec son avancement, sans
+                # consommer une unite de budget pour un travail deja paye, et sans demander
+                # une proposition de plus.
                 journal.append({"candidat": ident, "etat": "repris",
                                 "detail": "candidat deja enregistre, avancement recupere"})
             else:
+                # Les budgets se verifient AVANT de demander une proposition : un plafond
+                # atteint ou un temps epuise ne doit produire ni appel a l'optimiseur, ni
+                # commit, ni inscription. La boucle creait au contraire un candidat complet
+                # avec zero minute de budget, pour refuser S1 juste apres.
                 if budgets.candidats >= budgets.max_candidats:
                     journal.append({"proposition": ident_court, "etat": "non_traite",
                                     "detail": "plafond de candidats atteint"})
                     continue
+                if not budgets.place_pour_une_etape():
+                    journal.append({"proposition": ident_court, "etat": "non_traite",
+                                    "detail": "budget de temps epuise"})
+                    continue
+                proposition = optimiseur.proposer({
+                    "champion": champion["champion_courant"],
+                    "commit_champion": champion["commit_code"],
+                    "portee": cfg["optimiseur"]["portee"],
+                    "hors_portee": cfg["optimiseur"]["hors_portee"],
+                    "invariants": cfg["optimiseur"].get("invariants") or {},
+                    "objectif": cfg["objectif"],
+                    # L'echeance voyage avec la demande : une verification entre deux etapes
+                    # ne borne pas un appel externe bloquant.
+                    "secondes_restantes": round(max(0.0, budgets.reste_secondes), 1),
+                    "resultats_precedents": _resultats_connus(reg, cfg),
+                })
+                fichier = RUNS / "propositions" / ("%s.patch" % ident)
+                fichier.parent.mkdir(parents=True, exist_ok=True)
+                # En OCTETS : l'ecriture texte de Python traduit les fins de ligne sous
+                # Windows, et un diff aux fins de ligne reecrites ne s'applique sur rien.
+                fichier.write_bytes(proposition["patch"].encode("utf-8"))
                 try:
                     info = _enregistrer_candidat(cfg, reg, ident, champion["commit_code"],
                                                  patch=fichier,
@@ -1011,24 +1124,45 @@ def cmd_run_loop(args) -> int:
                             key=lambda c: _objectif(avancement, c["id"], derniere),
                             reverse=True)
         for info in finalistes:
+            # a. Une decision POSITIVE dont la promotion n'a pas abouti se TERMINE, sans
+            #    rejouer un seul combat. C'est la tentative close qui porte cette intention,
+            #    pas le fichier de rapport : une coupure entre la cloture et la conservation,
+            #    ou une publication abandonnee pour raison technique, faisait auparavant
+            #    oublier le candidat gagnant a chaque relance.
+            a_publier = reg.confirmation_a_publier(cfg["campagne"]["id"], info["id"])
+            if a_publier is not None:
+                etat_reprise, promu = _terminer_publication(cfg, moteur, reg, info, a_publier,
+                                                            panel, builds)
+                journal.append({"candidat": info["id"], "etape": "promotion",
+                                "etat": etat_reprise, "reprise": True,
+                                "tentative": a_publier["vague"], "promu": promu})
+                if promu is None:
+                    continue
+                promotions.append(promu)
+                journal.append({"etape": "fin_de_vague",
+                                "detail": "promotion terminee depuis une decision conservee"})
+                break
+
+            # b. Une decision deja rendue et deja suivie d'effet ne se rejoue pas : ce serait
+            #    ouvrir une seconde tentative, sur des graines neuves, et consommer le budget
+            #    de la campagne en silence. En redemander une est un choix explicite.
+            decidee = reg.confirmation_decidee(cfg["campagne"]["id"], info["id"])
+            if decidee is not None:
+                journal.append({"candidat": info["id"], "etape": "confirmation",
+                                "etat": "repris", "decision": decidee["verdict"],
+                                "tentative": decidee["vague"],
+                                "suite": decidee["publication_etat"],
+                                "detail": "confirmation deja decidee pour ce champion"})
+                continue
+
             if not budgets.place_pour_une_etape():
                 journal.append({"candidat": info["id"], "etape": "confirmation",
                                 "etat": "non_traite", "detail": "budget de temps epuise"})
                 continue
-            # Une confirmation DECIDEE ne se rejoue pas a chaque relance : ce serait ouvrir une
-            # seconde tentative, sur des graines neuves, et consommer le budget de la campagne
-            # en silence. En redemander une est un choix explicite, pas un effet de la reprise.
-            deja = avancement[info["id"]].get("confirmation")
-            if deja is not None and deja["verdict"] != "INCOMPLET":
-                journal.append({"candidat": info["id"], "etape": "confirmation",
-                                "etat": "repris", "decision": deja["verdict"],
-                                "detail": "confirmation deja decidee pour ce champion"})
-                continue
-
-            # Une tentative REPRISE ne consomme pas de budget : son plan est deja paye, il
-            # s'agit de le terminer. Seule une tentative NEUVE en consomme une — et le plafond
-            # se verifie AVANT de l'ouvrir, faute de quoi une tentative vide serait inscrite
-            # au registre de la campagne sans qu'aucun combat ne soit joue.
+            # c. Une tentative REPRISE ne consomme pas de budget : son plan est deja paye, il
+            #    s'agit de le terminer. Seule une tentative NEUVE en consomme une — et le
+            #    plafond se verifie AVANT de l'ouvrir, faute de quoi une tentative vide serait
+            #    inscrite au registre sans qu'aucun combat ne soit joue.
             reprenable = reg.confirmation_reprenable(cfg["campagne"]["id"], info["id"])
             if reprenable is None and budgets.confirmations >= budgets.max_confirmations:
                 journal.append({"candidat": info["id"], "etape": "confirmation",
@@ -1048,7 +1182,8 @@ def cmd_run_loop(args) -> int:
                          vague=tentative["vague"], echeance=budgets.echeance,
                          promouvable=True, progres=_compter)
             verdict = r["decision"]["verdict"]
-            _cloturer_tentative(reg, tentative, verdict)
+            # La cloture porte la decision ET l'intention de publication, en une transaction.
+            _cloturer_tentative(reg, tentative, verdict, r, info)
             _conserver(reg, cfg, info["id"], "confirmation", r, tentative)
             journal.append({"candidat": info["id"], "etape": "confirmation",
                             "tentative": tentative["vague"], "reprise": reprise,

@@ -225,6 +225,57 @@ def test_coupure_a_chaque_frontiere_ne_change_jamais_le_champion_actif():
                 assert bac.reconcilier()["etat"] == "rien_a_reconcilier", etape
 
 
+def test_un_abandon_retire_ce_que_la_publication_a_cree_et_rien_d_autre():
+    """Le nettoyage doit viser ce que la publication a cree, pas tout ce qui traine.
+
+    Un fichier suivi se restaure par `checkout` ; un fichier AJOUTE par le candidat redevient
+    simplement non suivi et survivait a l'abandon, laissant le depot sale. A l'inverse, un
+    fichier etranger depose avant la publication n'est pas son affaire et doit survivre.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        with _Bac(Path(t)) as bac:
+            # Le candidat AJOUTE un fichier au scoring.
+            _git(bac.depot, "checkout", "-q", "scoring-candidates/c1")
+            # Le candidat a retire le seul fichier de Scoring/ : Git a donc supprime le
+            # repertoire au checkout.
+            (bac.depot / "New_AI" / "Scoring").mkdir(parents=True, exist_ok=True)
+            (bac.depot / "New_AI" / "Scoring" / "Ajoute.leek").write_text(
+                "// helper ajoute par le candidat\n", encoding="utf-8")
+            _git(bac.depot, "add", "-A")
+            _git(bac.depot, "commit", "-q", "-m", "c1 ajoute un helper")
+            bac.candidat["commit"] = _git(bac.depot, "rev-parse", "HEAD").strip()
+            bac.candidat["bundle_sha256"] = mod_bundle.empreinte(
+                bac.candidat["commit"])["sha256"]
+            _git(bac.depot, "checkout", "-q", "scoring")
+
+            # Un fichier ETRANGER, depose avant la publication.
+            # Hors de `New_AI`, que la preparation du sous-arbre vide entierement : sous
+            # `New_AI`, rien d'etranger ne peut survivre, et c'est ce qui rend l'arbre publie
+            # exactement celui du candidat.
+            etranger = bac.depot / "training" / "champions" / "brouillon-a-moi.txt"
+            etranger.write_text("note personnelle\n", encoding="utf-8")
+
+            try:
+                bac.publier(_coupure="commit_ecrit")
+                raise AssertionError("la coupure n'a pas eu lieu")
+            except mod_pub.CoupureSimulee:
+                pass
+            assert (bac.depot / "New_AI" / "Scoring" / "Ajoute.leek").exists()
+
+            etat = bac.reconcilier()
+            assert etat["etat"] == "abandonnee", etat
+            assert etat["recuperable"] is True, etat
+            assert etat["reste_a_nettoyer"] == [], etat
+            assert not (bac.depot / "New_AI" / "Scoring" / "Ajoute.leek").exists(), \
+                "le fichier ajoute par le candidat doit avoir ete retire"
+            assert etranger.exists(), "un fichier etranger a la publication doit survivre"
+            assert bac.champion_actif() == "champion-000"
+            # Hors ce fichier etranger, la zone de publication est propre.
+            reste = _git(bac.depot, "status", "--porcelain", "--", "New_AI",
+                         "training/champions").strip()
+            assert reste == "?? training/champions/brouillon-a-moi.txt", repr(reste)
+
+
 def test_bundle_refuse_ne_commite_rien():
     """Un bundle qui ne correspond pas a ce qui a ete evalue n'entre pas dans l'histoire."""
     with tempfile.TemporaryDirectory() as t:

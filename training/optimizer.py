@@ -22,6 +22,7 @@ de son contexte jusqu'a la decision.
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -57,13 +58,24 @@ class Manuel:
         self._hypothese = hypothese or "aucune hypothese fournie (mode manuel)"
         self._dependances = list(dependances or [])
 
+    def empreinte_prevue(self) -> str:
+        """L'empreinte de la source, CONNUE SANS APPELER `proposer`.
+
+        Elle permet a la boucle de reconnaitre un candidat deja constitue sans demander une
+        proposition de plus : un fournisseur paye ne doit pas etre sollicite pour retrouver un
+        travail deja fait. Un fournisseur qui ne peut pas la predire n'expose pas cette
+        methode, et seule l'identite du parent est alors verifiee.
+        """
+        return hashlib.sha256(self._patch.encode("utf-8")).hexdigest()
+
     def proposer(self, contexte: dict[str, Any]) -> dict[str, Any]:
         return Proposition(
             patch=self._patch,
             hypothese=self._hypothese,
             dependances=self._dependances,
             parent=str(contexte.get("champion", "")),
-            meta={"mode": "manuel", "cout": 0.0},
+            meta={"mode": "manuel", "cout": 0.0,
+                  "secondes_restantes": contexte.get("secondes_restantes")},
         ).as_dict()
 
 

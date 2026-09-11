@@ -82,8 +82,14 @@ CREATE TABLE IF NOT EXISTS journal (
 # prochain ouverture ; recreer la base perdrait le cache de matchs, donc on migre.
 COLONNES_AJOUTEES = {
     "publications": [("pointeur_precedent", "TEXT"), ("commit_champion", "TEXT"),
-                     ("confirmation", "INTEGER")],
+                     ("confirmation", "INTEGER"), ("non_suivis_json", "TEXT")],
     "campagnes": [("empreinte_protocole", "TEXT"), ("protocole_json", "TEXT")],
+    # La DECISION vit avec sa tentative, dans la meme transaction que sa cloture. Elle etait
+    # auparavant conservee a cote, dans un fichier et une ligne d'avancement ecrits apres :
+    # une coupure entre les deux faisait rouvrir une tentative neuve, avec d'autres graines et
+    # une unite de budget de plus, pour recalculer ce qui etait deja decide.
+    "confirmations": [("decision_json", "TEXT"), ("rapport_json", "TEXT"),
+                      ("publication_etat", "TEXT"), ("champion_publie", "TEXT")],
 }
 
 
@@ -106,6 +112,17 @@ class ProtocoleDifferent(RuntimeError):
 #   abandonnee : renoncement explicite ; ne se reprend pas
 ETATS_REPRENABLES = ("ouverte", "partielle")
 ETATS_TERMINAUX = ("close", "abandonnee")
+
+# Suite donnee a une decision close. C'est cet etat, et non le fichier de rapport, qui dit
+# s'il reste quelque chose a faire.
+#   sans_objet  : la decision est negative ou non promouvable, il n'y a rien a publier
+#   a_publier   : decision POSITIVE dont la promotion n'a pas encore abouti — a terminer
+#   publiee     : la promotion est allee au bout
+#   caduque     : la decision ne peut plus etre publiee (champion change, bundle incoherent)
+PUBLICATION_SANS_OBJET = "sans_objet"
+PUBLICATION_A_PUBLIER = "a_publier"
+PUBLICATION_PUBLIEE = "publiee"
+PUBLICATION_CADUQUE = "caduque"
 
 
 class Registre:
@@ -335,14 +352,59 @@ class Registre:
                                (cur.lastrowid,)).fetchone()
             return ligne, False
 
-    def cloturer_confirmation(self, ident: int, etat: str, verdict: str) -> None:
+    def cloturer_confirmation(self, ident: int, etat: str, verdict: str,
+                              decision: dict[str, Any] | None = None,
+                              rapport: dict[str, Any] | None = None,
+                              publication_etat: str | None = None) -> None:
         """`close` quand une decision a porte sur le plan ENTIER, `partielle` quand il reste
         des combats a jouer, `abandonnee` pour un renoncement explicite. Seul `partielle` se
-        reprend, et une reprise ne consomme aucune unite de budget."""
+        reprend, et une reprise ne consomme aucune unite de budget.
+
+        La DECISION et son rapport sont ecrits ICI, dans la meme transaction que la cloture,
+        avec l'intention de publication. Une coupure ne peut donc plus laisser une tentative
+        close dont la decision serait introuvable — ce qui faisait rejouer tout le plan — ni
+        une decision positive que plus rien ne relie a une promotion a terminer.
+        """
         if etat not in ETATS_REPRENABLES + ETATS_TERMINAUX:
             raise ValueError("etat de confirmation inconnu : %r" % etat)
-        self.executer("UPDATE confirmations SET etat=?, verdict=?, close_le=? WHERE id=?",
-                      (etat, verdict, _maintenant(), ident))
+        if publication_etat is None:
+            publication_etat = PUBLICATION_SANS_OBJET
+        with self.transaction() as cx:
+            cx.execute(
+                "UPDATE confirmations SET etat=?, verdict=?, close_le=?, decision_json=?,"
+                " rapport_json=?, publication_etat=? WHERE id=?",
+                (etat, verdict, _maintenant(),
+                 json.dumps(decision, ensure_ascii=False) if decision is not None else None,
+                 json.dumps(rapport, ensure_ascii=False) if rapport is not None else None,
+                 publication_etat, ident))
+
+    def confirmation_a_publier(self, campagne: str, candidat: str) -> sqlite3.Row | None:
+        """La decision POSITIVE dont la promotion n'a pas encore abouti.
+
+        C'est elle qu'une relance doit terminer, sans rejouer un seul combat. L'ancienne
+        version ne regardait que l'avancement : une decision PROMOUVOIR dont la publication
+        avait ete interrompue, ou abandonnee pour raison technique, faisait simplement sauter
+        le candidat gagnant a chaque relance.
+        """
+        return self.executer(
+            "SELECT * FROM confirmations WHERE campagne=? AND candidat=? AND etat='close'"
+            " AND publication_etat=? ORDER BY id DESC LIMIT 1",
+            (campagne, candidat, PUBLICATION_A_PUBLIER)).fetchone()
+
+    def confirmation_decidee(self, campagne: str, candidat: str) -> sqlite3.Row | None:
+        """La derniere tentative CLOSE, quelle que soit la suite qui lui a ete donnee."""
+        return self.executer(
+            "SELECT * FROM confirmations WHERE campagne=? AND candidat=? AND etat='close'"
+            " ORDER BY id DESC LIMIT 1", (campagne, candidat)).fetchone()
+
+    def marquer_publication_confirmation(self, ident: int, etat: str,
+                                         champion: str = "") -> None:
+        """Suite donnee a une decision close : publiee, caduque, ou toujours a publier."""
+        if etat not in (PUBLICATION_SANS_OBJET, PUBLICATION_A_PUBLIER,
+                        PUBLICATION_PUBLIEE, PUBLICATION_CADUQUE):
+            raise ValueError("etat de publication inconnu : %r" % etat)
+        self.executer("UPDATE confirmations SET publication_etat=?, champion_publie=?"
+                      " WHERE id=?", (etat, champion, ident))
 
     def confirmation(self, ident: int) -> sqlite3.Row | None:
         return self.executer("SELECT * FROM confirmations WHERE id=?", (ident,)).fetchone()
@@ -403,6 +465,11 @@ class Registre:
                 (candidat, champion_attendu, nouveau, "ouverte", "en_cours", "", _maintenant(),
                  json.dumps(pointeur, ensure_ascii=False), "", confirmation))
             return int(cur.lastrowid)
+
+    def etrangers_publication(self, pub_id: int, chemins: list[str]) -> None:
+        """Les fichiers non suivis presents AVANT la publication. Un abandon les preserve."""
+        self.executer("UPDATE publications SET non_suivis_json=? WHERE id=?",
+                      (json.dumps(chemins), pub_id))
 
     def etape_publication(self, pub_id: int, etape: str, detail: str = "",
                           commit_champion: str | None = None) -> None:

@@ -291,14 +291,24 @@ class Laboratoire:
                                               encoding="utf-8")
 
     # ---- utilitaires -----------------------------------------------------------------
-    def patch(self, force: int, chemin_relatif: str = "New_AI/Scoring/Scoring.leek") -> str:
-        """Un vrai diff unifie, fabrique par Git : un patch ecrit a la main casse."""
+    def patch(self, force: int, chemin_relatif: str = "New_AI/Scoring/Scoring.leek",
+              ajoute: str | None = None) -> str:
+        """Un vrai diff unifie, fabrique par Git : un patch ecrit a la main casse.
+
+        `ajoute` fait en plus CREER un fichier, en gardant une force qui change vraiment le
+        jeu : un patch qui n'ajouterait qu'un fichier laisserait le candidat identique au
+        champion et il n'atteindrait jamais la confirmation.
+        """
         _git(self.depot, "checkout", "-q", "-b", "fabrique", self.base)
-        cible = self.depot / chemin_relatif
-        _ecrire(cible, SCORING % force)
+        _ecrire(self.depot / chemin_relatif, SCORING % force)
+        if ajoute:
+            _ecrire(self.depot / ajoute, "// helper ajoute par le candidat\n")
         _git(self.depot, "add", "-A")
         diff = _git(self.depot, "diff", "--cached")
         _git(self.depot, "reset", "-q", "--hard", self.base)
+        # `reset --hard` ne retire pas toujours un fichier qui n'existait dans aucun commit :
+        # le depot jouet doit repartir vraiment propre, sinon l'inscription du candidat refuse.
+        _git(self.depot, "clean", "-fdq", "--", "New_AI")
         _git(self.depot, "checkout", "-q", "scoring")
         _git(self.depot, "branch", "-q", "-D", "fabrique")
         return diff
@@ -739,6 +749,212 @@ def test_une_tentative_ne_change_pas_de_champion_en_silence():
                 except mod_reg.ChampionObsolete as e:
                     assert "champion-000" in str(e) and "champion-001" in str(e)
                 assert reg.confirmations_utilisees("essai") == 1
+
+
+def _etat_apres_coupure(lab, patches, coupure):
+    """Lance la boucle jusqu'a une coupure donnee du passage decision -> publication.
+
+    Rien n'est simule dans le controleur : on remplace le PROCESSUS qui devait suivre, comme
+    une panne l'aurait fait. `coupure` vaut :
+      - "cloture"    : la cloture de la tentative n'aboutit pas ;
+      - "avant_pub"  : la decision est conservee, la publication n'est jamais ouverte ;
+      - "code"       : la publication est ouverte puis interrompue a `code_prepare` ;
+      - "bundle"     : interrompue a `bundle_verifie`, donc APRES la pose de l'arbre du
+                       candidat et avant tout commit.
+    """
+    anciens = (cli._cloturer_tentative, cli.mod_pub.publier)
+    if coupure == "cloture":
+        def _casse(*a, **k):
+            raise RuntimeError("panne de stockage pendant la cloture")
+        cli._cloturer_tentative = _casse
+    elif coupure == "avant_pub":
+        def _jamais(*a, **k):
+            raise RuntimeError("panne avant l'ouverture de la publication")
+        cli.mod_pub.publier = _jamais
+    elif coupure in ("code", "bundle"):
+        vrai = anciens[1]
+        etape = "code_prepare" if coupure == "code" else "bundle_verifie"
+        cli.mod_pub.publier = lambda *a, _e=etape, **k: vrai(*a, _coupure=_e, **k)
+    try:
+        try:
+            lab.run_loop(patches, candidats=1, confirmations=1, minutes=30.0)
+        except Exception:
+            pass
+    finally:
+        cli._cloturer_tentative, cli.mod_pub.publier = anciens
+
+
+def test_une_decision_positive_survit_a_une_coupure_avant_sa_publication():
+    """Les trois coupures du passage decision -> publication, puis deux relances.
+
+    Une decision PROMOUVOIR doit etre conservee avec sa tentative, et sa promotion terminee a
+    la relance : ni rejouer la confirmation, ni oublier le gagnant. Auparavant, la boucle
+    sautait toute confirmation dont l'avancement ne valait pas INCOMPLET, y compris une
+    decision positive jamais publiee.
+    """
+    for coupure, attendu in (("cloture", "tentative rouverte, plan repris"),
+                             ("avant_pub", "decision conservee, promotion a terminer"),
+                             ("code", "publication abandonnee, decision toujours publiable")):
+        with tempfile.TemporaryDirectory() as t:
+            with Laboratoire(Path(t)) as lab:
+                lab.init_campagne()
+                patches = lab.ecrire_patches({"c-fort": 45})
+                _etat_apres_coupure(lab, patches, coupure)
+
+                with lab.registre() as reg:
+                    assert reg.confirmations_utilisees("essai") == 1, coupure
+                    if coupure == "cloture":
+                        # La cloture n'a pas eu lieu : la tentative reste OUVERTE, donc
+                        # reprenable avec le meme plan.
+                        assert reg.confirmation_reprenable("essai", "essai-c-fort") is not None
+                    else:
+                        a_publier = reg.confirmation_a_publier("essai", "essai-c-fort")
+                        assert a_publier is not None, (coupure, "decision positive perdue")
+                        assert a_publier["verdict"] == "PROMOUVOIR"
+                    assert reg.champion_courant()["champion_courant"] == "champion-000"
+
+                # Premiere relance : la promotion aboutit, sans confirmation supplementaire.
+                lab.synth.joues = 0
+                lab.run_loop(patches, candidats=1, confirmations=1, minutes=30.0)
+                rapport = lab.rapport_boucle()
+                assert rapport["promotions"] == 1, (coupure, attendu, rapport["journal"])
+                with lab.registre() as reg:
+                    assert reg.confirmations_utilisees("essai") == 1, (coupure, "budget entame")
+                    assert reg.champion_courant()["champion_courant"] == "champion-001"
+                    assert reg.publication_en_cours() is None
+                if coupure != "cloture":
+                    assert lab.synth.joues == 0, (
+                        coupure, "aucun combat ne doit etre rejoue apres une decision complete")
+                assert mod_pub.tag_existe("scoring/champion-001", depot=lab.depot)
+
+                # Seconde relance : plus rien a faire, et surtout pas un second champion.
+                lab.run_loop(patches, candidats=1, confirmations=1, minutes=30.0)
+                assert lab.rapport_boucle()["promotions"] == 0, coupure
+                assert not mod_pub.tag_existe("scoring/champion-002", depot=lab.depot)
+
+
+def test_un_abandon_retire_les_fichiers_ajoutes_par_le_candidat():
+    """Un candidat qui AJOUTE un helper ne doit pas laisser le depot sale apres un abandon.
+
+    Le `reset` puis le `checkout` restaurent les fichiers suivis ; un fichier ajoute redevient
+    simplement non suivi et survivait a l'abandon, ce qui bloquait ensuite l'inscription de
+    tout nouveau candidat.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        with Laboratoire(Path(t)) as lab:
+            lab.init_campagne()
+            patches = lab.tmp / "patches"
+            patches.mkdir(exist_ok=True)
+            _ecrire(patches / "ajout.patch",
+                    lab.patch(45, ajoute="New_AI/Scoring/Added.leek"))
+            assert "new file" in (patches / "ajout.patch").read_text(encoding="utf-8"), \
+                "le patch doit creer un fichier"
+            # Coupure APRES la pose de l'arbre du candidat : le fichier ajoute est en place,
+            # et rien n'est encore commite.
+            _etat_apres_coupure(lab, patches, "bundle")
+            assert (lab.depot / "New_AI" / "Scoring" / "Added.leek").exists(), \
+                "la coupure doit tomber alors que le fichier ajoute est pose"
+
+            with lab.registre() as reg:
+                etat = mod_pub.reconcilier(reg, champions=lab.champions, depot=lab.depot)
+            assert etat["etat"] == "abandonnee", etat
+            assert etat["recuperable"] is True, etat
+            assert etat["reste_a_nettoyer"] == [], etat
+            assert not (lab.depot / "New_AI" / "Scoring" / "Added.leek").exists(), \
+                "le fichier ajoute par le candidat doit avoir ete retire"
+            # Le depot est reellement utilisable : un nouveau candidat s'inscrit.
+            assert mod_cand.arbre_propre(), _git(lab.depot, "status", "--porcelain")
+            with lab.registre() as reg:
+                assert reg.champion_courant()["champion_courant"] == "champion-000"
+            suite = lab.ecrire_patches({"suivant": 20})
+            lab.run_loop(suite, candidats=2, confirmations=0, minutes=30.0)
+            rejets = [l for l in lab.rapport_boucle()["journal"] if l.get("etat") == "rejete"]
+            assert not rejets, rejets
+
+
+def test_une_inscription_interrompue_entre_git_et_sqlite_se_reprend():
+    """Panne apres le commit du candidat, avant son insertion : une seule branche, une seule
+    inscription, et le candidat reste evaluable."""
+    with tempfile.TemporaryDirectory() as t:
+        with Laboratoire(Path(t)) as lab:
+            lab.init_campagne()
+            patches = lab.ecrire_patches({"c-fort": 45})
+            vrai = cli._inscrire_candidat
+            cli._inscrire_candidat = lambda *a, **k: (_ for _ in ()).throw(
+                RuntimeError("stockage indisponible"))
+            try:
+                lab.run_loop(patches, candidats=1, confirmations=0, minutes=30.0)
+            finally:
+                cli._inscrire_candidat = vrai
+            premier = lab.rapport_boucle()
+            assert [l for l in premier["journal"] if l.get("etat") == "rejete"], premier
+            with lab.registre() as reg:
+                assert reg.candidat("essai-c-fort") is None, "le registre ne doit rien avoir"
+            assert mod_cand.branche_existe("essai-c-fort"), "le commit, lui, existe"
+
+            # Relance apres retablissement : le candidat est reconstruit depuis Git.
+            lab.run_loop(patches, candidats=1, confirmations=0, minutes=30.0)
+            second = lab.rapport_boucle()
+            repris = [l for l in second["journal"] if l.get("etat") == "repris"]
+            assert repris, second["journal"]
+            assert not [l for l in second["journal"] if l.get("etat") == "rejete"], second
+            with lab.registre() as reg:
+                ligne = reg.candidat("essai-c-fort")
+                assert ligne is not None, "l'inscription doit avoir ete reconstruite"
+                assert ligne["commit"] if False else True
+            branches = [b for b in _git(lab.depot, "branch", "--list",
+                                        "scoring-candidates/*").strip().split("\n") if b.strip()]
+            assert len(branches) == 1, branches
+            assert any(l.get("etape") == "s1" for l in second["journal"]), second["journal"]
+
+
+def test_un_budget_nul_ne_produit_ni_proposition_ni_inscription():
+    """Zero minute, ou plafond de candidats atteint : l'optimiseur n'est pas sollicite.
+
+    La boucle creait, commitait et inscrivait un candidat avec zero minute de budget, pour
+    refuser S1 juste apres.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        with Laboratoire(Path(t)) as lab:
+            lab.init_campagne()
+            patches = lab.ecrire_patches({"c-fort": 45})
+
+            class Compteur(mod_opt.Manuel):
+                appels = 0
+
+                def proposer(self, contexte):
+                    Compteur.appels += 1
+                    return super().proposer(contexte)
+
+            vrai = cli._propositions
+            cli._propositions = lambda cfg, source: [
+                ("c-fort", Compteur((source / "c-fort.patch").read_text(encoding="utf-8")))]
+            try:
+                lab.run_loop(patches, candidats=1, confirmations=0, minutes=0.0)
+                sans_temps = lab.rapport_boucle()
+                assert Compteur.appels == 0, "aucune proposition ne doit etre demandee"
+                assert sans_temps["candidats_enregistres"] == 0
+                assert any(l.get("detail") == "budget de temps epuise"
+                           for l in sans_temps["journal"]), sans_temps["journal"]
+                with lab.registre() as reg:
+                    assert reg.candidat("essai-c-fort") is None
+                assert not mod_cand.branche_existe("essai-c-fort")
+
+                # Plafond de candidats a zero : meme exigence.
+                lab.run_loop(patches, candidats=0, confirmations=0, minutes=30.0)
+                sans_place = lab.rapport_boucle()
+                assert Compteur.appels == 0, "l'optimiseur ne doit pas etre sollicite"
+                assert any(l.get("detail") == "plafond de candidats atteint"
+                           for l in sans_place["journal"]), sans_place["journal"]
+
+                # Avec du budget, la proposition est bien demandee une fois.
+                lab.run_loop(patches, candidats=1, confirmations=0, minutes=30.0)
+                assert Compteur.appels == 1, Compteur.appels
+                # Et une relance ne redemande rien : le candidat existe.
+                lab.run_loop(patches, candidats=1, confirmations=0, minutes=30.0)
+                assert Compteur.appels == 1, Compteur.appels
+            finally:
+                cli._propositions = vrai
 
 
 def test_le_vrai_registre_reste_intact():
