@@ -230,22 +230,245 @@ def test_coeurs_reels_et_tours_normaux():
             assert e["cores"] == attendu, "les coeurs doivent etre ceux du build"
 
 
-def test_graines_de_confirmation_sont_neuves():
-    """Le decalage donne des graines jamais utilisees au developpement."""
+def test_graines_de_confirmation_sont_neuves_a_chaque_tentative():
+    """Chaque TENTATIVE de confirmation tire dans sa propre vague.
+
+    Le decalage fixe d'un million donnait les memes 160 blocs a toutes les confirmations de la
+    campagne : retoucher une idee apres avoir vu ces resultats puis la reconfirmer ne
+    fournissait plus une confirmation sur un echantillon nouveau.
+    """
     builds = mod_sc.charger_builds()
-    dev = mod_sc.plan_de_blocs("farmer", ["o"], 20, 7, builds, decalage=0)
-    conf = mod_sc.plan_de_blocs("farmer", ["o"], 20, 7, builds, decalage=10000)
-    assert not ({b.graine for b in dev} & {b.graine for b in conf})
+    dev = mod_sc.plan_de_blocs("farmer", ["o"], 20, 7, builds)
+    t1 = mod_sc.plan_de_blocs("farmer", ["o"], 20, 7, builds, vague="confirm-c1-01")
+    t2 = mod_sc.plan_de_blocs("farmer", ["o"], 20, 7, builds, vague="confirm-c1-02")
+    g_dev = {b.graine for b in dev}
+    g1 = {b.graine for b in t1}
+    g2 = {b.graine for b in t2}
+    assert not (g_dev & g1) and not (g_dev & g2)
+    assert not (g1 & g2), "deux tentatives ne doivent pas rejouer le meme echantillon"
+
+
+def test_etapes_partagent_leurs_blocs():
+    """S1 ⊂ S2 ⊂ S3 : ajouter un adversaire ne doit pas reattribuer les blocs deja joues.
+
+    Avec `indice % nb_adversaires`, passer de trois a cinq adversaires ne conservait que trois
+    des huit blocs de S1, et quatorze des vingt-quatre de S2 : le cout cumulatif annonce entre
+    etapes n'existait pas.
+    """
+    builds = mod_sc.charger_builds()
+    panel = ["p%d" % i for i in range(10)]
+    s1 = mod_sc.plan_de_blocs("farmer", panel, 8, 99, builds, adversaires=panel[:3])
+    s2 = mod_sc.plan_de_blocs("farmer", panel, 24, 99, builds, adversaires=panel[:5])
+    s3 = mod_sc.plan_de_blocs("farmer", panel, 60, 99, builds, adversaires=panel)
+    k1, k2, k3 = ({b.cle() for b in x} for x in (s1, s2, s3))
+    assert k1 <= k2, "les blocs de S1 doivent tous se retrouver dans S2"
+    assert k2 <= k3, "les blocs de S2 doivent tous se retrouver dans S3"
+    assert {b.adversaire for b in s1} <= set(panel[:3])
+
+
+def test_team_fait_deux_camps_de_quatre_avec_deux_proprietaires():
+    """Un camp = une sous-liste de `entities`, et rien d'autre.
+
+    Le generateur incremente son camp a chaque sous-liste (`State.addEntity`, `team = t`). La
+    version precedente ecrivait quatre sous-listes de deux poireaux : quatre camps, et les deux
+    eleveurs censes cooperer devenaient adversaires. Le champ JSON `team` ne corrige rien.
+    """
+    builds = mod_sc.charger_builds()
+    bloc = mod_sc.plan_de_blocs("team", ["o"], 1, 4242, builds)[0]
+    sc = mod_sc.scenario(bloc, builds, "g/Main.leek", "d/Main.leek")
+    camps = mod_sc.camps_attendus(sc)
+    assert len(camps) == 2, "le moteur construirait %d camps" % len(camps)
+    assert [len(c) for c in camps] == [4, 4]
+    for groupe in sc["entities"]:
+        proprietaires = {e["farmer"] for e in groupe}
+        assert len(proprietaires) == 2, "deux eleveurs differents par camp"
+        assert len({e["ai"] for e in groupe}) == 1, "un camp joue une seule politique"
+    assert {e["ai"] for e in sc["entities"][0]} != {e["ai"] for e in sc["entities"][1]}
 
 
 def test_classement_des_erreurs():
     assert mod_eval.classer({"runner_error": "Invalid AI"})[0] == mod_eval.ERREUR_COMPILATION
     assert mod_eval.classer({"runner_error": "disque plein"})[0] == mod_eval.ERREUR_INFRA
     assert mod_eval.classer({})[0] == mod_eval.ERREUR_MANQUANT
+    # Une panne du generateur PENDANT la generation est a rejouer, pas un resultat manquant.
+    assert mod_eval.classer({"exception": "NullPointerException"})[0] == mod_eval.ERREUR_INFRA
     # Un tour avorte ou en exception CONSERVE le resultat : c'est du jeu, pas une panne.
-    cat, _ = mod_eval.classer({"winner": 0, "ai_errors": [[1002, 3]]})
+    cat, _ = mod_eval.classer({"winner": 0, "ai_errors": [[1002, 3]], "system_errors": []})
     assert cat == mod_eval.ERREUR_IA
-    assert mod_eval.analyser({"winner": 0, "ai_errors": [[1002, 3]]})[0] == 1.0
+    assert mod_eval.analyser({"winner": 0, "ai_errors": [[1002, 3]],
+                              "system_errors": []})[0] == 1.0
+
+
+def test_ia_non_chargee_sort_des_mesures_mais_pas_un_combat_couteux():
+    """Le critere de validite vient du MOTEUR, pas du cout ni de l'issue.
+
+    Un combat ou l'IA epuise son plafond d'operations, perd, ou dure longtemps compte
+    pleinement. Seul un combat ou le moteur n'a jamais eu d'IA a executer est ecarte, et c'est
+    son erreur systeme qui le dit — pas une heuristique sur la duree.
+    """
+    sans_ia = {"winner": 1, "duration": 65, "execution_time_ns": 4 * 10**8,
+               "ai_errors": [[1002, 1]] * 128,
+               "system_errors": [[10001, 8, 61], [20001, 8, 61]]}
+    assert mod_eval.classer(sans_ia)[0] == mod_eval.ERREUR_CHARGEMENT
+    assert mod_eval.analyser(sans_ia)[0] is None
+    bon, raison = mod_eval.valide_pour_le_debit(sans_ia)
+    assert not bon and "ia_non_chargee" in raison
+
+    # Meme sortie, mais l'erreur systeme est un depassement d'operations (101) : c'est du jeu.
+    couteux = dict(sans_ia, system_errors=[[10001, 8, 101]] * 60)
+    assert mod_eval.classer(couteux)[0] == mod_eval.ERREUR_IA
+    assert mod_eval.valide_pour_le_debit(couteux)[0]
+    assert mod_eval.analyser(couteux)[0] == 0.0        # l'equipe gauche a perdu, et ca compte
+
+
+def test_couverture_incomplete_interdit_la_promotion():
+    """Il ne suffit pas que les blocs CONSERVES soient complets.
+
+    Reproduction d'Astra : quarante blocs prevus contre deux adversaires, tous les blocs de
+    l'un manquent. Il reste vingt blocs et un adversaire — et l'ancienne decision rendait
+    PROMOUVOIR en reponderant l'adversaire survivant.
+    """
+    d = _par_format(farmer=[[0.30, 0.25, 0.35, 0.28] * 5], solo=[[0.05, 0.02, 0.06, 0.03] * 5])
+    couverture = {
+        "farmer": {"blocs_attendus": 40, "blocs_complets": 20,
+                   "blocs_incomplets": [{"indice": i, "manquants": []} for i in range(20)],
+                   "adversaires_attendus": ["o0", "o1"], "adversaires_sans_donnees": ["o1"]},
+        "solo": {"blocs_attendus": 20, "blocs_complets": 20, "blocs_incomplets": [],
+                 "adversaires_attendus": ["o0"], "adversaires_sans_donnees": []},
+    }
+    dec = st.decider(d, POIDS, PLANCHERS, 0.005, 0.01, formats_requis=("farmer", "solo"),
+                     couverture=couverture)
+    assert dec.verdict == "INCOMPLET", dec.verdict
+    assert any("o1" in r for r in dec.raisons)
+
+    # Sans le format team, pourtant pondere : INCOMPLET, et non un verdict sur farmer seul.
+    complet = {"farmer": dict(couverture["farmer"], blocs_complets=40, blocs_incomplets=[],
+                              adversaires_sans_donnees=[]),
+               "solo": couverture["solo"]}
+    dec2 = st.decider(d, POIDS, PLANCHERS, 0.005, 0.01,
+                      formats_requis=("farmer", "solo", "team"), couverture=complet)
+    assert dec2.verdict == "INCOMPLET"
+    assert any("team" in r for r in dec2.raisons)
+
+
+def test_lot_technique_ne_peut_pas_promouvoir():
+    """Des tailles imposees a la main donnent au mieux INDICATIF."""
+    d = _par_format(farmer=[[0.30, 0.25, 0.35, 0.28] * 5], solo=[[0.05, 0.02, 0.06, 0.03] * 5])
+    couverture = {f: {"blocs_attendus": 20, "blocs_complets": 20, "blocs_incomplets": [],
+                      "adversaires_attendus": ["o0"], "adversaires_sans_donnees": []}
+                  for f in ("farmer", "solo")}
+    assert st.decider(d, POIDS, PLANCHERS, 0.005, 0.01, ("farmer", "solo"),
+                      couverture=couverture).verdict == "PROMOUVOIR"
+    dec = st.decider(d, POIDS, PLANCHERS, 0.005, 0.01, ("farmer", "solo"),
+                     couverture=couverture, promouvable=False,
+                     motif_non_promouvable="tailles imposees a la main")
+    assert dec.verdict == "INDICATIF"
+    assert any("NON PROMOUVABLE" in r for r in dec.raisons)
+
+
+def test_invariant_de_budget_interne_bloque_le_candidat():
+    """Autoriser BFS.leek n'autorise pas a retirer les gardes du budget d'operations."""
+    import optimizer as opt
+    invariants = {"f.leek": [{"motif": r"getOperations\(\) > OPS_DEADLINE", "minimum": 3,
+                              "raison": "gardes du budget interne"}]}
+    garde = "if (getOperations() > OPS_DEADLINE) break\n"
+    assert opt.verifier_invariants(lambda c: garde * 3, invariants) == []
+    ruptures = opt.verifier_invariants(lambda c: garde * 2, invariants)
+    assert len(ruptures) == 1 and "budget interne" in ruptures[0]
+    assert opt.verifier_invariants(lambda c: None, invariants)
+
+
+def test_portee_autorisee_explicitement():
+    import optimizer as opt
+    verdict, fautifs = opt.classer_portee(["New_AI/Load/Cache.leek"],
+                                          ["New_AI/Scoring/**"], ["New_AI/Load/Cache.leek"])
+    assert verdict == opt.EXTENSION_A_EXAMINER and fautifs == ["New_AI/Load/Cache.leek"]
+    assert verdict in opt.VERDICTS_BLOQUANTS
+    assert opt.EXTENSION_AUTORISEE not in opt.VERDICTS_BLOQUANTS
+
+
+def test_confirmations_tentatives_budget_et_reprise():
+    """Les vraies fonctions du registre appelees par `evaluate` et `run-loop`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        with mod_reg.Registre(Path(tmp) / "r.sqlite") as reg:
+            t1, reprise = reg.ouvrir_confirmation("camp", "c1", "champion-000",
+                                                  {"farmer": 8}, ["o1"], "proto", 2)
+            assert not reprise
+            # Reprise : meme tentative, MEME plan de graines.
+            t1b, reprise = reg.ouvrir_confirmation("camp", "c1", "champion-000",
+                                                   {"farmer": 8}, ["o1"], "proto", 2)
+            assert reprise and t1b["vague"] == t1["vague"]
+            reg.cloturer_confirmation(t1["id"], "close", "INCONCLUSIF")
+            # Nouvelle tentative : vague NEUVE.
+            t2, reprise = reg.ouvrir_confirmation("camp", "c1", "champion-000",
+                                                  {"farmer": 8}, ["o1"], "proto", 2)
+            assert not reprise and t2["vague"] != t1["vague"]
+            reg.cloturer_confirmation(t2["id"], "close", "INCONCLUSIF")
+            # Plafond effectivement impose.
+            try:
+                reg.ouvrir_confirmation("camp", "c2", "champion-000", {"farmer": 8},
+                                        ["o1"], "proto", 2)
+                raise AssertionError("le plafond de confirmations n'a pas ete impose")
+            except mod_reg.BudgetEpuise as e:
+                assert "2 tentatives sur 2" in str(e)
+
+
+def test_protocole_fige_refuse_une_reecriture_silencieuse():
+    with tempfile.TemporaryDirectory() as tmp:
+        with mod_reg.Registre(Path(tmp) / "r.sqlite") as reg:
+            assert reg.enregistrer_campagne("camp", "{}", "cfg", "proto-a", {}) == "creee"
+            assert reg.enregistrer_campagne("camp", "{}", "cfg", "proto-a", {}) == "inchangee"
+            try:
+                reg.enregistrer_campagne("camp", "{}", "cfg", "proto-b", {})
+                raise AssertionError("un protocole different aurait du etre refuse")
+            except mod_reg.ProtocoleDifferent as e:
+                assert "NOUVELLE campagne" in str(e)
+            reg.verifier_protocole("camp", "proto-a")
+            try:
+                reg.verifier_protocole("camp", "proto-b")
+                raise AssertionError("l'evaluation aurait du refuser un protocole different")
+            except mod_reg.ProtocoleDifferent:
+                pass
+
+
+def test_flux_conserve_les_combats_termines_quand_l_echeance_tombe():
+    """La VRAIE fonction d'execution, avec un faux processus a la place de la JVM.
+
+    L'ancienne version attendait la fin du processus : une coupure au deuxieme lot rendait
+    introuvables les huit combats deja joues du premier. Ici le premier resultat arrive avant
+    l'echeance et doit etre conserve ; les suivants sont declares manquants, jamais inventes.
+    """
+    import time
+    with tempfile.TemporaryDirectory() as t:
+        tmp = Path(t)
+        script = tmp / "faux_runner.py"
+        script.write_text(
+            "import sys, time, json\n"
+            "for i, chemin in enumerate(sys.argv[1:]):\n"
+            "    if i:\n"
+            "        time.sleep(3)\n"
+            "    print('%s' + str(i) + '\\t' + json.dumps({'winner': 0, 'duration': 10,\n"
+            "          'system_errors': []}), flush=True)\n" % mod_eval.PREFIXE,
+            encoding="utf-8")
+        scenarios = [tmp / ("s%d.json" % i) for i in range(3)]
+        for s in scenarios:
+            s.write_text("{}", encoding="utf-8")
+        moteur = _moteur_factice()
+        ancienne = mod_eval.commande_lot
+        recus = []
+        try:
+            mod_eval.commande_lot = lambda m, b, sc: [sys.executable, str(script),
+                                                      *[str(p) for p in sc]]
+            sorties = mod_eval.executer_flux(
+                moteur, tmp, scenarios, timeout=60.0, echeance=time.monotonic() + 1.0,
+                sur_resultat=lambda i, ch, brut: recus.append(i))
+        finally:
+            mod_eval.commande_lot = ancienne
+        assert recus == [0], "le combat termine avant l'echeance doit etre remonte : %s" % recus
+        assert sorties[0]["winner"] == 0
+        for reste in sorties[1:]:
+            assert "runner_error" in reste and "echeance" in reste["runner_error"]
+            assert mod_eval.analyser(reste)[1] == mod_eval.ERREUR_INFRA
 
 
 def _moteur_factice():

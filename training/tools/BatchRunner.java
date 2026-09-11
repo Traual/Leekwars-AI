@@ -54,6 +54,37 @@ public final class BatchRunner {
         }
     }
 
+    /**
+     * Les erreurs SYSTEME du moteur, par entite : [entite, niveau, cle].
+     *
+     * Elles portent la seule information qui distingue une IA qui n'a jamais ete chargee
+     * (fichier introuvable, IA invalide, compilation ratee) d'une IA qui a joue puis epuise
+     * son plafond d'operations. L'action 1002 ne fait pas cette difference : elle vaut pour
+     * les deux, et un combat sans IA passait donc pour un combat valide et tres rapide.
+     */
+    private static ArrayNode systemErrors(Outcome outcome) {
+        ArrayNode found = JsonNodeFactory.instance.arrayNode();
+        if (outcome.logs == null) return found;
+        for (var entry : outcome.logs.entrySet()) {
+            ObjectNode farmerLogs = entry.getValue().toJSON();
+            for (var property : farmerLogs.properties()) {
+                JsonNode group = property.getValue();
+                if (group == null || !group.isArray()) continue;
+                for (JsonNode raw : group) {
+                    if (!raw.isArray() || raw.size() < 4) continue;
+                    if (!raw.get(1).isIntegralNumber() || !raw.get(3).isIntegralNumber()) continue;
+                    int level = raw.get(1).intValue();
+                    if (level != 7 && level != 8) continue;   // SWARNING, SERROR
+                    ArrayNode line = found.addArray();
+                    line.add(raw.get(0).intValue());
+                    line.add(level);
+                    line.add(raw.get(3).intValue());
+                }
+            }
+        }
+        return found;
+    }
+
     private static ObjectNode summarize(Outcome outcome) {
         ObjectNode result = JsonNodeFactory.instance.objectNode();
         result.put("winner", outcome.winner);
@@ -62,6 +93,7 @@ public final class BatchRunner {
         result.put("compilation_time_ns", outcome.compilationTime);
         result.put("execution_time_ns", outcome.executionTime);
         if (outcome.exception != null) result.put("exception", outcome.exception.toString());
+        result.set("system_errors", systemErrors(outcome));
         if (outcome.fight == null) return result;
 
         ObjectNode fight = outcome.fight.toJSON();

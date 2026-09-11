@@ -40,10 +40,18 @@ def fichiers_du_diff(base: str, tete: str) -> list[str]:
     return [l for l in sortie.split("\n") if l]
 
 
+def contenu_au_commit(commit: str, chemin: str) -> str | None:
+    r = subprocess.run(["git", "-C", str(DEPOT), "show", "%s:%s" % (commit, chemin)],
+                       capture_output=True, text=True)
+    return r.stdout if r.returncode == 0 else None
+
+
 def enregistrer(ident: str, parent: str, patch: Path | None = None,
                 bundle_dir: Path | None = None, hypothese: str = "",
                 portee: list[str] | None = None, hors_portee: list[str] | None = None,
-                dependances: list[str] | None = None) -> dict[str, Any]:
+                dependances: list[str] | None = None,
+                invariants: dict[str, list[dict[str, Any]]] | None = None,
+                autorisation: str = "") -> dict[str, Any]:
     """Cree `scoring-candidates/<id>` depuis `parent`, y pose le changement, et commite.
 
     Deux entrees possibles, et une seule sortie : un commit. `patch` applique un diff unifie ;
@@ -77,22 +85,35 @@ def enregistrer(ident: str, parent: str, patch: Path | None = None,
         modifies = [l for l in _git("diff", "--cached", "--name-only").strip().split("\n") if l]
         verdict, fautifs = mod_opt.classer_portee(modifies, portee or ["New_AI/**"],
                                                   hors_portee or [])
-        if verdict != "DANS_PORTEE":
-            # On commite quand meme, mais l'appelant classera la proposition en EXTENSION A
-            # EXAMINER : mesurer un patch tronque donnerait un resultat qui ne correspond a
-            # aucune idee.
-            pass
+        # On commite quand meme : le candidat reste trace. C'est l'APPELANT qui refuse de
+        # l'evaluer tant que le verdict est bloquant. Une extension peut etre autorisee, mais
+        # seulement de facon explicite et journalisee.
+        if verdict != mod_opt.DANS_PORTEE and autorisation:
+            verdict = mod_opt.EXTENSION_AUTORISEE
         message = ("candidat %s : %s\n\nParent : %s\nPortee : %s\nDependances declarees : %s\n"
                    % (ident, hypothese or "(aucune hypothese fournie)", parent, verdict,
                       ", ".join(dependances or []) or "aucune"))
+        if autorisation:
+            message += "Extension autorisee : %s\n" % autorisation
         _git("commit", "-q", "-m", message)
         tete = _git("rev-parse", "HEAD").strip()
+
+        # Le perimetre EFFECTIF a l'interieur des fichiers autorises : autoriser un fichier
+        # n'autorise pas a y retirer les gardes du budget interne d'operations. Une IA sans
+        # garde ne « perd pas de la recherche » : elle se fait couper par le moteur.
+        ruptures = mod_opt.verifier_invariants(
+            lambda chemin: contenu_au_commit(tete, chemin), invariants or {})
+        if ruptures:
+            verdict = mod_opt.INVARIANT_ROMPU
+
         emp = mod_bundle.empreinte(tete)
         return {
-            "id": ident, "branche": branche, "commit": tete, "parent": _git("rev-parse", parent).strip(),
+            "id": ident, "branche": branche, "commit": tete,
+            "parent": _git("rev-parse", parent).strip(),
             "bundle_sha256": emp["sha256"], "arbre_git": emp["arbre_git"],
             "nb_fichiers": emp["nb_fichiers"], "fichiers_modifies": modifies,
             "verdict_portee": verdict, "hors_portee": fautifs,
+            "invariants_rompus": ruptures, "autorisation": autorisation,
             "hypothese": hypothese, "dependances": list(dependances or []),
         }
     finally:

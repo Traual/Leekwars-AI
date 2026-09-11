@@ -7,8 +7,9 @@
     evaluate            etapes de crible (s1/s2/s3) puis confirmation
     report              resultats, incertitudes, couts, raisons de decision
     audit-br            remplacement focal en battle royale, rapport sans veto
-    resume              reconcilie une publication interrompue
-    run-loop            boucle bornee : trois budgets obligatoires
+    resume              reconcilie ou abandonne une publication interrompue
+    run-loop            boucle bornee et COMPLETE : proposition -> S1 -> S2 -> S3 ->
+                        confirmation -> promotion, sous trois budgets obligatoires
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import hashlib
 import json
 import statistics as stdstats
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -39,6 +41,10 @@ import statistics_lab as mod_stats   # noqa: E402
 CONFIG = RACINE / "config" / "loop.yaml"
 RUNS = RACINE / "runs"
 
+# En dessous de ce reste de budget, une etape n'est plus lancee : la commencer pour la couper
+# aussitot depenserait des combats sans produire de decision.
+PLANCHER_ETAPE_SECONDES = 60.0
+
 
 def charger_config(chemin: Path = CONFIG) -> dict:
     return yaml.safe_load(Path(chemin).read_text(encoding="utf-8"))
@@ -54,11 +60,11 @@ def _contexte(args):
 def deployer_bundle(moteur, commit: str, sha256: str) -> tuple[Path, str]:
     """Materialise un bundle SOUS LA RACINE DU GENERATEUR et rend son chemin RELATIF.
 
-    Le `NativeFileSystem` du compilateur LeekScript resout depuis sa propre racine. Un chemin
-    absolu dans le champ `ai` d'un scenario ne provoque AUCUNE erreur de lancement : le combat
-    se joue et l'IA leve a chaque tour. Symptome mesure : 128 erreurs par combat, 65 tours,
-    quatre dixiemes de seconde — sans regarder le detail, on prend ca pour un debit
-    exceptionnel. D'ou le test de reception qui refuse un combat sans IA dans une mesure.
+    Le `NativeFileSystem` du compilateur LeekScript resout depuis sa propre racine et refuse
+    tout ce qui en sort (`resolveSafe`). Un bundle place ailleurs ne provoque AUCUNE erreur de
+    lancement : le combat se joue et l'IA leve a chaque tour. Symptome mesure : 128 erreurs par
+    combat, 65 tours, quatre dixiemes de seconde — sans regarder le detail, on prend ca pour un
+    debit exceptionnel. D'ou le diagnostic de chargement remonte par le runner.
 
     Le repertoire est nomme par l'empreinte : le generateur ressert un binaire compile quand un
     nom a deja servi, et ici un nom identique signifie un contenu identique.
@@ -68,9 +74,37 @@ def deployer_bundle(moteur, commit: str, sha256: str) -> tuple[Path, str]:
     return racine, "test/ai/bundles/%s/Main.leek" % sha256[:16]
 
 
-def _politiques(cfg, n: int | None = None):
-    pols = mod_ligue.charger(cfg["ligue"]["source"], cfg["ligue"].get("ancre"))
-    return pols if n is None else pols[:n]
+def _panel(cfg) -> list:
+    """Le PANEL de la campagne : la ligue, dans un ordre fige. Les sous-ensembles d'etapes en
+    sont des prefixes, ce qui rend les blocs de S1 inclus dans ceux de S2, et ainsi de suite."""
+    return mod_ligue.charger(cfg["ligue"]["source"], cfg["ligue"].get("ancre"))
+
+
+def empreinte_protocole(cfg, moteur, builds, panel) -> tuple[str, dict]:
+    """Tout ce qui, en changeant, rendrait les resultats deja obtenus incomparables.
+
+    Le manifeste de campagne etait descriptif : les evaluations rechargeaient la configuration,
+    la ligue et les builds courants sans jamais comparer quoi que ce soit. Cette empreinte est
+    VERIFIEE avant chaque evaluation.
+    """
+    detail = {
+        "config": hashlib.sha256(json.dumps(cfg, sort_keys=True, ensure_ascii=False)
+                                 .encode("utf-8")).hexdigest(),
+        "moteur": moteur.empreinte,
+        "runner": mod_eval.empreinte_runner(),
+        "parseur": mod_eval.VERSION_PARSEUR,
+        "builds": mod_sc.empreinte_builds(builds),
+        "panel": [{"id": p.ident, "sha256": p.sha256} for p in panel],
+        "formats": {n: [f.type_moteur, f.contexte, f.poireaux_par_camp, f.eleveurs_par_camp]
+                    for n, f in sorted(mod_sc.FORMATS.items())},
+        "tours_max": mod_sc.TOURS_MAX,
+    }
+    brut = json.dumps(detail, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(brut.encode("utf-8")).hexdigest(), detail
+
+
+def _graine_campagne(cfg) -> int:
+    return int(hashlib.sha256(cfg["campagne"]["id"].encode()).hexdigest()[:8], 16)
 
 
 # --------------------------------------------------------------------------------------
@@ -88,15 +122,20 @@ def cmd_doctor(args) -> int:
         ok = False
         print("  ECHEC :", e)
 
-    print("== champion courant ==")
+    print("== champion actif ==")
     try:
         with mod_reg.Registre() as reg:
             courant = reg.champion_courant()
+            en_cours = reg.publication_en_cours()
         emp = mod_bundle.empreinte(courant["commit_code"])
         concorde = emp["sha256"] == courant["bundle_sha256"]
         print("  id            :", courant["champion_courant"])
         print("  commit        :", courant["commit_code"][:12])
         print("  bundle        :", emp["sha256"][:16], "concordance:", "OUI" if concorde else "NON")
+        if en_cours is not None:
+            print("  PUBLICATION EN COURS :", en_cours["nouveau_champion"],
+                  "etape", en_cours["etape"], "— lancer `resume` avant toute evaluation")
+            ok = False
         ok = ok and concorde
     except Exception as e:
         ok = False
@@ -112,23 +151,43 @@ def cmd_doctor(args) -> int:
         print("  builds        :", len(builds), "| eleveurs :", len(eleveurs),
               "dont", complets, "a 4 poireaux ou plus")
         for nom, fmt in mod_sc.FORMATS.items():
-            print("  %-7s type=%d contexte=%d%s"
-                  % (nom, fmt.type_moteur, fmt.contexte,
-                     "  SYNTHETIQUE" if fmt.synthetique else ""))
-        ok = ok and complets >= 2
+            print("  %-7s type=%d contexte=%d camps=2x%d poireaux, %d eleveur(s) par camp%s"
+                  % (nom, fmt.type_moteur, fmt.contexte, fmt.poireaux_par_camp,
+                     fmt.eleveurs_par_camp, "  SYNTHETIQUE" if fmt.synthetique else ""))
+        ok = ok and complets >= 4
     except Exception as e:
         ok = False
         print("  ECHEC :", e)
 
-    print("== ligue ==")
+    print("== ligue (panel de campagne, ordre fige) ==")
     try:
-        pols = _politiques(cfg)
+        pols = _panel(cfg)
         print("  politiques    :", len(pols))
         dbl = mod_ligue.doublons(pols)
         if dbl:
             print("  DOUBLONS      :", dbl, "— autant d'adversaires identiques, pas de diversite")
-        for p in pols:
-            print("    %-24s %-11s %s" % (p.ident, p.origine, p.sha256[:16]))
+        for i, p in enumerate(pols):
+            print("    %2d %-24s %-11s %s" % (i, p.ident, p.origine, p.sha256[:16]))
+    except Exception as e:
+        ok = False
+        print("  ECHEC :", e)
+
+    print("== protocole ==")
+    try:
+        emp, _detail = empreinte_protocole(cfg, moteur, builds, pols)
+        print("  empreinte     :", emp[:16])
+        with mod_reg.Registre() as reg:
+            ligne = reg.campagne(cfg["campagne"]["id"])
+        if ligne is None:
+            print("  campagne      : %s non enregistree (lancer init-campaign)"
+                  % cfg["campagne"]["id"])
+        elif (ligne["empreinte_protocole"] or "") == emp:
+            print("  campagne      : %s, protocole concordant" % cfg["campagne"]["id"])
+        else:
+            ok = False
+            print("  campagne      : %s, PROTOCOLE DIFFERENT (%s enregistre) — ouvrir une "
+                  "nouvelle campagne" % (cfg["campagne"]["id"],
+                                         (ligne["empreinte_protocole"] or "?")[:16]))
     except Exception as e:
         ok = False
         print("  ECHEC :", e)
@@ -140,7 +199,9 @@ def cmd_doctor(args) -> int:
 # --------------------------------------------------------------------------------------
 def cmd_init_campaign(args) -> int:
     cfg, moteur, _build = _contexte(args)
-    pols = _politiques(cfg)
+    pols = _panel(cfg)
+    builds = mod_sc.charger_builds()
+    emp_proto, detail = empreinte_protocole(cfg, moteur, builds, pols)
     with mod_reg.Registre() as reg:
         courant = reg.champion_courant()
         conf = json.dumps(cfg, sort_keys=True, ensure_ascii=False)
@@ -149,12 +210,11 @@ def cmd_init_campaign(args) -> int:
             "cree_le": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "statut": "preparee",
             "champion_initial": courant,
-            "ligue": mod_ligue.resume(pols),
+            "panel": mod_ligue.resume(pols),
             "doublons_de_ligue": mod_ligue.doublons(pols),
             "moteur": {"racine": str(moteur.racine), "empreinte": moteur.empreinte,
                        "java": moteur.version_java(),
-                       "runner_sha256": hashlib.sha256(
-                           mod_eval.SOURCE_RUNNER.read_bytes()).hexdigest()},
+                       "runner_sha256": mod_eval.empreinte_runner()},
             "politique_coeurs": "reels, aucun plancher ni plafond",
             "tours_max": mod_sc.TOURS_MAX,
             "objectif": cfg["objectif"],
@@ -163,23 +223,34 @@ def cmd_init_campaign(args) -> int:
                         "risque_nominal_campagne": cfg["campagne"]["risque_nominal_campagne"],
                         "alpha_par_confirmation": cfg["campagne"]["alpha_par_confirmation"]},
             "empreinte_config": hashlib.sha256(conf.encode("utf-8")).hexdigest(),
+            "empreinte_protocole": emp_proto,
+            "protocole": detail,
             "_note_risque": ("Le risque nominal vaut pour CE budget de confirmations. Enchainer "
                              "des campagnes ne conserve pas 5 % de risque cumule."),
+            "_note_gel": ("Le protocole est VERIFIE avant chaque evaluation. Un moteur, des "
+                          "builds, une ligue ou une configuration differents refusent de "
+                          "continuer cette campagne : c'est une nouvelle campagne."),
             "_note_builds": ("Le snapshot donne des BUILDS, pas les IA des joueurs du haut de "
                              "classement. Les resultats se lisent « contre les politiques de la "
                              "ligue sur des builds representatifs »."),
         }
+        try:
+            etat = reg.enregistrer_campagne(manifeste["id"], conf, manifeste["empreinte_config"],
+                                            emp_proto, detail)
+        except mod_reg.ProtocoleDifferent as e:
+            print("REFUS :", e)
+            return 2
         chemin = RUNS / ("campagne-%s.json" % cfg["campagne"]["id"])
         chemin.parent.mkdir(parents=True, exist_ok=True)
         chemin.write_text(json.dumps(manifeste, ensure_ascii=False, indent=2), encoding="utf-8")
-        reg.cx.execute("INSERT OR REPLACE INTO campagnes (id, cree_le, config_json,"
-                       " empreinte_config, statut) VALUES (?,?,?,?,?)",
-                       (manifeste["id"], manifeste["cree_le"], conf,
-                        manifeste["empreinte_config"], "preparee"))
-    print("campagne preparee :", chemin)
+        utilisees = reg.confirmations_utilisees(manifeste["id"])
+    print("campagne %s :" % etat, chemin)
     print("champion initial  :", courant["champion_courant"], courant["commit_code"][:12])
-    print("ligue             :", len(pols), "politiques")
-    print("\nAucune boucle lancee. Etape suivante : register-candidate puis evaluate.")
+    print("panel             :", len(pols), "politiques")
+    print("protocole         :", emp_proto[:16])
+    print("confirmations     : %d utilisees sur %d"
+          % (utilisees, cfg["campagne"]["confirmations_max"]))
+    print("\nAucune boucle lancee. Etape suivante : register-candidate puis evaluate, ou run-loop.")
     return 0
 
 
@@ -224,15 +295,17 @@ def cmd_calibrate(args) -> int:
                                              cfg["debit"]["timeout_lot_secondes"])]
         mur = time.monotonic() - t0
 
-        durees, compils, erreurs, valides = [], [], {}, 0
+        durees, compils, erreurs, valides, ecartes = [], [], {}, 0, []
         for lot, bruts in zip(lots, sorties):
             for chemin, brut in zip(lot, bruts):
                 _s, err, det = mod_eval.analyser(brut)
                 erreurs[err] = erreurs.get(err, 0) + 1
-                # Un combat dont les IA n'ont pas tourne ne nourrit AUCUNE mesure de debit : il
-                # est rapide precisement parce qu'il n'a rien calcule.
-                if err in (mod_eval.ERREUR_COMPILATION, mod_eval.ERREUR_INFRA,
-                           mod_eval.ERREUR_MANQUANT):
+                # LA fonction de production, celle que le test de reception exerce. Un combat
+                # dont les IA n'ont pas ete chargees ne nourrit aucune mesure de debit : il est
+                # rapide precisement parce qu'il n'a rien calcule.
+                bon, raison = mod_eval.valide_pour_le_debit(brut)
+                if not bon:
+                    ecartes.append({"fichier": chemin.name, "raison": raison})
                     continue
                 valides += 1
                 if brut.get("execution_time_ns"):
@@ -247,16 +320,17 @@ def cmd_calibrate(args) -> int:
         if durees:
             tries = sorted(durees)
             par_format[f] = {
-                "n_valides": valides, "mur_s": round(mur, 2),
+                "n_valides": valides, "n_ecartes": len(ecartes), "mur_s": round(mur, 2),
                 "compilation_max_s": round(max(compils), 2) if compils else None,
                 "execution_mediane_s": round(stdstats.median(durees), 2),
                 "execution_p90_s": round(tries[max(0, int(0.9 * len(tries)) - 1)], 2),
                 "execution_max_s": round(max(durees), 2),
                 "combats_par_minute": round(60.0 * valides / mur, 2),
-                "erreurs": erreurs,
+                "erreurs": erreurs, "ecartes": ecartes,
             }
         else:
-            par_format[f] = {"n_valides": 0, "erreurs": erreurs,
+            par_format[f] = {"n_valides": 0, "n_ecartes": len(ecartes), "erreurs": erreurs,
+                             "ecartes": ecartes,
                              "note": "aucun combat VALIDE : rien a mesurer"}
 
     rapport = {"workers": args.workers, "budget_secondes": budget,
@@ -275,42 +349,82 @@ def cmd_calibrate(args) -> int:
 
 
 # --------------------------------------------------------------------------------------
+def _enregistrer_candidat(cfg, reg, ident: str, parent: str, patch=None, bundle_dir=None,
+                          hypothese: str = "", dependances=None,
+                          autorisation: str = "") -> dict:
+    info = mod_cand.enregistrer(
+        ident, parent, patch=patch, bundle_dir=bundle_dir, hypothese=hypothese,
+        portee=cfg["optimiseur"]["portee"], hors_portee=cfg["optimiseur"]["hors_portee"],
+        dependances=dependances or [],
+        invariants=cfg["optimiseur"].get("invariants") or {},
+        autorisation=autorisation)
+    etat = ("bloque:%s" % info["verdict_portee"]
+            if info["verdict_portee"] in mod_opt.VERDICTS_BLOQUANTS else "enregistre")
+    reg.enregistrer_candidat(info["id"], cfg["campagne"]["id"], info["commit"], info["parent"],
+                             info["bundle_sha256"], info["hypothese"],
+                             {"fichiers": info["fichiers_modifies"],
+                              "verdict": info["verdict_portee"],
+                              "hors_portee": info["hors_portee"],
+                              "invariants_rompus": info["invariants_rompus"],
+                              "autorisation": info["autorisation"],
+                              "dependances": info["dependances"]}, etat)
+    if info["autorisation"]:
+        reg.note("portee", "candidat %s : extension autorisee — %s (fichiers : %s)"
+                 % (info["id"], info["autorisation"], ", ".join(info["hors_portee"]) or "-"))
+    if info["verdict_portee"] in mod_opt.VERDICTS_BLOQUANTS:
+        reg.note("portee", "candidat %s bloque (%s) : %s"
+                 % (info["id"], info["verdict_portee"],
+                    "; ".join(info["invariants_rompus"] or info["hors_portee"])))
+    return info
+
+
 def cmd_register_candidate(args) -> int:
     cfg = charger_config(Path(args.config))
     with mod_reg.Registre() as reg:
         courant = reg.champion_courant()
         parent = args.parent or courant["commit_code"]
-        info = mod_cand.enregistrer(
-            args.id, parent,
+        info = _enregistrer_candidat(
+            cfg, reg, args.id, parent,
             patch=Path(args.patch) if args.patch else None,
             bundle_dir=Path(args.bundle) if args.bundle else None,
             hypothese=args.hypothese,
-            portee=cfg["optimiseur"]["portee"], hors_portee=cfg["optimiseur"]["hors_portee"],
-            dependances=[d for d in (args.dependances or "").split(",") if d])
+            dependances=[d for d in (args.dependances or "").split(",") if d],
+            autorisation=args.autoriser_extension or "")
         deja = reg.bundle_deja_evalue(info["bundle_sha256"])
         if deja is not None and deja["id"] != args.id:
             print("ATTENTION : bundle identique au candidat %s. Le rejouer ne mesurerait rien de"
                   " neuf." % deja["id"])
-        reg.enregistrer_candidat(info["id"], cfg["campagne"]["id"], info["commit"],
-                                 info["parent"], info["bundle_sha256"], info["hypothese"],
-                                 {"fichiers": info["fichiers_modifies"],
-                                  "verdict": info["verdict_portee"],
-                                  "hors_portee": info["hors_portee"],
-                                  "dependances": info["dependances"]})
         chemin = RUNS / "candidats" / ("%s.json" % info["id"])
         chemin.parent.mkdir(parents=True, exist_ok=True)
         chemin.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(info, ensure_ascii=False, indent=2))
-    if info["verdict_portee"] != "DANS_PORTEE":
-        print("\nEXTENSION A EXAMINER : %s sort du perimetre convenu. Mesurer un patch tronque "
-              "donnerait un resultat qui ne correspond a aucune idee." % info["hors_portee"])
+    if info["verdict_portee"] in mod_opt.VERDICTS_BLOQUANTS:
+        print("\n%s : ce candidat NE SERA PAS EVALUE." % info["verdict_portee"])
+        for r in (info["invariants_rompus"] or info["hors_portee"]):
+            print("   -", r)
+        print("   Un helper necessaire peut etre autorise explicitement :"
+              " --autoriser-extension \"motif\" (l'autorisation est journalisee).")
+        return 3
     return 0
 
 
 # --------------------------------------------------------------------------------------
+def _formats_requis(spec: dict, blocs: dict) -> list[str]:
+    demandes = spec.get("formats_requis")
+    if demandes:
+        return [f for f in demandes if blocs.get(f, 0) > 0]
+    return [f for f, n in blocs.items() if n and n > 0] or ["farmer"]
+
+
 def _evaluer(cfg, moteur, build, reg, cand: dict, etape: str, workers: int,
-             blocs_override: dict | None = None) -> dict:
+             blocs_override: dict | None = None, vague: str = mod_sc.VAGUE_DEV,
+             echeance: float | None = None, promouvable: bool = False,
+             progres=None) -> dict:
     builds = mod_sc.charger_builds()
+    panel = _panel(cfg)
+    emp_proto, _detail = empreinte_protocole(cfg, moteur, builds, panel)
+    reg.verifier_protocole(cfg["campagne"]["id"], emp_proto)
+
     courant = reg.champion_courant()
     emp_h = mod_bundle.empreinte(courant["commit_code"])
     deployer_bundle(moteur, courant["commit_code"], emp_h["sha256"])
@@ -320,23 +434,30 @@ def _evaluer(cfg, moteur, build, reg, cand: dict, etape: str, workers: int,
 
     spec = dict(cfg["etapes"][etape])
     blocs = blocs_override or spec["blocs"]
-    pols = _politiques(cfg, spec.get("adversaires"))
+    noms_panel = [p.ident for p in panel]
+    actifs = panel[:spec.get("adversaires", len(panel))]
     confirmation = etape == "confirmation"
-    # Graines de confirmation NEUVES : tirees apres le gel du candidat, jamais utilisees pour le
-    # choisir ou le retoucher avant la decision.
-    decalage = 1_000_000 if confirmation else 0
-    graine = int(hashlib.sha256(cfg["campagne"]["id"].encode()).hexdigest()[:8], 16)
 
     t0 = time.monotonic()
-    par_format = mod_orch.evaluer_etape(
-        reg, moteur, build, builds, pols, ia_c, cand["bundle_sha256"], ia_h, emp_h["sha256"],
-        blocs, pols, graine, RUNS / "matchs" / etape, decalage=decalage, workers=workers)
+    par_format, couverture = mod_orch.evaluer_etape(
+        reg, moteur, build, builds, noms_panel, actifs, ia_c, cand["bundle_sha256"],
+        ia_h, emp_h["sha256"], blocs, _graine_campagne(cfg), RUNS / "matchs" / etape,
+        vague=vague, workers=workers, taille_lot=cfg["debit"].get("taille_lot", 8),
+        timeout=cfg["debit"]["timeout_lot_secondes"], echeance=echeance, progres=progres)
     mur = time.monotonic() - t0
 
     alpha = cfg["campagne"]["alpha_par_confirmation"] if confirmation else 0.05
+    motif = ""
+    if not promouvable:
+        motif = ("etape de crible" if not confirmation else
+                 "tailles imposees a la main" if blocs_override else
+                 "confirmation non enregistree comme tentative")
     dec = mod_stats.decider(par_format, cfg["objectif"]["poids"],
                             cfg["objectif"]["planchers_empiriques"], alpha,
-                            cfg["objectif"]["gain_minimal_farmer"])
+                            cfg["objectif"]["gain_minimal_farmer"],
+                            formats_requis=_formats_requis(spec, blocs),
+                            couverture=couverture, promouvable=promouvable,
+                            motif_non_promouvable=motif)
     resultats = {}
     for f, comps in par_format.items():
         d, _v, a = mod_stats.agreger_format(comps)
@@ -350,37 +471,95 @@ def _evaluer(cfg, moteur, build, reg, cand: dict, etape: str, workers: int,
     return {"candidat": cand, "etape": etape, "champion": courant["champion_courant"],
             "alpha": alpha, "secondes": round(mur, 1),
             "protocole": {"coeurs": "reels", "tours_max": mod_sc.TOURS_MAX,
-                          "graines": "neuves" if confirmation else "developpement",
-                          "blocs": blocs, "adversaires": [p.ident for p in pols],
-                          "taille_figee_avant_resultats": True},
+                          "empreinte": emp_proto, "vague": vague,
+                          "blocs": blocs, "panel": noms_panel,
+                          "adversaires": [p.ident for p in actifs],
+                          "formats_requis": _formats_requis(spec, blocs),
+                          "promouvable": promouvable,
+                          "taille_figee_avant_resultats": not blocs_override},
+            "couverture": couverture,
             "resultats": resultats,
             "decision": {"verdict": dec.verdict, "raisons": dec.raisons,
+                         "lacunes": dec.lacunes,
                          "objectif_pondere": round(dec.j, 4),
                          "borne_basse_objectif":
                              None if dec.borne_j is None else round(dec.borne_j, 4)}}
 
 
+def _candidat_du_registre(reg, ident: str) -> dict | None:
+    ligne = reg.candidat(ident)
+    if ligne is None:
+        return None
+    portee = json.loads(ligne["portee_json"] or "{}")
+    return {"id": ligne["id"], "commit": ligne["commit_code"], "parent": ligne["parent"],
+            "bundle_sha256": ligne["bundle_sha256"], "hypothese": ligne["hypothese"],
+            "branche": "%s/%s" % (mod_cand.PREFIXE_BRANCHE, ligne["id"]),
+            "verdict_portee": portee.get("verdict", mod_opt.DANS_PORTEE),
+            "etat": ligne["etat"]}
+
+
 def cmd_evaluate(args) -> int:
     cfg, moteur, build = _contexte(args)
-    promu = None
+    promu, chemin = None, None
     with mod_reg.Registre() as reg:
-        ligne = reg.candidat(args.id)
-        if ligne is None:
+        if reg.publication_en_cours() is not None:
+            print("REFUS : une publication est en cours. Lancer `resume` d'abord.")
+            return 2
+        cand = _candidat_du_registre(reg, args.id)
+        if cand is None:
             print("candidat inconnu :", args.id)
             return 2
-        cand = {"id": ligne["id"], "commit": ligne["commit_code"], "parent": ligne["parent"],
-                "bundle_sha256": ligne["bundle_sha256"], "hypothese": ligne["hypothese"],
-                "branche": "%s/%s" % (mod_cand.PREFIXE_BRANCHE, ligne["id"])}
+        if cand["verdict_portee"] in mod_opt.VERDICTS_BLOQUANTS:
+            print("REFUS : candidat %s classe %s. Une extension non resolue ne participe ni au "
+                  "crible ni a la confirmation." % (args.id, cand["verdict_portee"]))
+            return 3
+
         etape = "confirmation" if args.stage == "confirm" else args.stage
         override = json.loads(args.blocs) if args.blocs else None
-        rapport = _evaluer(cfg, moteur, build, reg, cand, etape, args.workers, override)
+        vague = mod_sc.VAGUE_DEV
+        tentative = None
+        if etape == "confirmation":
+            if override is not None and args.promouvoir:
+                print("REFUS : --blocs impose des tailles a la main. Une confirmation publiable "
+                      "utilise les tailles figees du protocole.")
+                return 2
+            if override is None:
+                spec = cfg["etapes"]["confirmation"]
+                try:
+                    tentative, reprise = reg.ouvrir_confirmation(
+                        cfg["campagne"]["id"], args.id, reg.champion_courant()["champion_courant"],
+                        spec["blocs"], [p.ident for p in _panel(cfg)][:spec["adversaires"]],
+                        empreinte_protocole(cfg, moteur, mod_sc.charger_builds(),
+                                            _panel(cfg))[0],
+                        cfg["campagne"]["confirmations_max"])
+                except (mod_reg.BudgetEpuise, mod_reg.ProtocoleDifferent) as e:
+                    print("REFUS :", e)
+                    return 2
+                vague = tentative["vague"]
+                print("tentative de confirmation %s (%s) : vague %s"
+                      % (tentative["tentative"], "reprise" if reprise else "nouvelle", vague))
+
+        promouvable = etape == "confirmation" and tentative is not None
+        try:
+            rapport = _evaluer(cfg, moteur, build, reg, cand, etape, args.workers, override,
+                               vague=vague, promouvable=promouvable)
+        except mod_reg.ProtocoleDifferent as e:
+            print("REFUS :", e)
+            return 2
         chemin = RUNS / "rapports" / ("%s-%s.json" % (args.id, etape))
         chemin.parent.mkdir(parents=True, exist_ok=True)
         chemin.write_text(json.dumps(rapport, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        if tentative is not None:
+            verdict = rapport["decision"]["verdict"]
+            reg.cloturer_confirmation(tentative["id"],
+                                      "close" if verdict != "INCOMPLET" else "interrompue",
+                                      verdict)
         if etape == "confirmation" and rapport["decision"]["verdict"] == "PROMOUVOIR" \
                 and args.promouvoir:
             promu = mod_pub.publier(reg, cand, rapport["champion"], rapport["decision"],
-                                    rapport["protocole"])
+                                    rapport["protocole"],
+                                    confirmation=tentative["id"] if tentative else None)
             rapport["promotion"] = promu
             chemin.write_text(json.dumps(rapport, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({k: v for k, v in rapport.items() if k != "candidat"},
@@ -401,12 +580,15 @@ def cmd_report(args) -> int:
         if "decision" not in r:
             continue
         print("=" * 78)
-        print("%s | etape %s | champion %s | alpha %s"
-              % (r["candidat"]["id"], r["etape"], r["champion"], r["alpha"]))
+        print("%s | etape %s | champion %s | alpha %s | %s"
+              % (r["candidat"]["id"], r["etape"], r["champion"], r["alpha"],
+                 "PROMOUVABLE" if r["protocole"].get("promouvable") else "non promouvable"))
         print("hypothese :", r["candidat"].get("hypothese") or "(aucune)")
         for f, v in r["resultats"].items():
-            print("  %-7s blocs %4d  delta %+.4f  borne %s  ddl %s"
-                  % (f, v["blocs"], v["delta_moyen"], v["borne_basse"], v["ddl_welch"]))
+            cv = (r.get("couverture") or {}).get(f, {})
+            print("  %-7s blocs %4d/%-4s  delta %+.4f  borne %s  ddl %s"
+                  % (f, v["blocs"], cv.get("blocs_attendus", "?"), v["delta_moyen"],
+                     v["borne_basse"], v["ddl_welch"]))
         d = r["decision"]
         print("  objectif pondere %+.4f  borne %s"
               % (d["objectif_pondere"], d["borne_basse_objectif"]))
@@ -432,12 +614,15 @@ def cmd_audit_br(args) -> int:
             deployer_bundle(moteur, ligne["commit_code"], ligne["bundle_sha256"])
             ia_c = "test/ai/bundles/%s/Main.leek" % ligne["bundle_sha256"][:16]
             sha_c = ligne["bundle_sha256"]
-        pols = _politiques(cfg)
+        pols = _panel(cfg)
         rapport = mod_orch.auditer_br(reg, moteur, build, builds, pols, ia_c, sha_c,
                                       ia_h, emp_h["sha256"], RUNS / "matchs" / "br",
                                       lobbies=args.lobbies,
                                       creneaux=cfg["br"]["creneaux_focaux_par_lobby"],
-                                      workers=args.workers)
+                                      graine=_graine_campagne(cfg),
+                                      workers=args.workers,
+                                      taille_lot=cfg["debit"].get("taille_lot", 8),
+                                      timeout=cfg["debit"]["timeout_lot_secondes"])
     chemin = RUNS / "rapports" / ("br-%s.json" % (args.id or "champion"))
     chemin.parent.mkdir(parents=True, exist_ok=True)
     chemin.write_text(json.dumps(rapport, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -450,61 +635,234 @@ def cmd_resume(args) -> int:
     with mod_reg.Registre() as reg:
         etat = mod_pub.reconcilier(reg)
     print(json.dumps(etat, ensure_ascii=False, indent=2))
-    return 0 if etat["etat"] in ("rien_a_reconcilier", "terminee_par_reprise") else 1
+    return 0 if etat["etat"] in ("rien_a_reconcilier", "terminee_par_reprise",
+                                 "abandonnee") else 1
 
 
 # --------------------------------------------------------------------------------------
-def cmd_run_loop(args) -> int:
-    """Boucle BORNEE. Les trois budgets sont obligatoires : aucun lancement recursif illimite.
+class Budgets:
+    """Les trois budgets de la boucle, RESERVES et decomptes au fil de la consommation."""
 
-    Elle enregistre et CRIBLE ; elle ne confirme ni ne promeut. La confirmation reste une
-    commande explicite, parce qu'elle coute cher et qu'elle engage le registre des champions.
+    def __init__(self, max_candidats: int, max_confirmations: int, minutes: float):
+        self.max_candidats = max_candidats
+        self.max_confirmations = max_confirmations
+        self.echeance = time.monotonic() + minutes * 60.0
+        self.candidats = 0
+        self.confirmations = 0
+        self.combats = 0
+        # Les workers rapportent leur avancement depuis plusieurs fils : le compte des combats
+        # consommes doit etre exact, c'est lui qu'on rapporte.
+        self.verrou = threading.Lock()
+
+    def un_combat_de_plus(self) -> None:
+        with self.verrou:
+            self.combats += 1
+
+    @property
+    def reste_secondes(self) -> float:
+        return self.echeance - time.monotonic()
+
+    def place_pour_une_etape(self) -> bool:
+        return self.reste_secondes > PLANCHER_ETAPE_SECONDES
+
+    def etat(self) -> dict:
+        return {"candidats": "%d/%d" % (self.candidats, self.max_candidats),
+                "confirmations": "%d/%d" % (self.confirmations, self.max_confirmations),
+                "secondes_restantes": round(max(0.0, self.reste_secondes), 1),
+                "combats_joues": self.combats}
+
+
+def _propositions(cfg, source: Path) -> list[tuple[str, object]]:
+    """(identifiant, optimiseur) pour chaque proposition de la vague.
+
+    Le mode manuel reste un vrai optimiseur : chaque patch du repertoire devient un `Manuel`
+    dont `proposer` est REELLEMENT appele par la boucle. Brancher un fournisseur paye ne
+    changera que cette fonction.
+    """
+    if not source.is_dir():
+        return []
+    sorties = []
+    for p in sorted(source.glob("*.patch")):
+        sorties.append((p.stem, mod_opt.Manuel(p.read_text(encoding="utf-8"), p.stem)))
+    return sorties
+
+
+def cmd_run_loop(args) -> int:
+    """Boucle BORNEE et COMPLETE : proposition -> S1 -> selection -> S2 -> S3 ->
+    confirmation -> promotion. Les trois budgets sont obligatoires.
+
+    La confirmation et la promotion sont AUTOMATIQUES : leur cout est encadre par les budgets,
+    et les laisser manuelles laissait la boucle s'arreter au crible. Ce qui reste interdit
+    n'est pas la transition, c'est de promouvoir sur un protocole incomplet ou non fige — et
+    c'est le decideur qui l'empeche.
     """
     cfg, moteur, build = _contexte(args)
-    fin = time.monotonic() + args.budget_minutes * 60
+    budgets = Budgets(args.max_candidats, args.max_confirmations, args.budget_minutes)
     source = Path(args.patches)
-    patches = sorted(source.glob("*.patch")) if source.is_dir() else []
-    if not patches:
+    propositions = _propositions(cfg, source)
+    journal: list[dict] = []
+    promotions: list[dict] = []
+
+    if not propositions:
         print("aucun patch dans %s : le mode manuel attend des fichiers .patch." % source)
         return 2
 
-    faits, journal = 0, []
+    def _compter(faits, total):
+        if faits:
+            budgets.un_combat_de_plus()
+
     with mod_reg.Registre() as reg:
-        for p in patches:
-            if faits >= args.max_candidats:
-                journal.append({"patch": p.name, "etat": "non_traite",
+        if reg.publication_en_cours() is not None:
+            etat = mod_pub.reconcilier(reg)
+            journal.append({"etape": "reprise", "etat": etat})
+            if etat["etat"] not in ("terminee_par_reprise", "abandonnee", "rien_a_reconcilier"):
+                print("publication irrecuperable :", json.dumps(etat, ensure_ascii=False))
+                return 1
+
+        builds = mod_sc.charger_builds()
+        panel = _panel(cfg)
+        emp_proto, _d = empreinte_protocole(cfg, moteur, builds, panel)
+        try:
+            reg.verifier_protocole(cfg["campagne"]["id"], emp_proto)
+        except mod_reg.ProtocoleDifferent as e:
+            print("REFUS :", e)
+            return 2
+
+        # ---- proposition puis S1 ----
+        survivants: list[dict] = []
+        for ident_court, optimiseur in propositions:
+            if budgets.candidats >= budgets.max_candidats:
+                journal.append({"proposition": ident_court, "etat": "non_traite",
                                 "detail": "plafond de candidats atteint"})
                 continue
-            if time.monotonic() > fin:
-                journal.append({"patch": p.name, "etat": "non_traite",
+            if not budgets.place_pour_une_etape():
+                journal.append({"proposition": ident_court, "etat": "non_traite",
                                 "detail": "budget de temps epuise"})
                 continue
-            ident = "%s-%s" % (cfg["campagne"]["id"], p.stem)
+            champion = reg.champion_courant()
+            proposition = optimiseur.proposer({
+                "champion": champion["champion_courant"],
+                "commit_champion": champion["commit_code"],
+                "portee": cfg["optimiseur"]["portee"],
+                "hors_portee": cfg["optimiseur"]["hors_portee"],
+                "invariants": cfg["optimiseur"].get("invariants") or {},
+                "objectif": cfg["objectif"],
+                "resultats_precedents": [j for j in journal if "decision" in j],
+            })
+            ident = "%s-%s" % (cfg["campagne"]["id"], ident_court)
+            fichier = RUNS / "propositions" / ("%s.patch" % ident)
+            fichier.parent.mkdir(parents=True, exist_ok=True)
+            # En OCTETS : l'ecriture texte de Python traduit les fins de ligne sous Windows, et
+            # un diff aux fins de ligne reecrites ne s'applique sur aucun fichier du depot.
+            fichier.write_bytes(proposition["patch"].encode("utf-8"))
             try:
-                info = mod_cand.enregistrer(ident, reg.champion_courant()["commit_code"],
-                                            patch=p, hypothese=p.stem,
-                                            portee=cfg["optimiseur"]["portee"],
-                                            hors_portee=cfg["optimiseur"]["hors_portee"])
+                info = _enregistrer_candidat(cfg, reg, ident, champion["commit_code"],
+                                             patch=fichier,
+                                             hypothese=proposition["hypothese"],
+                                             dependances=proposition.get("dependances"))
             except Exception as e:
-                journal.append({"patch": p.name, "etat": "rejete", "detail": str(e)[:200]})
+                journal.append({"proposition": ident_court, "etat": "rejete",
+                                "detail": str(e)[:200]})
                 continue
-            reg.enregistrer_candidat(info["id"], cfg["campagne"]["id"], info["commit"],
-                                     info["parent"], info["bundle_sha256"], info["hypothese"],
-                                     {"fichiers": info["fichiers_modifies"],
-                                      "verdict": info["verdict_portee"]})
-            faits += 1
-            r = _evaluer(cfg, moteur, build, reg, info, "s1", args.workers)
+            budgets.candidats += 1
+            if info["verdict_portee"] in mod_opt.VERDICTS_BLOQUANTS:
+                journal.append({"candidat": ident, "etat": "bloque",
+                                "verdict": info["verdict_portee"],
+                                "detail": info["invariants_rompus"] or info["hors_portee"]})
+                continue
+            r = _evaluer(cfg, moteur, build, reg, info, "s1", args.workers,
+                         echeance=budgets.echeance, progres=_compter)
             journal.append({"candidat": ident, "etape": "s1",
-                            "delta_farmer": r["resultats"].get("farmer", {}).get("delta_moyen"),
-                            "verdict": r["decision"]["verdict"]})
-    etat = {"propositions": len(patches), "candidats_enregistres": faits,
-            "confirmations_lancees": 0, "promotions": 0,
-            "budgets": {"max_candidats": args.max_candidats,
-                        "max_confirmations": args.max_confirmations,
-                        "budget_minutes": args.budget_minutes},
+                            "decision": r["decision"]["verdict"],
+                            "objectif": r["decision"]["objectif_pondere"],
+                            "complet": all(c["complet"] for c in r["couverture"].values())})
+            if r["decision"]["verdict"] != "INCOMPLET":
+                survivants.append({"cand": info, "j": r["decision"]["objectif_pondere"]})
+
+        # ---- S2 puis S3 : selection par l'objectif pondere ----
+        etape_precedente = {"s2": "s1", "s3": "s2"}
+        for etape in ("s2", "s3"):
+            # Le nombre de survivants est fixe par l'etape PRECEDENTE : c'est elle qui a
+            # mesure, c'est elle qui dit combien de candidats meritent de couter plus cher.
+            garder = cfg["etapes"][etape_precedente[etape]].get("garder", 1)
+            survivants = [s for s in survivants if s["j"] > 0]
+            survivants.sort(key=lambda s: s["j"], reverse=True)
+            survivants = survivants[:garder]
+            suite = []
+            for s in survivants:
+                if not budgets.place_pour_une_etape():
+                    journal.append({"candidat": s["cand"]["id"], "etape": etape,
+                                    "etat": "non_traite", "detail": "budget de temps epuise"})
+                    continue
+                r = _evaluer(cfg, moteur, build, reg, s["cand"], etape, args.workers,
+                             echeance=budgets.echeance, progres=_compter)
+                journal.append({"candidat": s["cand"]["id"], "etape": etape,
+                                "decision": r["decision"]["verdict"],
+                                "objectif": r["decision"]["objectif_pondere"],
+                                "complet": all(c["complet"] for c in r["couverture"].values())})
+                if r["decision"]["verdict"] != "INCOMPLET":
+                    suite.append({"cand": s["cand"], "j": r["decision"]["objectif_pondere"]})
+            survivants = suite
+
+        # ---- confirmation puis promotion ----
+        finalistes = sorted([s for s in survivants if s["j"] > 0],
+                            key=lambda s: s["j"], reverse=True)
+        for s in finalistes:
+            if budgets.confirmations >= budgets.max_confirmations:
+                journal.append({"candidat": s["cand"]["id"], "etape": "confirmation",
+                                "etat": "non_traite", "detail": "plafond de confirmations"})
+                continue
+            if not budgets.place_pour_une_etape():
+                journal.append({"candidat": s["cand"]["id"], "etape": "confirmation",
+                                "etat": "non_traite", "detail": "budget de temps epuise"})
+                continue
+            spec = cfg["etapes"]["confirmation"]
+            try:
+                tentative, reprise = reg.ouvrir_confirmation(
+                    cfg["campagne"]["id"], s["cand"]["id"],
+                    reg.champion_courant()["champion_courant"], spec["blocs"],
+                    [p.ident for p in panel][:spec["adversaires"]], emp_proto,
+                    cfg["campagne"]["confirmations_max"])
+            except (mod_reg.BudgetEpuise, mod_reg.ProtocoleDifferent) as e:
+                journal.append({"candidat": s["cand"]["id"], "etape": "confirmation",
+                                "etat": "refuse", "detail": str(e)[:200]})
+                continue
+            budgets.confirmations += 1
+            r = _evaluer(cfg, moteur, build, reg, s["cand"], "confirmation", args.workers,
+                         vague=tentative["vague"], echeance=budgets.echeance,
+                         promouvable=True, progres=_compter)
+            verdict = r["decision"]["verdict"]
+            reg.cloturer_confirmation(tentative["id"],
+                                      "close" if verdict != "INCOMPLET" else "interrompue",
+                                      verdict)
+            chemin = RUNS / "rapports" / ("%s-confirmation.json" % s["cand"]["id"])
+            chemin.parent.mkdir(parents=True, exist_ok=True)
+            chemin.write_text(json.dumps(r, ensure_ascii=False, indent=2), encoding="utf-8")
+            journal.append({"candidat": s["cand"]["id"], "etape": "confirmation",
+                            "tentative": tentative["vague"], "reprise": reprise,
+                            "decision": verdict, "lacunes": r["decision"]["lacunes"]})
+            if verdict != "PROMOUVOIR":
+                continue
+            promu = mod_pub.publier(reg, s["cand"], r["champion"], r["decision"],
+                                    r["protocole"], confirmation=tentative["id"])
+            promotions.append(promu)
+            journal.append({"candidat": s["cand"]["id"], "etape": "promotion", "promu": promu})
+            # Le champion a change : les resultats des autres finalistes comparent a l'ancienne
+            # reference. La vague s'arrete ici, la suivante repartira du nouveau champion.
+            journal.append({"etape": "fin_de_vague",
+                            "detail": "promotion effectuee ; les comparaisons restantes "
+                                      "portaient sur l'ancien champion"})
+            break
+
+    etat = {"propositions": len(propositions),
+            "candidats_enregistres": budgets.candidats,
+            "confirmations_lancees": budgets.confirmations,
+            "promotions": len(promotions),
+            "budgets": budgets.etat(),
             "journal": journal,
-            "_note": ("La boucle crible seulement. La confirmation et la promotion restent "
-                      "explicites : evaluate --stage confirm --promouvoir.")}
+            "_note": ("Confirmation et promotion sont automatiques et bornees par les budgets. "
+                      "Ce qui reste interdit est de promouvoir sur un protocole incomplet ou "
+                      "non fige : le decideur rend INCOMPLET, et la publication n'a pas lieu.")}
     chemin = RUNS / "rapport-boucle.json"
     chemin.parent.mkdir(parents=True, exist_ok=True)
     chemin.write_text(json.dumps(etat, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -535,13 +893,16 @@ def main(argv=None) -> int:
     r.add_argument("--bundle", default=None)
     r.add_argument("--hypothese", default="")
     r.add_argument("--dependances", default="")
+    r.add_argument("--autoriser-extension", default="",
+                   help="motif d'autorisation d'un helper hors perimetre ; journalise")
     r.set_defaults(fn=cmd_register_candidate)
 
     e = s.add_parser("evaluate")
     e.add_argument("--id", required=True)
     e.add_argument("--stage", default="s1", choices=["s1", "s2", "s3", "confirm"])
     e.add_argument("--workers", type=int, default=1)
-    e.add_argument("--blocs", default=None, help='ex: {"farmer":2,"solo":1}')
+    e.add_argument("--blocs", default=None,
+                   help='tailles imposees, ex: {"farmer":2,"solo":1} — lot NON promouvable')
     e.add_argument("--promouvoir", action="store_true")
     e.set_defaults(fn=cmd_evaluate)
 

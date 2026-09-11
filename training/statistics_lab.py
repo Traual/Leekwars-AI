@@ -19,7 +19,7 @@ affichee comme telle. Elle ne devient pas exacte parce qu'on l'a programmee.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable
 
 # Table de quantiles t unilateraux, interpolee en 1/nu. La bibliotheque standard n'a pas de
@@ -116,20 +116,61 @@ def borne_basse(estimation: float, a: list[float], n: list[int], alpha: float) -
 
 @dataclass
 class Decision:
-    verdict: str                     # PROMOUVOIR | INCONCLUSIF | REJETER | INCOMPLET
+    verdict: str                     # PROMOUVOIR | INDICATIF | INCONCLUSIF | INCOMPLET
     raisons: list[str]
     delta: dict[str, float]
     borne: dict[str, float | None]
     nu: dict[str, float | None]
     j: float
     borne_j: float | None
+    lacunes: list[str] = field(default_factory=list)
+
+
+def controler_couverture(couverture: dict[str, dict], formats_requis: Iterable[str]
+                         ) -> list[str]:
+    """Les LACUNES du protocole, format par format. Une seule suffit a rendre INCOMPLET.
+
+    Il ne suffit pas que les blocs conservés soient individuellement complets : il faut que
+    TOUS les blocs prevus, TOUS les adversaires prevus et TOUS les formats requis soient
+    presents. Sans ce controle, quarante blocs prevus contre deux adversaires dont l'un ne
+    rend rien laissaient vingt blocs et un adversaire — et un verdict PROMOUVOIR.
+    """
+    lacunes: list[str] = []
+    for f in formats_requis:
+        c = (couverture or {}).get(f)
+        if c is None:
+            lacunes.append("format requis absent du protocole execute : %s" % f)
+            continue
+        manquants = c.get("blocs_incomplets") or []
+        if manquants:
+            exemples = ", ".join(str(m.get("indice")) for m in manquants[:5])
+            lacunes.append("%s : %d bloc(s) incomplet(s) sur %d (indices %s%s)"
+                           % (f, len(manquants), c.get("blocs_attendus", 0), exemples,
+                              ", ..." if len(manquants) > 5 else ""))
+        sans = c.get("adversaires_sans_donnees") or []
+        if sans:
+            lacunes.append("%s : aucun resultat contre %s" % (f, ", ".join(sans)))
+        if not c.get("blocs_attendus"):
+            lacunes.append("%s : aucun bloc prevu" % f)
+    return lacunes
 
 
 def decider(par_format: dict[str, list[Composante]], poids: dict[str, float],
             planchers: dict[str, float], alpha: float, gain_minimal: float,
-            formats_requis: Iterable[str] = ("farmer",)) -> Decision:
-    """Applique les conditions de promotion, toutes obligatoires et evaluees ensemble."""
+            formats_requis: Iterable[str] = ("farmer",),
+            couverture: dict[str, dict] | None = None,
+            promouvable: bool = True, motif_non_promouvable: str = "") -> Decision:
+    """Applique les conditions de promotion, toutes obligatoires et evaluees ensemble.
+
+    `couverture` vient de l'orchestrateur et decrit ce qui a REELLEMENT ete joue. Une lacune
+    donne INCOMPLET, jamais un verdict statistique sur l'echantillon survivant.
+
+    `promouvable` est faux pour un lot technique — tailles imposees a la main, etape de crible,
+    protocole non fige. Un tel lot peut rendre INDICATIF, jamais PROMOUVOIR.
+    """
+    formats_requis = list(formats_requis)
     raisons: list[str] = []
+    lacunes = controler_couverture(couverture, formats_requis) if couverture is not None else []
     delta: dict[str, float] = {}
     a_par_format: dict[str, list[float]] = {}
     n_par_format: dict[str, list[int]] = {}
@@ -147,8 +188,11 @@ def decider(par_format: dict[str, list[Composante]], poids: dict[str, float],
 
     for f in formats_requis:
         if f not in delta:
-            return Decision("INCOMPLET", ["format requis absent des resultats : %s" % f],
-                            delta, borne, nu, 0.0, None)
+            lacunes.append("format requis absent des resultats : %s" % f)
+    if lacunes:
+        return Decision("INCOMPLET",
+                        ["protocole incomplet : aucune promotion possible."] + lacunes,
+                        delta, borne, nu, 0.0, None, lacunes)
 
     # J et sa variance : les poids s'appliquent aux composantes, pas aux nombres de combats.
     j = sum(poids.get(f, 0.0) * delta[f] for f in delta)
@@ -159,7 +203,7 @@ def decider(par_format: dict[str, list[Composante]], poids: dict[str, float],
     if borne.get("farmer") is None or bj is None:
         raisons.append("test non concluant : effectif insuffisant ou variance nulle sur un lot. "
                        "Des resultats identiques ne prouvent pas l'equivalence.")
-        return Decision("INCONCLUSIF", raisons, delta, borne, nu, j, bj)
+        return Decision("INCONCLUSIF", raisons, delta, borne, nu, j, bj, lacunes)
 
     ok = True
     if borne["farmer"] <= 0:
@@ -179,7 +223,12 @@ def decider(par_format: dict[str, list[Composante]], poids: dict[str, float],
                            % (f, delta[f], plancher))
 
     if ok:
-        raisons.append("toutes les conditions sont remplies ; la borne reste une approximation "
-                       "de Student et ne certifie pas une superiorite sur tout le jeu.")
-        return Decision("PROMOUVOIR", raisons, delta, borne, nu, j, bj)
-    return Decision("INCONCLUSIF", raisons, delta, borne, nu, j, bj)
+        raisons.append("toutes les conditions statistiques sont remplies ; la borne reste une "
+                       "approximation de Student et ne certifie pas une superiorite sur tout "
+                       "le jeu.")
+        if not promouvable:
+            raisons.append("lot NON PROMOUVABLE : %s"
+                           % (motif_non_promouvable or "protocole non fige"))
+            return Decision("INDICATIF", raisons, delta, borne, nu, j, bj, lacunes)
+        return Decision("PROMOUVOIR", raisons, delta, borne, nu, j, bj, lacunes)
+    return Decision("INCONCLUSIF", raisons, delta, borne, nu, j, bj, lacunes)

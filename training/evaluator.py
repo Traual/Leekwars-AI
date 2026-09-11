@@ -12,6 +12,12 @@ cahier des charges demande de remplacer.
 
 La version du parseur en fait partie : si l'interpretation d'une sortie change, les resumes
 doivent etre invalides meme quand le combat, lui, n'a pas bouge.
+
+**Un lot rend ses resultats AU FIL DE L'EAU.** Le runner ecrit une ligne par combat termine et
+la vide immediatement ; `executer_flux` la lit et la remonte tout de suite. Une coupure — par
+echeance de budget ou par panne — ne perd donc que le combat en cours, jamais les combats deja
+joues du meme lot. L'ancienne version attendait la fin du processus : une interruption au
+deuxieme lot rendait les huit combats du premier introuvables alors qu'ils etaient joues.
 """
 from __future__ import annotations
 
@@ -21,17 +27,19 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 RACINE = Path(__file__).resolve().parent
 SOURCE_RUNNER = RACINE / "tools" / "BatchRunner.java"
 PREFIXE = "__TRAUAL_RESULT__\t"
 
 # A incrementer des que l'interpretation d'une sortie de combat change.
-VERSION_PARSEUR = 1
+# 2 : lecture des erreurs systeme du moteur (chargement d'IA) et du champ `exception`.
+VERSION_PARSEUR = 2
 
 
 # --------------------------------------------------------------------------------------
@@ -104,6 +112,10 @@ class Moteur:
         return (r.stderr or r.stdout).strip().split("\n")[0]
 
 
+def empreinte_runner() -> str:
+    return hashlib.sha256(SOURCE_RUNNER.read_bytes()).hexdigest()
+
+
 def compiler_runner(moteur: Moteur, build: Path) -> Path:
     """Compile BatchRunner une fois, et seulement si sa source ou le JAR ont bouge."""
     build = Path(build)
@@ -112,7 +124,8 @@ def compiler_runner(moteur: Moteur, build: Path) -> Path:
     plus_recent = max(SOURCE_RUNNER.stat().st_mtime, moteur.jar.stat().st_mtime)
     if classe.exists() and classe.stat().st_mtime >= plus_recent:
         return build
-    cp = os.pathsep.join([str(moteur.jar)] + ([str(moteur.leekscript_jar)] if moteur.leekscript_jar else []))
+    cp = os.pathsep.join([str(moteur.jar)]
+                         + ([str(moteur.leekscript_jar)] if moteur.leekscript_jar else []))
     subprocess.run([moteur.binaire("javac"), "-cp", cp,
                     "-d", str(build), str(SOURCE_RUNNER)], check=True,
                    capture_output=True)
@@ -135,7 +148,7 @@ def cle_de_match(scenario: dict[str, Any], bundles: dict[str, str], moteur: Mote
         "scenario": scenario,
         "bundles": dict(sorted(bundles.items())),
         "moteur": moteur.empreinte,
-        "runner": hashlib.sha256(SOURCE_RUNNER.read_bytes()).hexdigest(),
+        "runner": empreinte_runner(),
         "parseur": VERSION_PARSEUR,
         "options": options or {},
     }
@@ -151,14 +164,45 @@ ERREUR_AUCUNE = "aucune"
 # Le moteur emet une seule action pour plusieurs causes : depassement du plafond
 # d'operations, StackOverflow, exception arithmetique, modification pendant iteration, IA
 # invalide (EntityAI.java:385-400). L'action ne porte que [1002, id] ; la CAUSE vit dans les
-# logs de l'entite, que BatchRunner n'extrait pas encore. L'etiquette reste donc volontairement
-# large : elle ne pretend pas distinguer un avortement au plafond d'une vraie exception.
-# Les deux CONSERVENT le resultat, donc aucune decision ne depend de cette distinction
-# aujourd'hui. La separer demandera de faire remonter les logs.
+# logs de l'entite. L'etiquette reste donc volontairement large : elle ne pretend pas
+# distinguer un avortement au plafond d'une vraie exception. Les deux CONSERVENT le resultat.
 ERREUR_IA = "tour_avorte_ou_exception"  # comportement de l'IA : resultat CONSERVE
 ERREUR_COMPILATION = "compilation"      # candidat invalide
 ERREUR_INFRA = "infrastructure"         # worker, stockage, environnement : a rejouer
 ERREUR_MANQUANT = "resultat_manquant"   # timeout du banc : ni victoire ni nul
+ERREUR_CHARGEMENT = "ia_non_chargee"    # le moteur n'a jamais eu d'IA a executer
+
+# Erreurs SYSTEME du moteur qui signifient « cette IA n'a jamais tourne » (ordinaux de
+# `leekscript.common.Error`) : fichier introuvable, aucune IA equipee, IA invalide, echec de
+# compilation Java, code trop gros. Elles se distinguent des erreurs de COMPORTEMENT —
+# plafond d'operations (101), interruption (64), debordement de pile (76) — qui sont du jeu
+# reel et dont le resultat compte.
+CLES_CHARGEMENT = {
+    16: "AI_NOT_EXISTING",
+    60: "NO_AI_EQUIPPED",
+    61: "INVALID_AI",
+    62: "COMPILE_JAVA",
+    66: "CODE_TOO_LARGE",
+}
+NIVEAU_SERREUR = 8
+
+
+def erreurs_de_chargement(brut: dict[str, Any]) -> list[dict[str, Any]]:
+    """Les erreurs systeme du moteur qui disent qu'une IA n'a pas ete chargee.
+
+    C'est l'information du MOTEUR, pas une heuristique sur le cout : un combat lent, perdu, ou
+    dont l'IA a explose son plafond d'operations reste un combat valide. Seul un combat ou le
+    moteur n'a jamais eu d'IA a executer sort des mesures.
+    """
+    trouvees = []
+    for entree in brut.get("system_errors") or []:
+        try:
+            entite, niveau, cle = entree[0], entree[1], entree[2]
+        except (IndexError, TypeError):
+            continue
+        if niveau == NIVEAU_SERREUR and cle in CLES_CHARGEMENT:
+            trouvees.append({"entite": entite, "cle": cle, "nom": CLES_CHARGEMENT[cle]})
+    return trouvees
 
 
 def classer(brut: dict[str, Any]) -> tuple[str, str]:
@@ -168,17 +212,36 @@ def classer(brut: dict[str, Any]) -> tuple[str, str]:
     l'echantillon les mauvaises performances — precisement celles qu'on veut mesurer. Ici une
     exception de l'IA laisse le resultat dans l'echantillon : c'est du jeu, pas une panne.
     De meme, un depassement du plafond d'operations est le comportement reel du moteur.
+
+    En revanche un combat dont les IA n'ont pas ete CHARGEES n'est pas du jeu : il se termine
+    vite parce qu'il n'a rien calcule. Le moteur le dit lui-meme par une erreur systeme.
     """
     if "runner_error" in brut:
         texte = str(brut["runner_error"])
         if "Invalid AI" in texte or "compil" in texte.lower():
             return ERREUR_COMPILATION, texte
         return ERREUR_INFRA, texte
+    if brut.get("exception"):
+        # Panne du generateur PENDANT la generation du combat : le combat n'a pas eu lieu,
+        # il est a rejouer. Sans cette lecture il devenait un simple « resultat manquant ».
+        return ERREUR_INFRA, "exception du generateur : %s" % brut["exception"]
+    chargement = erreurs_de_chargement(brut)
+    if chargement:
+        noms = sorted({e["nom"] for e in chargement})
+        return ERREUR_CHARGEMENT, ("%d entite(s) sans IA chargee : %s"
+                                   % (len({e["entite"] for e in chargement}), ", ".join(noms)))
     if brut.get("winner") is None:
         return ERREUR_MANQUANT, "aucun vainqueur officiel dans la sortie"
     if brut.get("ai_errors"):
         return ERREUR_IA, "%d tour(s) avorte(s) ou en exception" % len(brut["ai_errors"])
     return ERREUR_AUCUNE, ""
+
+
+# Categories dont le resultat ne compte PAS : ni score, ni mesure de debit.
+ERREURS_DISQUALIFIANTES = (ERREUR_COMPILATION, ERREUR_INFRA, ERREUR_MANQUANT,
+                           ERREUR_CHARGEMENT)
+# Categories qu'il faut REJOUER : le combat n'a pas eu lieu dans des conditions valables.
+ERREURS_A_REJOUER = (ERREUR_INFRA, ERREUR_MANQUANT, ERREUR_CHARGEMENT)
 
 
 # --------------------------------------------------------------------------------------
@@ -219,40 +282,113 @@ def _score_gauche(brut: dict[str, Any]) -> float | None:
 
 def analyser(brut: dict[str, Any]) -> tuple[float | None, str, str]:
     erreur, detail = classer(brut)
-    if erreur in (ERREUR_COMPILATION, ERREUR_INFRA, ERREUR_MANQUANT):
+    if erreur in ERREURS_DISQUALIFIANTES:
         return None, erreur, detail
     return _score_gauche(brut), erreur, detail
+
+
+def valide_pour_le_debit(brut: dict[str, Any]) -> tuple[bool, str]:
+    """Ce combat peut-il nourrir une mesure de debit ? (oui/non, raison).
+
+    **C'est la fonction appelee par `calibrate`**, et c'est elle que le test de reception
+    exerce. Une version definie dans le test seul ne protegeait rien : le pilote comptait
+    valides des combats de quatre dixiemes de seconde ou l'IA levait a chaque tour.
+
+    Le critere n'est pas le cout ni l'issue : un combat lent, perdu, ou dont l'IA epuise son
+    plafond d'operations compte pleinement. Seul le diagnostic du moteur disqualifie.
+    """
+    _score, err, detail = analyser(brut)
+    if err in ERREURS_DISQUALIFIANTES:
+        return False, "%s : %s" % (err, detail)
+    if "system_errors" not in brut and "runner_error" not in brut:
+        return False, ("sortie anterieure au diagnostic de chargement : impossible de "
+                       "distinguer un combat joue d'un combat sans IA")
+    return True, ""
 
 
 # --------------------------------------------------------------------------------------
 # Execution
 # --------------------------------------------------------------------------------------
 
-def executer_lot(moteur: Moteur, build_runner: Path, scenarios: list[Path],
-                 timeout: float = 1800.0) -> list[dict[str, Any]]:
-    """Un worker = UNE JVM qui joue ses scenarios en serie.
+def commande_lot(moteur: Moteur, build_runner: Path, scenarios: list[Path]) -> list[str]:
+    """La commande d'un worker. Isolee pour qu'un test de reception puisse exercer le FLUX
+    reel — lecture au fil de l'eau, echeance, resultats partiels — sans lancer une JVM."""
+    return [moteur.binaire("java"), "-cp", moteur.classpath(build_runner),
+            "training.tools.BatchRunner", *[str(p) for p in scenarios]]
 
-    Pas de threads : le moteur porte des etats statiques, et rien ne prouve leur isolation.
-    La JVM est reutilisee pour amortir la compilation des IA, ce que fait deja BatchRunner.
+
+def executer_flux(moteur: Moteur, build_runner: Path, scenarios: list[Path],
+                  timeout: float = 1800.0, echeance: float | None = None,
+                  sur_resultat: Callable[[int, Path, dict[str, Any]], None] | None = None
+                  ) -> list[dict[str, Any]]:
+    """Un worker = UNE JVM qui joue ses scenarios en serie, et rend chacun DES SA FIN.
+
+    Pas de threads dans le moteur : il porte des etats statiques, et rien ne prouve leur
+    isolation. La JVM est reutilisee pour amortir la compilation des IA, ce que fait deja
+    BatchRunner.
+
+    `echeance` est une date `time.monotonic()` : le lot est coupe quand elle est atteinte, et
+    les combats DEJA TERMINES sont conserves. C'est ce qui permet a un budget de temps de
+    s'appliquer sans jeter le travail paye.
     """
     if not scenarios:
         return []
-    cmd = [moteur.binaire("java"), "-cp", moteur.classpath(build_runner),
-           "training.tools.BatchRunner", *[str(p) for p in scenarios]]
-    debut = time.monotonic()
-    try:
-        fini = subprocess.run(cmd, cwd=str(moteur.racine), stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        # Timeout du banc : resultat MANQUANT pour chaque scenario du lot. Jamais un nul.
-        return [{"runner_error": "timeout du lot apres %.0f s" % (time.monotonic() - debut)}
+    cmd = commande_lot(moteur, build_runner, scenarios)
+    limite = time.monotonic() + float(timeout)
+    if echeance is not None:
+        limite = min(limite, float(echeance))
+    if limite <= time.monotonic():
+        return [{"runner_error": "echeance atteinte avant le lancement du lot"}
                 for _ in scenarios]
-    resultats: dict[int, dict[str, Any]] = {}
-    for ligne in fini.stdout.split("\n"):
-        if not ligne.startswith(PREFIXE):
-            continue
-        corps = ligne[len(PREFIXE):]
-        index, charge = corps.split("\t", 1)
-        resultats[int(index)] = json.loads(charge)
-    return [resultats.get(i, {"runner_error": "aucune sortie du runner pour ce scenario"})
-            for i in range(len(scenarios))]
+
+    proc = subprocess.Popen(cmd, cwd=str(moteur.racine), stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, bufsize=1,
+                            encoding="utf-8", errors="replace")
+    arrives: dict[int, dict[str, Any]] = {}
+    coupe = threading.Event()
+
+    def _couper() -> None:
+        coupe.set()
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+    chien = threading.Timer(max(0.0, limite - time.monotonic()), _couper)
+    chien.daemon = True
+    chien.start()
+    try:
+        for ligne in proc.stdout:
+            if not ligne.startswith(PREFIXE):
+                continue
+            corps = ligne[len(PREFIXE):].rstrip("\r\n")
+            index, charge = corps.split("\t", 1)
+            i = int(index)
+            brut = json.loads(charge)
+            arrives[i] = brut
+            if sur_resultat is not None:
+                sur_resultat(i, scenarios[i], brut)
+    finally:
+        chien.cancel()
+        try:
+            proc.stdout.close()
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=30)
+        except Exception:
+            proc.kill()
+
+    if coupe.is_set():
+        manquant = ("lot coupe a l'echeance ; %d combat(s) du lot termines et conserves"
+                    % len(arrives))
+    else:
+        manquant = "aucune sortie du runner pour ce scenario"
+    return [arrives.get(i, {"runner_error": manquant}) for i in range(len(scenarios))]
+
+
+def executer_lot(moteur: Moteur, build_runner: Path, scenarios: list[Path],
+                 timeout: float = 1800.0) -> list[dict[str, Any]]:
+    """Forme bloquante d'`executer_flux`, conservee pour les appels qui n'ont rien a
+    enregistrer au fil de l'eau."""
+    return executer_flux(moteur, build_runner, scenarios, timeout)

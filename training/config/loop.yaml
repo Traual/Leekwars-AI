@@ -6,7 +6,12 @@
 # confirmation invaliderait le risque annonce.
 
 campagne:
-  id: "campagne-001"
+  # Changer le protocole — formats, moteur, builds, ligne de ligue, parseur — demande une
+  # NOUVELLE campagne. `init-campaign` refuse de reecrire une campagne existante sous un autre
+  # protocole : des resultats deja lus ne doivent pas changer de sens en silence.
+  # campagne-002 : premiere campagne avec les deux camps reels du format team, les blocs
+  # emboites entre etapes et le diagnostic de chargement d'IA.
+  id: "campagne-002"
   # Plafond de promotions automatiques. Au-dela, la boucle s'arrete et rend un bilan ; la
   # campagne suivante est un nouveau choix explicite de budget. Le risque nominal ci-dessous
   # vaut pour CE budget, pas pour une suite illimitee de campagnes.
@@ -37,11 +42,16 @@ objectif:
   gain_minimal_farmer: 0.01
 
 # Tailles de lots, en BLOCS (un bloc = 4 combats, dont 2 reutilisables entre candidats).
+#
+# Les sous-ensembles d'adversaires sont des PREFIXES du panel de la campagne, et les tailles
+# croissent : les blocs de S1 sont donc reellement contenus dans ceux de S2, et ceux de S2 dans
+# ceux de S3. Le cout annonce entre etapes est cumulatif parce que le plan de blocs le garantit,
+# pas parce qu'on l'espere.
 etapes:
   s1:
     candidats: 4
     blocs: { farmer: 8,  solo: 4,  team: 0 }
-    adversaires: 3                  # sous-ensemble tournant de la ligue
+    adversaires: 3                  # prefixe du panel
     garder: 2
   s2:
     blocs: { farmer: 24, solo: 8,  team: 4 }
@@ -50,10 +60,15 @@ etapes:
   s3:
     blocs: { farmer: 60, solo: 20, team: 10 }
     adversaires: 10
+    garder: 1
   confirmation:
     blocs: { farmer: 160, solo: 60, team: 60 }
     adversaires: 10
     graines_neuves: true
+    # Formats dont la couverture COMPLETE est exigee pour une promotion. Un format prevu dont
+    # les blocs ou les adversaires manquent donne INCOMPLET, jamais un verdict statistique sur
+    # l'echantillon survivant.
+    formats_requis: [farmer, solo, team]
 
 # La BR est un rapport periodique, pas un veto. L'appeler « audit » ne la rend pas
 # independante : si elle doit bloquer une promotion, il faut l'inscrire dans la validation et
@@ -72,6 +87,7 @@ ligue:
 
 debit:
   workers: 1                        # a regler apres le pilote ; un worker = une JVM
+  taille_lot: 8                     # combats par JVM ; la file est repartie entre les workers
   timeout_lot_secondes: 1800
   budget_pilote_secondes: 600
 
@@ -83,4 +99,13 @@ optimiseur:
   hors_portee:
     - "training/**"                 # evaluateur, seuils, builds, coeurs, graines
     - "New_AI/Load/Cache.leek"      # extension possible, mais explicite et journalisee
+  # Perimetre EFFECTIF a l'interieur des fichiers autorises. Autoriser BFS.leek autorise la
+  # coupe et son majorant, pas le retrait des gardes du budget interne d'operations : une IA
+  # sans garde ne perd pas de la recherche, elle se fait couper par le moteur, et aucun combat
+  # ne facture cela comme un mauvais scoring.
+  invariants:
+    "New_AI/User/BFS.leek":
+      - motif: "getOperations\\(\\) > OPS_DEADLINE"
+        minimum: 3
+        raison: "gardes du budget interne d'operations de la coupe"
   candidats_max_par_vague: 4

@@ -1,8 +1,12 @@
-"""Publication d'un champion : commit, tag, manifeste, et reprise apres coupure.
+"""Publication d'un champion, et reprise apres coupure A CHAQUE FRONTIERE.
 
 Tout se passe dans un DEPOT TEMPORAIRE, avec des resultats SYNTHETIQUES explicitement
 etiquetes. Aucune promotion n'est forcee dans le vrai registre : le champion reel reste
 champion-000, etabli comme baseline et non comme vainqueur.
+
+La question a laquelle ces tests repondent n'est pas « la promotion marche-t-elle », mais
+« une coupure peut-elle faire annoncer un champion qui n'est pas publie ». La reponse exigee
+est non, a chacune des cinq frontieres.
 
     python training/tests/test_publication.py
 """
@@ -21,6 +25,9 @@ import bundle as mod_bundle          # noqa: E402
 import publication as mod_pub        # noqa: E402
 import registry as mod_reg           # noqa: E402
 
+SYNTHETIQUE = {"verdict": "PROMOUVOIR", "_synthetique": True,
+               "_avertissement": "resultats fabriques pour le test, aucun combat joue"}
+
 
 def _git(depot, *args):
     r = subprocess.run(["git", "-C", str(depot), *args], capture_output=True, text=True)
@@ -29,7 +36,7 @@ def _git(depot, *args):
     return r.stdout
 
 
-def _depot_jouet(tmp: Path) -> tuple[Path, Path, str, str]:
+def _depot_jouet(tmp: Path):
     """Un depot minimal avec un New_AI, une branche scoring et un candidat deja commite."""
     depot = tmp / "depot"
     (depot / "New_AI").mkdir(parents=True)
@@ -38,9 +45,12 @@ def _depot_jouet(tmp: Path) -> tuple[Path, Path, str, str]:
     _git(depot.parent, "init", "-q", "-b", "scoring", str(depot))
     _git(depot, "config", "user.email", "banc@local")
     _git(depot, "config", "user.name", "banc")
-    (depot / "training" / "champions" / "current.json").write_text(json.dumps(
+    champions = depot / "training" / "champions"
+    (champions / "current.json").write_text(json.dumps(
         {"champion_courant": "champion-000", "commit_code": "", "bundle_sha256": "",
          "tag": "scoring/champion-000"}), encoding="utf-8")
+    (champions / "champion-000.json").write_text(json.dumps({"id": "champion-000"}),
+                                                 encoding="utf-8")
     _git(depot, "add", "-A")
     _git(depot, "commit", "-q", "-m", "initial")
     base = _git(depot, "rev-parse", "HEAD").strip()
@@ -51,98 +61,141 @@ def _depot_jouet(tmp: Path) -> tuple[Path, Path, str, str]:
     _git(depot, "commit", "-q", "-m", "candidat c1")
     commit_cand = _git(depot, "rev-parse", "HEAD").strip()
     _git(depot, "checkout", "-q", "scoring")
-    return depot, depot / "training" / "champions", base, commit_cand
+
+    # Le pointeur porte le commit de base, pour que le champion initial soit coherent.
+    (champions / "current.json").write_text(json.dumps(
+        {"champion_courant": "champion-000", "commit_code": base,
+         "bundle_sha256": "peu importe", "tag": "scoring/champion-000"}), encoding="utf-8")
+    _git(depot, "add", "-A")
+    _git(depot, "commit", "-q", "-m", "pointeur initial")
+    return depot, champions, base, commit_cand
 
 
-def _avec_depot(depot):
-    """Fait pointer le module d'empreinte sur le depot jouet, le temps du test."""
-    ancien = mod_bundle.DEPOT
-    mod_bundle.DEPOT = depot
-    return ancien
+class _Bac:
+    """Un depot jouet, un registre a cote, et les modules pointes dessus le temps du test."""
+
+    def __init__(self, tmp: Path):
+        self.tmp = tmp
+        self.depot, self.champions, self.base, self.commit_cand = _depot_jouet(tmp)
+        self._anciens = (mod_bundle.DEPOT, mod_pub.DEPOT, mod_pub.CHAMPIONS)
+        mod_bundle.DEPOT = self.depot
+        mod_pub.DEPOT = self.depot
+        mod_pub.CHAMPIONS = self.champions
+        self.reg = mod_reg.Registre(tmp / "r.sqlite", champions=self.champions)
+        self.candidat = {
+            "id": "c1", "commit": self.commit_cand, "parent": self.base,
+            "bundle_sha256": mod_bundle.empreinte(self.commit_cand)["sha256"],
+            "arbre_git": mod_bundle.empreinte(self.commit_cand)["arbre_git"],
+            "branche": "scoring-candidates/c1",
+            "hypothese": "SYNTHETIQUE : test de publication"}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.reg.fermer()
+        mod_bundle.DEPOT, mod_pub.DEPOT, mod_pub.CHAMPIONS = self._anciens
+
+    def publier(self, **kw):
+        return mod_pub.publier(self.reg, self.candidat, "champion-000", SYNTHETIQUE,
+                               {"_synthetique": True}, champions=self.champions,
+                               depot=self.depot, **kw)
+
+    def reconcilier(self):
+        return mod_pub.reconcilier(self.reg, champions=self.champions, depot=self.depot)
+
+    def champion_actif(self):
+        return self.reg.champion_courant()["champion_courant"]
 
 
-def test_promotion_ecrit_commit_tag_et_manifeste():
+def test_promotion_ecrit_commit_tag_manifeste_et_pointeur():
     with tempfile.TemporaryDirectory() as t:
-        tmp = Path(t)
-        depot, champions, base, commit_cand = _depot_jouet(tmp)
-        ancien = _avec_depot(depot)
-        try:
-            emp = mod_bundle.empreinte(commit_cand)
-            # Pointeur coherent avec le depot jouet.
-            (champions / "current.json").write_text(json.dumps(
-                {"champion_courant": "champion-000", "commit_code": base,
-                 "bundle_sha256": "peu importe", "tag": "scoring/champion-000"}),
-                encoding="utf-8")
-            (champions / "champion-000.json").write_text(json.dumps({"id": "champion-000"}),
-                                                         encoding="utf-8")
-            with mod_reg.Registre(tmp / "r.sqlite") as reg:
-                reg.champion_courant = lambda: json.loads(
-                    (champions / "current.json").read_text(encoding="utf-8"))
-                cand = {"id": "c1", "commit": commit_cand, "parent": base,
-                        "bundle_sha256": emp["sha256"], "arbre_git": emp["arbre_git"],
-                        "branche": "scoring-candidates/c1",
-                        "hypothese": "SYNTHETIQUE : test de publication"}
-                res = mod_pub.publier(
-                    reg, cand, "champion-000",
-                    {"verdict": "PROMOUVOIR", "_synthetique": True,
-                     "_avertissement": "resultats fabriques pour le test, aucun combat joue"},
-                    {"_synthetique": True},
-                    champions=champions, depot=depot)
-
+        with _Bac(Path(t)) as bac:
+            res = bac.publier()
             assert res["champion"] == "champion-001"
-            assert mod_pub.tag_existe("scoring/champion-001", depot=depot)
+            assert mod_pub.tag_existe("scoring/champion-001", depot=bac.depot)
             # Le code du champion est EXACTEMENT celui du candidat.
-            commit_champ = _git(depot, "rev-list", "-n", "1", "scoring/champion-001").strip()
-            assert mod_bundle.empreinte(commit_champ)["sha256"] == emp["sha256"]
-            pointeur = json.loads((champions / "current.json").read_text(encoding="utf-8"))
-            assert pointeur["champion_courant"] == "champion-001"
-            manifeste = json.loads((champions / "champion-001.json").read_text(encoding="utf-8"))
+            commit = _git(bac.depot, "rev-list", "-n", "1", "scoring/champion-001").strip()
+            assert mod_bundle.empreinte(commit)["sha256"] == bac.candidat["bundle_sha256"]
+            assert bac.champion_actif() == "champion-001"
+            manifeste = json.loads((bac.champions / "champion-001.json")
+                                   .read_text(encoding="utf-8"))
             assert manifeste["champion_precedent"] == "champion-000"
             assert manifeste["resultats"]["_synthetique"] is True
-            # L'ancien tag et l'ancien manifeste survivent : on n'ecrase pas l'histoire.
-            assert (champions / "champion-000.json").exists()
-        finally:
-            mod_bundle.DEPOT = ancien
+            # L'ancien manifeste survit : on n'ecrase pas l'histoire.
+            assert (bac.champions / "champion-000.json").exists()
 
 
-def test_reprise_apres_coupure_ne_promeut_pas_deux_fois():
+def test_coupure_a_chaque_frontiere_ne_change_jamais_le_champion_actif():
+    """Cinq coupures, cinq fois la meme exigence : tant que la publication n'est pas close,
+    le champion actif reste champion-000 — y compris quand le pointeur a deja ete ecrit."""
+    attendus = {
+        "code_prepare": "abandonnee", "bundle_verifie": "abandonnee",
+        "commit_ecrit": "abandonnee", "tag_ecrit": "terminee_par_reprise",
+        "pointeur_ecrit": "terminee_par_reprise",
+    }
+    for etape, attendu in attendus.items():
+        with tempfile.TemporaryDirectory() as t:
+            with _Bac(Path(t)) as bac:
+                try:
+                    bac.publier(_coupure=etape)
+                    raise AssertionError("la coupure a %s n'a pas eu lieu" % etape)
+                except mod_pub.CoupureSimulee:
+                    pass
+                assert bac.champion_actif() == "champion-000", (
+                    "coupure a %s : le champion actif a bouge avant la cloture" % etape)
+                etat = bac.reconcilier()
+                assert etat["etat"] == attendu, (etape, etat)
+                if attendu == "abandonnee":
+                    assert bac.champion_actif() == "champion-000"
+                    assert not mod_pub.tag_existe("scoring/champion-001", depot=bac.depot)
+                    assert not (bac.champions / "champion-001.json").exists()
+                    assert not _git(bac.depot, "status", "--porcelain").strip(), \
+                        "l'arbre de travail doit etre restaure"
+                else:
+                    assert bac.champion_actif() == "champion-001"
+                    assert mod_pub.tag_existe("scoring/champion-001", depot=bac.depot)
+                    commit = _git(bac.depot, "rev-list", "-n", "1",
+                                  "scoring/champion-001").strip()
+                    assert mod_bundle.empreinte(commit)["sha256"] == \
+                        bac.candidat["bundle_sha256"]
+                # Dans les deux cas, une seule publication : jamais un second champion.
+                assert not mod_pub.tag_existe("scoring/champion-002", depot=bac.depot)
+
+
+def test_bundle_refuse_ne_commite_rien():
+    """Un bundle qui ne correspond pas a ce qui a ete evalue n'entre pas dans l'histoire."""
+    with tempfile.TemporaryDirectory() as t:
+        with _Bac(Path(t)) as bac:
+            tete_avant = _git(bac.depot, "rev-parse", "scoring").strip()
+            bac.candidat["bundle_sha256"] = "0" * 64
+            try:
+                bac.publier()
+                raise AssertionError("un bundle different aurait du refuser la promotion")
+            except RuntimeError as e:
+                assert "differe de celui evalue" in str(e)
+            assert bac.champion_actif() == "champion-000"
+            etat = bac.reconcilier()
+            assert etat["etat"] == "abandonnee", etat
+            assert _git(bac.depot, "rev-parse", "scoring").strip() == tete_avant, \
+                "aucun commit ne doit avoir ete ajoute a scoring"
+            assert bac.champion_actif() == "champion-000"
+            assert not (bac.champions / "champion-001.json").exists()
+
+
+def test_reprise_ne_promeut_pas_deux_fois():
     """Interruption entre Git et SQLite : la reprise CONSTATE, elle ne refait pas."""
     with tempfile.TemporaryDirectory() as t:
-        tmp = Path(t)
-        depot, champions, base, commit_cand = _depot_jouet(tmp)
-        ancien = _avec_depot(depot)
-        try:
-            emp = mod_bundle.empreinte(commit_cand)
-            (champions / "current.json").write_text(json.dumps(
-                {"champion_courant": "champion-000", "commit_code": base,
-                 "bundle_sha256": "x", "tag": "scoring/champion-000"}), encoding="utf-8")
-            (champions / "champion-000.json").write_text(json.dumps({"id": "champion-000"}),
-                                                         encoding="utf-8")
-            base_sqlite = tmp / "r.sqlite"
-            cand = {"id": "c1", "commit": commit_cand, "parent": base,
-                    "bundle_sha256": emp["sha256"], "arbre_git": emp["arbre_git"],
-                    "branche": "scoring-candidates/c1", "hypothese": "SYNTHETIQUE"}
-            with mod_reg.Registre(base_sqlite) as reg:
-                reg.champion_courant = lambda: json.loads(
-                    (champions / "current.json").read_text(encoding="utf-8"))
-                mod_pub.publier(reg, cand, "champion-000",
-                                {"verdict": "PROMOUVOIR", "_synthetique": True},
-                                {"_synthetique": True}, champions=champions, depot=depot)
-                # On simule la coupure : la publication est rouverte comme si elle n'avait
-                # jamais ete close cote SQLite, alors que Git a tout ecrit.
-                reg.cx.execute("UPDATE publications SET etat='en_cours', etape='tag_ecrit'")
-
-            with mod_reg.Registre(base_sqlite) as reg2:
-                reg2.champion_courant = lambda: json.loads(
-                    (champions / "current.json").read_text(encoding="utf-8"))
-                etat = mod_pub.reconcilier(reg2, champions=champions, depot=depot)
-                assert etat["etat"] == "terminee_par_reprise", etat
-                assert etat["champion"] == "champion-001"
-                # Et surtout : AUCUN second champion n'a ete cree.
-                assert not mod_pub.tag_existe("scoring/champion-002", depot=depot)
-                assert not (champions / "champion-002.json").exists()
-        finally:
-            mod_bundle.DEPOT = ancien
+        with _Bac(Path(t)) as bac:
+            bac.publier()
+            # On simule la coupure : la publication est rouverte comme si elle n'avait jamais
+            # ete close cote SQLite, alors que Git a tout ecrit.
+            bac.reg.executer("UPDATE publications SET etat='en_cours', etape='pointeur_ecrit'")
+            etat = bac.reconcilier()
+            assert etat["etat"] == "terminee_par_reprise", etat
+            assert etat["champion"] == "champion-001"
+            assert not mod_pub.tag_existe("scoring/champion-002", depot=bac.depot)
+            assert not (bac.champions / "champion-002.json").exists()
 
 
 def test_le_vrai_registre_reste_intact():
