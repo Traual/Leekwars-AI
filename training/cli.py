@@ -1015,6 +1015,16 @@ def cmd_run_loop(args) -> int:
                 journal.append({"candidat": info["id"], "etape": "confirmation",
                                 "etat": "non_traite", "detail": "budget de temps epuise"})
                 continue
+            # Une confirmation DECIDEE ne se rejoue pas a chaque relance : ce serait ouvrir une
+            # seconde tentative, sur des graines neuves, et consommer le budget de la campagne
+            # en silence. En redemander une est un choix explicite, pas un effet de la reprise.
+            deja = avancement[info["id"]].get("confirmation")
+            if deja is not None and deja["verdict"] != "INCOMPLET":
+                journal.append({"candidat": info["id"], "etape": "confirmation",
+                                "etat": "repris", "decision": deja["verdict"],
+                                "detail": "confirmation deja decidee pour ce champion"})
+                continue
+
             # Une tentative REPRISE ne consomme pas de budget : son plan est deja paye, il
             # s'agit de le terminer. Seule une tentative NEUVE en consomme une — et le plafond
             # se verifie AVANT de l'ouvrir, faute de quoi une tentative vide serait inscrite
