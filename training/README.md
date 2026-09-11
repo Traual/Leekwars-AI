@@ -49,14 +49,29 @@ et chaque lancement son journal dans `runs/boucles`.
 décision complète est écrite avec sa tentative, dans la transaction qui la clôt, avec
 l'intention de publication qui en découle. Une décision positive dont la promotion n'a pas
 abouti est terminée à la relance, après contrôle du candidat, du protocole et du champion
-attendu — jamais rejouée, jamais oubliée. Une publication interrompue pour raison technique
+attendu — jamais rejouée, jamais oubliée. `evaluate --stage confirm` suit le même chemin :
+avec `--promouvoir` il termine la décision en attente, et il faut `--nouvelle-tentative` pour
+demander explicitement un nouvel échantillon. Une publication interrompue pour raison technique
 laisse la décision publiable ; un bundle incohérent la rend caduque, et le journal distingue
 les deux.
 
-**Les budgets se vérifient avant de demander une proposition.** Un plafond atteint ou un temps
-épuisé ne produit ni appel à l'optimiseur, ni commit, ni inscription. L'échéance restante
-voyage avec la demande, pour qu'un fournisseur externe puisse la respecter : un contrôle entre
-deux étapes ne borne pas un appel bloquant.
+**Les budgets se vérifient avant de demander une proposition, et à son retour.** Un plafond
+atteint ou un temps épuisé ne produit ni appel à l'optimiseur, ni commit, ni inscription.
+L'échéance restante voyage avec la demande, pour qu'un fournisseur externe puisse la respecter,
+et elle est reconstatée quand il répond : un patch arrivé trop tard est conservé comme
+proposition à reprendre, sans qu'aucune opération Git ne commence.
+
+**Une promotion refuse de détruire un travail local.** La préparation vide `New_AI` pour y
+poser exactement l'arbre du candidat, et la liste des fichiers étrangers ne mémorise que des
+chemins, jamais des contenus. Un arbre propre à l'inscription du candidat ne l'est pas
+forcément des heures plus tard, à la promotion : la zone est donc reconstatée juste avant, et
+l'opération s'arrête sans rien toucher si elle porte des modifications non commitées. La
+décision reste publiable une fois la zone libérée.
+
+**Une branche de candidat ne se reprend que sur preuve.** Le commit porte l'empreinte de sa
+source dans son message. S'il n'en porte aucune — branche ancienne, ou créée autrement — la
+reprise exige que le patch demandé reconstruise exactement son arbre, vérifié dans un index
+temporaire. Sans preuve, elle refuse au lieu de recopier l'empreinte entrante.
 
 `config/reception.yaml` est un protocole de RECEPTION, pas de décision : tailles minuscules et
 risque non contrôlé, pour exercer la machinerie de confirmation sur de vrais combats en un
@@ -166,7 +181,7 @@ identique signifie un contenu identique.
 
 ```bash
 python training/tests/test_harnais.py       # 32 tests, instantanés
-python training/tests/test_boucle.py        # 17 tests, moteur synthétique, ~70 s
+python training/tests/test_boucle.py        # 20 tests, moteur synthétique, ~110 s
 python training/tests/test_publication.py   #  7 tests, dépôt git temporaire
 python training/tests/test_reels.py         #  3 tests, joue de vrais combats
 ```

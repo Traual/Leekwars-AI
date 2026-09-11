@@ -225,55 +225,47 @@ def test_coupure_a_chaque_frontiere_ne_change_jamais_le_champion_actif():
                 assert bac.reconcilier()["etat"] == "rien_a_reconcilier", etape
 
 
-def test_un_abandon_retire_ce_que_la_publication_a_cree_et_rien_d_autre():
-    """Le nettoyage doit viser ce que la publication a cree, pas tout ce qui traine.
+def test_un_travail_local_fait_refuser_la_publication_avant_toute_suppression():
+    """Un prototype local dans `New_AI` ne doit jamais etre detruit par une promotion.
 
-    Un fichier suivi se restaure par `checkout` ; un fichier AJOUTE par le candidat redevient
-    simplement non suivi et survivait a l'abandon, laissant le depot sale. A l'inverse, un
-    fichier etranger depose avant la publication n'est pas son affaire et doit survivre.
+    La preparation VIDE `New_AI` avant d'y poser l'arbre du candidat, et la liste des fichiers
+    etrangers ne memorise que des chemins, jamais des contenus : rien n'aurait pu rendre un
+    fichier efface. Un arbre propre a l'inscription du candidat ne l'est pas forcement des
+    heures plus tard, a la promotion — le fichier a pu naitre pendant une confirmation. La
+    zone est donc RECONSTATEE juste avant, et l'operation refuse plutot que d'effacer.
     """
-    with tempfile.TemporaryDirectory() as t:
-        with _Bac(Path(t)) as bac:
-            # Le candidat AJOUTE un fichier au scoring.
-            _git(bac.depot, "checkout", "-q", "scoring-candidates/c1")
-            # Le candidat a retire le seul fichier de Scoring/ : Git a donc supprime le
-            # repertoire au checkout.
-            (bac.depot / "New_AI" / "Scoring").mkdir(parents=True, exist_ok=True)
-            (bac.depot / "New_AI" / "Scoring" / "Ajoute.leek").write_text(
-                "// helper ajoute par le candidat\n", encoding="utf-8")
-            _git(bac.depot, "add", "-A")
-            _git(bac.depot, "commit", "-q", "-m", "c1 ajoute un helper")
-            bac.candidat["commit"] = _git(bac.depot, "rev-parse", "HEAD").strip()
-            bac.candidat["bundle_sha256"] = mod_bundle.empreinte(
-                bac.candidat["commit"])["sha256"]
-            _git(bac.depot, "checkout", "-q", "scoring")
+    cas = {
+        "fichier non suivi": ("New_AI/Scoring/Prototype-local.leek",
+                              "// prototype ecrit pendant la confirmation\n"),
+        "modification suivie": ("New_AI/Main.leek", "// retouche locale non commitee\n"),
+    }
+    for nom, (relatif, contenu) in cas.items():
+        with tempfile.TemporaryDirectory() as t:
+            with _Bac(Path(t)) as bac:
+                local = bac.depot / relatif
+                local.parent.mkdir(parents=True, exist_ok=True)
+                local.write_text(contenu, encoding="utf-8")
 
-            # Un fichier ETRANGER, depose avant la publication.
-            # Hors de `New_AI`, que la preparation du sous-arbre vide entierement : sous
-            # `New_AI`, rien d'etranger ne peut survivre, et c'est ce qui rend l'arbre publie
-            # exactement celui du candidat.
-            etranger = bac.depot / "training" / "champions" / "brouillon-a-moi.txt"
-            etranger.write_text("note personnelle\n", encoding="utf-8")
+                try:
+                    bac.publier()
+                    raise AssertionError("la publication aurait du refuser (%s)" % nom)
+                except mod_pub.TravauxLocaux as e:
+                    assert relatif.split("/")[-1] in str(e), (nom, str(e))
 
-            try:
-                bac.publier(_coupure="commit_ecrit")
-                raise AssertionError("la coupure n'a pas eu lieu")
-            except mod_pub.CoupureSimulee:
-                pass
-            assert (bac.depot / "New_AI" / "Scoring" / "Ajoute.leek").exists()
+                # RIEN n'a ete touche : ni le fichier, ni le champion, ni le journal.
+                assert local.read_text(encoding="utf-8") == contenu, nom
+                assert bac.champion_actif() == "champion-000", nom
+                assert bac.reg.publication_en_cours() is None, nom
+                assert not mod_pub.tag_existe("scoring/champion-001", depot=bac.depot), nom
+                assert not (bac.champions / "champion-001.json").exists(), nom
 
-            etat = bac.reconcilier()
-            assert etat["etat"] == "abandonnee", etat
-            assert etat["recuperable"] is True, etat
-            assert etat["reste_a_nettoyer"] == [], etat
-            assert not (bac.depot / "New_AI" / "Scoring" / "Ajoute.leek").exists(), \
-                "le fichier ajoute par le candidat doit avoir ete retire"
-            assert etranger.exists(), "un fichier etranger a la publication doit survivre"
-            assert bac.champion_actif() == "champion-000"
-            # Hors ce fichier etranger, la zone de publication est propre.
-            reste = _git(bac.depot, "status", "--porcelain", "--", "New_AI",
-                         "training/champions").strip()
-            assert reste == "?? training/champions/brouillon-a-moi.txt", repr(reste)
+                # Une fois la zone liberee, la meme publication aboutit.
+                if relatif == "New_AI/Main.leek":
+                    _git(bac.depot, "checkout", "--", relatif)
+                else:
+                    local.unlink()
+                bac.publier()
+                bac.verifier_publication_complete(nom)
 
 
 def test_bundle_refuse_ne_commite_rien():

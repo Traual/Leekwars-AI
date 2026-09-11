@@ -18,6 +18,7 @@ import hashlib
 import json
 import statistics as stdstats
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -458,7 +459,8 @@ def _depuis_le_registre(ligne) -> dict:
             "dependances": portee.get("dependances", [])}
 
 
-def _retrouver_candidat(cfg, reg, ident: str, parent: str, empreinte: str | None) -> dict | None:
+def _retrouver_candidat(cfg, reg, ident: str, parent: str, empreinte: str | None,
+                        source: str | None = None) -> dict | None:
     """Le candidat deja constitue, qu'il soit au registre ou seulement dans Git.
 
     La boucle donnait le meme identifiant au meme patch a chaque lancement puis tentait de le
@@ -486,10 +488,19 @@ def _retrouver_candidat(cfg, reg, ident: str, parent: str, empreinte: str | None
 
     if not mod_cand.branche_existe(ident):
         return None
-    try:
-        recupere = mod_cand.retrouver(ident, parent, empreinte or "")
-    except RuntimeError as e:
-        raise CandidatDivergent(str(e))
+    # Une branche sans marqueur de provenance ne peut etre rattachee qu'en DEMONTRANT que le
+    # patch demande reconstruit son arbre. Le mode manuel connait son patch sans appel ; un
+    # fournisseur qui ne peut pas le fournir verra la reprise refusee, ce qui vaut mieux que
+    # d'attribuer une evaluation a une proposition qui n'a pas produit le code mesure.
+    with tempfile.TemporaryDirectory() as t:
+        preuve = None
+        if source is not None:
+            preuve = Path(t) / "source.patch"
+            preuve.write_bytes(source.encode("utf-8"))
+        try:
+            recupere = mod_cand.retrouver(ident, parent, empreinte or "", preuve)
+        except RuntimeError as e:
+            raise CandidatDivergent(str(e))
     # Inscription interrompue : le commit existe, le registre l'ignorait. On le reinscrit tel
     # quel, sans toucher au commit deja cree.
     verdict, fautifs = mod_opt.classer_portee(recupere["fichiers_modifies"],
@@ -787,6 +798,28 @@ def cmd_evaluate(args) -> int:
                 print("REFUS : --blocs impose des tailles a la main. Une confirmation publiable "
                       "utilise les tailles figees du protocole.")
                 return 2
+            # Une decision POSITIVE encore a publier se TERMINE ici, comme dans la boucle :
+            # ouvrir une tentative de plus rejouerait tout le plan sur d'autres graines et
+            # consommerait une unite de budget pour recalculer ce qui est deja decide. Une
+            # demande VOLONTAIRE d'un nouvel echantillon reste possible, mais elle se dit.
+            a_publier = reg.confirmation_a_publier(cfg["campagne"]["id"], args.id)
+            if a_publier is not None and not args.nouvelle_tentative:
+                if not args.promouvoir:
+                    print("REFUS : une decision %s attend sa publication (tentative %s). "
+                          "Ajouter --promouvoir pour la terminer, ou --nouvelle-tentative pour "
+                          "demander explicitement un nouvel echantillon."
+                          % (a_publier["verdict"], a_publier["vague"]))
+                    return 2
+                panel = _panel(cfg)
+                etat_reprise, promu = _terminer_publication(
+                    cfg, moteur, reg, cand, a_publier, panel, mod_sc.charger_builds())
+                print("reprise de la tentative %s : %s" % (a_publier["vague"], etat_reprise))
+                if promu is None:
+                    print("La decision conservee n'est plus publiable. Relancer une "
+                          "confirmation avec --nouvelle-tentative si l'idee tient toujours.")
+                    return 1
+                print("PROMU :", promu["champion"], promu["tag"])
+                return 0
             if override is None:
                 try:
                     tentative, reprise = _ouvrir_tentative(
@@ -1014,8 +1047,10 @@ def cmd_run_loop(args) -> int:
             # L'empreinte de la source AVANT d'appeler l'optimiseur : le mode manuel connait
             # deja son patch, donc reconnaitre un candidat existant ne coute aucun appel.
             prevue = getattr(optimiseur, "empreinte_prevue", lambda: None)()
+            source = getattr(optimiseur, "source", lambda: None)()
             try:
-                info = _retrouver_candidat(cfg, reg, ident, champion["commit_code"], prevue)
+                info = _retrouver_candidat(cfg, reg, ident, champion["commit_code"], prevue,
+                                           source)
             except CandidatDivergent as e:
                 journal.append({"proposition": ident_court, "etat": "rejete",
                                 "detail": str(e)[:200]})
@@ -1056,6 +1091,15 @@ def cmd_run_loop(args) -> int:
                 # En OCTETS : l'ecriture texte de Python traduit les fins de ligne sous
                 # Windows, et un diff aux fins de ligne reecrites ne s'applique sur rien.
                 fichier.write_bytes(proposition["patch"].encode("utf-8"))
+                # L'appel a pu CONSOMMER le temps restant — un fournisseur externe repondra
+                # bien plus lentement qu'une lecture de fichier. La proposition est conservee
+                # pour une reprise, mais aucune operation Git n'est engagee apres l'echeance.
+                if not budgets.place_pour_une_etape():
+                    journal.append({"proposition": ident_court, "etat": "conservee",
+                                    "detail": "budget epuise pendant l'appel a l'optimiseur ; "
+                                              "patch conserve, aucune inscription",
+                                    "patch": str(fichier)})
+                    continue
                 try:
                     info = _enregistrer_candidat(cfg, reg, ident, champion["commit_code"],
                                                  patch=fichier,
@@ -1261,6 +1305,9 @@ def main(argv=None) -> int:
     e.add_argument("--blocs", default=None,
                    help='tailles imposees, ex: {"farmer":2,"solo":1} — lot NON promouvable')
     e.add_argument("--promouvoir", action="store_true")
+    e.add_argument("--nouvelle-tentative", action="store_true",
+                   help="demander explicitement un nouvel echantillon alors qu'une decision "
+                        "attend sa publication ; consomme une unite de budget")
     e.set_defaults(fn=cmd_evaluate)
 
     rp = s.add_parser("report")

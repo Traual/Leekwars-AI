@@ -58,6 +58,11 @@ class Manuel:
         self._hypothese = hypothese or "aucune hypothese fournie (mode manuel)"
         self._dependances = list(dependances or [])
 
+    def source(self) -> str:
+        """Le patch, CONNU SANS APPELER `proposer`. Sert a demontrer la provenance d'une
+        branche ancienne sans solliciter un fournisseur."""
+        return self._patch
+
     def empreinte_prevue(self) -> str:
         """L'empreinte de la source, CONNUE SANS APPELER `proposer`.
 

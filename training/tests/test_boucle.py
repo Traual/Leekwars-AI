@@ -957,6 +957,161 @@ def test_un_budget_nul_ne_produit_ni_proposition_ni_inscription():
                 cli._propositions = vrai
 
 
+def _evaluer_confirm(lab, ident, **kw):
+    args = types.SimpleNamespace(config=str(lab.chemin_cfg), id=ident, stage="confirm",
+                                 workers=1, blocs=None, promouvoir=False,
+                                 nouvelle_tentative=False)
+    for cle, valeur in kw.items():
+        setattr(args, cle, valeur)
+    return cli.cmd_evaluate(args)
+
+
+def test_evaluate_termine_une_decision_positive_au_lieu_de_la_rejouer():
+    """La commande `evaluate` passe par la meme reprise de decision que la boucle.
+
+    Sans cela, une relance apres interruption ouvrait une tentative 02 sur de nouvelles
+    graines, rejouait tout le plan, consommait une seconde unite de budget, et laissait la
+    tentative 01 orpheline en `a_publier`.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        with Laboratoire(Path(t)) as lab:
+            lab.init_campagne()
+            patches = lab.ecrire_patches({"c-fort": 45})
+            # Le crible amene le candidat jusqu'a la confirmation.
+            lab.run_loop(patches, candidats=1, confirmations=0, minutes=30.0)
+            ident = "essai-c-fort"
+
+            # Confirmation par `evaluate`, interrompue juste avant la publication.
+            vrai = cli.mod_pub.publier
+            cli.mod_pub.publier = lambda *a, **k: (_ for _ in ()).throw(
+                RuntimeError("panne avant l'ouverture de la publication"))
+            try:
+                _evaluer_confirm(lab, ident, promouvoir=True)
+            except RuntimeError:
+                pass
+            finally:
+                cli.mod_pub.publier = vrai
+
+            with lab.registre() as reg:
+                a_publier = reg.confirmation_a_publier("essai", ident)
+                assert a_publier is not None and a_publier["tentative"] == 1, dict(a_publier or {})
+                assert reg.confirmations_utilisees("essai") == 1
+
+            # Sans --promouvoir : refus explicite, aucune tentative de plus.
+            lab.synth.joues = 0
+            assert _evaluer_confirm(lab, ident) == 2
+            with lab.registre() as reg:
+                assert reg.confirmations_utilisees("essai") == 1
+            assert lab.synth.joues == 0
+
+            # Avec --promouvoir : la decision de la tentative 01 est publiee, sans combat.
+            assert _evaluer_confirm(lab, ident, promouvoir=True) == 0
+            assert lab.synth.joues == 0, "aucun combat ne doit etre rejoue"
+            with lab.registre() as reg:
+                assert reg.confirmations_utilisees("essai") == 1, "budget entame"
+                assert reg.champion_courant()["champion_courant"] == "champion-001"
+                assert reg.confirmation_a_publier("essai", ident) is None, \
+                    "aucun etat a_publier ne doit rester orphelin"
+                ligne = reg.confirmation_decidee("essai", ident)
+                assert ligne["publication_etat"] == mod_reg.PUBLICATION_PUBLIEE
+            assert mod_pub.tag_existe("scoring/champion-001", depot=lab.depot)
+
+
+def test_une_branche_sans_empreinte_n_est_reprise_que_sur_preuve():
+    """Sans marqueur de provenance, il faut DEMONTRER que le patch produit ce commit.
+
+    Recopier l'empreinte demandee pour combler une provenance inconnue attribuait l'evaluation
+    a une proposition qui n'avait pas produit le code mesure.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        with Laboratoire(Path(t)) as lab:
+            lab.init_campagne()
+            # Une branche a l'ancienne : commit sans marqueur `Empreinte-source`.
+            patch_faible = lab.patch(10)
+            chemin = lab.tmp / "faible.patch"
+            _ecrire(chemin, patch_faible)
+            _git(lab.depot, "checkout", "-q", "-b", "scoring-candidates/essai-vieux", lab.base)
+            _git(lab.depot, "apply", "--index", str(chemin))
+            _git(lab.depot, "commit", "-q", "-m", "candidat essai-vieux : sans marqueur")
+            tete = _git(lab.depot, "rev-parse", "HEAD").strip()
+            _git(lab.depot, "checkout", "-q", "scoring")
+            assert mod_cand._empreinte_du_commit(tete) == "", "la branche doit etre sans marqueur"
+
+            # Un AUTRE patch sous le meme identifiant : la reprise doit refuser.
+            autre = lab.tmp / "fort.patch"
+            _ecrire(autre, lab.patch(45))
+            try:
+                mod_cand.retrouver("essai-vieux", lab.base,
+                                   cli._empreinte_source(patch=autre), autre)
+                raise AssertionError("une proposition differente aurait du etre refusee")
+            except RuntimeError as e:
+                assert "autre arbre" in str(e), str(e)
+
+            # Sans patch du tout : refus faute de preuve, jamais d'attribution par defaut.
+            try:
+                mod_cand.retrouver("essai-vieux", lab.base, "peu importe")
+                raise AssertionError("une provenance inconnue aurait du etre refusee")
+            except RuntimeError as e:
+                assert "aucune empreinte de provenance" in str(e), str(e)
+
+            # Le MEME patch : la reprise est acceptee, preuve faite par reconstruction.
+            repris = mod_cand.retrouver("essai-vieux", lab.base,
+                                        cli._empreinte_source(patch=chemin), chemin)
+            assert repris["commit"] == tete
+            assert repris["provenance"] == "arbre reconstruit", repris["provenance"]
+            assert repris["empreinte_source"] == cli._empreinte_source(patch=chemin)
+            # Et le code conserve est bien celui de la branche, pas celui du patch demande.
+            assert "FORCE = 10" in mod_cand.contenu_au_commit(
+                repris["commit"], "New_AI/Scoring/Scoring.leek")
+
+
+def test_un_optimiseur_qui_epuise_le_budget_ne_fait_rien_inscrire():
+    """Le budget est revérifié AU RETOUR de l'optimiseur, avant toute operation Git.
+
+    Un appel a un fournisseur externe sera bien plus long que la lecture d'un patch : fournir
+    l'echeance a l'appel ne dispense pas de la revoir a son retour.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        with Laboratoire(Path(t)) as lab:
+            lab.init_campagne()
+            patches = lab.ecrire_patches({"c-fort": 45})
+
+            class Lent(mod_opt.Manuel):
+                """Rend un patch valide, mais apres avoir consomme tout le temps restant."""
+                budgets = None
+
+                def proposer(self, contexte):
+                    assert contexte.get("secondes_restantes") is not None, \
+                        "l'echeance doit voyager avec la demande"
+                    Lent.budgets.echeance = time.monotonic() - 1.0
+                    return super().proposer(contexte)
+
+            vrai = cli._propositions
+            cli._propositions = lambda cfg, source: [
+                ("c-fort", Lent((source / "c-fort.patch").read_text(encoding="utf-8")))]
+            vraie_classe = cli.Budgets
+
+            class Espion(vraie_classe):
+                def __init__(self, *a):
+                    super().__init__(*a)
+                    Lent.budgets = self
+
+            cli.Budgets = Espion
+            try:
+                lab.run_loop(patches, candidats=1, confirmations=0, minutes=30.0)
+            finally:
+                cli._propositions, cli.Budgets = vrai, vraie_classe
+
+            rapport = lab.rapport_boucle()
+            assert rapport["candidats_enregistres"] == 0, rapport["journal"]
+            conservees = [l for l in rapport["journal"] if l.get("etat") == "conservee"]
+            assert conservees, rapport["journal"]
+            assert Path(conservees[0]["patch"]).exists(), "le patch doit etre conserve"
+            assert not mod_cand.branche_existe("essai-c-fort"), "aucun commit ne doit exister"
+            with lab.registre() as reg:
+                assert reg.candidat("essai-c-fort") is None
+
+
 def test_le_vrai_registre_reste_intact():
     pointeur = json.loads((RACINE / "champions" / "current.json").read_text(encoding="utf-8"))
     assert pointeur["champion_courant"] == "champion-000"

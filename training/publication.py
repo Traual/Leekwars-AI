@@ -63,6 +63,11 @@ class CoupureSimulee(RuntimeError):
     """Interruption provoquee par un test de reception, a une frontiere precise."""
 
 
+class TravauxLocaux(RuntimeError):
+    """Des modifications non commitees occupent la zone : la publication refuse de les
+    detruire. Rien n'a ete touche, et la decision reste publiable une fois la zone liberee."""
+
+
 def _git(*args: str, depot: Path | None = None, verifier: bool = True) -> str:
     r = subprocess.run(["git", "-C", str(depot or DEPOT), *args], capture_output=True, text=True,
                        encoding="utf-8", errors="replace")
@@ -108,7 +113,9 @@ def _preparer_sous_arbre(depot: Path, commit: str, sous_arbre: str) -> None:
 
     Consequence assumee : `New_AI` appartient entierement a l'operation. Un fichier etranger
     qui y trainait ne survit pas — et c'est necessaire, puisqu'un `git add -A` le ferait
-    autrement entrer dans le commit de champion et changerait l'arbre publie.
+    autrement entrer dans le commit de champion et changerait l'arbre publie. C'est pourquoi
+    `publier` REFUSE de commencer quand la zone porte du travail non commite : voir
+    `travaux_locaux`.
     """
     _git("rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", sous_arbre, depot=depot)
     cible = Path(depot) / sous_arbre
@@ -174,12 +181,22 @@ def publier(reg, candidat: dict[str, Any], champion_attendu: str, decision: dict
         if _coupure == etape:
             raise CoupureSimulee("interruption de reception a l'etape %s" % etape)
 
+    # AVANT toute operation destructive, et avant meme d'ouvrir le journal : la preparation
+    # vide `New_AI`, donc un travail local non commite y serait perdu sans retour possible.
+    travaux = travaux_locaux(depot)
+    if travaux:
+        raise TravauxLocaux(
+            "la zone de publication porte des modifications non commitees ; la preparation de "
+            "l'arbre du candidat les detruirait sans pouvoir les rendre. Rien n'a ete touche. "
+            "Commiter, remiser ou supprimer ces fichiers, puis relancer : la decision reste "
+            "publiable. En cause : %s" % " | ".join(travaux[:10]))
+
     pub = reg.ouvrir_publication(candidat["id"], champion_attendu, nouveau, confirmation)
     depart = _git("rev-parse", "--abbrev-ref", "HEAD", depot=depot).strip()
     try:
         _git("checkout", "-q", BRANCHE, depot=depot)
-        # Ce qui trainait DEJA dans la zone avant qu'on y touche. Un abandon n'effacera que ce
-        # que la publication aura cree, jamais ces fichiers-la.
+        # Le changement de branche a pu faire apparaitre des fichiers non suivis propres a
+        # `scoring`. Ce sont les seuls que l'abandon preservera.
         reg.etrangers_publication(pub, non_suivis(depot))
 
         # 1. Le CODE du candidat et son manifeste, dans l'arbre de travail. Le pointeur du
@@ -321,6 +338,22 @@ def non_suivis(depot: Path) -> list[str]:
     sortie = _git("ls-files", "--others", "--exclude-standard", "--", *ZONE,
                   depot=depot, verifier=False).strip()
     return sorted(l.strip() for l in sortie.split("\n") if l.strip())
+
+
+def travaux_locaux(depot: Path) -> list[str]:
+    """Tout ce qui, dans la zone de publication, n'appartient pas a un commit.
+
+    Fichiers non suivis ET modifications de fichiers suivis. La publication prepare l'arbre du
+    candidat en VIDANT `New_AI` : elle detruirait un prototype local cree pendant une
+    confirmation, bien apres les controles faits a l'inscription du candidat. Et la liste des
+    etrangers ne memorise que des chemins, jamais des contenus : aucun nettoyage ne pourrait
+    les rendre.
+
+    Un arbre propre a l'inscription ne l'est pas forcement a la promotion, des heures plus
+    tard. On le RECONSTATE donc juste avant, et on refuse plutot que d'effacer.
+    """
+    sortie = _git("status", "--porcelain", "--", *ZONE, depot=depot, verifier=False).strip()
+    return [l.strip() for l in sortie.split("\n") if l.strip()]
 
 
 def _nettoyer_arbre(champions: Path, depot: Path, nouveau: str,

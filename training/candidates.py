@@ -11,6 +11,7 @@ Git refuse de creer une reference sous un prefixe quand une branche du meme nom 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -73,7 +74,32 @@ def _empreinte_du_commit(commit: str) -> str:
     return ""
 
 
-def retrouver(ident: str, parent: str, empreinte_source: str = "") -> dict[str, Any] | None:
+def arbre_du_patch(parent: str, patch: Path) -> str:
+    """L'arbre qu'on obtiendrait en appliquant ce patch sur ce parent, sans rien toucher.
+
+    Tout se passe dans un INDEX temporaire : ni la branche courante, ni l'arbre de travail ne
+    bougent. C'est la seule preuve possible qu'un patch a bien produit un commit donne, quand
+    ce commit ne porte aucun marqueur de provenance.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        index = Path(t) / "index"
+        env = dict(os.environ, GIT_INDEX_FILE=str(index))
+
+        def _g(*args: str) -> str:
+            r = subprocess.run(["git", "-C", str(DEPOT), *args], capture_output=True,
+                               text=True, encoding="utf-8", errors="replace", env=env)
+            if r.returncode != 0:
+                raise RuntimeError("git %s : %s" % (" ".join(args),
+                                                    (r.stderr or r.stdout).strip()))
+            return r.stdout
+
+        _g("read-tree", parent)
+        _g("apply", "--cached", str(Path(patch).resolve()))
+        return _g("write-tree").strip()
+
+
+def retrouver(ident: str, parent: str, empreinte_source: str = "",
+              patch: Path | None = None) -> dict[str, Any] | None:
     """Le candidat deja COMMITE dont l'inscription au registre a ete interrompue.
 
     Le commit et la branche sont crees avant l'insertion SQLite. Si celle-ci echoue, le
@@ -93,17 +119,37 @@ def retrouver(ident: str, parent: str, empreinte_source: str = "") -> dict[str, 
             "meme essai." % (branche, (parents[0] if parents else "?")[:12],
                              parent_resolu[:12]))
     portee_commit = _empreinte_du_commit(tete)
-    if empreinte_source and portee_commit and portee_commit != empreinte_source:
-        raise RuntimeError(
-            "la branche %s porte une autre proposition (%s au lieu de %s) : un candidat est "
-            "immuable, choisir un identifiant neuf." % (branche, portee_commit[:12],
-                                                        empreinte_source[:12]))
+    if portee_commit:
+        if empreinte_source and portee_commit != empreinte_source:
+            raise RuntimeError(
+                "la branche %s porte une autre proposition (%s au lieu de %s) : un candidat est "
+                "immuable, choisir un identifiant neuf." % (branche, portee_commit[:12],
+                                                            empreinte_source[:12]))
+        prouve = portee_commit
+    else:
+        # Aucun marqueur de provenance : une branche ancienne, ou creee autrement. On ne
+        # RECOPIE PAS l'empreinte demandee pour combler ce trou — il faut la DEMONTRER, en
+        # verifiant que le patch demande reconstruit exactement l'arbre du commit.
+        if patch is None:
+            raise RuntimeError(
+                "la branche %s ne porte aucune empreinte de provenance et aucun patch n'est "
+                "fourni pour la demontrer : impossible de la rattacher a une proposition. "
+                "Choisir un identifiant neuf, ou supprimer cette branche." % branche)
+        attendu = arbre_du_patch(parent_resolu, patch)
+        reel = _git("rev-parse", "%s^{tree}" % tete).strip()
+        if attendu != reel:
+            raise RuntimeError(
+                "la branche %s ne porte aucune empreinte de provenance, et le patch demande "
+                "produirait un autre arbre (%s au lieu de %s) : elle appartient a une autre "
+                "proposition." % (branche, attendu[:12], reel[:12]))
+        prouve = empreinte_source
     modifies = fichiers_du_diff(parent_resolu, tete)
     emp = mod_bundle.empreinte(tete)
     return {"id": ident, "branche": branche, "commit": tete, "parent": parent_resolu,
             "bundle_sha256": emp["sha256"], "arbre_git": emp["arbre_git"],
             "nb_fichiers": emp["nb_fichiers"], "fichiers_modifies": modifies,
-            "empreinte_source": portee_commit or empreinte_source,
+            "empreinte_source": prouve,
+            "provenance": "marqueur" if portee_commit else "arbre reconstruit",
             "reconstruit_depuis_git": True}
 
 
