@@ -39,9 +39,11 @@ def _git(depot, *args):
 def _depot_jouet(tmp: Path):
     """Un depot minimal avec un New_AI, une branche scoring et un candidat deja commite."""
     depot = tmp / "depot"
-    (depot / "New_AI").mkdir(parents=True)
+    (depot / "New_AI" / "Scoring").mkdir(parents=True)
     (depot / "training" / "champions").mkdir(parents=True)
     (depot / "New_AI" / "Main.leek").write_text("// champion initial\n", encoding="utf-8")
+    (depot / "New_AI" / "Scoring" / "Obsolete.leek").write_text("// helper inutilise\n",
+                                                                encoding="utf-8")
     _git(depot.parent, "init", "-q", "-b", "scoring", str(depot))
     _git(depot, "config", "user.email", "banc@local")
     _git(depot, "config", "user.name", "banc")
@@ -57,6 +59,9 @@ def _depot_jouet(tmp: Path):
 
     _git(depot, "checkout", "-q", "-b", "scoring-candidates/c1")
     (depot / "New_AI" / "Main.leek").write_text("// candidat gagnant\n", encoding="utf-8")
+    # Le candidat RETIRE un helper de scoring : c'est exactement le cas que la preparation en
+    # superposition cassait, en laissant le helper survivre dans l'arbre publie.
+    (depot / "New_AI" / "Scoring" / "Obsolete.leek").unlink()
     _git(depot, "add", "-A")
     _git(depot, "commit", "-q", "-m", "candidat c1")
     commit_cand = _git(depot, "rev-parse", "HEAD").strip()
@@ -107,17 +112,30 @@ class _Bac:
     def champion_actif(self):
         return self.reg.champion_courant()["champion_courant"]
 
+    def verifier_publication_complete(self, contexte=""):
+        """Tout ce qu'une publication terminee doit laisser : tag, manifeste versionne,
+        pointeur COMMITE, arbre propre, et le code exact du candidat."""
+        assert self.champion_actif() == "champion-001", contexte
+        assert mod_pub.tag_existe("scoring/champion-001", depot=self.depot), contexte
+        commit = _git(self.depot, "rev-list", "-n", "1", "scoring/champion-001").strip()
+        assert mod_bundle.empreinte(commit)["sha256"] == self.candidat["bundle_sha256"], contexte
+        assert (self.champions / "champion-001.json").exists(), contexte
+        assert _git(self.depot, "ls-tree", "--name-only", "scoring",
+                    "training/champions/champion-001.json").strip(), contexte
+        pointeur = mod_pub.pointeur_commite(self.depot)
+        assert pointeur and pointeur["champion_courant"] == "champion-001", (contexte, pointeur)
+        assert not _git(self.depot, "status", "--porcelain").strip(), contexte
+        # Le helper que le candidat retirait doit reellement etre absent de l'arbre publie.
+        assert not _git(self.depot, "ls-tree", "--name-only", "scoring",
+                        "New_AI/Scoring/Obsolete.leek").strip(), contexte
+
 
 def test_promotion_ecrit_commit_tag_manifeste_et_pointeur():
     with tempfile.TemporaryDirectory() as t:
         with _Bac(Path(t)) as bac:
             res = bac.publier()
             assert res["champion"] == "champion-001"
-            assert mod_pub.tag_existe("scoring/champion-001", depot=bac.depot)
-            # Le code du champion est EXACTEMENT celui du candidat.
-            commit = _git(bac.depot, "rev-list", "-n", "1", "scoring/champion-001").strip()
-            assert mod_bundle.empreinte(commit)["sha256"] == bac.candidat["bundle_sha256"]
-            assert bac.champion_actif() == "champion-001"
+            bac.verifier_publication_complete()
             manifeste = json.loads((bac.champions / "champion-001.json")
                                    .read_text(encoding="utf-8"))
             assert manifeste["champion_precedent"] == "champion-000"
@@ -126,14 +144,42 @@ def test_promotion_ecrit_commit_tag_manifeste_et_pointeur():
             assert (bac.champions / "champion-000.json").exists()
 
 
+def test_un_candidat_qui_retire_un_helper_publie_un_arbre_identique_a_son_bundle():
+    """La preparation en superposition laissait survivre les fichiers que le candidat retire.
+
+    Le bundle mesure etait correct ; c'est sa preparation pour publication qui l'alterait, et
+    la verification d'empreinte refusait ensuite une promotion pourtant legitime.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        with _Bac(Path(t)) as bac:
+            # Le helper existe chez le champion, pas chez le candidat.
+            assert _git(bac.depot, "ls-tree", "--name-only", "scoring",
+                        "New_AI/Scoring/Obsolete.leek").strip()
+            assert not _git(bac.depot, "ls-tree", "--name-only", bac.commit_cand,
+                            "New_AI/Scoring/Obsolete.leek").strip()
+            bac.publier()
+            bac.verifier_publication_complete()
+            assert not (bac.depot / "New_AI" / "Scoring" / "Obsolete.leek").exists(), \
+                "le helper doit avoir disparu de l'arbre de travail aussi"
+
+
 def test_coupure_a_chaque_frontiere_ne_change_jamais_le_champion_actif():
-    """Cinq coupures, cinq fois la meme exigence : tant que la publication n'est pas close,
-    le champion actif reste champion-000 — y compris quand le pointeur a deja ete ecrit."""
+    """Sept coupures, sept fois la meme exigence : tant que la publication n'est pas close,
+    le champion actif reste champion-000 — y compris quand le pointeur a deja ete ecrit.
+
+    Les deux dernieres tombent APRES une ecriture Git reussie et avant la ligne SQLite qui la
+    note : ce sont les fenetres ou le journal ment. `apres_commit` laissait la reprise conclure
+    « aucun commit n'existait » alors que `scoring` portait deja le code du candidat, et
+    `apres_pointeur` la faisait annoncer une publication terminee dont le pointeur versionne
+    designait encore l'ancien champion.
+    """
     attendus = {
         "code_prepare": "abandonnee", "bundle_verifie": "abandonnee",
-        "commit_ecrit": "abandonnee", "tag_ecrit": "terminee_par_reprise",
-        "pointeur_ecrit": "terminee_par_reprise",
+        "commit_ecrit": "abandonnee", "apres_commit": "terminee_par_reprise",
+        "tag_ecrit": "terminee_par_reprise", "pointeur_ecrit": "terminee_par_reprise",
+        "apres_pointeur": "terminee_par_reprise",
     }
+    assert set(attendus) == set(mod_pub.COUPURES), "une frontiere n'est pas couverte"
     for etape, attendu in attendus.items():
         with tempfile.TemporaryDirectory() as t:
             with _Bac(Path(t)) as bac:
@@ -144,23 +190,39 @@ def test_coupure_a_chaque_frontiere_ne_change_jamais_le_champion_actif():
                     pass
                 assert bac.champion_actif() == "champion-000", (
                     "coupure a %s : le champion actif a bouge avant la cloture" % etape)
+                en_vol = bac.reg.publication_en_cours()
+                if etape == "apres_commit":
+                    # La fenetre exacte : le commit EXISTE, son SHA n'est nulle part.
+                    assert not (en_vol["commit_champion"] or ""), en_vol["commit_champion"]
+                    assert not mod_pub.tag_existe("scoring/champion-001", depot=bac.depot)
+                    assert _git(bac.depot, "ls-tree", "--name-only", "scoring",
+                                "training/champions/champion-001.json").strip(), \
+                        "le commit de champion doit bien exister sur la branche"
+                if etape == "apres_pointeur":
+                    # Le fichier annonce deja 001, le pointeur VERSIONNE dit encore 000.
+                    assert json.loads((bac.champions / "current.json").read_text(
+                        encoding="utf-8"))["champion_courant"] == "champion-001"
+                    assert mod_pub.pointeur_commite(bac.depot)["champion_courant"] \
+                        == "champion-000"
                 etat = bac.reconcilier()
                 assert etat["etat"] == attendu, (etape, etat)
                 if attendu == "abandonnee":
                     assert bac.champion_actif() == "champion-000"
                     assert not mod_pub.tag_existe("scoring/champion-001", depot=bac.depot)
                     assert not (bac.champions / "champion-001.json").exists()
+                    assert mod_pub.pointeur_commite(bac.depot)["champion_courant"] \
+                        == "champion-000", "le pointeur versionne doit rester sur 000"
                     assert not _git(bac.depot, "status", "--porcelain").strip(), \
                         "l'arbre de travail doit etre restaure"
+                    # Et le code du candidat ne doit pas etre reste sur la branche.
+                    assert "candidat gagnant" not in _git(
+                        bac.depot, "show", "scoring:New_AI/Main.leek")
                 else:
-                    assert bac.champion_actif() == "champion-001"
-                    assert mod_pub.tag_existe("scoring/champion-001", depot=bac.depot)
-                    commit = _git(bac.depot, "rev-list", "-n", "1",
-                                  "scoring/champion-001").strip()
-                    assert mod_bundle.empreinte(commit)["sha256"] == \
-                        bac.candidat["bundle_sha256"]
+                    bac.verifier_publication_complete(etape)
                 # Dans les deux cas, une seule publication : jamais un second champion.
                 assert not mod_pub.tag_existe("scoring/champion-002", depot=bac.depot)
+                # Idempotence : une seconde reprise n'a plus rien a faire.
+                assert bac.reconcilier()["etat"] == "rien_a_reconcilier", etape
 
 
 def test_bundle_refuse_ne_commite_rien():

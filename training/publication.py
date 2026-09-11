@@ -15,17 +15,24 @@ n'existait.
 **Un journal a etats, tenu dans SQLite AVANT chaque ecriture Git**, et une reprise qui lit
 l'etat REEL de Git plutot que de faire confiance au journal :
 
-    ouverte -> code_prepare -> bundle_verifie -> commit_ecrit -> tag_ecrit
-            -> pointeur_ecrit -> terminee
+    ouverte -> code_prepare -> bundle_verifie -> commit_ecrit -> commit_enregistre
+            -> tag_ecrit -> pointeur_ecrit -> terminee
 
-La reprise aboutit toujours a l'un des deux etats surs : la publication est terminee, ou le
-champion precedent est reellement conserve — pointeur restaure, arbre de travail nettoye,
-manifeste orphelin retire. Le controle qui decide est le meme dans les deux cas : l'arbre
-`New_AI` du commit de champion doit etre EXACTEMENT celui qui a ete evalue.
+Le journal ne suffit jamais a lui seul, parce qu'une coupure tombe aussi ENTRE une ecriture Git
+reussie et la ligne SQLite qui la note. La reprise cherche donc le commit de champion par trois
+faits successifs — le tag, le SHA enregistre, puis le manifeste versionne sur la branche — et
+lit le pointeur tel qu'il est COMMITE, pas tel qu'il traine dans l'arbre de travail.
+
+La reprise aboutit toujours a l'un des deux etats surs : la publication est terminee et
+controlee — tag, manifeste versionne, pointeur commite, arbre propre — ou le champion
+precedent est reellement conserve, pointeur restaure, arbre nettoye, manifeste orphelin retire.
+Le controle qui decide est le meme dans les deux cas : l'arbre `New_AI` du commit de champion
+doit etre EXACTEMENT celui qui a ete evalue, suppressions comprises.
 """
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -37,8 +44,15 @@ DEPOT = Path(__file__).resolve().parents[1]
 CHAMPIONS = Path(__file__).resolve().parent / "champions"
 BRANCHE = "scoring"
 
-ETAPES = ("ouverte", "code_prepare", "bundle_verifie", "commit_ecrit", "tag_ecrit",
-          "pointeur_ecrit", "terminee")
+ETAPES = ("ouverte", "code_prepare", "bundle_verifie", "commit_ecrit",
+          "commit_enregistre", "tag_ecrit", "pointeur_ecrit", "terminee")
+
+# Points d'arret de RECEPTION. Les cinq premiers tombent AVANT l'operation qu'ils
+# nomment ; les deux derniers tombent APRES une ecriture Git reussie et avant la
+# suivante — ce sont les fenetres ou le journal et Git divergent, et c'est la que la
+# reprise doit se fier aux faits plutot qu'au journal.
+COUPURES = ("code_prepare", "bundle_verifie", "commit_ecrit", "apres_commit",
+            "tag_ecrit", "pointeur_ecrit", "apres_pointeur")
 
 
 class CoupureSimulee(RuntimeError):
@@ -77,15 +91,60 @@ def _commit_existe(ref: str, depot: Path | None = None) -> bool:
     return r.returncode == 0
 
 
+def _preparer_sous_arbre(depot: Path, commit: str, sous_arbre: str) -> None:
+    """Met dans l'index ET l'arbre de travail EXACTEMENT le sous-arbre du candidat.
+
+    `git checkout <commit> -- New_AI` travaille en SUPERPOSITION : un fichier suivi sur
+    `scoring` mais absent du candidat reste en place. Un candidat qui retire un helper de
+    scoring voyait donc son helper survivre, l'empreinte de l'arbre prepare differer de celle
+    qui avait ete mesuree, et sa promotion refusee — alors que son bundle etait correct.
+
+    On vide donc d'abord l'index et le disque du sous-arbre, puis on le repose depuis le
+    candidat. Les suppressions passent ainsi comme le reste.
+    """
+    _git("rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", sous_arbre, depot=depot)
+    cible = Path(depot) / sous_arbre
+    if cible.exists():
+        shutil.rmtree(cible)
+    _git("checkout", commit, "--", sous_arbre, depot=depot)
+
+
+def _ecrire_json(chemin: Path, valeur: dict[str, Any]) -> None:
+    """Ecriture ATOMIQUE : une coupure ne doit jamais laisser un pointeur a moitie ecrit,
+    qu'aucune reprise ne saurait relire."""
+    chemin = Path(chemin)
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    provisoire = chemin.with_name(chemin.name + ".partiel")
+    provisoire.write_text(json.dumps(valeur, ensure_ascii=False, indent=2) + "\n",
+                          encoding="utf-8")
+    provisoire.replace(chemin)
+
+
 def _ecrire_pointeur(champions: Path, nouveau: str, candidat: dict[str, Any], tag: str) -> dict:
     pointeur = {"champion_courant": nouveau,
                 "manifeste": "training/champions/%s.json" % nouveau,
                 "commit_code": candidat["commit"],
                 "bundle_sha256": candidat["bundle_sha256"], "tag": tag,
                 "_role": "Seul le controleur ecrit ce pointeur ; l'optimiseur n'y touche pas."}
-    (Path(champions) / "current.json").write_text(
-        json.dumps(pointeur, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _ecrire_json(Path(champions) / "current.json", pointeur)
     return pointeur
+
+
+def pointeur_commite(depot: Path, branche: str = BRANCHE) -> dict[str, Any] | None:
+    """Le pointeur tel qu'il est COMMITE sur la branche, pas tel qu'il est sur le disque.
+
+    Une coupure entre l'ecriture du fichier et son commit laisse un pointeur de travail qui
+    annonce deja le nouveau champion alors que rien n'est versionne. Une reprise qui lit le
+    fichier saute alors le commit qui manque justement.
+    """
+    brut = _git("show", "%s:training/champions/current.json" % branche,
+                depot=depot, verifier=False)
+    if not brut.strip():
+        return None
+    try:
+        return json.loads(brut)
+    except json.JSONDecodeError:
+        return None
 
 
 def publier(reg, candidat: dict[str, Any], champion_attendu: str, decision: dict[str, Any],
@@ -116,7 +175,7 @@ def publier(reg, candidat: dict[str, Any], champion_attendu: str, decision: dict
         #    champion actif n'est PAS touche ici.
         reg.etape_publication(pub, "code_prepare", nouveau)
         _peut_etre_coupe("code_prepare")
-        _git("checkout", candidat["commit"], "--", "New_AI", depot=depot)
+        _preparer_sous_arbre(depot, candidat["commit"], mod_bundle.SOUS_ARBRE)
 
         manifeste = {
             "id": nouveau, "statut": "promu",
@@ -135,8 +194,7 @@ def publier(reg, candidat: dict[str, Any], champion_attendu: str, decision: dict
                       "et n'ecrit rien sinon."),
         }
         chemin_manifeste = champions / ("%s.json" % nouveau)
-        chemin_manifeste.write_text(json.dumps(manifeste, ensure_ascii=False, indent=2) + "\n",
-                                    encoding="utf-8")
+        _ecrire_json(chemin_manifeste, manifeste)
 
         # 2. Controle AVANT le commit : l'arbre prepare est-il celui qui a ete mesure ?
         #    Verifier apres coup laissait un commit de champion errone dans l'histoire de
@@ -153,14 +211,19 @@ def publier(reg, candidat: dict[str, Any], champion_attendu: str, decision: dict
                 "promotion est annulee et il faut une nouvelle evaluation."
                 % (emp["sha256"][:16], candidat["bundle_sha256"][:16]))
 
-        # 3. Commit du code et du manifeste.
+        # 3. Commit du code et du manifeste. La coupure `apres_commit` tombe entre un commit
+        #    REUSSI et l'enregistrement de son SHA : la reprise doit alors reconnaitre le
+        #    commit par les FAITS Git, pas par le journal.
         reg.etape_publication(pub, "commit_ecrit", nouveau)
         _peut_etre_coupe("commit_ecrit")
         _git("commit", "-q", "-m",
              "scoring: promouvoir %s\n\nCandidat %s, parent %s.\nBundle %s.\n"
              % (nouveau, candidat["id"], champion_attendu, candidat["bundle_sha256"][:16]),
              depot=depot)
+        _peut_etre_coupe("apres_commit")
         commit_champion = _git("rev-parse", "HEAD", depot=depot).strip()
+        reg.etape_publication(pub, "commit_enregistre", nouveau,
+                              commit_champion=commit_champion)
 
         # 4. Tag annote.
         reg.etape_publication(pub, "tag_ecrit", tag, commit_champion=commit_champion)
@@ -170,11 +233,13 @@ def publier(reg, candidat: dict[str, Any], champion_attendu: str, decision: dict
                  "%s — promu depuis %s\nBundle %s\n" % (nouveau, candidat["id"], emp["sha256"]),
                  depot=depot)
 
-        # 5. SEULEMENT MAINTENANT : le champion actif change.
+        # 5. SEULEMENT MAINTENANT : le champion actif change. La coupure `apres_pointeur`
+        #    tombe entre l'ecriture du fichier et son commit.
         reg.etape_publication(pub, "pointeur_ecrit", tag, commit_champion=commit_champion)
         _peut_etre_coupe("pointeur_ecrit")
         _ecrire_pointeur(champions, nouveau, candidat, tag)
         _git("add", "-A", "training/champions", depot=depot)
+        _peut_etre_coupe("apres_pointeur")
         _git("commit", "-q", "-m", "scoring: pointer le champion %s\n" % nouveau, depot=depot)
 
         reg.cloturer_publication(pub, {"id": nouveau, "commit_code": candidat["commit"],
@@ -191,6 +256,51 @@ def publier(reg, candidat: dict[str, Any], champion_attendu: str, decision: dict
                               reg.publication_en_cours() else "echec",
                               "interrompue : %s" % str(e)[:200])
         raise
+
+
+def _commit_de_champion(depot: Path, tag: str, enregistre: str, nouveau: str) -> str:
+    """Le commit de champion, cherche par les FAITS Git et non par le journal.
+
+    Trois sources, dans l'ordre de certitude : le tag, le SHA enregistre, puis la branche
+    elle-meme. La troisieme est indispensable : une coupure entre un commit REUSSI et
+    l'enregistrement de son SHA ne laissait ni tag ni SHA, la reprise concluait « aucun commit
+    n'existait » et abandonnait — alors que `scoring` portait deja le code du candidat et son
+    manifeste, que le nettoyage restaurait ensuite depuis ce meme commit.
+    """
+    if tag_existe(tag, depot=depot):
+        return _git("rev-list", "-n", "1", tag, depot=depot).strip()
+    if _commit_existe(enregistre, depot=depot):
+        return enregistre.strip()
+    # Le manifeste du nouveau champion est-il deja versionne sur la branche ? Si oui, le
+    # commit qui l'a introduit EST le commit de champion.
+    trouve = _git("rev-list", "-n", "1", BRANCHE, "--",
+                  "training/champions/%s.json" % nouveau, depot=depot, verifier=False).strip()
+    return trouve
+
+
+def _controler_publication(depot: Path, champions: Path, nouveau: str, tag: str,
+                           bundle: str) -> list[str]:
+    """Ce qui manquerait encore pour qu'une publication soit vraiment terminee."""
+    manques = []
+    if not tag_existe(tag, depot=depot):
+        manques.append("tag %s absent" % tag)
+    else:
+        commit = _git("rev-list", "-n", "1", tag, depot=depot).strip()
+        if mod_bundle.empreinte(commit)["sha256"] != bundle:
+            manques.append("le bundle du tag ne correspond pas au manifeste")
+    if not (Path(champions) / ("%s.json" % nouveau)).exists():
+        manques.append("manifeste %s absent du disque" % nouveau)
+    if not _git("ls-tree", "--name-only", BRANCHE, "training/champions/%s.json" % nouveau,
+                depot=depot, verifier=False).strip():
+        manques.append("manifeste %s non versionne sur %s" % (nouveau, BRANCHE))
+    pointeur = pointeur_commite(depot)
+    if (pointeur or {}).get("champion_courant") != nouveau:
+        manques.append("le pointeur commite ne designe pas %s" % nouveau)
+    sale = _git("status", "--porcelain", "--", "New_AI", "training/champions",
+                depot=depot, verifier=False).strip()
+    if sale:
+        manques.append("arbre de travail non propre : %s" % sale.replace("\n", " | ")[:200])
+    return manques
 
 
 def _nettoyer_arbre(champions: Path, depot: Path, nouveau: str,
@@ -216,8 +326,7 @@ def _nettoyer_arbre(champions: Path, depot: Path, nouveau: str,
         actuel = Path(champions) / "current.json"
         if not actuel.exists() or json.loads(actuel.read_text(encoding="utf-8")) \
                 .get("champion_courant") != pointeur_precedent.get("champion_courant"):
-            actuel.write_text(json.dumps(pointeur_precedent, ensure_ascii=False, indent=2) + "\n",
-                              encoding="utf-8")
+            _ecrire_json(actuel, pointeur_precedent)
             faits.append("pointeur restaure sur %s" % pointeur_precedent.get("champion_courant"))
     return faits
 
@@ -246,11 +355,7 @@ def reconcilier(reg, champions: Path | None = None, depot: Path | None = None) -
     depart = _git("rev-parse", "--abbrev-ref", "HEAD", depot=depot).strip()
     _git("checkout", "-q", BRANCHE, depot=depot, verifier=False)
     try:
-        commit = ""
-        if tag_existe(tag, depot=depot):
-            commit = _git("rev-list", "-n", "1", tag, depot=depot).strip()
-        elif _commit_existe(en_cours["commit_champion"] or "", depot=depot):
-            commit = (en_cours["commit_champion"] or "").strip()
+        commit = _commit_de_champion(depot, tag, en_cours["commit_champion"] or "", nouveau)
 
         if not commit:
             faits = _nettoyer_arbre(champions, depot, nouveau, precedent)
@@ -288,15 +393,30 @@ def reconcilier(reg, champions: Path | None = None, depot: Path | None = None) -
         if not chemin_manifeste.exists():
             chemin_manifeste.write_text(brut, encoding="utf-8")
             faits.append("manifeste restaure depuis le commit")
-        pointeur = json.loads((champions / "current.json").read_text(encoding="utf-8"))
-        if pointeur.get("champion_courant") != nouveau:
+        # Le pointeur qui fait foi est le pointeur COMMITE. Lire le fichier de travail faisait
+        # sauter ce bloc apres une coupure entre son ecriture et son commit : la publication
+        # etait annoncee terminee alors que `HEAD` designait encore l'ancien champion, et
+        # `current.json` restait modifie dans l'index.
+        if (pointeur_commite(depot) or {}).get("champion_courant") != nouveau:
             _ecrire_pointeur(champions, nouveau,
                              {"commit": manifeste["code"]["commit_candidat"],
                               "bundle_sha256": manifeste["code"]["bundle_sha256"]}, tag)
-            _git("add", "-A", "training/champions", depot=depot, verifier=False)
+            _git("add", "-A", "training/champions", depot=depot)
+            # Les erreurs des operations REQUISES ne sont plus ignorees : une publication
+            # annoncee terminee doit l'etre.
             _git("commit", "-q", "-m", "scoring: pointer le champion %s (reprise)\n" % nouveau,
-                 depot=depot, verifier=False)
+                 depot=depot)
             faits.append("pointeur ecrit sur %s" % nouveau)
+
+        # Verifications FINALES avant cloture : tag, manifeste et pointeur, tous commites et
+        # coherents. Une seconde reprise n'aura alors plus rien a faire.
+        manques = _controler_publication(depot, champions, nouveau, tag,
+                                         manifeste["code"]["bundle_sha256"])
+        if manques:
+            return {"etat": "incomplete", "champion": nouveau, "controles_en_echec": manques,
+                    "remises_en_etat": faits,
+                    "detail": ("La reprise n'a pas abouti a un etat coherent ; la publication "
+                               "reste ouverte et rien n'est annonce comme promu.")}
         reg.cloturer_publication(en_cours["id"],
                                  {"id": nouveau, "commit_code": manifeste["code"]["commit_candidat"],
                                   "bundle_sha256": manifeste["code"]["bundle_sha256"], "tag": tag,

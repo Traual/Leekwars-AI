@@ -153,9 +153,11 @@ CONFIG = {
                  "planchers_empiriques": {"solo": -0.05, "team": -0.05},
                  "gain_minimal_farmer": 0.01},
     "etapes": {
+        # Les blocs PAR ADVERSAIRE ne decroissent jamais d'une etape a la suivante : c'est la
+        # condition de l'emboitement, et `init-campaign` la verifie.
         "s1": {"candidats": 3, "blocs": {"farmer": 3, "solo": 3}, "adversaires": 1, "garder": 2},
-        "s2": {"blocs": {"farmer": 6, "solo": 3, "team": 3}, "adversaires": 2, "garder": 1},
-        "s3": {"blocs": {"farmer": 9, "solo": 3, "team": 3}, "adversaires": 3, "garder": 1},
+        "s2": {"blocs": {"farmer": 6, "solo": 6, "team": 2}, "adversaires": 2, "garder": 1},
+        "s3": {"blocs": {"farmer": 9, "solo": 9, "team": 3}, "adversaires": 3, "garder": 1},
         "confirmation": {"blocs": {"farmer": 30, "solo": 12, "team": 12}, "adversaires": 3,
                          "graines_neuves": True,
                          "formats_requis": ["farmer", "solo", "team"]},
@@ -178,7 +180,7 @@ CONFIG = {
 class Laboratoire:
     """Depot, ligue, registre et moteur synthetique, tous jetables."""
 
-    def __init__(self, tmp: Path):
+    def __init__(self, tmp: Path, etapes: dict | None = None, nb_adversaires: int = 3):
         self.tmp = tmp
         self.depot = tmp / "depot"
         self.champions = self.depot / "training" / "champions"
@@ -187,11 +189,13 @@ class Laboratoire:
         (self.gen / "test" / "ai").mkdir(parents=True)
         self.runs.mkdir(parents=True)
         self._creer_depot()
-        self._creer_ligue()
+        self._creer_ligue(nb_adversaires)
         self.moteur = MoteurJouet(self.gen, self.gen / "g.jar", None, self.gen, "moteur-jouet")
         self.synth = MoteurSynthetique(self.gen)
 
         self.cfg = json.loads(json.dumps(CONFIG))
+        if etapes is not None:
+            self.cfg["etapes"] = json.loads(json.dumps(etapes))
         self.cfg["moteur"]["racine"] = str(self.gen)
         self.cfg["ligue"]["source"] = str(self.tmp / "ligue" / "versions.json")
         self.chemin_cfg = tmp / "loop.yaml"
@@ -271,10 +275,13 @@ class Laboratoire:
         _ecrire(rep / "Scoring" / "Scoring.leek", SCORING % force)
         return "test/ai/bundles/%s/Main.leek" % nom
 
-    def _creer_ligue(self):
+    def _creer_ligue(self, combien: int = 3):
         racine = self.tmp / "ligue"
         versions = []
-        for i, force in enumerate((-10, 0, 5), 1):
+        # Forces TOUTES distinctes : deux politiques au contenu identique auraient la meme
+        # empreinte, donc le meme bundle deploye, et la ligue ne compterait qu'un adversaire.
+        forces = ([-10, 0, 5] + [8 + i for i in range(max(0, combien - 3))])[:combien]
+        for i, force in enumerate(forces, 1):
             rep = racine / ("adv%02d" % i)
             (rep / "Scoring").mkdir(parents=True)
             _ecrire(rep / "Main.leek", MAIN)
@@ -557,6 +564,181 @@ def test_la_boucle_reprend_une_publication_interrompue_avant_de_continuer():
             with lab.registre() as reg:
                 assert reg.champion_courant()["champion_courant"] == "champion-001"
                 assert reg.publication_en_cours() is None
+
+
+def _etapes_livrees() -> dict:
+    """Les tailles et adversaires de la configuration REELLEMENT livree."""
+    reelle = cli.charger_config(RACINE / "config" / "loop.yaml")
+    return reelle["etapes"]
+
+
+def test_la_configuration_livree_est_faisable_et_traverse_s2():
+    """La vraie configuration, pas une autre.
+
+    Le test precedent utilisait des tailles a lui, qui ne rencontraient pas le defaut : S2
+    demandait quatre blocs team pour cinq adversaires, il en manquait forcement un, et la
+    couverture rendait INCOMPLET meme quand tous les combats demandes se terminaient. Aucun
+    candidat ne pouvait donc franchir S2.
+    """
+    etapes = _etapes_livrees()
+    # Confirmation reduite : ce test porte sur le crible, et une confirmation grandeur nature
+    # coute mille combats pour ne rien prouver de plus ici.
+    etapes = json.loads(json.dumps(etapes))
+    etapes["confirmation"]["blocs"] = {"farmer": 10, "solo": 10, "team": 10}
+    with tempfile.TemporaryDirectory() as t:
+        with Laboratoire(Path(t), etapes=etapes, nb_adversaires=11) as lab:
+            panel = mod_ligue.charger(lab.cfg["ligue"]["source"], None)
+            assert cli.controler_faisabilite(lab.cfg, panel, mod_sc.charger_builds()) == []
+            assert lab.init_campagne() == 0
+            patches = lab.ecrire_patches({"c-fort": 45})
+            lab.run_loop(patches, candidats=1, confirmations=0, minutes=30.0)
+            rapport = lab.rapport_boucle()
+            par_etape = {l["etape"]: l for l in rapport["journal"] if l.get("etape")
+                         in ("s1", "s2", "s3")}
+            for etape in ("s1", "s2", "s3"):
+                assert etape in par_etape, (etape, rapport["journal"])
+                assert par_etape[etape]["decision"] != "INCOMPLET", par_etape[etape]
+                assert par_etape[etape]["complet"], par_etape[etape]
+
+            # Et le defaut d'origine est bien detecte par le controle de faisabilite.
+            casse = json.loads(json.dumps(lab.cfg))
+            casse["etapes"]["s2"]["blocs"]["team"] = 4
+            problemes = cli.controler_faisabilite(casse, panel, mod_sc.charger_builds())
+            assert any("s2 / team" in p for p in problemes), problemes
+
+
+def test_la_boucle_reprend_un_candidat_et_son_avancement():
+    """Arret apres S3, puis relance : une seule inscription, aucun combat de crible rejoue.
+
+    La boucle redonnait le meme identifiant au meme patch et tentait de le reenregistrer : la
+    branche existait deja, le candidat etait rejete, et les combats deja payes n'etaient plus
+    relies a aucune idee.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        with Laboratoire(Path(t)) as lab:
+            lab.init_campagne()
+            patches = lab.ecrire_patches({"c-fort": 45})
+
+            # Premier lancement : aucune confirmation autorisee, le crible va jusqu'a S3.
+            lab.run_loop(patches, candidats=1, confirmations=0, minutes=30.0)
+            premier = lab.rapport_boucle()
+            crible = {l["etape"]: l for l in premier["journal"]
+                      if l.get("etape") in ("s1", "s2", "s3")}
+            assert set(crible) == {"s1", "s2", "s3"}, premier["journal"]
+            combats_crible = lab.synth.joues
+            assert combats_crible > 0
+            with lab.registre() as reg:
+                assert reg.confirmations_utilisees("essai") == 0
+                assert len(reg.avancement("essai", "essai-c-fort")) == 3
+            branches = _git(lab.depot, "branch", "--list",
+                            "scoring-candidates/*").strip().split("\n")
+            assert len([b for b in branches if b.strip()]) == 1, branches
+
+            # Deuxieme lancement : le candidat est REPRIS, le crible n'est pas rejoue.
+            lab.synth.joues = 0
+            lab.run_loop(patches, candidats=1, confirmations=1, minutes=30.0)
+            second = lab.rapport_boucle()
+            repris = [l for l in second["journal"] if l.get("etat") == "repris"]
+            assert any(l.get("detail", "").startswith("candidat deja enregistre")
+                       for l in repris), second["journal"]
+            assert {l["etape"] for l in repris if l.get("etape")} == {"s1", "s2", "s3"}, repris
+            assert second["candidats_enregistres"] == 0, "aucun candidat neuf a inscrire"
+            # Une seule branche, toujours : rien n'a ete renomme pour contourner le probleme.
+            branches = _git(lab.depot, "branch", "--list",
+                            "scoring-candidates/*").strip().split("\n")
+            assert len([b for b in branches if b.strip()]) == 1, branches
+            # La confirmation a bien eu lieu, et les combats joues sont les SIENS.
+            conf = [l for l in second["journal"] if l.get("etape") == "confirmation"]
+            assert conf and conf[0]["decision"] in ("PROMOUVOIR", "INCONCLUSIF"), conf
+            assert lab.synth.joues > 0
+            with lab.registre() as reg:
+                assert reg.confirmations_utilisees("essai") == 1
+                # Les mesures de developpement n'ont pas bouge.
+                for etape in ("s1", "s2", "s3"):
+                    assert reg.avancement("essai", "essai-c-fort")[etape]["objectif"] == \
+                        crible[etape]["objectif"]
+
+
+def test_une_confirmation_coupee_reprend_sa_tentative_sans_consommer_de_budget():
+    """Coupure pendant une confirmation, puis relance : meme tentative, meme plan, meme
+    compteur, et seuls les combats manquants sont joues."""
+    with tempfile.TemporaryDirectory() as t:
+        with Laboratoire(Path(t)) as lab:
+            lab.init_campagne()
+            patches = lab.ecrire_patches({"c-fort": 45})
+            lab.run_loop(patches, candidats=1, confirmations=1, minutes=30.0)
+            # Le parcours continu sert de reference.
+            reference = json.loads((lab.runs / "rapports"
+                                    / "essai-c-fort-confirmation-01.json")
+                                   .read_text(encoding="utf-8"))
+            assert reference["decision"]["verdict"] in ("PROMOUVOIR", "INCONCLUSIF")
+
+        # Meme laboratoire, mais la confirmation est coupee au milieu.
+        with tempfile.TemporaryDirectory() as t2:
+            with Laboratoire(Path(t2)) as lab:
+                lab.init_campagne()
+                patches = lab.ecrire_patches({"c-fort": 45})
+                lab.run_loop(patches, candidats=1, confirmations=0, minutes=30.0)
+                lab.synth.joues = 0
+                lab.synth.plafond = 20        # coupe la confirmation en cours de route
+                lab.run_loop(patches, candidats=1, confirmations=1, minutes=30.0)
+                coupe = lab.rapport_boucle()
+                conf = [l for l in coupe["journal"] if l.get("etape") == "confirmation"][0]
+                assert conf["decision"] == "INCOMPLET", conf
+                assert conf["reprise"] is False
+                vague = conf["tentative"]
+                with lab.registre() as reg:
+                    ligne = reg.confirmation_reprenable("essai", "essai-c-fort")
+                    assert ligne is not None and ligne["etat"] == "partielle", dict(ligne or {})
+                    assert reg.confirmations_utilisees("essai") == 1
+                partiels = lab.synth.joues
+
+                # Relance : MEME tentative, MEME plan, budget inchange.
+                lab.synth.plafond = None
+                lab.synth.joues = 0
+                lab.run_loop(patches, candidats=1, confirmations=1, minutes=30.0)
+                fini = lab.rapport_boucle()
+                conf2 = [l for l in fini["journal"] if l.get("etape") == "confirmation"][0]
+                assert conf2["reprise"] is True, conf2
+                assert conf2["tentative"] == vague, (conf2["tentative"], vague)
+                with lab.registre() as reg:
+                    assert reg.confirmations_utilisees("essai") == 1, \
+                        "une reprise ne consomme pas une confirmation de plus"
+                # Seuls les combats MANQUANTS ont ete joues : la somme des deux passes vaut
+                # EXACTEMENT le plan, donc aucun combat deja valide n'a ete rejoue.
+                prevus = 4 * sum(lab.cfg["etapes"]["confirmation"]["blocs"].values())
+                assert partiels == 20, partiels
+                assert partiels + lab.synth.joues == prevus, (partiels, lab.synth.joues, prevus)
+                # Et le resultat est celui du parcours continu.
+                repris = json.loads((lab.runs / "rapports"
+                                     / "essai-c-fort-confirmation-01.json")
+                                    .read_text(encoding="utf-8"))
+                assert repris["decision"]["verdict"] == reference["decision"]["verdict"]
+                assert repris["resultats"] == reference["resultats"]
+
+
+def test_une_tentative_ne_change_pas_de_champion_en_silence():
+    """Si le champion bouge entre deux appels, la tentative figee ne doit pas etre reprise."""
+    with tempfile.TemporaryDirectory() as t:
+        with Laboratoire(Path(t)) as lab:
+            lab.init_campagne()
+            with lab.registre() as reg:
+                tentative, reprise = reg.ouvrir_confirmation(
+                    "essai", "c1", "champion-000", {"farmer": 3}, ["adv01"], "proto", 5)
+                assert not reprise
+                # Meme champion : la tentative se reprend.
+                _meme, reprise = reg.ouvrir_confirmation(
+                    "essai", "c1", "champion-000", {"farmer": 3}, ["adv01"], "proto", 5)
+                assert reprise and _meme["vague"] == tentative["vague"]
+                reg.cloturer_confirmation(tentative["id"], "partielle", "INCOMPLET")
+                # Champion different : refus explicite, pas de changement de reference.
+                try:
+                    reg.ouvrir_confirmation("essai", "c1", "champion-001", {"farmer": 3},
+                                            ["adv01"], "proto", 5)
+                    raise AssertionError("la reprise aurait du etre refusee")
+                except mod_reg.ChampionObsolete as e:
+                    assert "champion-000" in str(e) and "champion-001" in str(e)
+                assert reg.confirmations_utilisees("essai") == 1
 
 
 def test_le_vrai_registre_reste_intact():

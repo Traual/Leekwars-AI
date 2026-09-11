@@ -70,6 +70,10 @@ CREATE TABLE IF NOT EXISTS confirmations (
   vague TEXT UNIQUE, champion_attendu TEXT, tailles_json TEXT, adversaires_json TEXT,
   empreinte_protocole TEXT, etat TEXT, verdict TEXT, ouverte_le TEXT, close_le TEXT);
 
+CREATE TABLE IF NOT EXISTS avancement (
+  campagne TEXT, candidat TEXT, etape TEXT, verdict TEXT, objectif REAL, complet INTEGER,
+  rapport TEXT, horodatage TEXT, PRIMARY KEY (campagne, candidat, etape));
+
 CREATE TABLE IF NOT EXISTS journal (
   id INTEGER PRIMARY KEY AUTOINCREMENT, horodatage TEXT, niveau TEXT, message TEXT);
 """
@@ -93,6 +97,15 @@ class BudgetEpuise(RuntimeError):
 
 class ProtocoleDifferent(RuntimeError):
     """Le protocole enregistre ne correspond plus a l'environnement courant."""
+
+
+# Etats d'une tentative de confirmation.
+#   ouverte    : lancee, resultat pas encore rendu
+#   partielle  : resultat INCOMPLET — le plan est paye a moitie, il se REPREND
+#   close      : une decision a ete rendue sur le plan entier
+#   abandonnee : renoncement explicite ; ne se reprend pas
+ETATS_REPRENABLES = ("ouverte", "partielle")
+ETATS_TERMINAUX = ("close", "abandonnee")
 
 
 class Registre:
@@ -221,11 +234,40 @@ class Registre:
                 % (enregistre[:12] or "?", empreinte_protocole[:12]))
         return ligne
 
+    # ---- avancement d'une vague ------------------------------------------------------
+    def enregistrer_avancement(self, campagne: str, candidat: str, etape: str, verdict: str,
+                               objectif: float | None, complet: bool,
+                               rapport: dict[str, Any]) -> None:
+        """L'etape franchie par un candidat, avec son rapport COMPLET.
+
+        Sans cette trace, une boucle relancee apres une interruption ne savait plus ou en
+        etait un candidat : elle tentait de le reenregistrer, se heurtait a sa branche, et
+        laissait sur place des combats deja payes que plus rien ne reliait a une idee.
+        """
+        self.executer(
+            "INSERT OR REPLACE INTO avancement (campagne, candidat, etape, verdict, objectif,"
+            " complet, rapport, horodatage) VALUES (?,?,?,?,?,?,?,?)",
+            (campagne, candidat, etape, verdict, objectif, 1 if complet else 0,
+             json.dumps(rapport, ensure_ascii=False), _maintenant()))
+
+    def avancement(self, campagne: str, candidat: str) -> dict[str, sqlite3.Row]:
+        return {r["etape"]: r for r in self.executer(
+            "SELECT * FROM avancement WHERE campagne=? AND candidat=?",
+            (campagne, candidat)).fetchall()}
+
+    def oublier_avancement(self, campagne: str, candidat: str, etape: str) -> None:
+        self.executer("DELETE FROM avancement WHERE campagne=? AND candidat=? AND etape=?",
+                      (campagne, candidat, etape))
+
     # ---- confirmations --------------------------------------------------------------
-    def confirmations_ouvertes(self, campagne: str, candidat: str) -> sqlite3.Row | None:
+    def confirmation_reprenable(self, campagne: str, candidat: str) -> sqlite3.Row | None:
+        """La tentative a COMPLETER, s'il y en a une. Une tentative close ou abandonnee n'en
+        est pas une."""
+        marques = ",".join("?" * len(ETATS_REPRENABLES))
         return self.executer(
-            "SELECT * FROM confirmations WHERE campagne=? AND candidat=? AND etat='ouverte'"
-            " ORDER BY id DESC LIMIT 1", (campagne, candidat)).fetchone()
+            "SELECT * FROM confirmations WHERE campagne=? AND candidat=? AND etat IN (%s)"
+            " ORDER BY id DESC LIMIT 1" % marques,
+            (campagne, candidat, *ETATS_REPRENABLES)).fetchone()
 
     def confirmations_utilisees(self, campagne: str) -> int:
         return int(self.executer("SELECT COUNT(*) AS n FROM confirmations WHERE campagne=?",
@@ -235,21 +277,37 @@ class Registre:
                             tailles: dict[str, int], adversaires: list[str],
                             empreinte_protocole: str,
                             plafond: int) -> tuple[sqlite3.Row, bool]:
-        """(tentative, reprise). Une tentative ouverte est REPRISE avec son plan de graines.
+        """(tentative, reprise). Une tentative INACHEVEE est reprise avec son plan de graines.
 
         Une tentative neuve recoit une vague inedite, verifiee unique en base : c'est ce qui
         garantit qu'une idee retouchee apres avoir vu ses resultats est reconfirmee sur un
         echantillon nouveau, et non sur celui qui a servi a la retoucher.
+
+        Mais une tentative simplement COUPEE n'est pas une idee retouchee : elle doit reprendre
+        le meme plan, sans consommer une unite de plus. Ne reprendre que les lignes `ouverte`
+        faisait ouvrir une seconde tentative apres chaque coupure — nouvelles graines, budget
+        entame, plan deja paye jamais termine.
+
+        Le champion fige dans la tentative est CONTROLE a la reprise : une comparaison devenue
+        obsolete ne doit pas changer de reference en silence.
         """
         with self.transaction() as cx:
+            marques = ",".join("?" * len(ETATS_REPRENABLES))
             ouverte = cx.execute(
-                "SELECT * FROM confirmations WHERE campagne=? AND candidat=? AND etat='ouverte'"
-                " ORDER BY id DESC LIMIT 1", (campagne, candidat)).fetchone()
+                "SELECT * FROM confirmations WHERE campagne=? AND candidat=? AND etat IN (%s)"
+                " ORDER BY id DESC LIMIT 1" % marques,
+                (campagne, candidat, *ETATS_REPRENABLES)).fetchone()
             if ouverte is not None:
                 if (ouverte["empreinte_protocole"] or "") != empreinte_protocole:
                     raise ProtocoleDifferent(
                         "la tentative %s a ete ouverte sous un autre protocole : elle ne peut "
                         "pas etre reprise telle quelle." % ouverte["vague"])
+                if ouverte["champion_attendu"] != champion_attendu:
+                    raise ChampionObsolete(
+                        "la tentative %s compare a %s, mais le champion est %s : reprendre ce "
+                        "plan mesurerait deux references differentes. L'abandonner "
+                        "explicitement, puis en ouvrir une neuve."
+                        % (ouverte["vague"], ouverte["champion_attendu"], champion_attendu))
                 return ouverte, True
             utilisees = int(cx.execute(
                 "SELECT COUNT(*) AS n FROM confirmations WHERE campagne=?",
@@ -278,6 +336,11 @@ class Registre:
             return ligne, False
 
     def cloturer_confirmation(self, ident: int, etat: str, verdict: str) -> None:
+        """`close` quand une decision a porte sur le plan ENTIER, `partielle` quand il reste
+        des combats a jouer, `abandonnee` pour un renoncement explicite. Seul `partielle` se
+        reprend, et une reprise ne consomme aucune unite de budget."""
+        if etat not in ETATS_REPRENABLES + ETATS_TERMINAUX:
+            raise ValueError("etat de confirmation inconnu : %r" % etat)
         self.executer("UPDATE confirmations SET etat=?, verdict=?, close_le=? WHERE id=?",
                       (etat, verdict, _maintenant(), ident))
 

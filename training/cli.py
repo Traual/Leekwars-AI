@@ -107,6 +107,67 @@ def _graine_campagne(cfg) -> int:
     return int(hashlib.sha256(cfg["campagne"]["id"].encode()).hexdigest()[:8], 16)
 
 
+ORDRE_ETAPES = ("s1", "s2", "s3")
+
+
+def controler_faisabilite(cfg, panel, builds) -> list[str]:
+    """Le plan demande est-il ATTEIGNABLE ? Rend la liste des impossibilites.
+
+    Un bloc porte UN adversaire. Demander quatre blocs team contre cinq adversaires laisse donc
+    forcement un adversaire sans donnees, et le controle de couverture — qui a raison — rend
+    INCOMPLET meme quand tous les combats demandes se terminent. La configuration livree avait
+    exactement ce defaut, et aucun candidat ne pouvait franchir S2.
+
+    On verifie aussi l'emboitement REEL des tailles retenues : ce que le plan de blocs promet
+    doit se constater sur les nombres de la campagne, pas seulement en principe.
+    """
+    problemes: list[str] = []
+    noms = [p.ident for p in panel]
+    for nom_etape, spec in cfg["etapes"].items():
+        adversaires = int(spec.get("adversaires", len(noms)))
+        if adversaires > len(noms):
+            problemes.append("%s : %d adversaires demandes, la ligue n'en compte que %d"
+                             % (nom_etape, adversaires, len(noms)))
+            continue
+        for format_nom, nb in (spec.get("blocs") or {}).items():
+            if not nb:
+                continue
+            if format_nom not in mod_sc.FORMATS:
+                problemes.append("%s : format inconnu %s" % (nom_etape, format_nom))
+            elif nb < adversaires:
+                problemes.append(
+                    "%s / %s : %d blocs pour %d adversaires — un bloc porte UN adversaire, "
+                    "il en manquera %d et la couverture rendra INCOMPLET"
+                    % (nom_etape, format_nom, nb, adversaires, adversaires - nb))
+
+    # Emboitement effectif des etapes de crible, sur les tailles retenues.
+    graine = _graine_campagne(cfg)
+    for precedente, suivante in zip(ORDRE_ETAPES, ORDRE_ETAPES[1:]):
+        if precedente not in cfg["etapes"] or suivante not in cfg["etapes"]:
+            continue
+        a, b = cfg["etapes"][precedente], cfg["etapes"][suivante]
+        for format_nom, nb in (a.get("blocs") or {}).items():
+            suite = (b.get("blocs") or {}).get(format_nom, 0)
+            if not nb or not suite or format_nom not in mod_sc.FORMATS:
+                continue
+            try:
+                avant = {x.cle() for x in mod_sc.plan_de_blocs(
+                    format_nom, noms, nb, graine, builds,
+                    adversaires=noms[:int(a.get("adversaires", len(noms)))])}
+                apres = {x.cle() for x in mod_sc.plan_de_blocs(
+                    format_nom, noms, suite, graine, builds,
+                    adversaires=noms[:int(b.get("adversaires", len(noms)))])}
+            except ValueError as e:
+                problemes.append("%s / %s : plan impossible — %s" % (suivante, format_nom, e))
+                continue
+            if not avant <= apres:
+                problemes.append(
+                    "%s / %s : %d bloc(s) de %s ne se retrouvent pas dans %s — le cout annonce "
+                    "entre etapes ne serait pas cumulatif"
+                    % (suivante, format_nom, len(avant - apres), precedente, suivante))
+    return problemes
+
+
 # --------------------------------------------------------------------------------------
 def cmd_doctor(args) -> int:
     cfg = charger_config(Path(args.config))
@@ -172,6 +233,19 @@ def cmd_doctor(args) -> int:
         ok = False
         print("  ECHEC :", e)
 
+    print("== faisabilite du plan ==")
+    try:
+        problemes = controler_faisabilite(cfg, pols, builds)
+        if problemes:
+            ok = False
+            for p in problemes:
+                print("  IMPOSSIBLE :", p)
+        else:
+            print("  toutes les etapes sont atteignables et emboitees")
+    except Exception as e:
+        ok = False
+        print("  ECHEC :", e)
+
     print("== protocole ==")
     try:
         emp, _detail = empreinte_protocole(cfg, moteur, builds, pols)
@@ -201,6 +275,14 @@ def cmd_init_campaign(args) -> int:
     cfg, moteur, _build = _contexte(args)
     pols = _panel(cfg)
     builds = mod_sc.charger_builds()
+    problemes = controler_faisabilite(cfg, pols, builds)
+    if problemes:
+        print("REFUS : le plan de cette campagne est inatteignable.")
+        for p in problemes:
+            print("   -", p)
+        print("\nCorriger les tailles ou le nombre d'adversaires AVANT d'ouvrir la campagne : "
+              "un plan infaisable depense des combats pour un verdict INCOMPLET garanti.")
+        return 2
     emp_proto, detail = empreinte_protocole(cfg, moteur, builds, pols)
     with mod_reg.Registre() as reg:
         courant = reg.champion_courant()
@@ -349,6 +431,46 @@ def cmd_calibrate(args) -> int:
 
 
 # --------------------------------------------------------------------------------------
+class CandidatDivergent(RuntimeError):
+    """Un identifiant deja pris designe une AUTRE idee : renommer serait perdre le fil."""
+
+
+def _empreinte_source(patch=None, bundle_dir=None) -> str:
+    """Empreinte de ce qui produit le candidat : le patch, ou l'arbre du bundle."""
+    if patch is not None:
+        return hashlib.sha256(Path(patch).read_bytes()).hexdigest()
+    if bundle_dir is not None:
+        return mod_bundle.empreinte_repertoire(Path(bundle_dir))["sha256"]
+    return ""
+
+
+def _candidat_existant(reg, ident: str, parent: str, empreinte: str) -> dict | None:
+    """Le candidat deja enregistre, s'il porte la MEME idee sur le MEME parent.
+
+    La boucle donnait le meme identifiant au meme patch a chaque lancement puis tentait de le
+    reenregistrer : la branche existait deja, le candidat etait rejete, et l'avancement deja
+    paye devenait inaccessible. Un candidat est immuable — s'il est le meme, on le REPREND.
+    """
+    ligne = reg.candidat(ident)
+    if ligne is None:
+        return None
+    portee = json.loads(ligne["portee_json"] or "{}")
+    if ligne["parent"] != parent or portee.get("empreinte_source", "") != empreinte:
+        raise CandidatDivergent(
+            "le candidat %s existe deja pour une autre idee ou un autre parent. Un candidat est "
+            "immuable : choisir un identifiant neuf plutot que d'ecraser un essai deja mesure."
+            % ident)
+    return {"id": ligne["id"], "commit": ligne["commit_code"], "parent": ligne["parent"],
+            "bundle_sha256": ligne["bundle_sha256"], "hypothese": ligne["hypothese"],
+            "branche": "%s/%s" % (mod_cand.PREFIXE_BRANCHE, ligne["id"]),
+            "verdict_portee": portee.get("verdict", mod_opt.DANS_PORTEE),
+            "hors_portee": portee.get("hors_portee", []),
+            "invariants_rompus": portee.get("invariants_rompus", []),
+            "autorisation": portee.get("autorisation", ""),
+            "fichiers_modifies": portee.get("fichiers", []),
+            "dependances": portee.get("dependances", [])}
+
+
 def _enregistrer_candidat(cfg, reg, ident: str, parent: str, patch=None, bundle_dir=None,
                           hypothese: str = "", dependances=None,
                           autorisation: str = "") -> dict:
@@ -358,6 +480,7 @@ def _enregistrer_candidat(cfg, reg, ident: str, parent: str, patch=None, bundle_
         dependances=dependances or [],
         invariants=cfg["optimiseur"].get("invariants") or {},
         autorisation=autorisation)
+    info["empreinte_source"] = _empreinte_source(patch, bundle_dir)
     etat = ("bloque:%s" % info["verdict_portee"]
             if info["verdict_portee"] in mod_opt.VERDICTS_BLOQUANTS else "enregistre")
     reg.enregistrer_candidat(info["id"], cfg["campagne"]["id"], info["commit"], info["parent"],
@@ -367,6 +490,7 @@ def _enregistrer_candidat(cfg, reg, ident: str, parent: str, patch=None, bundle_
                               "hors_portee": info["hors_portee"],
                               "invariants_rompus": info["invariants_rompus"],
                               "autorisation": info["autorisation"],
+                              "empreinte_source": info["empreinte_source"],
                               "dependances": info["dependances"]}, etat)
     if info["autorisation"]:
         reg.note("portee", "candidat %s : extension autorisee — %s (fichiers : %s)"
@@ -498,6 +622,47 @@ def _candidat_du_registre(reg, ident: str) -> dict | None:
             "etat": ligne["etat"]}
 
 
+def _ouvrir_tentative(cfg, moteur, reg, ident: str, panel, builds):
+    """(tentative, reprise). Une tentative COUPEE reprend son plan sans consommer de budget."""
+    spec = cfg["etapes"]["confirmation"]
+    return reg.ouvrir_confirmation(
+        cfg["campagne"]["id"], ident, reg.champion_courant()["champion_courant"],
+        spec["blocs"], [p.ident for p in panel][:spec["adversaires"]],
+        empreinte_protocole(cfg, moteur, builds, panel)[0],
+        cfg["campagne"]["confirmations_max"])
+
+
+def _cloturer_tentative(reg, tentative, verdict: str) -> None:
+    """Un verdict INCOMPLET laisse la tentative PARTIELLE : son plan est a moitie paye et se
+    reprend. La marquer terminee faisait rouvrir une tentative neuve a chaque coupure, avec
+    d'autres graines et une unite de budget en moins."""
+    reg.cloturer_confirmation(tentative["id"],
+                              "close" if verdict != "INCOMPLET" else "partielle", verdict)
+
+
+def _chemin_rapport(ident: str, etape: str, tentative=None) -> Path:
+    """Un rapport par ETAPE, et un par TENTATIVE de confirmation : une reprise ne doit pas
+    effacer le rapport de la tentative precedente."""
+    if tentative is not None:
+        nom = "%s-confirmation-%02d.json" % (ident, tentative["tentative"])
+    else:
+        nom = "%s-%s.json" % (ident, etape)
+    chemin = RUNS / "rapports" / nom
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    return chemin
+
+
+def _conserver(reg, cfg, ident: str, etape: str, rapport: dict, tentative=None) -> Path:
+    """Ecrit le rapport COMPLET sur disque et enregistre l'avancement du candidat."""
+    chemin = _chemin_rapport(ident, etape, tentative)
+    chemin.write_text(json.dumps(rapport, ensure_ascii=False, indent=2), encoding="utf-8")
+    reg.enregistrer_avancement(
+        cfg["campagne"]["id"], ident, etape, rapport["decision"]["verdict"],
+        rapport["decision"]["objectif_pondere"],
+        all(c["complet"] for c in rapport["couverture"].values()), rapport)
+    return chemin
+
+
 def cmd_evaluate(args) -> int:
     cfg, moteur, build = _contexte(args)
     promu, chemin = None, None
@@ -524,15 +689,11 @@ def cmd_evaluate(args) -> int:
                       "utilise les tailles figees du protocole.")
                 return 2
             if override is None:
-                spec = cfg["etapes"]["confirmation"]
                 try:
-                    tentative, reprise = reg.ouvrir_confirmation(
-                        cfg["campagne"]["id"], args.id, reg.champion_courant()["champion_courant"],
-                        spec["blocs"], [p.ident for p in _panel(cfg)][:spec["adversaires"]],
-                        empreinte_protocole(cfg, moteur, mod_sc.charger_builds(),
-                                            _panel(cfg))[0],
-                        cfg["campagne"]["confirmations_max"])
-                except (mod_reg.BudgetEpuise, mod_reg.ProtocoleDifferent) as e:
+                    tentative, reprise = _ouvrir_tentative(
+                        cfg, moteur, reg, args.id, _panel(cfg), mod_sc.charger_builds())
+                except (mod_reg.BudgetEpuise, mod_reg.ProtocoleDifferent,
+                        mod_reg.ChampionObsolete) as e:
                     print("REFUS :", e)
                     return 2
                 vague = tentative["vague"]
@@ -546,15 +707,15 @@ def cmd_evaluate(args) -> int:
         except mod_reg.ProtocoleDifferent as e:
             print("REFUS :", e)
             return 2
-        chemin = RUNS / "rapports" / ("%s-%s.json" % (args.id, etape))
-        chemin.parent.mkdir(parents=True, exist_ok=True)
-        chemin.write_text(json.dumps(rapport, ensure_ascii=False, indent=2), encoding="utf-8")
+        if override is None:
+            chemin = _conserver(reg, cfg, args.id, etape, rapport, tentative)
+        else:
+            chemin = _chemin_rapport(args.id, "%s-lot-technique" % etape)
+            chemin.write_text(json.dumps(rapport, ensure_ascii=False, indent=2),
+                              encoding="utf-8")
 
         if tentative is not None:
-            verdict = rapport["decision"]["verdict"]
-            reg.cloturer_confirmation(tentative["id"],
-                                      "close" if verdict != "INCOMPLET" else "interrompue",
-                                      verdict)
+            _cloturer_tentative(reg, tentative, rapport["decision"]["verdict"])
         if etape == "confirmation" and rapport["decision"]["verdict"] == "PROMOUVOIR" \
                 and args.promouvoir:
             promu = mod_pub.publier(reg, cand, rapport["champion"], rapport["decision"],
@@ -672,6 +833,23 @@ class Budgets:
                 "combats_joues": self.combats}
 
 
+def _objectif(avancement: dict, ident: str, etape: str) -> float:
+    """L'objectif pondere mesure a cette etape, ou moins l'infini si elle n'a pas abouti."""
+    ligne = (avancement.get(ident) or {}).get(etape)
+    if ligne is None or ligne["verdict"] == "INCOMPLET" or ligne["objectif"] is None:
+        return float("-inf")
+    return float(ligne["objectif"])
+
+
+def _resultats_connus(reg, cfg) -> list[dict]:
+    """Le retour de resultats rendu a l'optimiseur : ce qui a deja ete mesure dans la
+    campagne, etape par etape."""
+    lignes = reg.executer(
+        "SELECT candidat, etape, verdict, objectif FROM avancement WHERE campagne=?"
+        " ORDER BY horodatage", (cfg["campagne"]["id"],)).fetchall()
+    return [dict(l) for l in lignes]
+
+
 def _propositions(cfg, source: Path) -> list[tuple[str, object]]:
     """(identifiant, optimiseur) pour chaque proposition de la vague.
 
@@ -728,18 +906,12 @@ def cmd_run_loop(args) -> int:
             print("REFUS :", e)
             return 2
 
-        # ---- proposition puis S1 ----
-        survivants: list[dict] = []
+        # ---- 1. La vague : un candidat par proposition, REPRIS s'il existe deja ----
+        avancement: dict[str, dict] = {}
+        vague: list[dict] = []
         for ident_court, optimiseur in propositions:
-            if budgets.candidats >= budgets.max_candidats:
-                journal.append({"proposition": ident_court, "etat": "non_traite",
-                                "detail": "plafond de candidats atteint"})
-                continue
-            if not budgets.place_pour_une_etape():
-                journal.append({"proposition": ident_court, "etat": "non_traite",
-                                "detail": "budget de temps epuise"})
-                continue
             champion = reg.champion_courant()
+            ident = "%s-%s" % (cfg["campagne"]["id"], ident_court)
             proposition = optimiseur.proposer({
                 "champion": champion["champion_courant"],
                 "commit_champion": champion["commit_code"],
@@ -747,106 +919,136 @@ def cmd_run_loop(args) -> int:
                 "hors_portee": cfg["optimiseur"]["hors_portee"],
                 "invariants": cfg["optimiseur"].get("invariants") or {},
                 "objectif": cfg["objectif"],
-                "resultats_precedents": [j for j in journal if "decision" in j],
+                "resultats_precedents": _resultats_connus(reg, cfg),
             })
-            ident = "%s-%s" % (cfg["campagne"]["id"], ident_court)
             fichier = RUNS / "propositions" / ("%s.patch" % ident)
             fichier.parent.mkdir(parents=True, exist_ok=True)
             # En OCTETS : l'ecriture texte de Python traduit les fins de ligne sous Windows, et
             # un diff aux fins de ligne reecrites ne s'applique sur aucun fichier du depot.
             fichier.write_bytes(proposition["patch"].encode("utf-8"))
             try:
-                info = _enregistrer_candidat(cfg, reg, ident, champion["commit_code"],
-                                             patch=fichier,
-                                             hypothese=proposition["hypothese"],
-                                             dependances=proposition.get("dependances"))
-            except Exception as e:
+                info = _candidat_existant(reg, ident, champion["commit_code"],
+                                          _empreinte_source(patch=fichier))
+            except CandidatDivergent as e:
                 journal.append({"proposition": ident_court, "etat": "rejete",
                                 "detail": str(e)[:200]})
                 continue
-            budgets.candidats += 1
+            if info is not None:
+                # Candidat IMMUABLE deja enregistre : on le reprend avec son avancement, sans
+                # consommer une unite de budget pour un travail deja paye.
+                journal.append({"candidat": ident, "etat": "repris",
+                                "detail": "candidat deja enregistre, avancement recupere"})
+            else:
+                if budgets.candidats >= budgets.max_candidats:
+                    journal.append({"proposition": ident_court, "etat": "non_traite",
+                                    "detail": "plafond de candidats atteint"})
+                    continue
+                try:
+                    info = _enregistrer_candidat(cfg, reg, ident, champion["commit_code"],
+                                                 patch=fichier,
+                                                 hypothese=proposition["hypothese"],
+                                                 dependances=proposition.get("dependances"))
+                except Exception as e:
+                    journal.append({"proposition": ident_court, "etat": "rejete",
+                                    "detail": str(e)[:200]})
+                    continue
+                budgets.candidats += 1
             if info["verdict_portee"] in mod_opt.VERDICTS_BLOQUANTS:
                 journal.append({"candidat": ident, "etat": "bloque",
                                 "verdict": info["verdict_portee"],
                                 "detail": info["invariants_rompus"] or info["hors_portee"]})
                 continue
-            r = _evaluer(cfg, moteur, build, reg, info, "s1", args.workers,
-                         echeance=budgets.echeance, progres=_compter)
-            journal.append({"candidat": ident, "etape": "s1",
-                            "decision": r["decision"]["verdict"],
-                            "objectif": r["decision"]["objectif_pondere"],
-                            "complet": all(c["complet"] for c in r["couverture"].values())})
-            if r["decision"]["verdict"] != "INCOMPLET":
-                survivants.append({"cand": info, "j": r["decision"]["objectif_pondere"]})
+            avancement[ident] = {e: dict(r) for e, r in
+                                 reg.avancement(cfg["campagne"]["id"], ident).items()}
+            vague.append(info)
 
-        # ---- S2 puis S3 : selection par l'objectif pondere ----
+        # ---- 2. Les etapes de crible, reprises la ou elles s'etaient arretees ----
         etape_precedente = {"s2": "s1", "s3": "s2"}
-        for etape in ("s2", "s3"):
-            # Le nombre de survivants est fixe par l'etape PRECEDENTE : c'est elle qui a
-            # mesure, c'est elle qui dit combien de candidats meritent de couter plus cher.
-            garder = cfg["etapes"][etape_precedente[etape]].get("garder", 1)
-            survivants = [s for s in survivants if s["j"] > 0]
-            survivants.sort(key=lambda s: s["j"], reverse=True)
-            survivants = survivants[:garder]
+        retenus = vague
+        for etape in ORDRE_ETAPES:
+            if etape not in cfg["etapes"]:
+                continue
+            if etape in etape_precedente:
+                # Le nombre de survivants est fixe par l'etape PRECEDENTE : c'est elle qui a
+                # mesure, c'est elle qui dit combien de candidats meritent de couter plus cher.
+                garder = cfg["etapes"][etape_precedente[etape]].get("garder", 1)
+                precedente = etape_precedente[etape]
+                retenus.sort(key=lambda c: _objectif(avancement, c["id"], precedente),
+                             reverse=True)
+                retenus = [c for c in retenus
+                           if _objectif(avancement, c["id"], precedente) > 0][:garder]
             suite = []
-            for s in survivants:
+            for info in retenus:
+                deja = avancement[info["id"]].get(etape)
+                if deja is not None and deja["verdict"] != "INCOMPLET":
+                    journal.append({"candidat": info["id"], "etape": etape, "etat": "repris",
+                                    "decision": deja["verdict"], "objectif": deja["objectif"]})
+                    suite.append(info)
+                    continue
                 if not budgets.place_pour_une_etape():
-                    journal.append({"candidat": s["cand"]["id"], "etape": etape,
+                    journal.append({"candidat": info["id"], "etape": etape,
                                     "etat": "non_traite", "detail": "budget de temps epuise"})
                     continue
-                r = _evaluer(cfg, moteur, build, reg, s["cand"], etape, args.workers,
+                r = _evaluer(cfg, moteur, build, reg, info, etape, args.workers,
                              echeance=budgets.echeance, progres=_compter)
-                journal.append({"candidat": s["cand"]["id"], "etape": etape,
+                _conserver(reg, cfg, info["id"], etape, r)
+                avancement[info["id"]][etape] = {
+                    "verdict": r["decision"]["verdict"],
+                    "objectif": r["decision"]["objectif_pondere"]}
+                journal.append({"candidat": info["id"], "etape": etape,
                                 "decision": r["decision"]["verdict"],
                                 "objectif": r["decision"]["objectif_pondere"],
-                                "complet": all(c["complet"] for c in r["couverture"].values())})
+                                "complet": all(c["complet"]
+                                               for c in r["couverture"].values())})
                 if r["decision"]["verdict"] != "INCOMPLET":
-                    suite.append({"cand": s["cand"], "j": r["decision"]["objectif_pondere"]})
-            survivants = suite
+                    suite.append(info)
+            retenus = suite
 
-        # ---- confirmation puis promotion ----
-        finalistes = sorted([s for s in survivants if s["j"] > 0],
-                            key=lambda s: s["j"], reverse=True)
-        for s in finalistes:
-            if budgets.confirmations >= budgets.max_confirmations:
-                journal.append({"candidat": s["cand"]["id"], "etape": "confirmation",
-                                "etat": "non_traite", "detail": "plafond de confirmations"})
-                continue
+        # ---- 3. Confirmation puis promotion ----
+        derniere = ORDRE_ETAPES[-1]
+        finalistes = sorted([c for c in retenus
+                             if _objectif(avancement, c["id"], derniere) > 0],
+                            key=lambda c: _objectif(avancement, c["id"], derniere),
+                            reverse=True)
+        for info in finalistes:
             if not budgets.place_pour_une_etape():
-                journal.append({"candidat": s["cand"]["id"], "etape": "confirmation",
+                journal.append({"candidat": info["id"], "etape": "confirmation",
                                 "etat": "non_traite", "detail": "budget de temps epuise"})
                 continue
-            spec = cfg["etapes"]["confirmation"]
+            # Une tentative REPRISE ne consomme pas de budget : son plan est deja paye, il
+            # s'agit de le terminer. Seule une tentative NEUVE en consomme une — et le plafond
+            # se verifie AVANT de l'ouvrir, faute de quoi une tentative vide serait inscrite
+            # au registre de la campagne sans qu'aucun combat ne soit joue.
+            reprenable = reg.confirmation_reprenable(cfg["campagne"]["id"], info["id"])
+            if reprenable is None and budgets.confirmations >= budgets.max_confirmations:
+                journal.append({"candidat": info["id"], "etape": "confirmation",
+                                "etat": "non_traite", "detail": "plafond de confirmations"})
+                continue
             try:
-                tentative, reprise = reg.ouvrir_confirmation(
-                    cfg["campagne"]["id"], s["cand"]["id"],
-                    reg.champion_courant()["champion_courant"], spec["blocs"],
-                    [p.ident for p in panel][:spec["adversaires"]], emp_proto,
-                    cfg["campagne"]["confirmations_max"])
-            except (mod_reg.BudgetEpuise, mod_reg.ProtocoleDifferent) as e:
-                journal.append({"candidat": s["cand"]["id"], "etape": "confirmation",
+                tentative, reprise = _ouvrir_tentative(cfg, moteur, reg, info["id"], panel,
+                                                       builds)
+            except (mod_reg.BudgetEpuise, mod_reg.ProtocoleDifferent,
+                    mod_reg.ChampionObsolete) as e:
+                journal.append({"candidat": info["id"], "etape": "confirmation",
                                 "etat": "refuse", "detail": str(e)[:200]})
                 continue
-            budgets.confirmations += 1
-            r = _evaluer(cfg, moteur, build, reg, s["cand"], "confirmation", args.workers,
+            if not reprise:
+                budgets.confirmations += 1
+            r = _evaluer(cfg, moteur, build, reg, info, "confirmation", args.workers,
                          vague=tentative["vague"], echeance=budgets.echeance,
                          promouvable=True, progres=_compter)
             verdict = r["decision"]["verdict"]
-            reg.cloturer_confirmation(tentative["id"],
-                                      "close" if verdict != "INCOMPLET" else "interrompue",
-                                      verdict)
-            chemin = RUNS / "rapports" / ("%s-confirmation.json" % s["cand"]["id"])
-            chemin.parent.mkdir(parents=True, exist_ok=True)
-            chemin.write_text(json.dumps(r, ensure_ascii=False, indent=2), encoding="utf-8")
-            journal.append({"candidat": s["cand"]["id"], "etape": "confirmation",
+            _cloturer_tentative(reg, tentative, verdict)
+            _conserver(reg, cfg, info["id"], "confirmation", r, tentative)
+            journal.append({"candidat": info["id"], "etape": "confirmation",
                             "tentative": tentative["vague"], "reprise": reprise,
                             "decision": verdict, "lacunes": r["decision"]["lacunes"]})
             if verdict != "PROMOUVOIR":
                 continue
-            promu = mod_pub.publier(reg, s["cand"], r["champion"], r["decision"],
+            promu = mod_pub.publier(reg, info, r["champion"], r["decision"],
                                     r["protocole"], confirmation=tentative["id"])
             promotions.append(promu)
-            journal.append({"candidat": s["cand"]["id"], "etape": "promotion", "promu": promu})
+            journal.append({"candidat": info["id"], "etape": "promotion", "promu": promu})
             # Le champion a change : les resultats des autres finalistes comparent a l'ancienne
             # reference. La vague s'arrete ici, la suivante repartira du nouveau champion.
             journal.append({"etape": "fin_de_vague",
@@ -863,10 +1065,20 @@ def cmd_run_loop(args) -> int:
             "_note": ("Confirmation et promotion sont automatiques et bornees par les budgets. "
                       "Ce qui reste interdit est de promouvoir sur un protocole incomplet ou "
                       "non fige : le decideur rend INCOMPLET, et la publication n'a pas lieu.")}
+    # Un fichier par LANCEMENT, plus une copie du dernier. L'ancien fichier unique etait
+    # remplace au lancement suivant : la trace du parcours interrompu disparaissait avec lui,
+    # alors que c'est precisement celle qu'on veut relire apres une coupure. Les rapports
+    # complets de chaque etape vivent, eux, dans runs/rapports et dans le registre.
+    horodatage = time.strftime("%Y%m%dT%H%M%S")
+    archive = RUNS / "boucles" / ("boucle-%s.json" % horodatage)
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    contenu = json.dumps(etat, ensure_ascii=False, indent=2)
+    archive.write_text(contenu, encoding="utf-8")
     chemin = RUNS / "rapport-boucle.json"
     chemin.parent.mkdir(parents=True, exist_ok=True)
-    chemin.write_text(json.dumps(etat, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps(etat, ensure_ascii=False, indent=2))
+    chemin.write_text(contenu, encoding="utf-8")
+    print(contenu)
+    print("\narchive du lancement :", archive)
     return 0
 
 

@@ -36,6 +36,13 @@ Les trois budgets sont obligatoires et réellement décomptés : l'échéance de
 processus de combat, qui coupe son lot en gardant les combats déjà terminés. Une publication
 laissée en vol est reprise avant toute autre chose.
 
+**La boucle se relance.** Un candidat déjà enregistré est repris, pas réinscrit : même
+identifiant, même branche, même commit, et son avancement revient du registre. Les étapes déjà
+franchies ne sont pas rejouées, et une confirmation coupée reprend sa tentative — même plan de
+graines, même champion comparé, sans consommer une unité de budget de plus. Seuls les combats
+manquants sont joués. Chaque étape garde son rapport complet dans `runs/rapports`, et chaque
+lancement son journal dans `runs/boucles`.
+
 `config/reception.yaml` est un protocole de RECEPTION, pas de décision : tailles minuscules et
 risque non contrôlé, pour exercer la machinerie de confirmation sur de vrais combats en un
 temps borné. Aucune promotion ne doit en sortir.
@@ -66,16 +73,26 @@ prévus, tous les adversaires prévus et tous les formats requis doivent être p
 lacune donne INCOMPLET. Un lot aux tailles imposées à la main rend au mieux INDICATIF, jamais
 PROMOUVOIR.
 
+**Le plan doit donc être atteignable**, et `init-campaign` le refuse sinon. Un bloc porte un
+seul adversaire : chaque format actif a besoin d'au moins autant de blocs que l'étape a
+d'adversaires. Le contrôle vérifie aussi l'emboîtement sur les tailles retenues — les blocs par
+adversaire ne doivent jamais décroître d'une étape à la suivante, sans quoi S1 ⊄ S2 et le coût
+annoncé entre étapes n'est pas cumulatif.
+
 **La promotion** vérifie que le champion attendu est toujours actif, prépare le code et le
 manifeste, contrôle que l'arbre préparé est exactement le bundle mesuré **avant** de commiter,
 pose le tag annoté, et n'écrit le pointeur du champion actif qu'en dernier. Un écart de bundle
 n'ajoute donc rien à l'histoire.
 
 **La reprise** lit l'état réel de Git plutôt que de croire le journal SQLite, parce que les deux
-systèmes ne partagent pas de transaction. Deux issues, jamais d'état intermédiaire : la
-publication est terminée, ou elle est abandonnée — pointeur restauré, arbre de travail nettoyé,
-manifeste orphelin retiré. Tant qu'une publication n'est pas close, `champion_courant` rend le
-champion précédent, conservé dans la ligne de publication.
+systèmes ne partagent pas de transaction — et parce qu'une coupure tombe aussi entre une
+écriture Git réussie et la ligne SQLite qui la note. Elle cherche donc le commit de champion par
+trois faits successifs, le tag, le SHA enregistré, puis le manifeste versionné sur la branche,
+et elle lit le pointeur tel qu'il est **commité**, pas tel qu'il traîne dans l'arbre de travail.
+Deux issues, jamais d'état intermédiaire : la publication est terminée et contrôlée — tag,
+manifeste versionné, pointeur commité, arbre propre — ou elle est abandonnée, pointeur restauré,
+arbre nettoyé, manifeste orphelin retiré. Tant qu'une publication n'est pas close,
+`champion_courant` rend le champion précédent, conservé dans la ligne de publication.
 
 **L'audit BR** remplace une politique focale dans un lobby autrement figé, C puis H, sur la
 MÊME graine : la composition et le tirage sont faits une fois pour les deux. Une paire dont un
@@ -102,7 +119,7 @@ machine, et le temps par combat monte. Les résultats, eux, sont **identiques** 
 séquentielles, vérifié sur huit combats, vainqueur et durée compris. C'est ce test qui autorise
 le parallélisme, pas l'espoir.
 
-## Trois pièges devenus des tests
+## Quatre pièges devenus des tests
 
 **Un bundle hors de la racine du générateur ne se charge pas.** Le `NativeFileSystem` du
 compilateur résout depuis sa propre racine et refuse tout ce qui en sort. Le combat se lance
@@ -118,6 +135,12 @@ compteur de camp à chaque sous-liste ; le champ JSON `team` ne sert qu'à nomme
 team écrite en quatre sous-listes de deux poireaux donnait quatre camps, et les deux éleveurs
 censés coopérer se battaient entre eux. Le contrôle porte maintenant sur l'état moteur.
 
+**Préparer un sous-arbre depuis un commit est une SUPERPOSITION.** `git checkout <commit> --
+New_AI` laisse en place les fichiers suivis absents du candidat. Un candidat qui retire un
+helper de scoring voyait donc ce helper survivre dans l'arbre publié, l'empreinte différer de
+celle qui avait été mesurée, et sa promotion refusée — alors que son bundle était correct. On
+vide l'index et le disque avant de reposer le sous-arbre.
+
 **Le nom du répertoire d'un bundle est son empreinte.** Le générateur ressert un binaire compilé
 quand un nom a déjà servi. Nommer par l'empreinte rend ce comportement correct : un nom
 identique signifie un contenu identique.
@@ -126,8 +149,8 @@ identique signifie un contenu identique.
 
 ```bash
 python training/tests/test_harnais.py       # 32 tests, instantanés
-python training/tests/test_boucle.py        #  9 tests, moteur synthétique, ~20 s
-python training/tests/test_publication.py   #  5 tests, dépôt git temporaire
+python training/tests/test_boucle.py        # 13 tests, moteur synthétique, ~40 s
+python training/tests/test_publication.py   #  6 tests, dépôt git temporaire
 python training/tests/test_reels.py         #  3 tests, joue de vrais combats
 ```
 

@@ -10,8 +10,10 @@ campagne:
   # NOUVELLE campagne. `init-campaign` refuse de reecrire une campagne existante sous un autre
   # protocole : des resultats deja lus ne doivent pas changer de sens en silence.
   # campagne-002 : premiere campagne avec les deux camps reels du format team, les blocs
-  # emboites entre etapes et le diagnostic de chargement d'IA.
-  id: "campagne-002"
+  # emboites entre etapes et le diagnostic de chargement d'IA. FIGEE.
+  # campagne-003 : S2 passe a cinq blocs team, faute de quoi le cinquieme adversaire n'avait
+  # aucun bloc et la couverture rendait INCOMPLET quoi qu'il arrive.
+  id: "campagne-003"
   # Plafond de promotions automatiques. Au-dela, la boucle s'arrete et rend un bilan ; la
   # campagne suivante est un nouveau choix explicite de budget. Le risque nominal ci-dessous
   # vaut pour CE budget, pas pour une suite illimitee de campagnes.
@@ -47,6 +49,10 @@ objectif:
 # croissent : les blocs de S1 sont donc reellement contenus dans ceux de S2, et ceux de S2 dans
 # ceux de S3. Le cout annonce entre etapes est cumulatif parce que le plan de blocs le garantit,
 # pas parce qu'on l'espere.
+#
+# REGLE DURE : un bloc porte UN adversaire, donc chaque format actif doit avoir AU MOINS autant
+# de blocs que l'etape a d'adversaires. `init-campaign` refuse un plan qui ne la respecte pas,
+# et verifie aussi l'emboitement sur les tailles retenues.
 etapes:
   s1:
     candidats: 4
@@ -54,7 +60,7 @@ etapes:
     adversaires: 3                  # prefixe du panel
     garder: 2
   s2:
-    blocs: { farmer: 24, solo: 8,  team: 4 }
+    blocs: { farmer: 24, solo: 8,  team: 5 }
     adversaires: 5
     garder: 1
   s3:
