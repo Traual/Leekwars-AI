@@ -441,12 +441,19 @@ def test_flux_conserve_les_combats_termines_quand_l_echeance_tombe():
     import time
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
+        marqueur = tmp / "enfant-vivant.txt"
         script = tmp / "faux_runner.py"
+        # Le faux runner lance un PROCESSUS FILS, comme le shim Oracle `javapath` lance la
+        # vraie JVM sous Windows. Tuer le seul parent laisserait ce fils tourner : c'est ainsi
+        # qu'une campagne interrompue avait laisse vingt JVM abandonnees.
         script.write_text(
-            "import sys, time, json\n"
-            "for i, chemin in enumerate(sys.argv[1:]):\n"
+            "import sys, time, json, subprocess\n"
+            "subprocess.Popen([sys.executable, '-c',\n"
+            "    \"import time, sys, pathlib; time.sleep(3);\"\n"
+            "    \" pathlib.Path(sys.argv[1]).write_text('vivant')\", sys.argv[1]])\n"
+            "for i, chemin in enumerate(sys.argv[2:]):\n"
             "    if i:\n"
-            "        time.sleep(3)\n"
+            "        time.sleep(5)\n"
             "    print('%s' + str(i) + '\\t' + json.dumps({'winner': 0, 'duration': 10,\n"
             "          'system_errors': []}), flush=True)\n" % mod_eval.PREFIXE,
             encoding="utf-8")
@@ -457,7 +464,7 @@ def test_flux_conserve_les_combats_termines_quand_l_echeance_tombe():
         ancienne = mod_eval.commande_lot
         recus = []
         try:
-            mod_eval.commande_lot = lambda m, b, sc: [sys.executable, str(script),
+            mod_eval.commande_lot = lambda m, b, sc: [sys.executable, str(script), str(marqueur),
                                                       *[str(p) for p in sc]]
             sorties = mod_eval.executer_flux(
                 moteur, tmp, scenarios, timeout=60.0, echeance=time.monotonic() + 1.0,
@@ -469,6 +476,10 @@ def test_flux_conserve_les_combats_termines_quand_l_echeance_tombe():
         for reste in sorties[1:]:
             assert "runner_error" in reste and "echeance" in reste["runner_error"]
             assert mod_eval.analyser(reste)[1] == mod_eval.ERREUR_INFRA
+        time.sleep(4)
+        assert not marqueur.exists(), (
+            "la coupure doit emporter la DESCENDANCE du worker ; sinon une echeance de budget "
+            "laisse des JVM orphelines qui continuent de manger la machine")
 
 
 def _moteur_factice():

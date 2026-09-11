@@ -25,6 +25,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -310,6 +311,31 @@ def valide_pour_le_debit(brut: dict[str, Any]) -> tuple[bool, str]:
 # Execution
 # --------------------------------------------------------------------------------------
 
+def tuer_arbre(proc: subprocess.Popen) -> None:
+    """Tue le processus ET SA DESCENDANCE.
+
+    Sous Windows, le `java` du PATH est souvent le shim Oracle
+    (`Common Files/Oracle/Java/javapath`), qui lance le VRAI JVM dans un processus FILS. Tuer
+    le shim ne tue alors que le shim : la JVM continue a tourner, invisible, et mange la
+    machine — c'est exactement ce qui avait laisse vingt JVM abandonnees apres une campagne
+    interrompue. Une echeance de budget qui laisse des orphelins ne borne rien du tout.
+    """
+    if proc.poll() is not None:
+        return
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                       capture_output=True, check=False)
+    else:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except Exception:
+            pass
+    try:
+        proc.kill()
+    except Exception:
+        pass
+
+
 def commande_lot(moteur: Moteur, build_runner: Path, scenarios: list[Path]) -> list[str]:
     """La commande d'un worker. Isolee pour qu'un test de reception puisse exercer le FLUX
     reel — lecture au fil de l'eau, echeance, resultats partiels — sans lancer une JVM."""
@@ -341,18 +367,18 @@ def executer_flux(moteur: Moteur, build_runner: Path, scenarios: list[Path],
         return [{"runner_error": "echeance atteinte avant le lancement du lot"}
                 for _ in scenarios]
 
+    # `start_new_session` place la JVM dans son propre groupe de processus hors Windows, pour
+    # que `tuer_arbre` puisse emporter toute sa descendance d'un seul signal.
     proc = subprocess.Popen(cmd, cwd=str(moteur.racine), stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True, bufsize=1,
-                            encoding="utf-8", errors="replace")
+                            encoding="utf-8", errors="replace",
+                            start_new_session=(sys.platform != "win32"))
     arrives: dict[int, dict[str, Any]] = {}
     coupe = threading.Event()
 
     def _couper() -> None:
         coupe.set()
-        try:
-            proc.kill()
-        except Exception:
-            pass
+        tuer_arbre(proc)
 
     chien = threading.Timer(max(0.0, limite - time.monotonic()), _couper)
     chien.daemon = True
@@ -377,7 +403,7 @@ def executer_flux(moteur: Moteur, build_runner: Path, scenarios: list[Path],
         try:
             proc.wait(timeout=30)
         except Exception:
-            proc.kill()
+            tuer_arbre(proc)
 
     if coupe.is_set():
         manquant = ("lot coupe a l'echeance ; %d combat(s) du lot termines et conserves"

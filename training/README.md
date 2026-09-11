@@ -31,6 +31,15 @@ python training/cli.py init-campaign && python training/cli.py run-loop \
   --budget-minutes 60 --workers 2
 ```
 
+`run-loop` parcourt alors proposition → S1 → sélection → S2 → S3 → confirmation → promotion.
+Les trois budgets sont obligatoires et réellement décomptés : l'échéance descend jusqu'au
+processus de combat, qui coupe son lot en gardant les combats déjà terminés. Une publication
+laissée en vol est reprise avant toute autre chose.
+
+`config/reception.yaml` est un protocole de RECEPTION, pas de décision : tailles minuscules et
+risque non contrôlé, pour exercer la machinerie de confirmation sur de vrais combats en un
+temps borné. Aucune promotion ne doit en sortir.
+
 ## Ce que fait chaque étage
 
 **Le bloc** est l'unité statistique : quatre combats contre le même adversaire, mêmes builds
