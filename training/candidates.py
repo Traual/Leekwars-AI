@@ -68,9 +68,13 @@ def enregistrer(ident: str, parent: str, patch: Path | None = None,
 
     depart = _git("rev-parse", "--abbrev-ref", "HEAD").strip()
     _git("checkout", "-b", branche, parent)
+    abouti = False
     try:
         if patch is not None:
-            r = subprocess.run(["git", "-C", str(DEPOT), "apply", "--index", str(Path(patch))],
+            # Chemin ABSOLU : `git -C <depot>` resout un chemin relatif depuis la racine du
+            # depot, pas depuis le repertoire courant de l'appelant.
+            r = subprocess.run(["git", "-C", str(DEPOT), "apply", "--index",
+                                str(Path(patch).resolve())],
                                capture_output=True, text=True)
             if r.returncode != 0:
                 raise RuntimeError("patch inapplicable sur %s : %s" % (parent, r.stderr.strip()))
@@ -107,6 +111,7 @@ def enregistrer(ident: str, parent: str, patch: Path | None = None,
             verdict = mod_opt.INVARIANT_ROMPU
 
         emp = mod_bundle.empreinte(tete)
+        abouti = True
         return {
             "id": ident, "branche": branche, "commit": tete,
             "parent": _git("rev-parse", parent).strip(),
@@ -117,4 +122,11 @@ def enregistrer(ident: str, parent: str, patch: Path | None = None,
             "hypothese": hypothese, "dependances": list(dependances or []),
         }
     finally:
-        _git("checkout", depart, verifier=False)
+        if not abouti:
+            # Une tentative ratee ne doit bruler ni l'arbre de travail ni l'identifiant : sans
+            # ce menage, relancer la meme commande apres avoir corrige le patch se heurtait a
+            # « la branche existe deja », sur un arbre reste sale.
+            _git("reset", "-q", "--hard", parent, verifier=False)
+        _git("checkout", "-q", depart, verifier=False)
+        if not abouti:
+            _git("branch", "-q", "-D", branche, verifier=False)
