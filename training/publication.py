@@ -46,7 +46,8 @@ class CoupureSimulee(RuntimeError):
 
 
 def _git(*args: str, depot: Path | None = None, verifier: bool = True) -> str:
-    r = subprocess.run(["git", "-C", str(depot or DEPOT), *args], capture_output=True, text=True)
+    r = subprocess.run(["git", "-C", str(depot or DEPOT), *args], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     if verifier and r.returncode != 0:
         raise RuntimeError("git %s : %s" % (" ".join(args), (r.stderr or r.stdout).strip()))
     return r.stdout
@@ -71,7 +72,8 @@ def _commit_existe(ref: str, depot: Path | None = None) -> bool:
     if not ref:
         return False
     r = subprocess.run(["git", "-C", str(depot or DEPOT), "cat-file", "-e", "%s^{commit}" % ref],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     return r.returncode == 0
 
 

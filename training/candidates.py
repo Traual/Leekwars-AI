@@ -25,7 +25,8 @@ PREFIXE_BRANCHE = "scoring-candidates"
 
 
 def _git(*args: str, verifier: bool = True) -> str:
-    r = subprocess.run(["git", "-C", str(DEPOT), *args], capture_output=True, text=True)
+    r = subprocess.run(["git", "-C", str(DEPOT), *args], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     if verifier and r.returncode != 0:
         raise RuntimeError("git %s : %s" % (" ".join(args), (r.stderr or r.stdout).strip()))
     return r.stdout
@@ -42,7 +43,8 @@ def fichiers_du_diff(base: str, tete: str) -> list[str]:
 
 def contenu_au_commit(commit: str, chemin: str) -> str | None:
     r = subprocess.run(["git", "-C", str(DEPOT), "show", "%s:%s" % (commit, chemin)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     return r.stdout if r.returncode == 0 else None
 
 
@@ -75,7 +77,8 @@ def enregistrer(ident: str, parent: str, patch: Path | None = None,
             # depot, pas depuis le repertoire courant de l'appelant.
             r = subprocess.run(["git", "-C", str(DEPOT), "apply", "--index",
                                 str(Path(patch).resolve())],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
             if r.returncode != 0:
                 raise RuntimeError("patch inapplicable sur %s : %s" % (parent, r.stderr.strip()))
         elif bundle_dir is not None:
