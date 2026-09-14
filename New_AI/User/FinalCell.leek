@@ -26,6 +26,12 @@ class FinalCell {
      * @return id de cellule
      */
     static get(State, BaseHash) {
+        // Un tour qui commence déjà au-delà de sa date limite — un bulbe dont l'invocateur a
+        // consommé le compteur partagé — sort de la boucle de Play avant toute planification, et
+        // le contexte de poids n'a jamais été construit pour ce tour. Chaque lecture de poids
+        // levait alors une erreur, et leur rafale épuisait le budget jusqu'à l'avortement : ni
+        // placement, ni déplacement. Les poids historiques suffisent à se placer.
+        if (REPLAN_WEIGHTS == null) REPLAN_WEIGHTS = HistoricalWeightsFactory.build(State, State[Me].SIDE)
         var contextBySide = DeltaClass.buildContextBySide(State)
         var hfpBySide = HealClass.buildHfpBySide(State)
         var combinedHfp = 0
@@ -35,13 +41,13 @@ class FinalCell {
         var fold = ScoringClass.carrierFoldOthers(State)
         var poisonKey = (ANY_ANTIDOTE == true) ? ScoringClass.poisonKeyFromFold(State, BaseHash, fold) : 0
         var meWalkFp = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(State[Me])
-        // SEUL appel autorise a tronquer : c'est le placement REEL de fin de tour, celui qui se
-        // fait tuer par le moteur quand le budget est epuise (585 tours mesures sur 480 combats,
-        // contre 3 pour main). Le balayage est un MINIMUM dont la graine est ma cellule courante :
-        // s'arreter en route rend donc une reponse VALIDE, seulement moins bonne — strictement
-        // mieux que de mourir dedans, et mieux que de ne pas se placer du tout (mesure : sauter le
-        // placement coute -0,055, et -0,425 sous 8 coeurs).
-        var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey, meWalkFp, true)
+        // Le placement REEL de fin de tour se tronque au plus pres du plafond, en ne gardant que de
+        // quoi bouger : c'est lui que le moteur tue quand le budget est epuise (585 tours mesures sur
+        // 480 combats, contre 3 pour main). Le balayage est un MINIMUM dont la graine est ma cellule
+        // courante : s'arreter en route rend donc une reponse VALIDE, seulement moins bonne —
+        // strictement mieux que de mourir dedans, et mieux que de ne pas se placer du tout (mesure :
+        // sauter le placement coute -0,055, et -0,425 sous 8 coeurs).
+        var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey, meWalkFp, OPS_CAP - OPS_MOVE_MARGIN)
         debug("Best final cell: " + res[0] + " (pénalité: " + res[1] + ", net: " + res[2] + ")")
         return res[0]
     }
@@ -60,9 +66,12 @@ class FinalCell {
      * @param poisonKey clé de couverture antidote (node.POISON_KEY)
      * @param meWalkFp empreinte de mobilité de Me (node.ME_WALK_FINGERPRINT) : avec BaseHash,
      *        elle fixe exactement mes cellules accessibles
-     * @return [meilleure cellule, pénalité (>= 0), net à cette cellule]
+     * @param truncateAt nombre d'opérations au-delà duquel le balayage s'arrête sur le meilleur
+     *        trouvé : près du plafond pour le placement réel, plus tôt pour le reclassement du BFS
+     * @return [meilleure cellule, pénalité (>= 0), net à cette cellule], suivi de true si le
+     *        balayage a été tronqué — sa pénalité n'est alors qu'un majorant du minimum
      */
-    static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey, meWalkFp, allowTruncate) {
+    static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey, meWalkFp, truncateAt) {
         BenchOps.Start("FinalCell")
         var MyState = State[Me]
         var mySide = MyState.SIDE
@@ -132,10 +141,10 @@ class FinalCell {
         // l'optimum du set, il ne doit pas entrer dans le memo qui promet le contraire.
         var truncated = false
         for (var cell: var mp in possibleCells) {
-            // Budget epuise : on garde le meilleur trouve jusqu'ici et on laisse de quoi bouger.
-            // Le test n'est paye que sur le placement REEL — le reclassement du BFS, qui appelle
-            // cette fonction une fois par candidat, passe allowTruncate a faux.
-            if (allowTruncate && getOperations() + OPS_MOVE_MARGIN > OPS_CAP) {
+            // Budget epuise : on garde le meilleur trouve jusqu'ici. Le seuil vient de l'appelant —
+            // le reclassement du BFS doit laisser intacte la part du placement reel, celui-ci ne
+            // garde que de quoi bouger.
+            if (getOperations() > truncateAt) {
                 truncated = true
                 break
             }
@@ -169,9 +178,9 @@ class FinalCell {
         }
 
         // Renvoyé PAR RÉFÉRENCE, read-only en aval comme les autres maps cachées de l'IA.
-        var res = [bestCell, bestPenalty, bestNet]
-        // Un balayage tronque n'est pas l'optimum : le memoriser servirait une reponse degradee
-        // a un etat qui, lui, aurait le budget de faire mieux.
+        // Un balayage tronque n'est pas l'optimum : il le dit a l'appelant, et le memoriser servirait
+        // une reponse degradee a un etat qui, lui, aurait le budget de faire mieux.
+        var res = truncated ? [bestCell, bestPenalty, bestNet, true] : [bestCell, bestPenalty, bestNet]
         if (!truncated) FINAL_PLACEMENT_CACHE[memoKey] = res
         BenchOps.Stop("FinalCell")
         return res

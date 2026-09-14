@@ -90,7 +90,7 @@ global CAP_STAT_OF_EFFECT = [
     EFFECT_ABSOLUTE_SHIELD: STAT_RESISTANCE, EFFECT_RELATIVE_SHIELD: STAT_RESISTANCE // ×(1+RES/100)
 ]
 global CAP_MP_FACTOR = 0.1   // MP = multiplicateur plat (mobilité générique, volontairement aplati)
-global CAP_SCALE     = 0.006 // master dial (un buff de main-stat ≈ +10 sur un build chargé)
+global CAP_SCALE     = 0.020 // master dial (un buff de main-stat ≈ +33 sur un build chargé)
 
 class ImportanceClass {
 

@@ -24,6 +24,11 @@ include("../includes.leek")
 // Nombre de steps d'expansion déroulés par le getBestAction courant (affiché dans "Best:").
 global BFS_CHAIN_STEPS = 0
 
+// Marge laissée sous la part stricte du placement quand le reclassement terminal cesse d'ouvrir
+// des candidats : une évaluation commencée juste avant la limite doit encore y tenir. Elle couvre
+// le plus cher bloc de fin de tour mesuré (82 861 opérations sur 49 tours d'entité).
+global TERMINAL_EVAL_MARGIN = 100000
+
 /*
  * Politique de choix du successeur à dérouler.
  *   true  : par RENDEMENT, priority = Δscore / coût RÉEL de l'action dans cet état — coût de
@@ -85,7 +90,15 @@ class ActionSuite {
 		// effectif, portée par noPlay et héritée par ses enfants. Elle sale le filtre de
 		// cellules de tir du ScoredCache — plus aucun terme de scoring n'en dépend.
 		var RootWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MyStats)
-		var RootTerms = ScoringClass.buildTermsMap(State, MySide, BaseHash, RootContext, RootHfp, RootPoisonKey)
+		// La racine s'interrompt entre deux cibles quand elle entame la part stricte du placement
+		// final : une racine froide coûte jusqu'à plusieurs millions d'opérations, et le moteur qui
+		// la coupait emportait aussi le placement. Sans racine, aucune décision : le placement prend
+		// la main.
+		var RootTerms = ScoringClass.buildTermsMap(State, MySide, BaseHash, RootContext, RootHfp, RootPoisonKey, OPS_CAP - OPS_RESERVE_PLACEMENT)
+		if (RootTerms == null) {
+			BenchOps.Stop("BFS")
+			return null
+		}
 		var initialScore = ScoringClass.sumTerms(RootTerms)
 
 		// Cache par appel : scoredKeyOf(BaseHash, candidat résu) -> liste triée
@@ -167,30 +180,53 @@ class ActionSuite {
 				seed = c
 			}
 		}
-		var bound = bestRaw - penaltyOf(seed)
-		// Un candidat dont le score BRUT n'atteint pas déjà cette borne ne peut plus gagner : son
-		// score final lui est inférieur ou égal. Les écarter AVANT le tri est ce qui compte —
-		// le parcours n'en ouvre qu'une poignée, et trier des milliers de nœuds pour cela coûtait
-		// plus cher que toutes les évaluations réunies. Le seuil est LARGE (>=) : la graine y
-		// reste même si sa pénalité est nulle, et la liste triée reste un sur-ensemble exact de
-		// ce que le parcours aurait ouvert.
-		var live = []
-		for (var c in candidates) {
-			if (c.SCORE >= bound) push(live, c)
-		}
-		var sorted = arraySort(live, function(a, b) { return b.SCORE - a.SCORE })
-		var n = count(sorted)
+		// Date limite des évaluations terminales. Chacune peut coûter un balayage de placement
+		// entier et aucune ne s'interrompt : on n'en ouvre plus une fois entamé ce que la suite du
+		// tour doit trouver intact — la part stricte du placement final, celle des bulbes qui
+		// jouent après moi, et la marge du plus cher balayage. Franchir le plafond moteur ici
+		// tuait le tour entier : ni l'action choisie, ni le placement.
+		// Une évaluation commencée avant cette date limite peut encore courir jusqu'à terminalLimit, où
+		// son balayage se tronque : elle rend alors un majorant de sa pénalité, et le budget est épuisé.
+		var terminalLimit = OPS_DEADLINE + OPS_RESERVE_TURN - OPS_RESERVE_PLACEMENT
+		var terminalDeadline = terminalLimit - TERMINAL_EVAL_MARGIN
 		var best = null
 		var bestFinal = 0
-		for (var i = 0; i < n; i++) {
-			var node = sorted[i]
-			var raw = node.SCORE
-			if (best != null && raw <= bestFinal) break
-			var finalScore = raw - penaltyOf(node)
-			if (best == null || finalScore > bestFinal) {
-				best = node
-				bestFinal = finalScore
+		var seedClose = (getOperations() <= terminalDeadline) ? closeOf(seed, terminalLimit) : null
+		if (seedClose != null && count(seedClose) == 3) {
+			var bound = bestRaw - seedClose[1]
+			// Un candidat dont le score BRUT n'atteint pas déjà cette borne ne peut plus gagner : son
+			// score final lui est inférieur ou égal. Les écarter AVANT le tri est ce qui compte —
+			// le parcours n'en ouvre qu'une poignée, et trier des milliers de nœuds pour cela coûtait
+			// plus cher que toutes les évaluations réunies. Le seuil est LARGE (>=) : la graine y
+			// reste même si sa pénalité est nulle, et la liste triée reste un sur-ensemble exact de
+			// ce que le parcours aurait ouvert.
+			var live = []
+			for (var c in candidates) {
+				if (c.SCORE >= bound) push(live, c)
 			}
+			var sorted = arraySort(live, function(a, b) { return b.SCORE - a.SCORE })
+			var n = count(sorted)
+			for (var i = 0; i < n; i++) {
+				var node = sorted[i]
+				var raw = node.SCORE
+				if (best != null && raw <= bestFinal) break
+				// Budget épuisé : le meilleur candidat déjà clos l'emporte sur ceux qu'on n'ouvrira pas.
+				if (best != null && getOperations() > terminalDeadline) break
+				var close = closeOf(node, terminalLimit)
+				// Balayage tronqué : le budget des évaluations est épuisé, on garde ce qui est déjà clos.
+				if (count(close) > 3) break
+				var finalScore = raw - close[1]
+				if (best == null || finalScore > bestFinal) {
+					best = node
+					bestFinal = finalScore
+				}
+			}
+		}
+		// Aucun candidat n'a pu être clos : le meilleur score brut est joué tel quel. Le placement
+		// réel de fin de tour se décidera ensuite, avec son balayage qui sait se tronquer.
+		if (best == null) {
+			best = seed
+			bestFinal = bestRaw
 		}
 		BenchOps.Stop("Terminal")
 
@@ -215,13 +251,14 @@ class ActionSuite {
 	}
 
 	/*
-	 * Pénalité de placement d'un candidat : son état complet n'est reconstruit depuis sa chaîne
-	 * de patches que s'il est réellement évalué (matérialisation paresseuse, puis cachée sur le
-	 * nœud — la graine repasse ici sans rien recalculer).
+	 * Clôture d'un candidat par FinalCell : [cellule, pénalité, net], suivie de true si le balayage
+	 * a été tronqué à truncateAt. Son état complet n'est reconstruit depuis sa chaîne de patches que
+	 * s'il est réellement évalué (matérialisation paresseuse, puis cachée sur le nœud — la graine
+	 * repasse ici sans rien recalculer).
 	 */
-	static penaltyOf(node) {
+	static closeOf(node, truncateAt) {
 		var NodeState = StateClass.materializeNodeState(node)
-		return FinalCell.evaluate(NodeState, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, node.COMBINED_HFP, node.POISON_KEY, node.ME_WALK_FINGERPRINT, false)[1]
+		return FinalCell.evaluate(NodeState, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, node.COMBINED_HFP, node.POISON_KEY, node.ME_WALK_FINGERPRINT, truncateAt)
 	}
 
 	/*

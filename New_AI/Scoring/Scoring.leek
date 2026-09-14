@@ -35,13 +35,24 @@ class ScoringClass {
      * Utilisée à la racine du BFS, puis portée de nœud en nœud et patchée.
      * hfpBySide et poisonKey sont construits UNE seule fois par l'appelant (racine du BFS)
      * et réutilisés ici, jamais reconstruits.
+     *
+     * Les nets sont calculés cible par cible, avec le corps de DeltaClass.getNetDamageMap (netOf,
+     * même heal map, même ordre de parcours) : c'est le calcul le plus cher d'une planification
+     * froide, et le seul qu'on puisse interrompre entre deux cibles. Passé OpsLimit, la map est
+     * abandonnée et la fonction rend null plutôt que de laisser le moteur couper le tour.
      */
-    static buildTermsMap(State, MySide, BaseHash, contextBySide, hfpBySide, poisonKey) {
+    static buildTermsMap(State, MySide, BaseHash, contextBySide, hfpBySide, poisonKey, OpsLimit) {
         BenchOps.Start("Scoring")
-        var netDamageMap = DeltaClass.getNetDamageMap(State, BaseHash, contextBySide, hfpBySide)
+        var combinedFp = 0
+        for (var s: var h in hfpBySide) combinedFp ^= h
+        var healMap = HealClass.getHealMapByFp(State, combinedFp)
         var terms = [: ]
         for (var e: var stat in State) {
             if (stat.LIFE <= 0) continue
+            if (getOperations() > OpsLimit) {
+                BenchOps.Stop("Scoring")
+                return null
+            }
             var w = REPLAN_WEIGHTS.entityWeights(e, stat)
             if (e == Me) {
                 // Terme STATIQUE de Me : danger nul, donc drDeterrence nul aussi (les retours
@@ -49,8 +60,11 @@ class ScoringClass {
                 terms[e] = survivalWeighted(stat, 0, State, poisonKey, w) + w.CAPABILITY * ImportanceClass.capability(stat)
                 continue
             }
+            BenchOps.Start("Delta")
+            var net = DeltaClass.netOf(e, stat, State, BaseHash, contextBySide, hfpBySide, healMap)
+            BenchOps.Stop("Delta")
             var sign = (stat.SIDE == MySide) ? 1 : -1
-            terms[e] = sign * (survivalWeighted(stat, netDamageMap[e], State, poisonKey, w) + w.CAPABILITY * ImportanceClass.capability(stat) + w.DR * drDeterrence(stat, netDamageMap[e], State))
+            terms[e] = sign * (survivalWeighted(stat, net, State, poisonKey, w) + w.CAPABILITY * ImportanceClass.capability(stat) + w.DR * drDeterrence(stat, net, State))
         }
         BenchOps.Stop("Scoring")
         return terms

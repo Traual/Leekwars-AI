@@ -27,17 +27,18 @@ global W_LIFE = 14.0
 // Terme de vie max : le capital DURABLE de l'entité. Seul canal de l'érosion/nova (permanent,
 // aucun heal ne le rend) et de la moitié vie-max des buffs de vitalité.
 // Vit HORS de SURVIVAL_CACHE (clé pleine) — ajouté après la lecture.
-global W_TOTAL_LIFE = 0.5 * W_LIFE
+global W_TOTAL_LIFE = 1.0 * W_LIFE
 
 // Tick périodique NET du prochain tour (poison + aftereffect − heal over time), soustrait
 // de la vie (un HoT dominant le rehausse).
 global COEF_PERIODIC_TICK = 0.5
 
 // Le heal amortit le danger dans le net séquencé par ordre de tour (DeltaClass) : chaque
-// heal ne compte qu'à HEAL_COEF de son potentiel (un soin est moins CERTAIN qu'un dégât —
-// le healer peut être mort, shacklé, hors position).
+// heal compte à HEAL_COEF de son potentiel. Plein tarif : dans une méta où presque chaque
+// poireau porte Régénération, Rémission ou Sérum, le soin adverse tombe aussi sûrement qu'un
+// dégât, et l'escompter faisait viser des cibles qui seront remontées.
 global DANGER_COEF = 1.0
-global HEAL_COEF = 0.6
+global HEAL_COEF = 1.00
 
 // ----- Canal HORIZON : TTK (kill-horizon) — LE canal de menace -----
 // survivalValue gagne W_TTK · g en forme DIRECTE : g = horizonLife/(horizonLife +
@@ -78,8 +79,8 @@ global DR_RETURN_EXPECT = 0.4
 // danger réel — ce petit terme donne au shield préventif son ticket d'exploration quand il
 // n'y a rien de mieux à faire. NON clampé : une vulné (shield négatif) paie le même canal
 // en sens inverse (déshabiller un ennemi score même sans allié pour en profiter).
-global W_IDLE_ABS = 0.02   // par point de shield absolu
-global W_IDLE_REL = 0.1    // par % de shield relatif
+global W_IDLE_ABS = 0.12   // par point de shield absolu
+global W_IDLE_REL = 0.60   // par % de shield relatif
 
 // Coût de cast à la main pour quelques items d'économie : soustrait au SCORE du nœud qui
 // les caste (coût d'ACTION porté par le chemin, hors TERMS). L'item doit rapporter PLUS que
