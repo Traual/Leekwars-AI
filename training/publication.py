@@ -379,6 +379,7 @@ def travaux_locaux(depot: Path) -> list[str]:
 
     # 1. Ce que HEAD suit dans la zone. `-z` : chemins bruts, jamais quotes.
     suivis: dict[str, tuple[str, str]] = {}
+    head_brut: dict[str, tuple[str, str]] = {}
     brut = _git("ls-tree", "-r", "-z", "--full-tree", "HEAD", "--", *ZONE, depot=depot)
     for entree in brut.split("\0"):
         if not entree:
@@ -386,6 +387,7 @@ def travaux_locaux(depot: Path) -> list[str]:
         meta, chemin = entree.split("\t", 1)
         mode, type_objet, objet = meta.split()
         suivis[chemin] = (mode, objet if type_objet == "blob" else "")
+        head_brut[chemin] = (mode, objet)
 
     # 2. Ce qui existe REELLEMENT sur le disque, sans aucune regle d'exclusion.
     presents: list[str] = []
@@ -433,6 +435,35 @@ def travaux_locaux(depot: Path) -> list[str]:
     # 4. Suivis dans HEAD mais absents du disque.
     travaux += [" D %s" % c for c in sorted(suivis)
                 if not (racine / c).exists() and not (racine / c).is_symlink()]
+
+    # 5. L'INDEX contre HEAD. Le disque ne dit pas tout : une modification indexee puis
+    #    retablie sur le disque (etat MM), ou un ajout indexe puis retire du disque (etat AD),
+    #    passaient les comparaisons precedentes. La preparation, puis la reprise, reinitialisent
+    #    l'index et perdaient ce travail prepare. On lit l'index brut (`ls-files -s`), pas un
+    #    diff : aucun reglage de rendu ni de detection de renommage n'intervient.
+    indexe: dict[str, tuple[str, str]] = {}
+    en_conflit: set[str] = set()
+    brut_index = _git("ls-files", "-s", "-z", "--", *ZONE, depot=depot)
+    for entree in brut_index.split("\0"):
+        if not entree:
+            continue
+        meta, chemin = entree.split("\t", 1)
+        mode, objet, etage = meta.split()
+        if etage != "0":
+            en_conflit.add(chemin)
+        else:
+            indexe[chemin] = (mode, objet)
+    travaux += ["U  %s" % c for c in sorted(en_conflit)]
+    for chemin in sorted((set(indexe) | set(head_brut)) - en_conflit):
+        dans_index, dans_head = indexe.get(chemin), head_brut.get(chemin)
+        if dans_head is None:
+            travaux.append("A  %s" % chemin)
+        elif dans_index is None:
+            travaux.append("D  %s" % chemin)
+        elif dans_index[1] != dans_head[1]:
+            travaux.append("M  %s" % chemin)
+        elif dans_index[0] != dans_head[0]:
+            travaux.append("T  %s" % chemin)
     return travaux
 
 

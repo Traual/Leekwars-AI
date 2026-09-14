@@ -323,6 +323,81 @@ def test_un_prototype_masque_par_show_untracked_files_fait_refuser_la_publicatio
             _refus_sans_mutation(bac, local, contenu, "status.showUntrackedFiles=no")
 
 
+def _refus_index_et_disque_preserves(bac, relatif: str, contexte: str) -> None:
+    """Refus, INDEX et disque identiques avant et apres, aucune trace de publication — y
+    compris apres une reprise, qui reinitialisait l'index quand un journal avait ete ouvert."""
+    zone = ("New_AI", "training/champions")
+    index_avant = _git(bac.depot, "ls-files", "-s", "--", *zone)
+    chemin = bac.depot / relatif
+    disque_avant = chemin.read_bytes() if chemin.exists() else None
+    tete_avant = _git(bac.depot, "rev-parse", "scoring").strip()
+    try:
+        bac.publier()
+        raise AssertionError("la publication aurait du refuser (%s)" % contexte)
+    except mod_pub.TravauxLocaux as e:
+        assert Path(relatif).name in str(e), (contexte, str(e))
+
+    def _inchange(moment):
+        assert _git(bac.depot, "ls-files", "-s", "--", *zone) == index_avant, \
+            (contexte, moment, "index altere")
+        apres = chemin.read_bytes() if chemin.exists() else None
+        assert apres == disque_avant, (contexte, moment, "disque altere")
+
+    _inchange("apres le refus")
+    assert bac.reg.publication_en_cours() is None, (contexte, "journal ouvert")
+    assert not bac.reg.executer("SELECT COUNT(*) AS n FROM publications").fetchone()["n"], \
+        (contexte, "une ligne de publication a ete creee")
+    assert not mod_pub.tag_existe("scoring/champion-001", depot=bac.depot), (contexte, "tag")
+    assert not (bac.champions / "champion-001.json").exists(), (contexte, "manifeste")
+    assert _git(bac.depot, "rev-parse", "scoring").strip() == tete_avant, (contexte, "commit")
+    assert bac.champion_actif() == "champion-000", (contexte, "champion change")
+    # La reprise n'a rien a reconcilier, donc rien a reinitialiser.
+    assert bac.reconcilier()["etat"] == "rien_a_reconcilier", contexte
+    _inchange("apres la reprise")
+
+
+def test_une_modification_preparee_invisible_sur_le_disque_fait_refuser():
+    """Etat MM : modification suivie et indexee, puis disque remis au contenu de HEAD.
+
+    Le disque est identique a HEAD, donc l'inventaire du disque ne voyait rien. La publication
+    s'ouvrait, echouait, et la reprise reinitialisait l'index : la modification preparee etait
+    perdue. Seule une comparaison de l'INDEX a HEAD la revele.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        with _Bac(Path(t)) as bac:
+            relatif = "New_AI/Main.leek"
+            fichier = bac.depot / relatif
+            original = fichier.read_bytes()
+            fichier.write_text("// modification preparee, jamais commitee\n", encoding="utf-8")
+            _git(bac.depot, "add", "--", relatif)
+            fichier.write_bytes(original)          # le DISQUE seul revient a HEAD
+            etat = _git(bac.depot, "status", "--porcelain", "--", relatif)
+            assert etat.startswith("MM"), "etat attendu MM : %r" % etat
+            # Et le disque est bien identique a HEAD : c'est ce qui aveuglait l'inventaire.
+            assert _git(bac.depot, "hash-object", "--", relatif).strip() == \
+                _git(bac.depot, "rev-parse", "HEAD:%s" % relatif).strip()
+            _refus_index_et_disque_preserves(bac, relatif, "MM")
+
+
+def test_un_ajout_prepare_retire_du_disque_fait_refuser():
+    """Etat AD : fichier cree et indexe, puis retire du disque seulement.
+
+    Absent du disque et absent de HEAD, il echappait aux deux comparaisons du disque ; la
+    publication reussissait et supprimait l'entree de l'index.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        with _Bac(Path(t)) as bac:
+            relatif = "New_AI/Scoring/Ajout-prepare.leek"
+            fichier = bac.depot / relatif
+            fichier.parent.mkdir(parents=True, exist_ok=True)
+            fichier.write_text("// ajout prepare puis retire du disque\n", encoding="utf-8")
+            _git(bac.depot, "add", "--", relatif)
+            fichier.unlink()                       # retire du DISQUE seulement
+            etat = _git(bac.depot, "status", "--porcelain", "--", relatif)
+            assert etat.startswith("AD"), "etat attendu AD : %r" % etat
+            _refus_index_et_disque_preserves(bac, relatif, "AD")
+
+
 def test_un_inventaire_impossible_fait_refuser_la_publication():
     """Un inventaire rate ne vaut jamais un inventaire vide.
 

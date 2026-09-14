@@ -71,8 +71,10 @@ décision reste publiable une fois la zone libérée.
 Cet inventaire lit le **disque**, pas `git status`, qui tait les fichiers ignorés
 (`.gitignore`, `.git/info/exclude`) et tous les non-suivis sous `status.showUntrackedFiles=no`
 — alors que la préparation efface tout ce qui existe. Chaque fichier présent est comparé à
-l'arbre de `HEAD`, contenu filtré comme Git le filtre. Un inventaire impossible fait refuser :
-il ne vaut jamais un inventaire vide.
+l'arbre de `HEAD`, contenu filtré comme Git le filtre. L'index est comparé à `HEAD` lui aussi,
+entrée par entrée : une modification préparée puis rétablie sur le disque, ou un ajout préparé
+puis retiré du disque, ne se voit pas sur le disque mais serait perdu par la préparation. Un
+inventaire impossible fait refuser : il ne vaut jamais un inventaire vide.
 
 **Une branche de candidat ne se reprend que sur preuve.** Le commit porte l'empreinte de sa
 source dans son message. S'il n'en porte aucune — branche ancienne, ou créée autrement — la
@@ -188,7 +190,7 @@ identique signifie un contenu identique.
 ```bash
 python training/tests/test_harnais.py       # 32 tests, instantanés
 python training/tests/test_boucle.py        # 20 tests, moteur synthétique, ~110 s
-python training/tests/test_publication.py   # 10 tests, dépôt git temporaire
+python training/tests/test_publication.py   # 12 tests, dépôt git temporaire
 python training/tests/test_reels.py         #  3 tests, joue de vrais combats
 ```
 
