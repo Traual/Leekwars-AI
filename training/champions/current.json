@@ -1,8 +1,8 @@
 {
-  "champion_courant": "champion-000",
-  "manifeste": "training/champions/champion-000.json",
-  "commit_code": "3b3b0fd862b1829b08ea624b2fee17bbdd040fa0",
-  "bundle_sha256": "f74673365897f79c88aee94843069e8dc3971a8a96a98ae2e2632accc8176935",
-  "tag": "scoring/champion-000",
-  "_role": "Pointeur lu par le controleur pour savoir contre qui comparer. Seul le controleur l'ecrit ; l'optimiseur ne le modifie jamais."
+  "champion_courant": "champion-001",
+  "manifeste": "training/champions/champion-001.json",
+  "commit_code": "51b169375322955a81df72a5129609fe1c3bca91",
+  "bundle_sha256": "4e50d520fd8c4f0213fa9aedd6997799ae455b708cf882a34ee68161d0662a2d",
+  "tag": "scoring/champion-001",
+  "_role": "Seul le controleur ecrit ce pointeur ; l'optimiseur n'y touche pas."
 }
