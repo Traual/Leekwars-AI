@@ -183,7 +183,14 @@ def publier(reg, candidat: dict[str, Any], champion_attendu: str, decision: dict
 
     # AVANT toute operation destructive, et avant meme d'ouvrir le journal : la preparation
     # vide `New_AI`, donc un travail local non commite y serait perdu sans retour possible.
-    travaux = travaux_locaux(depot)
+    try:
+        travaux = travaux_locaux(depot)
+    except Exception as e:
+        # Un inventaire impossible ne vaut JAMAIS un inventaire vide : on refuse, sans rien
+        # avoir touche.
+        raise TravauxLocaux(
+            "inventaire de la zone de publication impossible (%s) ; faute de pouvoir prouver "
+            "qu'aucun travail local ne serait detruit, rien n'a ete touche." % e)
     if travaux:
         raise TravauxLocaux(
             "la zone de publication porte des modifications non commitees ; la preparation de "
@@ -351,9 +358,82 @@ def travaux_locaux(depot: Path) -> list[str]:
 
     Un arbre propre a l'inscription ne l'est pas forcement a la promotion, des heures plus
     tard. On le RECONSTATE donc juste avant, et on refuse plutot que d'effacer.
+
+    **L'inventaire lit le DISQUE, pas `git status`.** `shutil.rmtree` efface tout ce qui existe
+    sous `New_AI`, alors que `git status` n'en montre qu'une partie : il tait les fichiers
+    ignores (`.gitignore`, `.git/info/exclude`, `core.excludesFile`) et tous les non-suivis
+    quand `status.showUntrackedFiles=no`. Un prototype ainsi masque echappait au controle, puis
+    disparaissait avec une publication reussie. On parcourt donc chaque fichier reellement
+    present dans la zone et on le compare a l'arbre de HEAD :
+
+    - present sur le disque, absent de HEAD : travail local, quelles que soient les regles
+      d'exclusion ou d'affichage ;
+    - present des deux cotes : son contenu, filtre comme Git le filtre (fins de ligne), doit
+      donner exactement le blob de HEAD ;
+    - dans HEAD mais absent du disque : suppression locale non commitee.
+
+    Toute impossibilite d'inventorier LEVE : l'appelant refuse. Un inventaire rate ne doit
+    jamais valoir un inventaire vide.
     """
-    sortie = _git("status", "--porcelain", "--", *ZONE, depot=depot, verifier=False).strip()
-    return [l.strip() for l in sortie.split("\n") if l.strip()]
+    racine = Path(depot)
+
+    # 1. Ce que HEAD suit dans la zone. `-z` : chemins bruts, jamais quotes.
+    suivis: dict[str, tuple[str, str]] = {}
+    brut = _git("ls-tree", "-r", "-z", "--full-tree", "HEAD", "--", *ZONE, depot=depot)
+    for entree in brut.split("\0"):
+        if not entree:
+            continue
+        meta, chemin = entree.split("\t", 1)
+        mode, type_objet, objet = meta.split()
+        suivis[chemin] = (mode, objet if type_objet == "blob" else "")
+
+    # 2. Ce qui existe REELLEMENT sur le disque, sans aucune regle d'exclusion.
+    presents: list[str] = []
+    liens: list[str] = []
+    for base in ZONE:
+        dossier = racine / base
+        if dossier.is_symlink():
+            liens.append(base)
+            continue
+        if not dossier.exists():
+            continue
+        for p in dossier.rglob("*"):
+            relatif = p.relative_to(racine).as_posix()
+            if p.is_symlink():
+                liens.append(relatif)
+            elif p.is_file():
+                presents.append(relatif)
+            elif not p.is_dir():
+                # Ni fichier, ni repertoire, ni lien : on ne sait pas ce que rmtree en ferait.
+                raise RuntimeError("entree de nature inconnue dans la zone : %s" % relatif)
+
+    travaux = ["?? %s" % c for c in sorted(presents) if c not in suivis]
+    # Un lien symbolique ne se compare pas comme un fichier ; plutot que de deviner, il compte
+    # comme un travail local et fait refuser.
+    travaux += ["?L %s" % c for c in sorted(liens)]
+
+    # 3. Les fichiers suivis : le contenu present donne-t-il le blob de HEAD ?
+    a_verifier = sorted(c for c in presents if c in suivis)
+    if a_verifier:
+        # `hash-object` sans `-w` n'ecrit rien, et applique les filtres de nettoyage : c'est la
+        # definition meme de « modifie » pour Git, independante de tout reglage d'affichage.
+        r = subprocess.run(["git", "-C", str(depot), "hash-object", "--stdin-paths"],
+                           input="\n".join(a_verifier) + "\n", capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        if r.returncode != 0:
+            raise RuntimeError("git hash-object : %s" % (r.stderr or r.stdout).strip())
+        empreintes = r.stdout.split()
+        if len(empreintes) != len(a_verifier):
+            raise RuntimeError("inventaire incomplet : %d empreintes pour %d fichiers"
+                               % (len(empreintes), len(a_verifier)))
+        for chemin, empreinte in zip(a_verifier, empreintes):
+            if empreinte != suivis[chemin][1]:
+                travaux.append(" M %s" % chemin)
+
+    # 4. Suivis dans HEAD mais absents du disque.
+    travaux += [" D %s" % c for c in sorted(suivis)
+                if not (racine / c).exists() and not (racine / c).is_symlink()]
+    return travaux
 
 
 def _nettoyer_arbre(champions: Path, depot: Path, nouveau: str,

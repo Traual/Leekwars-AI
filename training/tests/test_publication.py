@@ -268,6 +268,89 @@ def test_un_travail_local_fait_refuser_la_publication_avant_toute_suppression():
                 bac.verifier_publication_complete(nom)
 
 
+def _refus_sans_mutation(bac, local: Path, contenu: str, contexte: str) -> None:
+    """La publication refuse, et RIEN n'a bouge : fichier, journal, tag, manifeste, champion."""
+    tete_avant = _git(bac.depot, "rev-parse", "scoring").strip()
+    try:
+        bac.publier()
+        raise AssertionError("la publication aurait du refuser (%s)" % contexte)
+    except mod_pub.TravauxLocaux as e:
+        assert local.name in str(e), (contexte, str(e))
+    assert local.read_text(encoding="utf-8") == contenu, (contexte, "contenu local altere")
+    assert bac.reg.publication_en_cours() is None, (contexte, "journal ouvert")
+    assert not bac.reg.executer("SELECT COUNT(*) AS n FROM publications").fetchone()["n"], \
+        (contexte, "une ligne de publication a ete creee")
+    assert not mod_pub.tag_existe("scoring/champion-001", depot=bac.depot), (contexte, "tag")
+    assert not (bac.champions / "champion-001.json").exists(), (contexte, "manifeste")
+    assert _git(bac.depot, "rev-parse", "scoring").strip() == tete_avant, (contexte, "commit")
+    assert bac.champion_actif() == "champion-000", (contexte, "champion change")
+
+
+def test_un_prototype_exclu_par_git_info_exclude_fait_refuser_la_publication():
+    """Un fichier IGNORE sous `New_AI` est tu par `git status`, mais rmtree l'efface quand meme.
+
+    Reproduction de la revue : prototype exclu via `.git/info/exclude`, publication REUSSIE,
+    fichier perdu. L'inventaire lit desormais le disque, independamment des regles d'exclusion.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        with _Bac(Path(t)) as bac:
+            (bac.depot / ".git" / "info").mkdir(parents=True, exist_ok=True)
+            with open(bac.depot / ".git" / "info" / "exclude", "a", encoding="utf-8") as f:
+                f.write("\nNew_AI/Scoring/Prototype-exclu.leek\n")
+            local = bac.depot / "New_AI" / "Scoring" / "Prototype-exclu.leek"
+            contenu = "// prototype ignore par .git/info/exclude\n"
+            local.write_text(contenu, encoding="utf-8")
+            # La preuve du piege : `git status` ne le voit pas.
+            assert not _git(bac.depot, "status", "--porcelain").strip(), \
+                "le fichier doit etre invisible a git status pour que ce test ait un sens"
+            _refus_sans_mutation(bac, local, contenu, ".git/info/exclude")
+
+
+def test_un_prototype_masque_par_show_untracked_files_fait_refuser_la_publication():
+    """Avec `status.showUntrackedFiles=no`, AUCUN non-suivi n'apparait dans `git status`.
+
+    Reproduction de la revue : prototype masque par ce reglage, publication reussie, fichier
+    perdu. L'inventaire ne depend d'aucun reglage d'affichage.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        with _Bac(Path(t)) as bac:
+            _git(bac.depot, "config", "status.showUntrackedFiles", "no")
+            local = bac.depot / "New_AI" / "Scoring" / "Prototype-masque.leek"
+            contenu = "// prototype masque par status.showUntrackedFiles=no\n"
+            local.write_text(contenu, encoding="utf-8")
+            assert not _git(bac.depot, "status", "--porcelain").strip(), \
+                "le fichier doit etre invisible a git status pour que ce test ait un sens"
+            _refus_sans_mutation(bac, local, contenu, "status.showUntrackedFiles=no")
+
+
+def test_un_inventaire_impossible_fait_refuser_la_publication():
+    """Un inventaire rate ne vaut jamais un inventaire vide.
+
+    L'ancien controle appelait `git status` sans verifier son code de retour : une commande en
+    echec rendait une sortie vide, donc « rien a preserver », et la preparation effacait tout.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        with _Bac(Path(t)) as bac:
+            local = bac.depot / "New_AI" / "Scoring" / "Prototype.leek"
+            contenu = "// prototype\n"
+            local.write_text(contenu, encoding="utf-8")
+            vrai = mod_pub.travaux_locaux
+            mod_pub.travaux_locaux = lambda depot: (_ for _ in ()).throw(
+                RuntimeError("git indisponible"))
+            try:
+                try:
+                    bac.publier()
+                    raise AssertionError("un inventaire impossible aurait du faire refuser")
+                except mod_pub.TravauxLocaux as e:
+                    assert "inventaire" in str(e) and "git indisponible" in str(e), str(e)
+            finally:
+                mod_pub.travaux_locaux = vrai
+            assert local.read_text(encoding="utf-8") == contenu
+            assert bac.reg.publication_en_cours() is None
+            assert not mod_pub.tag_existe("scoring/champion-001", depot=bac.depot)
+            assert bac.champion_actif() == "champion-000"
+
+
 def test_bundle_refuse_ne_commite_rien():
     """Un bundle qui ne correspond pas a ce qui a ete evalue n'entre pas dans l'histoire."""
     with tempfile.TemporaryDirectory() as t:
