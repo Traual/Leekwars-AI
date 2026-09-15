@@ -16,6 +16,7 @@ import random
 import sys
 import tempfile
 import time
+import types
 from pathlib import Path
 
 RACINE = Path(__file__).resolve().parents[1]
@@ -31,12 +32,12 @@ import scenarios as mod_sc           # noqa: E402
 import statistics_lab as st          # noqa: E402
 from test_boucle import MAIN, SCORING, Laboratoire, _ecrire  # noqa: E402
 
-# Parametres de crible PROPOSES pour la campagne v3 : les variances a priori sont celles
-# mesurees sur les campagnes historiques, les alphas ceux du rejeu hors ligne.
+# Parametres de crible de la campagne v3 : variances a priori mesurees sur campagne-003, alphas
+# retenus au rejeu hors ligne de ses resultats complets.
 CRIBLE = {
     "variance_a_priori": {"farmer": 0.0825, "solo": 0.0352, "team": 0.099},
     "ddl_a_priori": 4,
-    "alpha_plancher": 0.20, "alpha_futilite": 0.30, "alpha_objectif": 0.20,
+    "alpha_plancher": 0.10, "alpha_futilite": 0.30, "alpha_objectif": 0.10,
     "alpha_plancher_confirmation": 0.10, "alpha_futilite_confirmation": 0.10,
     "alpha_objectif_confirmation": 0.10,
     "seuil_premier_palier_farmer": -0.05,
@@ -52,8 +53,10 @@ BLOCS = {"solo": 3, "farmer": 6}
 PALIERS = [{"solo": 3}, {"solo": 3, "farmer": 3}, {"solo": 3, "farmer": 6}]
 PREVUS = 4 * sum(BLOCS.values())
 
-# Champion fort : face aux adversaires du laboratoire (-10, 0, 5), ses resultats sont presque
-# certains, ce qui rend la difference d'un candidat desastreux lisible sur trois blocs.
+# Deux mondes synthetiques. Champion FORT (45) : face aux adversaires du laboratoire (-10, 0, 5)
+# ses resultats sont presque certains, et la difference d'un candidat desastreux se lit sur trois
+# blocs. Champion NEUTRE (0, le defaut) : un bon candidat (45) le domine nettement, ce qui rend
+# sa poursuite certaine a l'echelle d'un palier.
 FORCE_CHAMPION = 45
 
 
@@ -87,11 +90,15 @@ class Etape:
         self.sha_h = emp["sha256"]
         self.juges: list[int] = []
 
-    def jouer(self, ia_c: str, sha_c: str, travail: str = "m"):
+    def jouer(self, ia_c: str, sha_c: str, travail: str = "m", arret_impose: str | None = None):
+        """`arret_impose` remplace la regle par un arret au premier palier juge : pour les tests
+        qui portent sur le deroulement et non sur le tirage."""
         cfg = self.lab.cfg
 
         def juge(pf, palier):
             self.juges.append(palier.rang)
+            if arret_impose is not None:
+                return mod_prog.Jugement(palier.rang, arret_impose, ["arret impose par le test"])
             return mod_prog.juger_palier(pf, palier, self.paliers, cfg,
                                          confirmation=self.confirmation)
 
@@ -266,11 +273,13 @@ def test_un_eleveur_futile_est_abandonne_au_premier_palier():
 
 def test_une_petite_baisse_solo_laisse_mesurer_l_eleveur():
     with tempfile.TemporaryDirectory() as t:
-        with Laboratoire(Path(t), force_champion=FORCE_CHAMPION, crible=CRIBLE) as lab:
+        with Laboratoire(Path(t), force_champion=0, force_solo_champion=FORCE_CHAMPION,
+                         crible=CRIBLE) as lab:
             lab.init_campagne()
             etape = Etape(lab)
             # Un peu moins bon que le champion en solo, nettement meilleur en eleveur.
-            ia_c, sha_c = _bundle(lab, "baisse-solo", 100, force_solo=FORCE_CHAMPION - 2)
+            ia_c, sha_c = _bundle(lab, "baisse-solo", FORCE_CHAMPION,
+                                  force_solo=FORCE_CHAMPION - 2)
             _pf, couverture, suivi = etape.jouer(ia_c, sha_c)
             assert suivi["arret"] is None, suivi
             assert etape.juges == [0, 1], etape.juges
@@ -278,35 +287,49 @@ def test_une_petite_baisse_solo_laisse_mesurer_l_eleveur():
             assert lab.synth.joues == PREVUS and suivi["combats_evites"] == 0, suivi
 
 
-def test_un_bon_ou_un_indecis_poursuit_jusqu_au_bout():
+def test_un_bon_candidat_poursuit_jusqu_au_bout():
     with tempfile.TemporaryDirectory() as t:
-        with Laboratoire(Path(t), force_champion=FORCE_CHAMPION, crible=CRIBLE) as lab:
+        with Laboratoire(Path(t), crible=CRIBLE) as lab:
             lab.init_campagne()
             etape = Etape(lab)
-            for nom, force in (("bon", 100), ("indecis", FORCE_CHAMPION)):
-                ia_c, sha_c = _bundle(lab, nom, force)
-                _pf, couverture, suivi = etape.jouer(ia_c, sha_c, travail=nom)
-                assert suivi["arret"] is None, (nom, suivi)
-                # Le dernier palier n'est jamais juge ici : il revient au decideur complet.
-                assert etape.juges == [0, 1], (nom, etape.juges)
-                assert [p["rang"] for p in suivi["paliers"]] == [0, 1, 2]
-                assert suivi["combats_evites"] == 0
-                assert all(c["complet"] for c in couverture.values())
+            ia_c, sha_c = _bundle(lab, "bon", FORCE_CHAMPION)
+            _pf, couverture, suivi = etape.jouer(ia_c, sha_c)
+            assert suivi["arret"] is None, suivi
+            # Le dernier palier n'est jamais juge ici : il revient au decideur complet.
+            assert etape.juges == [0, 1], etape.juges
+            assert [p["rang"] for p in suivi["paliers"]] == [0, 1, 2]
+            assert suivi["combats_evites"] == 0
+            assert all(c["complet"] for c in couverture.values())
+
+
+def test_un_indecis_poursuit_a_chaque_palier_intermediaire():
+    """Aucun ecart mesure, dispersion typique des campagnes : rien ne doit l'arreter, aux
+    effectifs des paliers de la campagne v3."""
+    paliers = mod_prog.paliers_de({"blocs": {"solo": 3, "farmer": 12},
+                                   "paliers": [{"solo": 3}, {"solo": 3, "farmer": 6},
+                                               {"solo": 3, "farmer": 12}]})
+    ecart_solo, ecart_farmer = 0.0352 ** 0.5, 0.0825 ** 0.5
+    pf0 = {"solo": _comps("solo", [0.0, 0.0, 0.0], n=1, ecart=ecart_solo)}
+    j0 = mod_prog.juger_palier(pf0, paliers[0], paliers, _cfg())
+    assert j0.arret is None, j0.tests
+    pf1 = dict(pf0, farmer=_comps("farmer", [0.0, 0.0, 0.0], n=2, ecart=ecart_farmer))
+    j1 = mod_prog.juger_palier(pf1, paliers[1], paliers, _cfg())
+    assert j1.arret is None, j1.tests
 
 
 def test_une_interruption_se_reprend_sans_doublon_et_rend_le_meme_resultat():
     with tempfile.TemporaryDirectory() as t:
-        with Laboratoire(Path(t), force_champion=FORCE_CHAMPION, crible=CRIBLE) as lab:
+        with Laboratoire(Path(t), crible=CRIBLE) as lab:
             lab.init_campagne()
             etape = Etape(lab)
-            ia_c, sha_c = _bundle(lab, "indecis", FORCE_CHAMPION)
+            ia_c, sha_c = _bundle(lab, "bon", FORCE_CHAMPION)
             reference, _cv, _s = etape.jouer(ia_c, sha_c)
 
     with tempfile.TemporaryDirectory() as t:
-        with Laboratoire(Path(t), force_champion=FORCE_CHAMPION, crible=CRIBLE) as lab:
+        with Laboratoire(Path(t), crible=CRIBLE) as lab:
             lab.init_campagne()
             etape = Etape(lab)
-            ia_c, sha_c = _bundle(lab, "indecis", FORCE_CHAMPION)
+            ia_c, sha_c = _bundle(lab, "bon", FORCE_CHAMPION)
             # Coupure au milieu du palier 1 : le palier 0 (12 combats) est complet.
             lab.synth.plafond = 16
             _pf, _cv, coupe = etape.jouer(ia_c, sha_c)
@@ -330,24 +353,26 @@ def test_une_interruption_se_reprend_sans_doublon_et_rend_le_meme_resultat():
 
 def test_le_cache_de_reference_est_partage_entre_candidats():
     with tempfile.TemporaryDirectory() as t:
-        with Laboratoire(Path(t), force_champion=FORCE_CHAMPION, crible=CRIBLE) as lab:
+        with Laboratoire(Path(t), crible=CRIBLE) as lab:
             lab.init_campagne()
             etape = Etape(lab, blocs={"farmer": 12}, paliers=[{"farmer": 3}, {"farmer": 12}])
 
-            ia_a, sha_a = _bundle(lab, "a-futile", -100)
-            _pf, _cv, a = etape.jouer(ia_a, sha_a, travail="a")
+            ia_a, sha_a = _bundle(lab, "a-arrete", -100)
+            _pf, _cv, a = etape.jouer(ia_a, sha_a, travail="a",
+                                      arret_impose=mod_prog.ABANDON_CRIBLE)
             assert a["arret"] == mod_prog.ABANDON_CRIBLE and a["combats_joues"] == 12, a
 
             # B reprend les 6 combats de reference du palier 0 joues pour A ; ceux du palier 1
             # n'existaient pas encore.
-            ia_b, sha_b = _bundle(lab, "b-bon", 100)
+            ia_b, sha_b = _bundle(lab, "b-bon", FORCE_CHAMPION)
             _pf, _cv, b = etape.jouer(ia_b, sha_b, travail="b")
             assert b["arret"] is None, b
             assert b["combats_du_cache"] == 6 and b["combats_joues"] == 42, b
 
             # C trouve toute la reference en cache : seuls ses propres combats sont joues.
-            ia_c, sha_c = _bundle(lab, "c-indecis", FORCE_CHAMPION)
+            ia_c, sha_c = _bundle(lab, "c-bon", 30)
             _pf, _cv, c = etape.jouer(ia_c, sha_c, travail="c")
+            assert c["arret"] is None, c
             assert c["combats_du_cache"] == 24 and c["combats_joues"] == 24, c
 
 
@@ -365,6 +390,27 @@ def test_des_blocs_incomplets_interrompent_sans_juger():
             assert not couverture["solo"]["complet"]
             assert lab.synth.joues == 8, lab.synth.joues
             assert suivi["combats_evites"] == PREVUS - 12, suivi
+
+
+def test_la_configuration_v3_est_faisable_et_porte_le_crible_retenu():
+    """La configuration livree pour la campagne v3, pas une autre."""
+    cfg = cli.charger_config(RACINE / "config" / "v3.yaml")
+    try:
+        assert {k: cfg["crible"][k] for k in CRIBLE} == CRIBLE, cfg["crible"]
+        assert cfg["objectif"] == OBJECTIF
+        # Panel de la meme taille que la ligue v3 : dix versions, puis l'ancre.
+        panel = [types.SimpleNamespace(ident="v%02d" % i) for i in range(10)]
+        panel.append(types.SimpleNamespace(ident="ancre"))
+        problemes = cli.controler_faisabilite(cfg, panel, mod_sc.charger_builds())
+        assert problemes == [], problemes
+        for nom, spec in cfg["etapes"].items():
+            paliers = mod_prog.paliers_de(spec)
+            assert len(paliers) >= 2, "%s : aucune possibilite d'arret anticipe" % nom
+            assert spec.get("adversaires", 11) <= 10, "l'ancre ne doit jamais decider (%s)" % nom
+        s1 = mod_prog.paliers_de(cfg["etapes"]["s1"])
+        assert list(s1[0].blocs) == ["solo"], "S1 commence par un controle solo minuscule"
+    finally:
+        cli.appliquer_profil({})
 
 
 # --------------------------------------------------------------------------------------
@@ -385,10 +431,9 @@ ETAPES_BOUCLE = {
 
 def test_la_boucle_n_ouvre_pas_l_etape_suivante_apres_un_arret():
     with tempfile.TemporaryDirectory() as t:
-        with Laboratoire(Path(t), etapes=ETAPES_BOUCLE, force_champion=FORCE_CHAMPION,
-                         crible=CRIBLE) as lab:
+        with Laboratoire(Path(t), etapes=ETAPES_BOUCLE, crible=CRIBLE) as lab:
             assert lab.init_campagne() == 0
-            patches = lab.ecrire_patches({"a-desastre": -100, "b-bon": 100})
+            patches = lab.ecrire_patches({"a-desastre": -100, "b-bon": FORCE_CHAMPION})
             lab.run_loop(patches, candidats=2, confirmations=0, minutes=10.0)
             rapport = lab.rapport_boucle()
             s1 = {l["candidat"]: l for l in rapport["journal"] if l.get("etape") == "s1"}

@@ -1,0 +1,174 @@
+# Campagne Leek Wars 3.00 : nouvelle famille de scoring, crible progressif.
+#
+# Protocole FIGE a l'ouverture de la campagne : moteur, builds, ligue, formats, paliers, seuils
+# et parametres du crible entrent tous dans l'empreinte du protocole. Les resultats des
+# campagnes historiques (moteur, builds et IA d'avant la 3.00) ne sont pas des mesures valides
+# ici et ne sont jamais relus.
+#
+#   python training/cli.py doctor        --config training/config/v3.yaml
+#   python training/cli.py init-campaign --config training/config/v3.yaml
+#   python training/cli.py run-loop      --config training/config/v3.yaml --patches <vague> ...
+
+campagne:
+  id: "campagne-v3-001"
+  # Plafond de confirmations de la campagne. A son epuisement, la boucle s'arrete et le signale ;
+  # ouvrir une campagne suivante est un choix explicite, jamais automatique.
+  confirmations_max: 10
+  risque_nominal_campagne: 0.05
+  alpha_par_confirmation: 0.005     # 0.05 / 10
+
+moteur:
+  # Generateur officiel 3.00 isole (commit 3bf504d, LeekScript v3.00, import API du
+  # 2026-09-15T10:09:08Z) ; le generateur historique Desktop/lw-gen reste intact.
+  racine: "C:/Users/aurel/Desktop/lw-gen-300"
+  java_home: null
+  # Coeurs REELS de chaque build, aucun plancher ni plafond, limite normale de 64 tours.
+  coeurs: "reels"
+  tours_max: 64
+
+publication:
+  # Les promotions de cette campagne s'ecrivent sur la branche de travail, jamais sur `scoring`,
+  # et sans aucun push.
+  branche: "scoring-v3"
+  prefixe_tag: "scoring-v3"
+
+builds:
+  # 215 builds originaux + 12 eleveurs variantes 3.00 (training/v3/variantes.py) : 62 eleveurs
+  # complets, tires uniformement par bloc. Les miroirs d'un bloc partagent les memes builds.
+  source: "training/data/builds_v3.jsonl"
+
+objectif:
+  # Echelle victoire = 1, nul = 0,5, defaite = 0 : un plancher de -0.05 vaut cinq points de
+  # resultat moyen.
+  poids:
+    farmer: 0.80
+    solo: 0.15
+    team: 0.05
+    br: 0.00
+  format_principal: farmer
+  planchers_empiriques:
+    solo: -0.05
+    team: -0.05
+  gain_minimal_farmer: 0.01
+
+# Crible progressif (training/progressif.py). Arrets DEFAVORABLES seulement, jamais de
+# promotion anticipee. Chaque famille recoit un alpha par etape, reparti a parts egales sur les
+# paliers intermediaires ou elle lit des blocs nouveaux ; le dernier palier d'une etape revient
+# au decideur complet.
+#
+# Variances a priori : variance intra-adversaire des differences de bloc, poolee sur les
+# resultats complets de campagne-003 (farmer 863 ddl, solo 227, team 150). Alphas retenus au
+# rejeu hors ligne de ces memes resultats (training/v3/rejeu_crible.py) : 7 arrets sur 30
+# etapes, aucun candidat historiquement poursuivi ou promu arrete, 1,9 % des combats de
+# candidat evites aux tailles historiques. Ce rejeu evalue le PROCEDE sur des traces de l'ancien
+# moteur ; une regle choisie sur ces traces n'est pas validee independamment par elles.
+crible:
+  variance_a_priori: { farmer: 0.0825, solo: 0.0352, team: 0.099 }
+  ddl_a_priori: 4
+  # Plancher solo/team : borne HAUTE sous -0.05. Garde prudente : a 0.20, le rejeu arretait a
+  # tort deux candidats poursuivis, dont le futur promu, sur quatre blocs solo.
+  alpha_plancher: 0.10
+  # Futilite eleveur : borne haute sous le gain minimal (+0.01) ...
+  alpha_futilite: 0.30
+  # ... ou, au PREMIER palier eleveur de chaque etape de crible, sous ce seuil plus tolerant qui
+  # n'elimine que les desastres. Jamais en confirmation.
+  seuil_premier_palier_farmer: -0.05
+  # Objectif pondere : borne haute sous 0, calculee seulement quand les trois formats ponderes
+  # sont mesures (un format absent ne vaut pas zero).
+  alpha_objectif: 0.10
+  seuil_objectif: 0.0
+  # En confirmation, un arret anticipe peut economiser une confirmation condamnee ; la decision
+  # positive reste celle du protocole complet, au dernier palier.
+  alpha_plancher_confirmation: 0.10
+  alpha_futilite_confirmation: 0.10
+  alpha_objectif_confirmation: 0.10
+
+# Tailles en BLOCS (un bloc = 4 combats : candidat contre adversaire dans les deux orientations,
+# reference contre le meme adversaire dans les deux orientations, ces deux-la partages entre
+# candidats). Les adversaires d'une etape sont un PREFIXE du panel, les blocs des etapes
+# s'emboitent, et les paliers sont des PREFIXES CUMULATIFS du plan de l'etape. Chaque palier
+# intermediaire compte au moins autant de blocs par format que l'etape a d'adversaires.
+etapes:
+  s1:
+    candidats: 4
+    blocs: { farmer: 12, solo: 3 }
+    adversaires: 3
+    garder: 2
+    # Controle technique solo minuscule (un bloc par adversaire), puis premier palier eleveur
+    # court (deux blocs par adversaire), puis l'etape.
+    paliers:
+      - { solo: 3 }
+      - { solo: 3, farmer: 6 }
+      - { solo: 3, farmer: 12 }
+  s2:
+    blocs: { farmer: 30, solo: 10, team: 5 }
+    adversaires: 5
+    garder: 1
+    # La team vient apres les premiers survivants.
+    paliers:
+      - { farmer: 15, solo: 5 }
+      - { farmer: 30, solo: 10, team: 5 }
+  s3:
+    blocs: { farmer: 60, solo: 20, team: 10 }
+    adversaires: 10
+    garder: 1
+    paliers:
+      - { farmer: 30, solo: 20, team: 10 }
+      - { farmer: 60, solo: 20, team: 10 }
+  confirmation:
+    blocs: { farmer: 160, solo: 60, team: 60 }
+    adversaires: 10
+    graines_neuves: true
+    formats_requis: [farmer, solo, team]
+    paliers:
+      - { farmer: 80, solo: 30, team: 30 }
+      - { farmer: 160, solo: 60, team: 60 }
+
+# La BR est un rapport periodique, pas un veto.
+br:
+  declenchement_toutes_les_n_promotions: 5
+  lobbies: 12
+  creneaux_focaux_par_lobby: 2
+  veto: false
+
+ligue:
+  # Dix styles de la ligue historique rebases sur la reference de migration 3.00 (memes
+  # corrections de compatibilite), dont v11_sans_reseau. L'ancre est le champion HISTORIQUE,
+  # identifiable, place en fin de panel : aucune etape n'en fait un adversaire de decision.
+  source: "C:/Users/aurel/Desktop/LeekWars - Validation 300/versions.json"
+  ancre: "scoring/champion-001"
+
+debit:
+  # Un worker : deux n'apportaient qu'environ 23 % dans les mesures historiques. A reverifier
+  # seulement si la reception 3.00 montre un cout nettement different.
+  workers: 1
+  taille_lot: 8
+  timeout_lot_secondes: 1800
+  budget_pilote_secondes: 600
+
+optimiseur:
+  mode: "manuel"
+  # Perimetre de la recherche : Scoring, BFS et FinalCell. Le generateur, les builds, les coeurs,
+  # le harnais, les graines et les seuils restent figes.
+  portee:
+    - "New_AI/Scoring/**"
+    - "New_AI/User/BFS.leek"
+    - "New_AI/User/FinalCell.leek"
+  hors_portee:
+    - "training/**"
+    - "New_AI/Load/Cache.leek"
+  # Les gardes du budget interne d'operations restent en place : une IA sans garde se fait
+  # couper par le moteur, et aucun combat ne facture cela comme un mauvais scoring.
+  invariants:
+    "New_AI/User/BFS.leek":
+      - motif: "getOperations\\(\\) > OPS_DEADLINE"
+        minimum: 3
+        raison: "gardes du budget interne d'operations de la recherche"
+      - motif: "getOperations\\(\\) > terminalDeadline"
+        minimum: 1
+        raison: "garde d'operations de la fermeture terminale"
+    "New_AI/User/FinalCell.leek":
+      - motif: "getOperations\\(\\) > truncateAt"
+        minimum: 1
+        raison: "garde d'operations du placement final"
+  candidats_max_par_vague: 4

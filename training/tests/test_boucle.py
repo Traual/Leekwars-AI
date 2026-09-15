@@ -189,7 +189,8 @@ class Laboratoire:
     """Depot, ligue, registre et moteur synthetique, tous jetables."""
 
     def __init__(self, tmp: Path, etapes: dict | None = None, nb_adversaires: int = 3,
-                 force_champion: int = 0, crible: dict | None = None):
+                 force_champion: int = 0, crible: dict | None = None,
+                 force_solo_champion: int | None = None):
         self.tmp = tmp
         self.depot = tmp / "depot"
         self.champions = self.depot / "training" / "champions"
@@ -197,7 +198,7 @@ class Laboratoire:
         self.runs = tmp / "runs"
         (self.gen / "test" / "ai").mkdir(parents=True)
         self.runs.mkdir(parents=True)
-        self._creer_depot(force_champion)
+        self._creer_depot(force_champion, force_solo_champion)
         self._creer_ligue(nb_adversaires)
         self.moteur = MoteurJouet(self.gen, self.gen / "g.jar", None, self.gen, "moteur-jouet")
         self.synth = MoteurSynthetique(self.gen)
@@ -248,11 +249,14 @@ class Laboratoire:
         cli._contexte = self._anciens["contexte"]
 
     # ---- construction ----------------------------------------------------------------
-    def _creer_depot(self, force_champion: int = 0):
+    def _creer_depot(self, force_champion: int = 0, force_solo_champion: int | None = None):
         (self.depot / "New_AI" / "Scoring").mkdir(parents=True)
         self.champions.mkdir(parents=True)
         _ecrire(self.depot / "New_AI" / "Main.leek", MAIN)
-        _ecrire(self.depot / "New_AI" / "Scoring" / "Scoring.leek", SCORING % force_champion)
+        scoring = SCORING % force_champion
+        if force_solo_champion is not None:
+            scoring += "global FORCE_SOLO = %d;\n" % force_solo_champion
+        _ecrire(self.depot / "New_AI" / "Scoring" / "Scoring.leek", scoring)
         _git(self.tmp, "init", "-q", "-b", "scoring", str(self.depot))
         _git(self.depot, "config", "user.email", "banc@local")
         _git(self.depot, "config", "user.name", "banc")

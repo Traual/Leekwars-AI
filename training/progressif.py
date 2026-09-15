@@ -21,9 +21,9 @@ adversaire) est RETRECIE vers une variance a priori mesuree sur une campagne pre
 (`crible.variance_a_priori`, avec `crible.ddl_a_priori` degres de liberte fictifs) : une variance
 empirique nulle sur trois blocs ne prouve aucune absence d'incertitude, et un seul bloc par
 adversaire reste bornable. **Multiplicite** : chaque famille de tests recoit un risque alpha,
-reparti a parts egales (Bonferroni) sur les paliers ou elle est evaluee ; le risque de rejeter
-a tort un candidat reellement au-dessus des seuils est majore par la somme des trois alphas,
-sous l'approximation de Student. Aucune garantie non asymptotique n'est revendiquee.
+reparti a parts egales (Bonferroni) sur les paliers intermediaires ou elle lit des blocs
+nouveaux ; le risque de rejeter a tort, dans une etape, un candidat reellement au-dessus des
+seuils est majore par la somme des trois alphas, sous l'approximation de Student. Aucune garantie non asymptotique n'est revendiquee.
 
 Une etape de crible sur un sous-panel (trois adversaires) est une decision HEURISTIQUE sur ce
 sous-panel : le rapport le dit. Aucun arret n'est une preuve qu'une idee est mauvaise.
@@ -154,17 +154,32 @@ def paliers_de(spec: dict[str, Any]) -> list[Palier]:
     return out
 
 
+def formats_de_famille(famille: str, blocs: dict[str, int], poids: dict[str, float]) -> list[str]:
+    """Les formats qu'une famille de tests lit a un palier ; vide si elle ne s'y evalue pas."""
+    if famille == "plancher":
+        return [f for f in ("solo", "team") if blocs.get(f, 0) > 0]
+    if famille == "futilite":
+        return ["farmer"] if blocs.get("farmer", 0) > 0 else []
+    ponderes = [f for f, w in poids.items() if w > 0]
+    return ponderes if all(blocs.get(f, 0) > 0 for f in ponderes) else []
+
+
 def nombre_de_regards(paliers: list[Palier], famille: str, poids: dict[str, float]) -> int:
-    """Combien de paliers evaluent cette famille de tests (base de la repartition d'alpha)."""
+    """Combien de paliers JUGENT cette famille sur des donnees nouvelles (base de la
+    repartition d'alpha).
+
+    Le dernier palier n'est jamais juge par le crible : la decision complete de l'etape lui
+    appartient. Un palier ou les blocs lus par la famille n'ont pas change refait le meme test,
+    sur les memes donnees, au meme alpha : il ne peut rien arreter que le palier precedent ait
+    laisse passer, et ne compte pas.
+    """
     n = 0
-    for p in paliers:
-        if famille == "plancher" and any(f in p.blocs for f in ("solo", "team")):
+    precedent: dict[str, int] = {}
+    for p in paliers[:-1]:
+        formats = formats_de_famille(famille, p.blocs, poids)
+        if formats and any(p.blocs.get(f, 0) != precedent.get(f, 0) for f in formats):
             n += 1
-        elif famille == "futilite" and "farmer" in p.blocs:
-            n += 1
-        elif famille == "objectif" and all(p.blocs.get(f, 0) > 0
-                                           for f, w in poids.items() if w > 0):
-            n += 1
+        precedent = p.blocs
     return max(1, n)
 
 

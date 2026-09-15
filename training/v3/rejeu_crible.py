@@ -3,7 +3,8 @@
 Usage :
     python training/v3/rejeu_crible.py extraire          # blocs d, dans l'ordre du plan
     python training/v3/rejeu_crible.py variances         # variance intra-adversaire par format
-    python training/v3/rejeu_crible.py simuler <config>  # paliers et seuils d'une configuration
+    python training/v3/rejeu_crible.py simuler           # grille d'alphas et de seuils
+    python training/v3/rejeu_crible.py simuler <config>  # le crible d'une configuration
 
 Ces resultats evaluent le PROCEDE (economies, rejets qui auraient ete faits a tort) ; ils ne
 mesurent pas le niveau de jeu en 3.00, et une regle ajustee sur ces traces n'est pas validee
@@ -175,24 +176,28 @@ def simuler(crible: dict, sortie: bool = True) -> dict:
         if arret:
             bilan["arrets"] += 1
             bilan["combats_c_evites"] += 2 * (total_blocs - joues)
-            suite = [k for k in ("s2", "s3", "confirmation") if k in atteint[e["candidat"]]
-                     and ["s1", "s2", "s3", "confirmation"].index(k) > ["s1", "s2", "s3", "confirmation"].index(etape)]
-            conf = atteint[e["candidat"]].get("confirmation")
-            a_tort = bool(suite) and (conf is None or conf["objectif"] > 0)
+            ordre = ["s1", "s2", "s3", "confirmation"]
+            suite = [k for k in ordre[1:] if k in atteint[e["candidat"]]
+                     and ordre.index(k) > ordre.index(etape)]
+            promu = any(x["verdict"] == "PROMOUVOIR" for x in atteint[e["candidat"]].values())
             ligne = {"candidat": e["candidat"], "etape": etape, "palier": arret[0], "arret": arret[1],
                      "raisons": arret[2], "objectif_historique": e["objectif"],
-                     "etapes_suivantes_historiques": suite}
+                     "etapes_suivantes_historiques": suite, "promu_historiquement": promu}
             bilan["detail"].append(ligne)
-            if suite:
+            # A tort : le candidat a historiquement franchi l'etape (il en a atteint une suivante)
+            # ou il a ete promu.
+            if suite or promu:
                 bilan["arrets_a_tort"].append(ligne)
     if sortie:
-        print("etapes rejouees %d, arrets %d, combats de candidat evites %d sur %d (%.1f %%)"
-              % (bilan["etapes"], bilan["arrets"], bilan["combats_c_evites"], bilan["combats_c_prevus"],
+        print("etapes rejouees %d, arrets %d (dont a tort %d), combats de candidat evites %d sur %d (%.1f %%)"
+              % (bilan["etapes"], bilan["arrets"], len(bilan["arrets_a_tort"]),
+                 bilan["combats_c_evites"], bilan["combats_c_prevus"],
                  100.0 * bilan["combats_c_evites"] / max(1, bilan["combats_c_prevus"])))
         for l in bilan["detail"]:
-            print("  %-46s %-12s palier %d %-18s obj hist %+.3f suite %s | %s"
+            print("  %-46s %-12s palier %d %-18s obj hist %+.3f suite %s%s | %s"
                   % (l["candidat"], l["etape"], l["palier"], l["arret"], l["objectif_historique"],
-                     l["etapes_suivantes_historiques"], "; ".join(l["raisons"])[:120]))
+                     l["etapes_suivantes_historiques"], " PROMU" if l["promu_historiquement"] else "",
+                     "; ".join(l["raisons"])[:120]))
     return bilan
 
 
@@ -202,14 +207,32 @@ if __name__ == "__main__":
         extraire()
     elif commande == "variances":
         variances()
+    elif commande == "simuler" and len(sys.argv) > 2:
+        import yaml
+        crible = yaml.safe_load(Path(sys.argv[2]).read_text(encoding="utf-8"))["crible"]
+        print("== crible de", sys.argv[2], json.dumps(crible))
+        simuler(crible)
     elif commande == "simuler":
         base = {"variance_a_priori": {"farmer": 0.0825, "solo": 0.0352, "team": 0.099},
                 "ddl_a_priori": 4, "seuil_objectif": 0.0}
-        for nom, extra in (("alphas 0,05 / premier palier -0,10", {"alpha_plancher": 0.05, "alpha_futilite": 0.05, "alpha_objectif": 0.05, "seuil_premier_palier_farmer": -0.10}),
-                           ("alphas 0,10 / premier palier -0,10", {"alpha_plancher": 0.10, "alpha_futilite": 0.10, "alpha_objectif": 0.10, "seuil_premier_palier_farmer": -0.10}),
-                           ("alphas 0,20 / premier palier -0,05", {"alpha_plancher": 0.20, "alpha_futilite": 0.20, "alpha_objectif": 0.20, "seuil_premier_palier_farmer": -0.05}),
-                           ("alphas 0,30 / sans seuil tolerant", {"alpha_plancher": 0.30, "alpha_futilite": 0.30, "alpha_objectif": 0.30})):
-            print("==", nom)
-            simuler(dict(base, **extra))
+        print("plancher futilite objectif premier | arrets a_tort evites%")
+        for plancher in (0.05, 0.10, 0.20):
+            for futilite in (0.10, 0.20, 0.30, 0.40):
+                for objectif in (0.05, 0.10, 0.20):
+                    for premier in (None, -0.05, -0.10):
+                        crible = dict(base, alpha_plancher=plancher, alpha_futilite=futilite,
+                                      alpha_objectif=objectif,
+                                      alpha_plancher_confirmation=0.10,
+                                      alpha_futilite_confirmation=0.10,
+                                      alpha_objectif_confirmation=0.10)
+                        if premier is not None:
+                            crible["seuil_premier_palier_farmer"] = premier
+                        b = simuler(crible, sortie=False)
+                        print("  %.2f  %.2f  %.2f  %5s | %2d %2d %5.1f  %s"
+                              % (plancher, futilite, objectif, premier, b["arrets"],
+                                 len(b["arrets_a_tort"]),
+                                 100.0 * b["combats_c_evites"] / max(1, b["combats_c_prevus"]),
+                                 ",".join("%s/%s/p%d" % (l["candidat"][-14:], l["etape"], l["palier"])
+                                          for l in b["detail"])))
     else:
         raise SystemExit("commande inconnue : %s" % commande)
