@@ -40,7 +40,10 @@ PREFIXE = "__TRAUAL_RESULT__\t"
 
 # A incrementer des que l'interpretation d'une sortie de combat change.
 # 2 : lecture des erreurs systeme du moteur (chargement d'IA) et du champ `exception`.
-VERSION_PARSEUR = 2
+# 3 : moteur 3.00 — reveils de plante (PLANT_AWAKE 17 / PLANT_ASLEEP 18) comptes par plante ;
+#     les actions entre ces deux bornes sont celles de la plante, pas de l'entite dont c'est
+#     le tour.
+VERSION_PARSEUR = 3
 
 
 # --------------------------------------------------------------------------------------

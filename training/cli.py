@@ -48,7 +48,21 @@ PLANCHER_ETAPE_SECONDES = 60.0
 
 
 def charger_config(chemin: Path = CONFIG) -> dict:
-    return yaml.safe_load(Path(chemin).read_text(encoding="utf-8"))
+    cfg = yaml.safe_load(Path(chemin).read_text(encoding="utf-8"))
+    appliquer_profil(cfg)
+    return cfg
+
+
+def appliquer_profil(cfg: dict) -> None:
+    """Branche de publication, prefixe de tag et fichier de builds de la campagne.
+
+    Absents de la configuration, ils gardent leurs valeurs historiques (`scoring`, snapshot du
+    meta) : une campagne ancienne se relit a l'identique."""
+    pub = cfg.get("publication") or {}
+    mod_pub.BRANCHE = pub.get("branche", "scoring")
+    mod_pub.PREFIXE_TAG = pub.get("prefixe_tag", "scoring")
+    source = (cfg.get("builds") or {}).get("source")
+    mod_sc.BUILDS = (RACINE.parent / source) if source else (RACINE / "data" / "meta_builds.jsonl")
 
 
 def _contexte(args):

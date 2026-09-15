@@ -114,12 +114,20 @@ public final class BatchRunner {
         }
 
         ArrayNode aiErrors = JsonNodeFactory.instance.arrayNode();
+        // Moteur 3.00 : [17, plante, declencheur, PT] ouvre un reveil, [18, plante] le ferme.
+        // Les actions entre les deux sont jouees par la plante, pas par l'entite du tour.
+        Map<Integer, Integer> awakenings = new LinkedHashMap<>();
         for (JsonNode raw : actions) {
             ArrayNode action = (ArrayNode) raw;
             if (action.isEmpty()) continue;
             int type = action.get(0).intValue();
             if (type == 1002) {
                 aiErrors.add(action.deepCopy());
+                continue;
+            }
+            if (type == 17 && action.size() >= 2) {
+                int plant = action.get(1).intValue();
+                awakenings.put(plant, awakenings.getOrDefault(plant, 0) + 1);
                 continue;
             }
             if (type == 5 && action.size() >= 2) {
@@ -169,6 +177,10 @@ public final class BatchRunner {
             }
         }
         result.set("ai_errors", aiErrors);
+        ObjectNode plantAwakenings = result.putObject("plant_awakenings");
+        for (var entry : awakenings.entrySet()) {
+            plantAwakenings.put(String.valueOf(entry.getKey()), entry.getValue());
+        }
         if (Boolean.getBoolean("traual.profile") || !aiErrors.isEmpty()) {
             result.set("logs", outcome.toJson().get("logs"));
         }

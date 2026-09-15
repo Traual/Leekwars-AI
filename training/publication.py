@@ -43,6 +43,9 @@ import bundle as mod_bundle
 DEPOT = Path(__file__).resolve().parents[1]
 CHAMPIONS = Path(__file__).resolve().parent / "champions"
 BRANCHE = "scoring"
+# Prefixe des tags de champion de la lignee. Une campagne sur une autre branche porte ses
+# propres tags : ses champions ne se confondent pas avec ceux d'une lignee historique.
+PREFIXE_TAG = "scoring"
 
 # La ZONE de publication : les seuls chemins que cette operation ecrit, et les seuls
 # qu'un abandon a le droit de nettoyer. Rien ailleurs dans le depot n'est touche.
@@ -145,13 +148,14 @@ def _ecrire_pointeur(champions: Path, nouveau: str, candidat: dict[str, Any], ta
     return pointeur
 
 
-def pointeur_commite(depot: Path, branche: str = BRANCHE) -> dict[str, Any] | None:
+def pointeur_commite(depot: Path, branche: str | None = None) -> dict[str, Any] | None:
     """Le pointeur tel qu'il est COMMITE sur la branche, pas tel qu'il est sur le disque.
 
     Une coupure entre l'ecriture du fichier et son commit laisse un pointeur de travail qui
     annonce deja le nouveau champion alors que rien n'est versionne. Une reprise qui lit le
     fichier saute alors le commit qui manque justement.
     """
+    branche = branche or BRANCHE
     brut = _git("show", "%s:training/champions/current.json" % branche,
                 depot=depot, verifier=False)
     if not brut.strip():
@@ -175,7 +179,7 @@ def publier(reg, candidat: dict[str, Any], champion_attendu: str, decision: dict
     depot = Path(depot or DEPOT)
     champions = Path(champions or CHAMPIONS)
     nouveau = prochain_identifiant(champions)
-    tag = "scoring/%s" % nouveau
+    tag = "%s/%s" % (PREFIXE_TAG, nouveau)
 
     def _peut_etre_coupe(etape: str) -> None:
         if _coupure == etape:
@@ -528,7 +532,7 @@ def reconcilier(reg, champions: Path | None = None, depot: Path | None = None) -
         return {"etat": "rien_a_reconcilier"}
 
     nouveau = en_cours["nouveau_champion"]
-    tag = "scoring/%s" % nouveau
+    tag = "%s/%s" % (PREFIXE_TAG, nouveau)
     precedent = json.loads(en_cours["pointeur_precedent"]) if en_cours["pointeur_precedent"] \
         else None
     etrangers = json.loads(en_cours["non_suivis_json"] or "[]")

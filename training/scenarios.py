@@ -107,8 +107,12 @@ class Bloc:
         return hashlib.sha256(brut.encode("utf-8")).hexdigest()[:16]
 
 
-def charger_builds(chemin: Path = BUILDS) -> dict[int, dict[str, Any]]:
-    """[id -> build] du snapshot du meta. Ce sont des BUILDS, pas les IA de ces joueurs."""
+def charger_builds(chemin: Path | None = None) -> dict[int, dict[str, Any]]:
+    """[id -> build] du snapshot du meta. Ce sont des BUILDS, pas les IA de ces joueurs.
+
+    Le chemin par defaut est lu a l'APPEL : une campagne peut designer son propre fichier de
+    builds (variantes comprises) sans que la valeur liee a la definition ne l'ignore."""
+    chemin = Path(chemin or BUILDS)
     builds = {}
     with open(chemin, encoding="utf-8") as f:
         for ligne in f:
