@@ -1,8 +1,8 @@
 {
   "champion_courant": "reference-migration-300",
   "manifeste": "training/champions/reference-migration-300.json",
-  "commit_code": "42629917f6ce18ff1cab1427d33aaff94b63a4fb",
-  "bundle_sha256": "cdaffaab2955225cc2a1ffd0e61aba54c0a6962f2b04cf2d470dfb07cebcd23d",
+  "commit_code": "1d8ec4b6d5aaae653cfb491fad546e65809ec867",
+  "bundle_sha256": "fdbaa42213142621955d58d8589e7e157e9b014414b32cf4811883039b7a359b",
   "tag": "scoring-v3/reference-migration-300",
   "_role": "Seul le controleur ecrit ce pointeur ; l'optimiseur n'y touche pas. Sur scoring-v3, il designe la reference de migration 3.00 (pas une promotion)."
 }
