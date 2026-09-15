@@ -34,6 +34,7 @@ import evaluator as mod_eval         # noqa: E402
 import league as mod_ligue           # noqa: E402
 import optimizer as mod_opt          # noqa: E402
 import orchestrator as mod_orch      # noqa: E402
+import progressif as mod_prog        # noqa: E402
 import publication as mod_pub        # noqa: E402
 import registry as mod_reg           # noqa: E402
 import scenarios as mod_sc           # noqa: E402
@@ -144,6 +145,10 @@ def controler_faisabilite(cfg, panel, builds) -> list[str]:
             problemes.append("%s : %d adversaires demandes, la ligue n'en compte que %d"
                              % (nom_etape, adversaires, len(noms)))
             continue
+        try:
+            mod_prog.paliers_de(spec)
+        except ValueError as e:
+            problemes.append("%s : paliers incoherents — %s" % (nom_etape, e))
         for format_nom, nb in (spec.get("blocs") or {}).items():
             if not nb:
                 continue
@@ -632,12 +637,21 @@ def _evaluer(cfg, moteur, build, reg, cand: dict, etape: str, workers: int,
     actifs = panel[:spec.get("adversaires", len(panel))]
     confirmation = etape == "confirmation"
 
+    # Paliers fixes avant tout resultat : ceux de la configuration, jamais pour un lot aux tailles
+    # imposees a la main (qui reste un lot technique d'un seul tenant).
+    paliers = mod_prog.paliers_de(spec) if (spec.get("paliers") and not blocs_override) else None
+    juge = None
+    if paliers is not None and len(paliers) > 1:
+        def juge(pf, palier):
+            return mod_prog.juger_palier(pf, palier, paliers, cfg, confirmation=confirmation)
+
     t0 = time.monotonic()
-    par_format, couverture = mod_orch.evaluer_etape(
+    par_format, couverture, suivi = mod_orch.evaluer_etape_progressive(
         reg, moteur, build, builds, noms_panel, actifs, ia_c, cand["bundle_sha256"],
         ia_h, emp_h["sha256"], blocs, _graine_campagne(cfg), RUNS / "matchs" / etape,
         vague=vague, workers=workers, taille_lot=cfg["debit"].get("taille_lot", 8),
-        timeout=cfg["debit"]["timeout_lot_secondes"], echeance=echeance, progres=progres)
+        timeout=cfg["debit"]["timeout_lot_secondes"], echeance=echeance, progres=progres,
+        paliers=paliers, juge=juge)
     mur = time.monotonic() - t0
 
     alpha = cfg["campagne"]["alpha_par_confirmation"] if confirmation else 0.05
@@ -646,12 +660,26 @@ def _evaluer(cfg, moteur, build, reg, cand: dict, etape: str, workers: int,
         motif = ("etape de crible" if not confirmation else
                  "tailles imposees a la main" if blocs_override else
                  "confirmation non enregistree comme tentative")
-    dec = mod_stats.decider(par_format, cfg["objectif"]["poids"],
-                            cfg["objectif"]["planchers_empiriques"], alpha,
-                            cfg["objectif"]["gain_minimal_farmer"],
-                            formats_requis=_formats_requis(spec, blocs),
-                            couverture=couverture, promouvable=promouvable,
-                            motif_non_promouvable=motif)
+    if suivi["arret"] is not None:
+        # Arret a un palier : une decision DEFAVORABLE ou une execution coupee, jamais une
+        # promotion. L'objectif rapporte est PARTIEL : seuls les formats deja mesures y entrent.
+        poids = cfg["objectif"]["poids"]
+        j_partiel = 0.0
+        for f, comps in par_format.items():
+            d, _v, _a = mod_stats.agreger_format(comps)
+            j_partiel += poids.get(f, 0.0) * d
+        raisons = list(suivi["raisons"])
+        if suivi["arret"] in mod_prog.ARRETS_DEFINITIFS:
+            raisons.append("arret au palier %s ; un arret de crible ne prouve pas qu'une idee est "
+                           "mauvaise, il juge ce candidat sur ces blocs." % suivi["palier_arret"])
+        dec = mod_stats.Decision(suivi["arret"], raisons, {}, {}, {}, j_partiel, None, [])
+    else:
+        dec = mod_stats.decider(par_format, cfg["objectif"]["poids"],
+                                cfg["objectif"]["planchers_empiriques"], alpha,
+                                cfg["objectif"]["gain_minimal_farmer"],
+                                formats_requis=_formats_requis(spec, blocs),
+                                couverture=couverture, promouvable=promouvable,
+                                motif_non_promouvable=motif)
     resultats = {}
     for f, comps in par_format.items():
         d, _v, a = mod_stats.agreger_format(comps)
@@ -673,6 +701,10 @@ def _evaluer(cfg, moteur, build, reg, cand: dict, etape: str, workers: int,
                           "taille_figee_avant_resultats": not blocs_override},
             "couverture": couverture,
             "resultats": resultats,
+            "crible": dict(suivi, sous_panel=(len(actifs) < len(noms_panel) and not confirmation),
+                           note=("decision sur un SOUS-PANEL de %d adversaire(s) : heuristique pour "
+                                 "les autres" % len(actifs)) if len(actifs) < len(noms_panel) - 1
+                           and not confirmation else ""),
             "decision": {"verdict": dec.verdict, "raisons": dec.raisons,
                          "lacunes": dec.lacunes,
                          "objectif_pondere": round(dec.j, 4),
@@ -713,7 +745,7 @@ def _cloturer_tentative(reg, tentative, verdict: str, rapport: dict | None = Non
     Un verdict PROMOUVOIR laisse une intention `a_publier` : tant que la promotion n'a pas
     abouti, une relance la termine au lieu de rejouer la confirmation ou d'oublier le gagnant.
     """
-    etat = "close" if verdict != "INCOMPLET" else "partielle"
+    etat = "close" if verdict not in ("INCOMPLET", mod_prog.INTERROMPU) else "partielle"
     if verdict == "PROMOUVOIR":
         suite = mod_reg.PUBLICATION_A_PUBLIER
     elif etat == "close":
@@ -896,6 +928,14 @@ def cmd_report(args) -> int:
             print("  %-7s blocs %4d/%-4s  delta %+.4f  borne %s  ddl %s"
                   % (f, v["blocs"], cv.get("blocs_attendus", "?"), v["delta_moyen"],
                      v["borne_basse"], v["ddl_welch"]))
+        cr = r.get("crible") or {}
+        if cr:
+            print("  crible : paliers %s | arret %s (palier %s) | combats prevus %s, joues %s, "
+                  "du cache %s, evites %s%s"
+                  % ([p["rang"] for p in cr.get("paliers", [])], cr.get("arret"),
+                     cr.get("palier_arret"), cr.get("combats_prevus"), cr.get("combats_joues"),
+                     cr.get("combats_du_cache"), cr.get("combats_evites"),
+                     " | " + cr["note"] if cr.get("note") else ""))
         d = r["decision"]
         print("  objectif pondere %+.4f  borne %s"
               % (d["objectif_pondere"], d["borne_basse_objectif"]))
@@ -979,10 +1019,14 @@ class Budgets:
                 "combats_joues": self.combats}
 
 
+# Verdicts d'etape qui n'ouvrent pas l'etape suivante : execution a reprendre, ou arret de crible.
+NON_POURSUIVIS = ("INCOMPLET", mod_prog.INTERROMPU) + mod_prog.ARRETS_DEFINITIFS
+
+
 def _objectif(avancement: dict, ident: str, etape: str) -> float:
     """L'objectif pondere mesure a cette etape, ou moins l'infini si elle n'a pas abouti."""
     ligne = (avancement.get(ident) or {}).get(etape)
-    if ligne is None or ligne["verdict"] == "INCOMPLET" or ligne["objectif"] is None:
+    if ligne is None or ligne["verdict"] in NON_POURSUIVIS or ligne["objectif"] is None:
         return float("-inf")
     return float(ligne["objectif"])
 
@@ -1151,10 +1195,11 @@ def cmd_run_loop(args) -> int:
             suite = []
             for info in retenus:
                 deja = avancement[info["id"]].get(etape)
-                if deja is not None and deja["verdict"] != "INCOMPLET":
+                if deja is not None and deja["verdict"] not in ("INCOMPLET", mod_prog.INTERROMPU):
                     journal.append({"candidat": info["id"], "etape": etape, "etat": "repris",
                                     "decision": deja["verdict"], "objectif": deja["objectif"]})
-                    suite.append(info)
+                    if deja["verdict"] not in mod_prog.ARRETS_DEFINITIFS:
+                        suite.append(info)
                     continue
                 if not budgets.place_pour_une_etape():
                     journal.append({"candidat": info["id"], "etape": etape,
@@ -1170,8 +1215,12 @@ def cmd_run_loop(args) -> int:
                                 "decision": r["decision"]["verdict"],
                                 "objectif": r["decision"]["objectif_pondere"],
                                 "complet": all(c["complet"]
-                                               for c in r["couverture"].values())})
-                if r["decision"]["verdict"] != "INCOMPLET":
+                                               for c in r["couverture"].values()),
+                                "crible": {k: r["crible"].get(k) for k in
+                                           ("arret", "palier_arret", "combats_prevus",
+                                            "combats_joues", "combats_du_cache",
+                                            "combats_evites")}})
+                if r["decision"]["verdict"] not in NON_POURSUIVIS:
                     suite.append(info)
             retenus = suite
 

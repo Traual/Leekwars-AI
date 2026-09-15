@@ -201,36 +201,116 @@ def evaluer_etape(reg, moteur, build, builds, panel: list[str], adversaires_acti
     decideur en a besoin — sans elle, retirer les adversaires sans resultats revenait a
     reponderer ceux qui restaient et a promouvoir sur la moitie du protocole.
     """
+    par_format, couverture, _suivi = evaluer_etape_progressive(
+        reg, moteur, build, builds, panel, adversaires_actifs, ia_c, sha_c, ia_h, sha_h,
+        formats_blocs, graine, travail, vague=vague, workers=workers, taille_lot=taille_lot,
+        timeout=timeout, echeance=echeance, progres=progres)
+    return par_format, couverture
+
+
+def evaluer_etape_progressive(reg, moteur, build, builds, panel: list[str], adversaires_actifs: list,
+                              ia_c: str, sha_c: str, ia_h: str, sha_h: str,
+                              formats_blocs: dict[str, int], graine: int, travail: Path,
+                              vague: str = mod_sc.VAGUE_DEV, workers: int = 1, taille_lot: int = 8,
+                              timeout: float = 1800.0, echeance: float | None = None,
+                              progres=None, paliers: list | None = None,
+                              juge: Callable | None = None
+                              ) -> tuple[dict[str, list[st.Composante]], dict[str, Any], dict[str, Any]]:
+    """Joue une etape PALIER PAR PALIER et rend (composantes, couverture, suivi).
+
+    Le plan complet de l'etape est calcule d'emblee — il est deterministe et ne coute rien —
+    mais seuls les combats du palier courant sont soumis. A la fin d'un palier dont TOUS les
+    blocs sont complets, `juge(par_format, palier)` peut arreter l'etape : les paliers suivants
+    ne sont alors jamais soumis. Un palier incomplet (echeance, panne du banc) arrete aussi,
+    sans jugement : l'etape est INTERROMPUE et se reprend plus tard, le cache de matchs rendant
+    ce qui a deja ete joue.
+
+    Sans `paliers`, un seul palier : l'etape entiere, comme avant. Le dernier palier n'est
+    jamais juge ici : la decision complete de l'etape appartient a l'appelant.
+    """
+    import progressif as mod_prog
     travail = Path(travail)
     travail.mkdir(parents=True, exist_ok=True)
     noms_actifs = [p.ident for p in adversaires_actifs]
     ia_par_pol = {p.ident: (p.deployer(moteur.racine), p.sha256) for p in adversaires_actifs}
+    paliers = paliers or [mod_prog.Palier(0, {f: n for f, n in formats_blocs.items() if n})]
 
-    # 1. Tous les blocs de l'etape, tous formats confondus.
-    blocs_par_format: dict[str, list[mod_sc.Bloc]] = {}
+    # 1. Le plan complet, tous formats confondus : les paliers en prennent des PREFIXES.
+    plan: dict[str, list[mod_sc.Bloc]] = {}
     for format_nom, nb in formats_blocs.items():
         if nb and nb > 0:
-            blocs_par_format[format_nom] = mod_sc.plan_de_blocs(
+            plan[format_nom] = mod_sc.plan_de_blocs(
                 format_nom, panel, nb, graine, builds, vague=vague, adversaires=noms_actifs)
+    combats_prevus = 4 * sum(len(b) for b in plan.values())
 
-    # 2. Tous les combats, en UNE file : c'est elle que les workers se partagent.
     combats_par_bloc: dict[tuple[str, int], list[Combat]] = {}
-    file: list[Combat] = []
-    for format_nom, blocs in blocs_par_format.items():
-        for b in blocs:
-            ia_o, sha_o = ia_par_pol[b.adversaire]
-            cs = preparer(b, builds, moteur, travail, ia_c, ia_h, ia_o, sha_c, sha_h, sha_o)
-            combats_par_bloc[(format_nom, b.indice)] = cs
-            file.extend(cs)
+    resultats: dict[str, dict] = {}
+    suivi: dict[str, Any] = {"paliers": [], "arret": None, "raisons": [], "palier_arret": None,
+                             "combats_prevus": combats_prevus, "combats_soumis": 0,
+                             "combats_joues": 0, "combats_du_cache": 0}
+    par_format: dict[str, list[st.Composante]] = {}
+    couverture: dict[str, Any] = {}
+    for palier in paliers:
+        # 2. Les combats NEUFS de ce palier, en une file que les workers se partagent.
+        file: list[Combat] = []
+        blocs_du_palier: dict[str, list[mod_sc.Bloc]] = {}
+        for format_nom, n in palier.blocs.items():
+            blocs_du_palier[format_nom] = plan[format_nom][:n]
+            for b in blocs_du_palier[format_nom]:
+                cle = (format_nom, b.indice)
+                if cle in combats_par_bloc:
+                    continue
+                ia_o, sha_o = ia_par_pol[b.adversaire]
+                cs = preparer(b, builds, moteur, travail, ia_c, ia_h, ia_o, sha_c, sha_h, sha_o)
+                combats_par_bloc[cle] = cs
+                file.extend(cs)
+        nouveaux = jouer(reg, moteur, build, file, workers=workers, taille_lot=taille_lot,
+                         timeout=timeout, echeance=echeance, progres=progres)
+        resultats.update(nouveaux)
+        suivi["combats_soumis"] += len({c.cle for c in file})
+        suivi["combats_du_cache"] += sum(1 for r in nouveaux.values() if r.get("cache"))
+        suivi["combats_joues"] += sum(1 for r in nouveaux.values() if not r.get("cache"))
 
-    resultats = jouer(reg, moteur, build, file, workers=workers, taille_lot=taille_lot,
-                      timeout=timeout, echeance=echeance, progres=progres)
+        # 3. Differences et couverture sur TOUS les blocs du palier.
+        # Un palier intermediaire n'attend que les adversaires de SES blocs : le premier palier
+        # d'une etape peut compter moins de blocs que d'adversaires actifs.
+        dernier = palier is paliers[-1]
+        par_format, couverture = _agreger(blocs_du_palier, combats_par_bloc, resultats,
+                                          noms_actifs if dernier else None, vague)
+        complet = all(c["complet"] for c in couverture.values())
+        ligne = {"rang": palier.rang, "blocs": dict(palier.blocs), "complet": complet}
+        suivi["paliers"].append(ligne)
+        if not complet:
+            # Le DERNIER palier incomplet est l'etape incomplete : le decideur le dira, lacunes
+            # comprises. Un palier intermediaire incomplet interrompt l'etape avant les suivants.
+            if not dernier:
+                suivi["arret"] = mod_prog.INTERROMPU
+                suivi["palier_arret"] = palier.rang
+                suivi["raisons"].append("palier %d incomplet : l'etape est interrompue, les "
+                                        "paliers suivants ne sont pas soumis" % palier.rang)
+            break
+        if juge is None or palier is paliers[-1]:
+            continue
+        jugement = juge(par_format, palier)
+        ligne["tests"] = jugement.tests
+        if jugement.arret:
+            ligne["arret"] = jugement.arret
+            suivi["arret"] = jugement.arret
+            suivi["palier_arret"] = palier.rang
+            suivi["raisons"] = list(jugement.raisons)
+            break
+    # Combats du plan jamais soumis : ceux des paliers non atteints.
+    suivi["combats_evites"] = combats_prevus - 4 * len(combats_par_bloc)
+    return par_format, couverture, suivi
 
-    # 3. Differences et couverture.
+
+def _agreger(blocs_par_format: dict[str, list[mod_sc.Bloc]], combats_par_bloc, resultats,
+             noms_actifs: list[str] | None, vague: str) -> tuple[dict[str, list[st.Composante]], dict[str, Any]]:
     par_format: dict[str, list[st.Composante]] = {}
     couverture: dict[str, Any] = {}
     for format_nom, blocs in blocs_par_format.items():
-        d_par_adv: dict[str, list[float]] = {nom: [] for nom in noms_actifs}
+        attendus = list(noms_actifs) if noms_actifs is not None else sorted({b.adversaire for b in blocs})
+        d_par_adv: dict[str, list[float]] = {nom: [] for nom in attendus}
         incomplets = []
         for b in blocs:
             cs = combats_par_bloc[(format_nom, b.indice)]
@@ -247,8 +327,8 @@ def evaluer_etape(reg, moteur, build, builds, panel: list[str], adversaires_acti
             "blocs_attendus": len(blocs),
             "blocs_complets": len(blocs) - len(incomplets),
             "blocs_incomplets": incomplets,
-            "adversaires_attendus": list(noms_actifs),
-            "adversaires_sans_donnees": sorted(a for a in noms_actifs if not d_par_adv[a]),
+            "adversaires_attendus": list(attendus),
+            "adversaires_sans_donnees": sorted(a for a in attendus if not d_par_adv[a]),
             "vague": vague,
         }
         couverture[format_nom]["complet"] = (not incomplets

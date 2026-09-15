@@ -41,8 +41,10 @@ def test_champion_000_correspond_a_son_manifeste():
     emp = mod_bundle.empreinte(manifeste["code"]["commit_source"])
     assert emp["sha256"] == manifeste["code"]["bundle_sha256"]
     assert emp["arbre_git"] == manifeste["code"]["arbre_git_New_AI"]
+    # Le pointeur ACTIF designe exactement le code dont il porte l'empreinte, quel que soit le
+    # champion courant de la lignee.
     pointeur = json.loads((RACINE / "champions" / "current.json").read_text(encoding="utf-8"))
-    assert pointeur["bundle_sha256"] == emp["sha256"]
+    assert mod_bundle.empreinte(pointeur["commit_code"])["sha256"] == pointeur["bundle_sha256"]
 
 
 def test_cle_de_match_change_avec_le_bundle():
@@ -163,7 +165,12 @@ def test_welch_diminue_avec_le_desequilibre():
 def test_promotion_refusee_si_le_champion_a_change():
     """Test 9 : deux promotions concurrentes ne peuvent pas ecraser le registre."""
     with tempfile.TemporaryDirectory() as tmp:
-        with mod_reg.Registre(Path(tmp) / "r.sqlite") as reg:
+        champions = Path(tmp) / "champions"
+        champions.mkdir()
+        (champions / "current.json").write_text(json.dumps(
+            {"champion_courant": "champion-000", "commit_code": "", "bundle_sha256": ""}),
+            encoding="utf-8")
+        with mod_reg.Registre(Path(tmp) / "r.sqlite", champions) as reg:
             pub = reg.ouvrir_publication("cand-1", "champion-000", "champion-001")
             assert pub > 0
             try:
@@ -186,12 +193,17 @@ def test_promotion_refusee_sur_un_champion_perime():
 def test_journal_de_publication_survit_a_une_interruption():
     """Test 11 : une interruption entre Git et SQLite se reprend sans double promotion."""
     with tempfile.TemporaryDirectory() as tmp:
+        champions = Path(tmp) / "champions"
+        champions.mkdir()
+        (champions / "current.json").write_text(json.dumps(
+            {"champion_courant": "champion-000", "commit_code": "", "bundle_sha256": ""}),
+            encoding="utf-8")
         chemin = Path(tmp) / "r.sqlite"
-        with mod_reg.Registre(chemin) as reg:
+        with mod_reg.Registre(chemin, champions) as reg:
             pub = reg.ouvrir_publication("cand-1", "champion-000", "champion-001")
             reg.etape_publication(pub, "commit_ecrit", "abc123")
         # interruption simulee : la connexion meurt, le journal reste
-        with mod_reg.Registre(chemin) as reprise:
+        with mod_reg.Registre(chemin, champions) as reprise:
             en_cours = reprise.publication_en_cours()
             assert en_cours is not None
             assert en_cours["etape"] == "commit_ecrit"

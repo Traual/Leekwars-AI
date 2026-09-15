@@ -40,6 +40,10 @@ import scenarios as mod_sc           # noqa: E402
 import tempfile                      # noqa: E402
 
 SCORING = "// scoring synthetique\nglobal FORCE = %d;\n"
+
+# Le vrai pointeur et les manifestes de champion AVANT tout test : aucun test ne doit les changer.
+VRAI_POINTEUR_AVANT = (RACINE / "champions" / "current.json").read_text(encoding="utf-8")
+VRAIS_MANIFESTES_AVANT = sorted(p.name for p in (RACINE / "champions").glob("*.json"))
 MAIN = "include('Scoring/Scoring');\n// IA jouet\n"
 
 
@@ -1113,9 +1117,8 @@ def test_un_optimiseur_qui_epuise_le_budget_ne_fait_rien_inscrire():
 
 
 def test_le_vrai_registre_reste_intact():
-    pointeur = json.loads((RACINE / "champions" / "current.json").read_text(encoding="utf-8"))
-    assert pointeur["champion_courant"] == "champion-000"
-    assert not list((RACINE / "champions").glob("champion-0[1-9]*.json"))
+    assert (RACINE / "champions" / "current.json").read_text(encoding="utf-8") == VRAI_POINTEUR_AVANT
+    assert sorted(p.name for p in (RACINE / "champions").glob("*.json")) == VRAIS_MANIFESTES_AVANT
 
 
 if __name__ == "__main__":
