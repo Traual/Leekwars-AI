@@ -146,7 +146,15 @@ def controler_faisabilite(cfg, panel, builds) -> list[str]:
                              % (nom_etape, adversaires, len(noms)))
             continue
         try:
-            mod_prog.paliers_de(spec)
+            for palier in mod_prog.paliers_de(spec)[:-1]:
+                # Un palier juge TOUS les adversaires de l'etape : moins de blocs que
+                # d'adversaires en laisserait sans donnees au moment de decider.
+                for format_nom, nb in palier.blocs.items():
+                    if nb < adversaires:
+                        problemes.append(
+                            "%s / palier %d / %s : %d blocs pour %d adversaires — le palier "
+                            "deciderait sans certains adversaires"
+                            % (nom_etape, palier.rang, format_nom, nb, adversaires))
         except ValueError as e:
             problemes.append("%s : paliers incoherents — %s" % (nom_etape, e))
         for format_nom, nb in (spec.get("blocs") or {}).items():

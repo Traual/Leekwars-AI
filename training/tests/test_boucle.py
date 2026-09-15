@@ -69,9 +69,12 @@ def _git(depot, *args, verifier=True):
 # --------------------------------------------------------------------------------------
 # Moteur synthetique
 # --------------------------------------------------------------------------------------
-def _force(racine: Path, chemin_ia: str) -> float:
+def _force(racine: Path, chemin_ia: str, solo: bool = False) -> float:
+    """Force declaree par le scoring ; `FORCE_SOLO`, si present, la remplace en solo."""
     fichier = Path(racine) / Path(chemin_ia).parent / "Scoring" / "Scoring.leek"
-    m = re.search(r"FORCE\s*=\s*(-?\d+)", fichier.read_text(encoding="utf-8"))
+    texte = fichier.read_text(encoding="utf-8")
+    m = re.search(r"FORCE_SOLO\s*=\s*(-?\d+)", texte) if solo else None
+    m = m or re.search(r"FORCE\s*=\s*(-?\d+)", texte)
     return int(m.group(1)) / 100.0 if m else 0.0
 
 
@@ -125,7 +128,8 @@ class MoteurSynthetique:
                 return {"runner_error": "panne simulee de l'adversaire"}
             self.joues += 1
         rnd = random.Random("%d|%s" % (sc["random_seed"], "|".join(ias)))
-        forces = [_force(self.racine, ia) for ia in ias]
+        solo = all(len(groupe) == 1 for groupe in sc["entities"])
+        forces = [_force(self.racine, ia, solo) for ia in ias]
         if len(ias) > 2:
             poids = [max(0.01, 1.0 + f * 8) for f in forces]
             total, tirage, gagnant = sum(poids), rnd.random(), 0
@@ -184,7 +188,8 @@ CONFIG = {
 class Laboratoire:
     """Depot, ligue, registre et moteur synthetique, tous jetables."""
 
-    def __init__(self, tmp: Path, etapes: dict | None = None, nb_adversaires: int = 3):
+    def __init__(self, tmp: Path, etapes: dict | None = None, nb_adversaires: int = 3,
+                 force_champion: int = 0, crible: dict | None = None):
         self.tmp = tmp
         self.depot = tmp / "depot"
         self.champions = self.depot / "training" / "champions"
@@ -192,7 +197,7 @@ class Laboratoire:
         self.runs = tmp / "runs"
         (self.gen / "test" / "ai").mkdir(parents=True)
         self.runs.mkdir(parents=True)
-        self._creer_depot()
+        self._creer_depot(force_champion)
         self._creer_ligue(nb_adversaires)
         self.moteur = MoteurJouet(self.gen, self.gen / "g.jar", None, self.gen, "moteur-jouet")
         self.synth = MoteurSynthetique(self.gen)
@@ -200,6 +205,8 @@ class Laboratoire:
         self.cfg = json.loads(json.dumps(CONFIG))
         if etapes is not None:
             self.cfg["etapes"] = json.loads(json.dumps(etapes))
+        if crible is not None:
+            self.cfg["crible"] = json.loads(json.dumps(crible))
         self.cfg["moteur"]["racine"] = str(self.gen)
         self.cfg["ligue"]["source"] = str(self.tmp / "ligue" / "versions.json")
         self.chemin_cfg = tmp / "loop.yaml"
@@ -241,11 +248,11 @@ class Laboratoire:
         cli._contexte = self._anciens["contexte"]
 
     # ---- construction ----------------------------------------------------------------
-    def _creer_depot(self):
+    def _creer_depot(self, force_champion: int = 0):
         (self.depot / "New_AI" / "Scoring").mkdir(parents=True)
         self.champions.mkdir(parents=True)
         _ecrire(self.depot / "New_AI" / "Main.leek", MAIN)
-        _ecrire(self.depot / "New_AI" / "Scoring" / "Scoring.leek", SCORING % 0)
+        _ecrire(self.depot / "New_AI" / "Scoring" / "Scoring.leek", SCORING % force_champion)
         _git(self.tmp, "init", "-q", "-b", "scoring", str(self.depot))
         _git(self.depot, "config", "user.email", "banc@local")
         _git(self.depot, "config", "user.name", "banc")
