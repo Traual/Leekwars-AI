@@ -226,3 +226,21 @@ ARMES = [
 ]
 
 SCENARIOS_300 = HEMORRAGIE + PLANTES + PROPRIETAIRE + ARMES
+
+GENERATION = [
+    {
+        # Les actions 3.00 sont-elles GENEREES depuis un etat reel ? A porte les sept puces ; B
+        # ennemi a portee, C bulbe allie pour Maturation. Liste des items des actions generees.
+        "nom": "generation_300",
+        "tours": 2,
+        "entites": [
+            {"nom": "A", "camp": 1, "cellule": c(0, 0), "stats": {"frequency": 200, "tp": 40},
+             "puces": ["hemorrhage", "superinfection", "maturation", "corn", "chilli_pepper",
+                       "prototaxite", "trebuchet", "puny_bulb", "venom"],
+             "script": {1: [("summon", "puny_bulb", c(0, 2)), ("chip", "venom", c(2, 0)), ("gen",)]}},
+            {"nom": "B", "camp": 2, "cellule": c(2, 0)},
+        ],
+    },
+]
+
+SCENARIOS_300 = SCENARIOS_300 + GENERATION

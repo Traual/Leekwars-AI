@@ -136,6 +136,17 @@ class FideliteProbe {
 			REAL_AWAKEN_MARKS = marques
 			Preload.InitStateClass()
 			var S = StateClass.Virtualize()
+			if (action[0] == "gen") {
+				// Actions GENEREES depuis l'etat reel : [item -> nombre de visees].
+				var baseHash = StateClass.getBaseHash(S)
+				var couches = WalkCellsClass.getAllLayers(S, Me, baseHash)
+				var generees = [: ]
+				for (var act in ActionsClass.getEveryActionsInAState(S, couches, S[Me].CELL, baseHash)) {
+					generees[act.Item] = ((act.Item in generees) ? generees[act.Item] : 0) + 1
+				}
+				debug("GEN " + jsonEncode(["nom": nom, "tour": tour, "items": generees]))
+				continue
+			}
 			var avant = [: ]
 			for (var id: var s in S) avant[id] = true
 			var pMin = vueEtat(predire(S, action, false))

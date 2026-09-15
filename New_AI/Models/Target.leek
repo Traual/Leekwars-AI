@@ -45,8 +45,9 @@ class Target {
 			var Hitable = ConsequencesClass.isHitable(eff, EntityState, CastState, binTarEqualCaster == 1 ? true : false)
 			if (!Hitable) continue
 			// Un état se vise selon ce qu'il fait : Hémorragie ou Stérile sur un ennemi,
-			// Invincible sur un allié. La valeur de l'effet est l'ordinal de l'état.
-			var TarType = (eff[0] == EFFECT_ADD_STATE) ? StateTargetType[eff[1]] : TargetType[eff[0]]
+			// Invincible sur un allié. La valeur de l'effet est l'ordinal de l'état, rendu en réel
+			// par getChipEffects : ramené à l'entier avant de servir de clé.
+			var TarType = (eff[0] == EFFECT_ADD_STATE) ? StateTargetType[floor(eff[1])] : TargetType[eff[0]]
 			if (
 				(TarType == Target.ENEMY || TarType == Target.ALL) && (EntitySide != CasterSide)
 				) {

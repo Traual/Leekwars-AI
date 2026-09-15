@@ -82,6 +82,8 @@ def action_ls(a):
         return [kind, item(a[1]), cellule(*a[2])]
     if kind == "move":
         return [kind, cellule(*a[1])]
+    if kind == "gen":
+        return [kind]
     raise ValueError(a)
 
 
@@ -248,7 +250,18 @@ def main():
                         fid.append(json.loads(l[2][4:]))
                     elif len(l) >= 4 and l[1] in (7, 8):
                         erreurs.append(l)
-        attendues = sum(len(acts) for e in sc["entites"] for acts in e.get("script", {}).values())
+        gen = []
+        for _f, per in out["logs"].items():
+            for _a, lignes in per.items():
+                for l in lignes:
+                    if len(l) >= 3 and isinstance(l[2], str) and l[2].startswith("GEN "):
+                        gen.append(json.loads(l[2][4:]))
+        for g in gen:
+            noms = {str(PUCE.get(n, ARME.get(n))): n for n in list(PUCE) + list(ARME)}
+            print("   generation %s tour %s : %s" % (g["nom"], g["tour"],
+                  {noms.get(str(k), k): v for k, v in (g["items"] or {}).items()}))
+        attendues = sum(1 for e in sc["entites"] for acts in e.get("script", {}).values()
+                        for a in acts if a[0] != "gen")
         print("[%s] %d/%d etapes sondees, %d erreur(s) systeme, vainqueur %s"
               % (sc["nom"], len(fid), attendues, len(erreurs), brut.get("winner")))
         for e in erreurs[:5]:
