@@ -51,6 +51,13 @@ class ResurrectionClass {
 		revived.TOTAL_TP = bases[STAT_TP]
 		revived.TP       = bases[STAT_TP]
 
+		// Une plante ressuscitée retrouve son état permanent ENRACINÉ (State.applySummonStates) ;
+		// la résurrection ne teste aucune zone d'Éveil.
+		if (revived.NAME in PLANT_ZONE_BY_NAME) {
+			revived.STATES = 1 << STATE_ROOTED
+			revived.EFFECTS = [[EFFECT_ADD_STATE, STATE_ROOTED, Resurrect_ID, -1, false, 0, Resurrect_ID, EFFECT_MODIFIER_IRREDUCTIBLE, -1]]
+		}
+
 		// Vie ressuscitée engine-exacte : source unique reviveTotalLife/reviveLife (l'ordre
 		// des arrondis du moteur y est répliqué), partagée avec getResurrectionScore.
 		var newTotalLife = reviveTotalLife(revived.TOTAL_LIFE, State)

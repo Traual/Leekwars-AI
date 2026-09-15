@@ -197,9 +197,10 @@ class DeltaClass {
         // sur 220 193 appels), et le déroulé général traite ce cas sans écart — un caster
         // absent de la map échoue simplement son test d'appartenance.
         var totalLife = stat.TOTAL_LIFE
-        // Sous UNHEALABLE le moteur refuse le SOIN instantané mais laisse passer la VITALITÉ :
-        // elle n'est pas un soin, ni son effet ni l'ajout de vie qu'il fait n'ont de garde
-        // d'état, et le cap comme la vie montent quand même. Lu une fois par déroulé.
+        // Sous UNHEALABLE le moteur refuse le SOIN instantané, et la VITALITÉ n'agrandit plus
+        // que la vie max (EffectVitality.java) : le cap monte, la vie non. L'état est tenu pour
+        // actif sur toute la fenêtre, ce qui est exact quand je l'ai posé moi-même et prudent
+        // quand son lanceur rejoue avant la fin de la fenêtre. Lu une fois par déroulé.
         var healable = !EntityStateClass.hasState(stat, STATE_UNHEALABLE)
         // La séquence exclut la cible -> jamais de self-heal ici, profil par type.
         var allyProfile = stat.IS_SUMMON ? HEAL_PROFILE_ALLY_SUMMON : HEAL_PROFILE_ALLY_LEEK
@@ -223,8 +224,10 @@ class DeltaClass {
                     // produit est mémoïsé par cellule au lieu d'être refait à chaque caster.
                     var projectedVitality = parts[1]
                     totalLife += projectedVitality
-                    life += projectedVitality
-                    if (healable) life += parts[0]
+                    if (healable) {
+                        life += projectedVitality
+                        life += parts[0]
+                    }
                     if (life > totalLife) life = totalLife
                 }
             }

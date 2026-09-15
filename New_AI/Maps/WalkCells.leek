@@ -382,16 +382,53 @@ class WalkCellsClass {
 	static MoveTo(cell, State, BaseHash) {
 		var layers = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 		var ActionsToGet = getActionsToGet(State[Me].CELL, cell, layers.TELEPORTATION_AND_JUMP, layers.TELEPORTATION, layers.JUMP, layers.WALK)
+		// Plantes à zone en jeu : la marche suit le chemin canonique, celui dont la simulation a
+		// déroulé les réveils, au lieu du chemin choisi par le moteur.
+		var canonical = AwakeningClass.livingZones(State) != null
 		for (var Action in ActionsToGet) {
-			moveTowardCell(Action.From)
+			if (canonical) {
+				if (!walkCanonical(Action.From, State, BaseHash)) return [false, "move_step", getCell()]
+			} else {
+				moveTowardCell(Action.From)
+			}
 			if (getCell() != Action.From) return [false, "move_step", getCell()]
+			var start = getCell()
 			var r = useChipOnCell(Action.Item, Action.To)
 			if (r <= 0) return [false, "chip", r]
 			if (getCell() != Action.To) return [false, "chip_land", getCell()]
+			if (canonical) markRealEntries(State, start, Action.To)
 		}
-		moveTowardCell(cell)
+		if (canonical) {
+			if (!walkCanonical(cell, State, BaseHash)) return [false, "final_move", getCell()]
+		} else {
+			moveTowardCell(cell)
+		}
 		if (getCell() != cell) return [false, "final_move", getCell()]
 		return [true, null, 0]
+	}
+
+	/* Marche case par case sur le chemin canonique ; faux si un pas échoue ou si je meurs en route. */
+	static walkCanonical(target, State, BaseHash) {
+		var path = AwakeningClass.canonicalPath(State, BaseHash, getCell(), target, getMP(), getSide())
+		if (path == null) return false
+		for (var c in path) {
+			var from = getCell()
+			moveTowardCell(c, 1)
+			if (getCell() != c || getLife() <= 0) return false
+			markRealEntries(State, from, c)
+		}
+		return true
+	}
+
+	/* Note les zones que je viens d'entrer : le moteur ne me laissera plus les réveiller ce tour. */
+	static markRealEntries(State, fromCell, toCell) {
+		var zones = AwakeningClass.livingZones(State)
+		if (zones == null) return;
+		for (var z in zones) {
+			if (CellClass.getDist(toCell, z[1]) <= z[2] && CellClass.getDist(fromCell, z[1]) > z[2]) {
+				REAL_AWAKEN_MARKS[z[0] * 65536 + Me] = true
+			}
+		}
 	}
 
 	/*

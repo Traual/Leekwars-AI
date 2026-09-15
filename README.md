@@ -98,6 +98,50 @@ volontairement un summon ou une entité faible moins précieux.
 - Les fichiers Java de recherche présents localement à la racine du dépôt ne font **pas**
   partie de l'IA et ne doivent **jamais** être commités.
 
+## Leek Wars 3.00
+
+Générateur de mesure : `Desktop/lw-gen-300` (commit officiel `3bf504d`, catalogue aligné sur
+l'API du jeu, provenance dans `traual/PROVENANCE.md` de ce clone). Banc de fidélité :
+`training/v3/fidelite/banc.py`, qui compare après chaque action scriptée l'état prédit par les
+conséquences à l'état relu dans le moteur.
+
+- **Surinfection** (effet 64) : conversion ligne de poison par ligne de poison, arrondi de
+  chaque ligne, durée brute, irréductibles compris, poisons infinis ignorés ; dégâts de poison
+  crédités au lanceur, érosion de poison, passif du lance-grenades illicite. L'invincibilité
+  annule les dégâts, pas la réduction.
+- **Hémorragie** : un `ADD_STATE` se vise selon l'état qu'il pose (`Target.StateTargetType`).
+- **Maturation** : vitalité (vie max seule sous `UNHEALABLE`) et puissance permanente,
+  cumulable, irréductible, visant les invocations alliées.
+- **Plantes** : Maïs, Piment et Prototaxite s'invoquent (placement propre à chaque espèce),
+  naissent `ENRACINÉ` (ni poussée, ni attraction, ni recul ; l'inversion reste possible), et
+  comptent leurs cooldowns en réveils. Le Prototaxite joue un tour vide.
+- **Réveils** : une entité qui entre dans la zone d'une plante la réveille ; la plante rend ses
+  PT, décrémente ses cooldowns et joue aussitôt. Simulés pour la marche (case par case), la
+  glissade (l'entité déjà posée à l'arrivée), la téléportation (arrivée seule), l'inversion et
+  l'invocation (plante posée réveillée par chaque entité de sa zone).
+- **Politique de plante** (`PlantPolicy`) : une seule fonction décide pour nos plantes réelles
+  et pour la simulation. Au réveil réel, la plante joue cette politique sans écrire aucune
+  globale : le réveil peut interrompre l'action de son invocateur, dont `Me`, les états et les
+  caches restent intacts.
+
+Limites propres à la 3.00 :
+
+- La politique d'une plante ADVERSE est **estimée** : on la suppose identique à la nôtre.
+- Marqueurs de réveil : le moteur n'autorise qu'un réveil par couple (plante, entité) depuis le
+  début du tour de l'entité, et n'expose pas ces marqueurs. Ceux de Me sont suivis à partir de
+  mes déplacements réels du tour ; ceux des autres entités sont tenus pour absents.
+- Quand une plante à zone est en jeu, la marche suit un chemin CANONIQUE (le plus court, qui
+  traverse le moins de cases de zones adverses) et l'IA le marche case par case : c'est ce
+  chemin dont les réveils sont simulés, pas celui que choisirait le moteur.
+- Les buffs des puces de saut et de téléportation sont posés avant les réveils de la marche
+  qui les précède : écart sans effet sur les lancers d'une plante.
+- Carte de danger et carte de soin : une plante à zone y figure comme un attaquant ou un
+  soigneur immobile qui agit une fois par fenêtre ; la Surinfection et l'Hémorragie
+  adverses n'y sont pas projetées.
+- Le placement final ne chiffre pas les réveils de la marche finale (le chemin canonique
+  évite déjà les zones adverses quand il le peut).
+- Majorant : aucune coupe tant qu'une plante à zone est vivante et que l'action déplace Me.
+
 ## Profiler
 
 - `BenchOps.ENABLED = false` en production ([`Benchmark.leek`](New_AI/Utils/Benchmark.leek)).
@@ -159,7 +203,9 @@ Documentés comme des choix, pas des bugs à corriger immédiatement :
   neutre. Le chemin de simulation EXACTE (`getEntityDebuffConsequences`), lui, réduit bien
   ligne par ligne.
 - `UNHEALABLE` est simulé (refus du vol de vie au lanceur, soins et ticks de soin annulés chez
-  le porteur), mais aucun item actuel ne le pose : le chemin ne s'exerce qu'en forçant l'état.
+  le porteur, vitalité réduite à la vie max) ; Hémorragie le pose depuis la 3.00. La carte de
+  soin le tient pour actif sur toute la fenêtre, exact quand je l'ai posé moi-même, prudent
+  quand son lanceur rejoue avant la fin de la fenêtre.
 - Ordre de tour approximatif (fin de liste) pour une entité déjà morte et inconnue lors de la
   capture initiale.
 - Possible score de résurrection stale après un kill réel au milieu du tour : les clés de

@@ -18,6 +18,7 @@ include("Maps/Actions.leek")
 include("Maps/ItemCoverage.leek")
 
 include("Modifier/BulbState.leek")
+include("Modifier/Awakening.leek")
 include("Modifier/Resurrection.leek")
 include("Modifier/Consequences.leek")
 

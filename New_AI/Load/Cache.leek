@@ -33,6 +33,10 @@ function ReloadCacheNewTurn() {
     ACTIONS_ON_ME_CACHE = [: ]
     ACTIONS_SUMMON_CACHE = [: ]
     ACTIONS_ON_VOID_CACHE = [: ]
+    PLANT_ZONE_BY_ID = [: ]
+    REAL_AWAKEN_MARKS = [: ]
+    AWAKEN_PATH_CACHE = [: ]
+    AWAKENING_DEPTH = 0
 
     // Reset obligatoire : getItemsList est clé par ID et filtre cooldown > 1 au moment du
     // calcul — sans reset, un item en cooldown à la première évaluation resterait exclu tout
@@ -257,6 +261,21 @@ global ENTITY_CONST_BY_ID = [: ]
 // CONSEQUENCES
 
 global CONSEQUENCE_TARGET_CACHE = [: ]
+
+// PLANTES
+
+// Plantes à zone d'Éveil de l'état en cours, [id -> rayon] : relevées à la virtualisation et
+// posées par l'invocation simulée d'une plante. Vidée à chaque tour, les ids virtuels
+// d'invocation étant réattribués d'un tour à l'autre.
+global PLANT_ZONE_BY_ID = [: ]
+// Réveils déclenchés par mes déplacements RÉELS depuis le début de mon tour,
+// [plante * 65536 + déclencheur -> true] : le moteur n'en déclenche qu'un par couple et par
+// tour du déclencheur. Ceux des autres entités ne sont pas observables et sont tenus pour nuls.
+global REAL_AWAKEN_MARKS = [: ]
+// Chemins de marche canoniques quand des plantes à zone sont en jeu.
+global AWAKEN_PATH_CACHE = [: ]
+// Réveil simulé en cours : le moteur ne réveille jamais une plante pendant un réveil.
+global AWAKENING_DEPTH = 0
 
 // SUMMONS
 

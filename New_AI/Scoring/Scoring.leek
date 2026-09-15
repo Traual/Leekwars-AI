@@ -690,8 +690,11 @@ class ScoringClass {
 		// Drapeau posé au preload : poison, dégâts de vie, soin, bouclier, vol, multiplicateur par
 		// nombre de cibles et effets sur le lanceur sortent tous du domaine de cette formule.
 		if (!Infos.IS_BOUNDABLE_DAMAGE) return BOUND_MUST_SIMULATE
-		var dmg = Infos.EFFECTS
 		var MyStats = State[Me]
+		// Plantes a zone vivantes : le deplacement vers From peut reveiller une plante, dont les
+		// lancers sortent de cette formule. Aucune coupe tant qu'elles sont en jeu.
+		if (!mapIsEmpty(PLANT_ZONE_BY_ID) && From != MyStats.CELL && AwakeningClass.livingZones(State) != null) return BOUND_MUST_SIMULATE
+		var dmg = Infos.EFFECTS
 		// Cette formule suppose le cast critique. Or un critique declenche d'abord le passif
 		// Unstable Destroyer, qui me soigne AVANT les effets (Entity.java:757-765) et fait monter
 		// mon propre terme — un canal que la formule n'a pas. Plutot que de sous-estimer, on

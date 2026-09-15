@@ -23,7 +23,10 @@ class ActionsClass {
 		CHIP_METALLIC_BULB: true,
 		CHIP_SAVANT_BULB: true,
 		CHIP_TACTICIAN_BULB: true,
-		CHIP_LIGHTNING_BULB: true
+		CHIP_LIGHTNING_BULB: true,
+		CHIP_CORN: true,
+		CHIP_CHILLI_PEPPER: true,
+		CHIP_PROTOTAXITE: true
 	]
 
 	/* Toutes les actions jouables de l'état : sur moi + dans le vide + summons + sur les autres. */
@@ -150,6 +153,9 @@ class ActionsClass {
 		var CellToSummon
 		var BestScore = MAX_VALUE
 		var entity_side = State[Me].SIDE
+		if (item in PLANT_SUMMON_CHIPS) {
+			return getPlantSummonAction(LaunchType, basefrom, MinRange, MaxRange, LeekCells, item, State, base_hash)
+		}
 		if (item in MeanBulbs) {
 			for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
 				if (c in LeekCells) continue
@@ -187,6 +193,50 @@ class ActionsClass {
 		}
 
 		if (CellToSummon != null) return new ActionClass(item, basefrom, CellToSummon)
+	}
+
+	/*
+	 * Cellule d'une plante. Une plante posée est réveillée par chaque entité déjà dans sa zone :
+	 * le Piment se plante là où sa zone couvre le plus d'ennemis, le Maïs là où elle couvre le
+	 * plus d'alliés blessés, en départageant par la distance moyenne au camp visé. Le
+	 * Prototaxite, sans action, s'interpose : la cellule la plus proche de l'ennemi le plus
+	 * proche parmi celles au contact de moi (distance 1 ou 2).
+	 */
+	static getPlantSummonAction(LaunchType, basefrom, MinRange, MaxRange, LeekCells, item, State, base_hash) {
+		var side = State[Me].SIDE
+		var zone = PLANT_REACH
+		var best = null
+		var bestKey = null
+		for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
+			if (c in LeekCells || !CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) continue
+			var key
+			if (item == CHIP_PROTOTAXITE) {
+				if (CellClass.getDist(basefrom, c) > 2) continue
+				var nearest = MAX_VALUE
+				for (var e: var stat in State) {
+					if (stat.LIFE <= 0 || stat.SIDE == side) continue
+					var d = CellClass.getDist(stat.CELL, c)
+					if (d < nearest) nearest = d
+				}
+				key = nearest
+			} else {
+				var covered = 0
+				for (var e: var stat in State) {
+					if (stat.LIFE <= 0 || CellClass.getDist(stat.CELL, c) > zone) continue
+					if (item == CHIP_CHILLI_PEPPER && stat.SIDE != side) covered++
+					if (item == CHIP_CORN && stat.SIDE == side && stat.LIFE < stat.TOTAL_LIFE) covered++
+				}
+				var spread = (item == CHIP_CHILLI_PEPPER)
+					? StateClass.getAverageDistFromEnnemies(side, State, c, ID_NOBODY, base_hash)
+					: StateClass.getAverageDistFromAllies(side, State, c, ID_NOBODY, base_hash)
+				key = spread - covered * 100
+			}
+			if (bestKey == null || key < bestKey || (key == bestKey && c < best)) {
+				bestKey = key
+				best = c
+			}
+		}
+		if (best != null) return new ActionClass(item, basefrom, best)
 	}
 
 	static getInventoryOnEveryOne(Inventory) {

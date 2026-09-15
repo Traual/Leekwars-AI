@@ -35,6 +35,7 @@ class EntityClass {
 			this.SIDE = known[4]
 			this.NAME = known[5]
 			this.STATIC = known[6]
+			if (known[7] > 0) PLANT_ZONE_BY_ID[id] = known[7]
 		  } else {
 			this.SUMMONER = getSummoner(id)
 			this.IS_SUMMON = isSummon(id)
@@ -48,7 +49,10 @@ class EntityClass {
 			this.SIDE = getSide(id)
 			this.NAME = getName(id)
 			this.STATIC = isStatic(id)
-			ENTITY_CONST_BY_ID[id] = [this.SUMMONER, this.IS_SUMMON, this.INVENTORY, this.SPECIAL_WEAPON, this.SIDE, this.NAME, this.STATIC]
+			// Plante à zone d'Éveil : elle ne joue qu'à ses réveils, que la simulation déclenche.
+			var zone = (this.IS_SUMMON && getType(id) == ENTITY_PLANT) ? getAwakeningZone(id) : 0
+			if (zone > 0) PLANT_ZONE_BY_ID[id] = zone
+			ENTITY_CONST_BY_ID[id] = [this.SUMMONER, this.IS_SUMMON, this.INVENTORY, this.SPECIAL_WEAPON, this.SIDE, this.NAME, this.STATIC, zone]
 		  }
 		  this.TYPE_TAG = (id << 1) | (this.IS_SUMMON ? 1 : 0)
     }

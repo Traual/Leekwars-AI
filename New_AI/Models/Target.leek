@@ -44,7 +44,9 @@ class Target {
 		for (var eff in ITEMINFO[item].EFFECTS) {
 			var Hitable = ConsequencesClass.isHitable(eff, EntityState, CastState, binTarEqualCaster == 1 ? true : false)
 			if (!Hitable) continue
-			var TarType = TargetType[eff[0]]
+			// Un état se vise selon ce qu'il fait : Hémorragie ou Stérile sur un ennemi,
+			// Invincible sur un allié. La valeur de l'effet est l'ordinal de l'état.
+			var TarType = (eff[0] == EFFECT_ADD_STATE) ? StateTargetType[eff[1]] : TargetType[eff[0]]
 			if (
 				(TarType == Target.ENEMY || TarType == Target.ALL) && (EntitySide != CasterSide)
 				) {
@@ -71,9 +73,18 @@ class Target {
 		}
 	}
 
+	static StateTargetType = [
+		STATE_UNHEALABLE: Target.ENEMY,
+		STATE_INVINCIBLE: Target.ALLY,
+		STATE_ROOTED: Target.ENEMY,
+		STATE_STATIC: Target.ENEMY,
+		STATE_STERILE: Target.ENEMY
+	]
+
 	static TargetType = [
 		EFFECT_DAMAGE: Target.ENEMY,
 		EFFECT_POISON: Target.ENEMY,
+		EFFECT_SUPERINFECTION: Target.ENEMY,
 		EFFECT_NOVA_DAMAGE: Target.ENEMY,
 		EFFECT_LIFE_DAMAGE: Target.ENEMY,
 		EFFECT_VULNERABILITY: Target.ENEMY,
@@ -101,6 +112,7 @@ class Target {
 		EFFECT_RAW_BUFF_STRENGTH: Target.ALLY,
 		EFFECT_RAW_BUFF_TP: Target.ALLY,
 		EFFECT_RAW_BUFF_WISDOM: Target.ALLY,
+		EFFECT_RAW_BUFF_POWER: Target.ALLY,
 		EFFECT_BUFF_AGILITY: Target.ALLY,
 		EFFECT_BUFF_MP: Target.ALLY,
 		EFFECT_BUFF_RESISTANCE: Target.ALLY,

@@ -107,14 +107,15 @@ class NodeClass {
 	 * moteur planche le RESULTAT, vie et vie max montent ensemble, et RIEN n'entre au ledger —
 	 * un gain de vie max n'est jamais defait cote moteur.
 	 * Le jet (value2 = 5) n'est pas simule ; le critique l'est : passif d'abord, puis
-	 * multiplication de la valeur (State.java:768, EffectVitality.java:11).
+	 * multiplication de la valeur (State.java:768, EffectVitality.java:11). Sous UNHEALABLE,
+	 * seule la vie max monte.
 	 */
 	static applyTeleportCast(meStat, isCritical) {
 		if (isCritical && meStat.SPECIAL_WEAPON != 0) ConsequencesClass.applyOnCriticalPassive(meStat)
 		var raw = TELE_VITALITY * max(0, 1 + meStat.WISDOM / 100)
 		if (isCritical) raw = raw * CRITICAL_FACTOR
 		var gain = round(raw)
-		meStat.LIFE += gain
+		if (!EntityStateClass.hasState(meStat, STATE_UNHEALABLE)) meStat.LIFE += gain
 		meStat.TOTAL_LIFE += gain
 	}
 
@@ -138,6 +139,8 @@ class NodeClass {
 		// (WalkCellsClass.getActionsToGet, downgrade['tpJump'] essaie 'jump' en premier, donc le
 		// saut est l'action la plus tardive).
 		var meStat = ThisActionStats[Me]
+		var moveStartCell = meStat.CELL
+		var moveStartMp = meStat.MP
 		meStat.CELL = From
 		if (From in MyWalkCells.WALK) {
 			meStat.MP -= MyWalkCells.WALK[From]
@@ -164,6 +167,11 @@ class NodeClass {
 				applyJumpCast(meStat, meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)
 				applyTeleportCast(meStat, meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)
 			}
+		}
+		// Plantes à zone en jeu : la marche est rejouée case par case pour leurs réveils.
+		if (!mapIsEmpty(PLANT_ZONE_BY_ID) && moveStartCell != From) {
+			AwakeningClass.replayMeMove(ThisActionStats, moveStartCell, From, moveStartMp, MyWalkCells, BaseHash, clonedIds)
+			meStat = ThisActionStats[Me]
 		}
 		meStat.TP -= Cost
 		if (Info.IS_WEAPON) meStat.WEAPON = Item

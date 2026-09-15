@@ -58,6 +58,7 @@ class BulbState {
 	// Map Stats
 	CELL
 	STATIC
+	AWAKEN_MARKS         // même contrat qu'EntityState : null, un bulbe n'est jamais Me
 
 	/*
 	 * Une caractéristique de bulbe, transcrite mot pour mot de BulbTemplate.base :
@@ -80,7 +81,7 @@ class BulbState {
 		this.RELATIVE_SHIELD = 0
 		this.DAMAGE_RETURN = 0
 		this.POWER = 0
-		this.STATES = 0   // un bulbe nait sans aucun etat
+		this.STATES = 0   // un bulbe nait sans aucun etat ; une plante recoit ENRACINE plus bas
 		this.SUMMONER = Summoner
 		this.IS_SUMMON = true
 		this.ID = id
@@ -153,6 +154,17 @@ class BulbState {
 		// === Map Stats ===
 		this.CELL = To
 		this.STATIC = false
+		this.AWAKEN_MARKS = null
+
+		// === Plante : État permanent ENRACINÉ, et zone d'Éveil ===
+		// State.applySummonStates : ADD_STATE infini, irréductible, auto-lancé, sans item. La
+		// ligne le porte comme une ligne importée du moteur (item 0, tours -1).
+		if (this.NAME in PLANT_ZONE_BY_NAME) {
+			this.STATES = 1 << STATE_ROOTED
+			this.EFFECTS = [[EFFECT_ADD_STATE, STATE_ROOTED, id, -1, false, 0, id, EFFECT_MODIFIER_IRREDUCTIBLE, -1]]
+			var zone = PLANT_ZONE_BY_NAME[this.NAME]
+			if (zone > 0) PLANT_ZONE_BY_ID[id] = zone
+		}
 	}
 
 	static getNameFromChip(Chip) {
@@ -177,11 +189,17 @@ class BulbState {
 				return "tactician_bulb"
 			case CHIP_LIGHTNING_BULB:
 				return "lightning_bulb"
+			case CHIP_CORN:
+				return "corn"
+			case CHIP_CHILLI_PEPPER:
+				return "chilli_pepper"
+			case CHIP_PROTOTAXITE:
+				return "prototaxite"
 		}
 	}
 
 	/*
-	 * Index distinct par TYPE de bulbe (1..10), ajouté à SUMMON_ID_BASE (max des ids réels au
+	 * Index distinct par TYPE d'invocation (1..10 les bulbes, 11..13 les plantes), ajouté à SUMMON_ID_BASE (max des ids réels au
 	 * début du tour, morts inclus) : l'id d'un bulbe virtuel est FIXE par type tout le tour —
 	 * même id <=> même type quel que soit l'ordre des summons entre branches, donc les caches
 	 * clés par id seul ne peuvent pas collisionner entre types. Toujours > tout id réel (pas
@@ -200,6 +218,9 @@ class BulbState {
 			case CHIP_SAVANT_BULB:    return 8
 			case CHIP_TACTICIAN_BULB: return 9
 			case CHIP_LIGHTNING_BULB: return 10
+			case CHIP_CORN:           return 11
+			case CHIP_CHILLI_PEPPER:  return 12
+			case CHIP_PROTOTAXITE:    return 13
 		}
 		return 1   // unknown summon chip -> still +1 (free id, no overwrite)
 	}

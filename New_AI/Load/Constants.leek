@@ -30,6 +30,21 @@ global MeanBulbs = [
 	CHIP_LIGHTNING_BULB
 ]
 
+// PLANTES
+// Rayon de la zone d'Éveil par espèce, recopié de data/summons.json (champ zone) : aucune API ne
+// le donne pour une plante pas encore invoquée. Une plante réelle le relit par getAwakeningZone.
+// Le nom sert aussi de test « est une plante » (le Prototaxite est enraciné sans zone).
+global PLANT_ZONE_BY_NAME = ["corn": 3, "chilli_pepper": 3, "prototaxite": 0]
+global PLANT_TYPE_BY_NAME = ["corn": PLANT_CORN, "chilli_pepper": PLANT_CHILLI_PEPPER, "prototaxite": PLANT_PROTOTAXITE]
+// Puces de plante : portée 1 à 3 cases (zone de rayon 3 pour les grosses), coûts, et plafond de
+// lancers par réveil (7 TP au plus en donnent deux).
+global PLANT_REACH = 3
+global PLANT_SMALL_COST = 3
+global PLANT_BIG_COST = 6
+global PLANT_MAX_CASTS = 4
+// Puces d'invocation de plante.
+global PLANT_SUMMON_CHIPS = [CHIP_CORN: true, CHIP_CHILLI_PEPPER: true, CHIP_PROTOTAXITE: true]
+
 // Coût TP minimal de l'inventaire (court-circuite l'expansion quand il ne reste plus assez).
 global MINIMUM_COST_ITEM
 // La Résurrection est-elle dans mon inventaire ? Posé au tour (Preload.InitStateClass) : sans
@@ -169,11 +184,9 @@ function mix64Memo(x) {
 
 // CONSEQUENCES
 // Armes a PASSIF, en masque de bits : le moteur declenche les passifs de TOUTES les armes
-// portees (Entity.onCritical boucle sur mWeapons), pas seulement d'une. Huit bits pour les
-// huit passifs que l'IA modelise ; le neuvieme porteur, le lance-grenades illicite, en est
-// absent A DESSEIN — son passif ne se declenche qu'au tick de poison, hors de la
-// simulation d'un cast, et l'inclure ferait passer tous ses porteurs par des gardes qui
-// n'ont rien a faire.
+// portees (Entity.onCritical boucle sur mWeapons), pas seulement d'une. Le lance-grenades
+// illicite se declenche sur des degats de POISON : au tick, hors de la simulation d'un cast,
+// mais aussi pendant un cast de Surinfection, qui inflige ses degats convertis tout de suite.
 global SPW_REVOKED_M_LASER      = 1
 global SPW_MYSTERIOUS_ELECTRISOR = 2
 global SPW_PLUTONIUM_BAZOOKA    = 4
@@ -182,6 +195,7 @@ global SPW_UNSTABLE_DESTROYER   = 16
 global SPW_EXPLORER_RIFLE       = 32
 global SPW_DARK_KATANA          = 64
 global SPW_ENHANCED_LIGHTNINGER = 128
+global SPW_ILLICIT_GRENADE_LAUNCHER = 256
 // Peuplee au preload : [arme -> son bit]. L'appartenance sert aussi de test « a un passif
 // que je sais jouer », a la place de l'ancien parcours de PASSIVE_EFFECTS.
 global SPECIAL_WEAPON_BIT = [: ]
@@ -190,6 +204,7 @@ global EROSION_NO_POISON = 0.05
 global EROSION_POISON = 0.10
 // +10 points d'érosion sur un effet CRITIQUE (Effect.java : erosionRate += 0.10 si crit).
 global EROSION_CRIT = 0.15
+global EROSION_CRITICAL_BONUS = 0.10
 
 // JEU
 

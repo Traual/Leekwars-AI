@@ -46,8 +46,9 @@ class StateClass {
 	}
 
 	/*
-	 * Bit-set exact des ids VIVANTS : indépendant de l'ordre, zéro collision, ~3 ops/entité.
-	 * Valide tant que les ids < 64 (réels ~<50, bulbes virtuels = SUMMON_ID_BASE + 1..10).
+	 * Empreinte des ids VIVANTS, indépendante de l'ordre : un bit par id sous 62 (exacte, ~3
+	 * ops/entité), un mélange XORé au-delà — les invocations de plantes font monter les ids
+	 * au fil d'un long combat, et un décalage de 64 ou plus reboucle.
 	 * Vivants seulement : le seul TURN_ORDER qui puisse changer sous une même clé est celui
 	 * d'un ressuscité (fonction pure de l'ordre initial + du set des vivants), or le revive
 	 * flippe justement son bit ici -> même clé <=> même tri.
@@ -55,7 +56,9 @@ class StateClass {
 	static getHashedEntities(State) {
 		var hash_value = 0
 		for (var e: var stat in State) {
-			if (stat.LIFE > 0) hash_value |= 1 << e
+			if (stat.LIFE <= 0) continue
+			if (e < 62) hash_value |= 1 << e
+			else hash_value ^= mix64Memo(e) | 4611686018427387904
 		}
 		return hash_value
 	}
@@ -136,7 +139,9 @@ class StateClass {
 		var n = 0
 		for (var e: var stat in State) {
 			if (e == Me) continue
-			if (stat.LIFE > 0 && stat.IS_SUMMON && stat.SUMMONER == owner && stat.TURN_ORDER > myOrder) n++
+			// Une plante ne cherche pas : son tour est vide ou n'existe pas, et ses réveils
+			// jouent une politique courte.
+			if (stat.LIFE > 0 && stat.IS_SUMMON && stat.SUMMONER == owner && stat.TURN_ORDER > myOrder && !(stat.NAME in PLANT_ZONE_BY_NAME)) n++
 		}
 		return n
 	}

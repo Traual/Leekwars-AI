@@ -1,0 +1,366 @@
+/*
+ * Éveil des plantes : une entité qui ENTRE dans la zone d'une plante la réveille, et la plante
+ * joue aussitôt. Simulation des déclencheurs (marche, glissade, téléportation, inversion,
+ * invocation) et politique de jeu d'une plante, partagée avec l'IA réelle de nos plantes.
+ */
+
+include("../includes.leek")
+
+class PlantPolicy {
+
+	/*
+	 * Prochain lancer d'une plante réveillée, ou null. Même fonction pour la plante réelle
+	 * (Bulb.AI) et pour la simulation : nos plantes jouent exactement ce que la recherche a
+	 * prévu, celles de l'adversaire sont ESTIMÉES jouer ainsi.
+	 * Piment : Capsaïcine sur lui-même dès deux ennemis dans sa zone, sinon Piquant sur le
+	 * déclencheur s'il est ennemi, sinon sur l'ennemi le plus faible. Maïs : Pop-corn dès deux
+	 * alliés blessés soignables, sinon Sucre sur le déclencheur s'il en est un, sinon sur
+	 * l'allié le plus blessé. Égalités tranchées par l'id.
+	 *
+	 * @param plantType PLANT_CORN ou PLANT_CHILLI_PEPPER (toute autre espèce ne joue pas)
+	 * @param bigCd cooldown restant de la grosse puce (Capsaïcine ou Pop-corn)
+	 * @param near [id, cellule, camp, vie, vie max, insoignable] des entités vivantes à 1..3 cases
+	 * @return [puce, cellule] ou null
+	 */
+	static choose(plantType, plantCell, plantSide, tp, bigCd, triggerId, near) {
+		if (plantType == PLANT_CHILLI_PEPPER) {
+			var enemies = 0
+			var best = null
+			var trigger = null
+			for (var e in near) {
+				if (e[2] == plantSide) continue
+				enemies++
+				if (e[0] == triggerId) trigger = e
+				if (best == null || e[3] < best[3] || (e[3] == best[3] && e[0] < best[0])) best = e
+			}
+			if (enemies == 0) return null
+			if (bigCd <= 0 && tp >= PLANT_BIG_COST && enemies >= 2) return [CHIP_CAPSAICIN, plantCell]
+			if (tp >= PLANT_SMALL_COST) return [CHIP_PIQUANT, (trigger != null) ? trigger[1] : best[1]]
+			return null
+		}
+		if (plantType == PLANT_CORN) {
+			var allies = 0
+			var best = null
+			var trigger = null
+			for (var e in near) {
+				if (e[2] != plantSide || e[5] || e[4] <= e[3]) continue
+				allies++
+				if (e[0] == triggerId) trigger = e
+				if (best == null || e[4] - e[3] > best[4] - best[3] || (e[4] - e[3] == best[4] - best[3] && e[0] < best[0])) best = e
+			}
+			if (allies == 0) return null
+			if (bigCd <= 0 && tp >= PLANT_BIG_COST && allies >= 2) return [CHIP_POPCORN, plantCell]
+			if (tp >= PLANT_SMALL_COST) return [CHIP_SUGAR, (trigger != null) ? trigger[1] : best[1]]
+			return null
+		}
+		return null
+	}
+
+	/*
+	 * Réveil RÉEL d'une de nos plantes, dans la VM de son invocateur et possiblement au milieu
+	 * de l'action de celui-ci. Aucune variable globale n'est écrite : Me, les états virtuels et
+	 * les caches de l'invocateur restent tels qu'il les a laissés. Tout vient du moteur.
+	 */
+	static playReal() {
+		var plant = getEntity()
+		var plantType = getPlantType(plant)
+		if (plantType != PLANT_CHILLI_PEPPER && plantType != PLANT_CORN) return;
+		var trigger = getPlantTrigger()
+		var plantCell = getCell(plant)
+		var plantSide = getSide(plant)
+		var bigChip = (plantType == PLANT_CHILLI_PEPPER) ? CHIP_CAPSAICIN : CHIP_POPCORN
+		for (var n = 0; n < PLANT_MAX_CASTS; n++) {
+			var near = []
+			for (var e in getAliveAllies() + getAliveEnemies()) {
+				if (e == plant) continue
+				var c = getCell(e)
+				var d = getCellDistance(c, plantCell)
+				if (d < 1 || d > PLANT_REACH) continue
+				var unhealable = false
+				var states = getStates(e)
+				if (states != null) {
+					for (var st in states) {
+						if (st == STATE_UNHEALABLE) unhealable = true
+					}
+				}
+				push(near, [e, c, getSide(e), getLife(e), getTotalLife(e), unhealable])
+			}
+			var choice = choose(plantType, plantCell, plantSide, getTP(), getCooldown(bigChip), trigger, near)
+			if (choice == null) return;
+			if (useChipOnCell(choice[0], choice[1]) <= 0) return;
+		}
+	}
+}
+
+class AwakeningClass {
+
+	/*
+	 * [id, cellule, zone, camp] des plantes à zone VIVANTES de l'état, dans l'ordre où le moteur
+	 * les parcourt (camp, puis id), ou null. Le nom sert de garde : un id virtuel d'invocation
+	 * peut désigner une autre entité dans une autre branche.
+	 */
+	static livingZones(State) {
+		if (mapIsEmpty(PLANT_ZONE_BY_ID)) return null
+		var out = null
+		for (var pid: var zone in PLANT_ZONE_BY_ID) {
+			if (!(pid in State)) continue
+			var p = State[pid]
+			if (p.LIFE <= 0 || !(p.NAME in PLANT_ZONE_BY_NAME)) continue
+			if (out == null) out = []
+			push(out, [pid, p.CELL, zone, p.SIDE])
+		}
+		if (out != null && count(out) > 1) {
+			out = arraySort(out, function(a, b) {
+				return (a[3] != b[3]) ? a[3] - b[3] : a[0] - b[0]
+			})
+		}
+		return out
+	}
+
+	static isMarked(State, plantId, triggerId) {
+		var marks = State[Me].AWAKEN_MARKS
+		return marks != null && ((plantId * 65536 + triggerId) in marks)
+	}
+
+	/* Marqueur rebindé (jamais muté en place) sur le clone de Me de la branche. */
+	static mark(State, plantId, triggerId, clonedIds) {
+		var meStat = StateClass.ensureCloned(State, Me, clonedIds)
+		var fresh = (meStat.AWAKEN_MARKS == null) ? [: ] : clone(meStat.AWAKEN_MARKS, 1)
+		fresh[plantId * 65536 + triggerId] = true
+		meStat.AWAKEN_MARKS = fresh
+	}
+
+	/*
+	 * Une entité passe de fromCell à toCell (fromCell null : apparition). Réveille chaque plante
+	 * dont elle entre dans la zone, comme State.checkPlantTriggers : la mort du déclencheur
+	 * n'est testée qu'à l'entrée, pas entre deux plantes.
+	 */
+	static onStep(State, entityId, fromCell, toCell, clonedIds) {
+		if (AWAKENING_DEPTH > 0) return;
+		var zones = livingZones(State)
+		if (zones == null || State[entityId].LIFE <= 0) return;
+		for (var z in zones) {
+			var pid = z[0]
+			if (pid == entityId || State[pid].LIFE <= 0) continue
+			if (CellClass.getDist(toCell, z[1]) > z[2]) continue
+			if (fromCell != null && CellClass.getDist(fromCell, z[1]) <= z[2]) continue
+			awake(State, pid, entityId, clonedIds)
+		}
+	}
+
+	/*
+	 * Glissade (poussée, attraction, recul) : l'entité est déjà posée à l'arrivée, puis chaque
+	 * case de la ligne est testée (State.checkPlantTriggersAlong). Une ligne qui ne tombe pas
+	 * pile sur l'arrivée retombe sur le seul couple départ/arrivée.
+	 */
+	static onSlide(State, entityId, startCell, endCell, clonedIds) {
+		if (startCell == endCell || mapIsEmpty(PLANT_ZONE_BY_ID)) return;
+		var dx = CellClass.signOf(CELL_X[endCell] - CELL_X[startCell])
+		var dy = CellClass.signOf(CELL_Y[endCell] - CELL_Y[startCell])
+		var line = []
+		var cx = CELL_X[startCell]
+		var cy = CELL_Y[startCell]
+		var current = startCell
+		for (var i = getCellDistance(startCell, endCell); i > 0 && current != endCell; i--) {
+			cx += dx
+			cy += dy
+			current = getCellFromXY(cx, cy)
+			if (current == null) break
+			push(line, current)
+		}
+		if (current != endCell) {
+			onStep(State, entityId, startCell, endCell, clonedIds)
+			return;
+		}
+		var prev = startCell
+		for (var c in line) {
+			onStep(State, entityId, prev, c, clonedIds)
+			prev = c
+		}
+	}
+
+	/*
+	 * Invocation posée : elle réveille les plantes dont elle apparaît dans la zone, puis, si
+	 * c'est une plante à zone, chaque entité déjà dans SA zone la réveille une fois
+	 * (Fight.summonEntity : checkPlantTriggers puis checkPlantPlanted).
+	 */
+	static onSummoned(State, summonId, clonedIds) {
+		if (mapIsEmpty(PLANT_ZONE_BY_ID) || AWAKENING_DEPTH > 0) return;
+		var summon = State[summonId]
+		onStep(State, summonId, null, summon.CELL, clonedIds)
+		if (!(summonId in PLANT_ZONE_BY_ID) || State[summonId].LIFE <= 0) return;
+		var zone = PLANT_ZONE_BY_ID[summonId]
+		var plantCell = State[summonId].CELL
+		var inZone = []
+		for (var e: var stat in State) {
+			if (e == summonId || stat.LIFE <= 0) continue
+			if (CellClass.getDist(stat.CELL, plantCell) > zone) continue
+			push(inZone, [e, stat.SIDE])
+		}
+		if (count(inZone) > 1) {
+			inZone = arraySort(inZone, function(a, b) {
+				return (a[1] != b[1]) ? a[1] - b[1] : a[0] - b[0]
+			})
+		}
+		for (var t in inZone) {
+			if (State[summonId].LIFE <= 0) break
+			if (State[t[0]].LIFE <= 0) continue
+			awake(State, summonId, t[0], clonedIds)
+		}
+	}
+
+	/*
+	 * Réveil : cooldowns de la plante décrémentés, TP rendus, puis ses lancers
+	 * (State.awakePlant). Aucun réveil imbriqué. Le critique du lancer en cours est restauré.
+	 */
+	static awake(State, plantId, triggerId, clonedIds) {
+		if (isMarked(State, plantId, triggerId)) return;
+		mark(State, plantId, triggerId, clonedIds)
+		var plant = StateClass.ensureCloned(State, plantId, clonedIds)
+		var cds = [: ]
+		for (var chip: var cd in plant.COOLDOWNS) cds[chip] = (cd > 0) ? cd - 1 : 0
+		plant.COOLDOWNS = cds
+		plant.TP = plant.TOTAL_TP
+		var plantType = PLANT_TYPE_BY_NAME[plant.NAME]
+		if (plantType != PLANT_CHILLI_PEPPER && plantType != PLANT_CORN) return;
+		var bigChip = (plantType == PLANT_CHILLI_PEPPER) ? CHIP_CAPSAICIN : CHIP_POPCORN
+		var savedCrit = CAST_IS_CRITICAL
+		AWAKENING_DEPTH++
+		for (var n = 0; n < PLANT_MAX_CASTS; n++) {
+			plant = State[plantId]
+			if (plant.LIFE <= 0) break
+			var near = []
+			for (var e: var stat in State) {
+				if (e == plantId || stat.LIFE <= 0) continue
+				var d = CellClass.getDist(stat.CELL, plant.CELL)
+				if (d < 1 || d > PLANT_REACH) continue
+				push(near, [e, stat.CELL, stat.SIDE, stat.LIFE, stat.TOTAL_LIFE, EntityStateClass.hasState(stat, STATE_UNHEALABLE) == 1])
+			}
+			var bigCd = (bigChip in plant.COOLDOWNS) ? plant.COOLDOWNS[bigChip] : 0
+			var choice = PlantPolicy.choose(plantType, plant.CELL, plant.SIDE, plant.TP, bigCd, triggerId, near)
+			if (choice == null) break
+			var chip = choice[0]
+			var info = ITEMINFO[chip]
+			plant.TP -= info.COST
+			if (info.COOLDOWN > 0) {
+				var after = clone(plant.COOLDOWNS, 1)
+				after[chip] = info.COOLDOWN
+				plant.COOLDOWNS = after
+			}
+			ConsequencesClass.getConsequencesUncached(State, chip, plant.CELL, choice[1], plantId, clonedIds)
+		}
+		AWAKENING_DEPTH--
+		CAST_IS_CRITICAL = savedCrit
+	}
+
+	/*
+	 * Chemin de marche CANONIQUE de fromCell à toCell : le plus court (la distance de la couche
+	 * de marche, donc les MP facturés), et parmi les plus courts celui qui passe le moins de
+	 * cases dans la zone d'une plante ADVERSE, égalités à l'id de cellule le plus petit. L'IA
+	 * réelle marche exactement ce chemin quand des plantes à zone sont en jeu
+	 * (WalkCellsClass.MoveTo), ce qui rend exacts les réveils simulés le long de la marche.
+	 * Rend la liste des cases après le départ, ou null si toCell est hors d'atteinte.
+	 */
+	static canonicalPath(State, BaseHash, fromCell, toCell, mp, mySide) {
+		if (fromCell == toCell) return []
+		var key = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ BaseHash, (fromCell << 20) | (max(0, mp) << 10) | mySide), toCell)
+		if (key in AWAKEN_PATH_CACHE) return AWAKEN_PATH_CACHE[key]
+		var dist = WalkCellsClass.WalkableCells(fromCell, WalkCellsClass.LoadObstacleBoard(State, Me, BaseHash), max(0, mp))
+		if (!(toCell in dist)) {
+			AWAKEN_PATH_CACHE[key] = null
+			return null
+		}
+		var zones = livingZones(State)
+		var target = dist[toCell]
+		var cost = [fromCell: 0]
+		var pred = [: ]
+		var layers = []
+		for (var i = 0; i <= target; i++) push(layers, [])
+		for (var c: var d in dist) if (d <= target) push(layers[d], c)
+		for (var d = 1; d <= target; d++) {
+			for (var c in layers[d]) {
+				var x = CELL_X[c]
+				var y = CELL_Y[c]
+				var best = -1
+				var bestCost = 0
+				for (var nb in [XY_FREE[(x + 1) * 1024 + y], XY_FREE[(x - 1) * 1024 + y], XY_FREE[x * 1024 + y + 1], XY_FREE[x * 1024 + y - 1]]) {
+					if (nb == null || !(nb in dist) || dist[nb] != d - 1 || !(nb in cost)) continue
+					var nc = cost[nb]
+					if (best < 0 || nc < bestCost || (nc == bestCost && nb < best)) {
+						best = nb
+						bestCost = nc
+					}
+				}
+				if (best < 0) continue
+				var penalty = 0
+				if (zones != null) {
+					for (var z in zones) {
+						if (z[3] != mySide && CellClass.getDist(c, z[1]) <= z[2]) penalty++
+					}
+				}
+				pred[c] = best
+				cost[c] = bestCost + penalty
+			}
+		}
+		if (!(toCell in pred)) {
+			AWAKEN_PATH_CACHE[key] = null
+			return null
+		}
+		var path = []
+		var cur = toCell
+		while (cur != fromCell) {
+			push(path, cur)
+			cur = pred[cur]
+		}
+		reverse(path)
+		AWAKEN_PATH_CACHE[key] = path
+		return path
+	}
+
+	/*
+	 * Déplacement de Me vers From dans une branche, rejoué pas à pas pour les réveils : segments
+	 * de marche sur le chemin canonique, arrivées de saut ou de téléportation (seule l'arrivée
+	 * est testée, State.teleportEntity). Me s'arrête là où un réveil le tue.
+	 * Les buffs des puces de déplacement sont déjà posés par l'appelant : un réveil pendant la
+	 * marche qui les précède les voit, écart sans effet sur les lancers de plante.
+	 */
+	static replayMeMove(State, startCell, endCell, startMp, MyWalkCells, BaseHash, clonedIds) {
+		if (startCell == endCell || livingZones(State) == null) return;
+		var mySide = State[Me].SIDE
+		var segments = []
+		if (endCell in MyWalkCells.WALK) {
+			push(segments, [0, startCell, endCell])
+		} else {
+			var steps = WalkCellsClass.getActionsToGet(startCell, endCell, MyWalkCells.TELEPORTATION_AND_JUMP, MyWalkCells.TELEPORTATION, MyWalkCells.JUMP, MyWalkCells.WALK)
+			var cur = startCell
+			for (var a in steps) {
+				push(segments, [0, cur, a.From])
+				push(segments, [1, a.From, a.To])
+				cur = a.To
+			}
+			push(segments, [0, cur, endCell])
+		}
+		var mpLeft = startMp
+		for (var seg in segments) {
+			if (State[Me].LIFE <= 0) break
+			if (seg[1] == seg[2]) continue
+			if (seg[0] == 1) {
+				StateClass.ensureCloned(State, Me, clonedIds).CELL = seg[2]
+				onStep(State, Me, seg[1], seg[2], clonedIds)
+				continue
+			}
+			var path = canonicalPath(State, BaseHash, seg[1], seg[2], mpLeft, mySide)
+			if (path == null) break
+			mpLeft -= count(path)
+			var prev = seg[1]
+			for (var c in path) {
+				StateClass.ensureCloned(State, Me, clonedIds).CELL = c
+				onStep(State, Me, prev, c, clonedIds)
+				if (State[Me].LIFE <= 0) break
+				prev = c
+			}
+		}
+		var meStat = State[Me]
+		if (meStat.LIFE > 0) meStat.CELL = endCell
+	}
+}

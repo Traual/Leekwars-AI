@@ -82,6 +82,9 @@ class EntityStateClass extends EntityClass {
 	TP
 	TOTAL_TP
 	CELL
+	// Réveils de plante déjà déclenchés dans le tour, [plante * 65536 + déclencheur -> true] :
+	// porté par Me seul, null ailleurs. Jamais muté en place (AwakeningClass.mark le rebinde).
+	AWAKEN_MARKS
 	constructor(id) {
 		super(id)
 		// Masque construit en une lecture : getStates coute 25 operations, payees une fois par
@@ -109,6 +112,12 @@ class EntityStateClass extends EntityClass {
 			}
 		} else if (id in ENTITY_COOLDOWNS_BY_ID) {
 			this.COOLDOWNS = ENTITY_COOLDOWNS_BY_ID[id]
+		} else if (id in PLANT_ZONE_BY_ID) {
+			// Une plante à zone compte ses cooldowns en RÉVEILS, et mes propres déplacements
+			// peuvent la réveiller pendant mon tour : relevés à chaque construction.
+			var plantCooldowns = [: ]
+			for (var i in this.INVENTORY) plantCooldowns[i] = ItemClass.Cooldown(i, id)
+			this.COOLDOWNS = plantCooldowns
 		} else {
 			var cooldowns = [: ]
 			for (var i in this.INVENTORY) cooldowns[i] = ItemClass.Cooldown(i, id)
@@ -282,6 +291,7 @@ class EntityStateClass extends EntityClass {
 		}
 
 		this.CELL = getCell(id)
+		this.AWAKEN_MARKS = (id == Me) ? REAL_AWAKEN_MARKS : null
 		EntityStateClass.refreshShieldExpiry(this)
 	}
 
