@@ -1,35 +1,19 @@
 /*
- * Les deux canaux de valeur d'une entité, découplés :
+ * Deux mesures d'une entité, indépendantes du scoring d'un état.
  *
- *   term(e) = sign · ( importance(e) · survival(e)  +  capability(e) )
+ * PRODUCTION (OutputClass) — ce que son kit peut produire en un tour, en PV, à ses stats
+ * courantes : dégâts, poison sur sa durée, soins, vitalité, boucliers. Un remplissage glouton
+ * de ses PT par rendement, les items en recharge comptant pour la fraction de tours où ils sont
+ * disponibles, multiplié par l'espérance de critique (agilité / 1000) et par la mobilité. Les
+ * buffs et les shackles n'y ont pas de ligne propre : ils agissent sur les stats, les PT et les
+ * PM, donc sur la production elle-même.
  *
- * #1 IMPORTANCE — multiplicateur de rang dans [0,1], FIGÉ pendant un replan/BFS (memo par
- *    id, vidé par Play à chaque planification réelle).
- *    Son seul rôle : classer QUI compte (focus/protéger — un bulbe ≈ 1/3 d'un vrai poireau).
- *    Figé => un buff SIMULÉ en branche ne le bouge pas d'un point (un buff RÉEL est visible
- *    au replan suivant) ; les changements de stats en branche paient par capability et par
- *    les vrais canaux (contexte danger, formules de dégâts, heal map).
- *
- * #2 CAPABILITY — le canal LIVE des buffs/debuffs, additif et volontairement PETIT :
- *      capability = CAP_SCALE · Σ_S bucket_S · (1 + max(0,stat_S)/100) · (1 + CAP_MP_FACTOR·mp)
- *    bucket_S = la sortie HP des effets scalés par S dans le meilleur combo d'items de
- *    l'entité à son TOTAL_TP courant (glouton gated cooldown, valorisé via CAP_HP_W).
- *    « La valeur d'une stat = ce que les ITEMS peuvent en faire » : buffer une stat
- *    qu'aucun item n'utilise vaut 0 ; les buffs TP sont ÉMERGENTS (le combo se relance au
- *    nouveau budget) ; MP = multiplicateur plat. Tuer une entité libère sa capability.
- *
- * LIFE n'est dans aucun des deux (le terme de survie s'en charge).
+ * IMPORTANCE (ImportanceClass) — classement historique par stats, conservé pour les seuls
+ * poids de placement spatial (GravityClass, via HistoricalWeightsFactory).
  */
 
 include("../includes.leek")
 
-// ============================================================================
-// TUNING — #1 IMPORTANCE.   raw = Σ W[S]·stat[S]·(1 + IMP_CONVEX·stat[S]) ;
-// importance = max(0, min(1, raw/IMP_SCALE)), figée par replan réel (recalculée à chaque
-// planification de Play, stable pendant un BFS).
-//   - SCIENCE au-dessus (valeur d'équipe), autres stats de combat égales, TP >> MP.
-//   - IMP_SCALE : le raw qui vaut importance 1. Monter => tout le monde baisse.
-// ============================================================================
 global IMP_W_STRENGTH   = 0.002
 global IMP_W_MAGIC      = 0.002
 global IMP_W_WISDOM     = 0.002
@@ -41,169 +25,120 @@ global IMP_W_TOTAL_MP   = 0.05
 global IMP_CONVEX       = 0.0003
 global IMP_SCALE        = 9.0
 
-// ============================================================================
-// TUNING — #2 CAPABILITY. CAP_HP_W = HP par point d'effet de base (la monnaie commune).
-// Seuls les RATIOS comptent pour le glouton — le niveau absolu est absorbé par CAP_SCALE.
-// ============================================================================
-global CAP_HP_W = [
-    EFFECT_DAMAGE: 1.0,
-    EFFECT_POISON: 2.0,                 // ≈ ticks espérés avant cure
-    EFFECT_HEAL: 1.0,
-    EFFECT_BOOST_MAX_LIFE: 1.0,
-    EFFECT_ABSOLUTE_SHIELD: 5.0,        // 1 ABS bloque 1 dégât PAR HIT (~5 hits sur la durée)
-    EFFECT_RELATIVE_SHIELD: 25.0,       // 1% du flux entrant (~2500) sur la durée
-    EFFECT_VULNERABILITY: 25.0,         // miroir du relative shield
-    EFFECT_ABSOLUTE_VULNERABILITY: 5.0, // miroir de l'absolute shield
-    EFFECT_DAMAGE_RETURN: 15.0,
-    EFFECT_NOVA_DAMAGE: 5.0,            // permanent + heal-proof
-    EFFECT_NOVA_VITALITY: 5.0,
-    EFFECT_AFTEREFFECT: -2.0,           // le self-poison du doping
-    EFFECT_BUFF_TP: 100.0,              // 1 TP ≈ un cast de plus
-    EFFECT_BUFF_MP: 40.0,
-    EFFECT_BUFF_STRENGTH: 5.0,          // 1 STR = +1% dégâts ≈ 1% × ~500 de base
-    EFFECT_BUFF_RESISTANCE: 3.0,
-    EFFECT_BUFF_WISDOM: 3.0,
-    EFFECT_BUFF_AGILITY: 2.0,
-    EFFECT_SHACKLE_STRENGTH: 5.0,       // les shackles = miroirs des buffs
-    EFFECT_SHACKLE_MAGIC: 5.0,
-    EFFECT_SHACKLE_TP: 100.0,
-    EFFECT_SHACKLE_MP: 40.0,
-    EFFECT_SHACKLE_WISDOM: 3.0,
-    EFFECT_SHACKLE_AGILITY: 2.0
-]
-// Effet -> stat de scaling du CASTER (multiplicateurs vérifiés dans le moteur). Les effets
-// sans scaling (vulnés, raw buffs) comptent dans la VALEUR du glouton mais n'alimentent
-// aucun bucket.
-global CAP_STAT_OF_EFFECT = [
-    EFFECT_DAMAGE: STAT_STRENGTH,
-    EFFECT_POISON: STAT_MAGIC,
-    EFFECT_SHACKLE_STRENGTH: STAT_MAGIC, EFFECT_SHACKLE_MAGIC: STAT_MAGIC,
-    EFFECT_SHACKLE_TP: STAT_MAGIC, EFFECT_SHACKLE_MP: STAT_MAGIC,
-    EFFECT_SHACKLE_WISDOM: STAT_MAGIC, EFFECT_SHACKLE_AGILITY: STAT_MAGIC,        // shackles ×(1+MAG/100)
-    EFFECT_HEAL: STAT_WISDOM, EFFECT_BOOST_MAX_LIFE: STAT_WISDOM,                 // ×(1+WIS/100)
-    EFFECT_BUFF_TP: STAT_SCIENCE, EFFECT_BUFF_MP: STAT_SCIENCE,
-    EFFECT_BUFF_STRENGTH: STAT_SCIENCE, EFFECT_BUFF_RESISTANCE: STAT_SCIENCE,
-    EFFECT_BUFF_WISDOM: STAT_SCIENCE, EFFECT_BUFF_AGILITY: STAT_SCIENCE,
-    EFFECT_AFTEREFFECT: STAT_SCIENCE, EFFECT_NOVA_DAMAGE: STAT_SCIENCE,
-    EFFECT_NOVA_VITALITY: STAT_SCIENCE,                                           // ×(1+SCI/100)
-    EFFECT_DAMAGE_RETURN: STAT_AGILITY,                                           // ×(1+AGI/100)
-    EFFECT_ABSOLUTE_SHIELD: STAT_RESISTANCE, EFFECT_RELATIVE_SHIELD: STAT_RESISTANCE // ×(1+RES/100)
-]
-global CAP_MP_FACTOR = 0.1   // MP = multiplicateur plat (mobilité générique, volontairement aplati)
-global CAP_SCALE     = 0.020 // master dial (un buff de main-stat ≈ +33 sur un build chargé)
+class OutputClass {
+
+	/*
+	 * Production d'une entité, en PV par tour. Mémoïsée sur l'objet stat (CAP_MEMO) : ses seuls
+	 * inputs variables sont FOR, MAG, SAG, SCI, RES, AGI, PT et PM totaux, qui font partie des dix
+	 * entrées dont la modification périme ce mémo (StateClass.diffMaskOf). La liste d'items,
+	 * elle, est figée au tour.
+	 */
+	static of(stat) {
+		if (stat.CAP_MEMO != null) return stat.CAP_MEMO
+		var str = 1 + max(0, stat.STRENGTH) / 100
+		var mag = 1 + max(0, stat.MAGIC) / 100
+		var wis = max(0, 1 + stat.WISDOM / 100)
+		var sci = 1 + max(0, stat.SCIENCE) / 100
+		var res = 1 + max(0, stat.RESISTANCE) / 100
+		var tp = max(0, stat.TOTAL_TP)
+		var total = 0
+		for (var it in itemsOf(stat)) {
+			if (tp <= 0) break
+			var cost = it[1]
+			// Nombre de lancers par tour de disponibilité, dans les PT restants.
+			var n = min(it[2], floor(tp / cost))
+			if (n <= 0) continue
+			var avail = it[3]
+			tp -= n * cost * avail
+			total += n * avail * (it[4] * str + it[5] * mag + it[6] * wis + it[7] * res + it[8] * sci + it[9])
+		}
+		total *= (1 + V3_OUT_CRIT * min(1, max(0, stat.AGILITY) / 1000)) * (1 + V3_OUT_MP * max(0, stat.TOTAL_MP))
+		stat.CAP_MEMO = total
+		return total
+	}
+
+	/*
+	 * Items productifs d'une entité, triés par rendement de base décroissant :
+	 * [item, coût, lancers par tour, disponibilité, base FOR, base MAG, base SAG, base RES, base SCI,
+	 * base fixe]. Le soutien suit la caractéristique qui le multiplie au moteur : SCI pour les
+	 * buffs, MAG pour les shackles ; les buffs bruts et les vulnérabilités ne sont pas multipliés.
+	 * La base est la moyenne des jets, déjà pondérée par V3_OUT_*. Figée au tour, par id.
+	 */
+	static itemsOf(stat) {
+		var id = stat.ID
+		if (id in CAPABILITY_ITEMS_BY_ID) return CAPABILITY_ITEMS_BY_ID[id]
+		var items = []
+		for (var i in stat.INVENTORY) {
+			var info = ITEMINFO[i]
+			if (info == null || info.COST <= 0) continue
+			var bStr = 0, bMag = 0, bWis = 0, bRes = 0, bSci = 0, bFlat = 0
+			for (var eff in info.EFFECTS) {
+				var t = eff[0]
+				var avg = (eff[1] + eff[2]) / 2
+				var turns = max(1, eff[3])
+				if (V3_OUT_SUPPORT != 0) {
+					var sup = V3_OUT_SUPPORT * avg * turns
+					if (t == EFFECT_BUFF_STRENGTH || t == EFFECT_BUFF_AGILITY || t == EFFECT_BUFF_WISDOM || t == EFFECT_BUFF_RESISTANCE) bSci += sup * V3_OUT_SUP_STAT
+					else if (t == EFFECT_BUFF_TP) bSci += sup * V3_OUT_SUP_TP
+					else if (t == EFFECT_BUFF_MP) bSci += sup * V3_OUT_SUP_MP
+					else if (t == EFFECT_SHACKLE_STRENGTH || t == EFFECT_SHACKLE_MAGIC || t == EFFECT_SHACKLE_AGILITY || t == EFFECT_SHACKLE_WISDOM) bMag += sup * V3_OUT_SUP_STAT
+					else if (t == EFFECT_SHACKLE_TP) bMag += sup * V3_OUT_SUP_TP
+					else if (t == EFFECT_SHACKLE_MP) bMag += sup * V3_OUT_SUP_MP
+					else if (t == EFFECT_RAW_BUFF_STRENGTH || t == EFFECT_RAW_BUFF_MAGIC || t == EFFECT_RAW_BUFF_SCIENCE || t == EFFECT_RAW_BUFF_AGILITY || t == EFFECT_RAW_BUFF_RESISTANCE || t == EFFECT_RAW_BUFF_WISDOM) bFlat += sup * V3_OUT_SUP_STAT
+					else if (t == EFFECT_RAW_BUFF_TP) bFlat += sup * V3_OUT_SUP_TP
+					else if (t == EFFECT_RAW_BUFF_MP) bFlat += sup * V3_OUT_SUP_MP
+					else if (t == EFFECT_VULNERABILITY) bFlat += V3_OUT_SUPPORT * avg * V3_OUT_REL_SHIELD
+					else if (t == EFFECT_ABSOLUTE_VULNERABILITY) bFlat += V3_OUT_SUPPORT * avg * V3_OUT_ABS_SHIELD
+				}
+				if (t == EFFECT_DAMAGE) bStr += avg * V3_OUT_DAMAGE
+				else if (t == EFFECT_POISON) bMag += avg * turns * V3_OUT_POISON
+				else if (t == EFFECT_NOVA_DAMAGE) bSci += avg * V3_OUT_DAMAGE
+				else if (t == EFFECT_HEAL) bWis += avg * turns * V3_OUT_HEAL
+				else if (t == EFFECT_BOOST_MAX_LIFE) bWis += avg * V3_OUT_HEAL
+				else if (t == EFFECT_ABSOLUTE_SHIELD) bRes += avg * V3_OUT_ABS_SHIELD
+				else if (t == EFFECT_RELATIVE_SHIELD) bRes += avg * V3_OUT_REL_SHIELD
+			}
+			var base = bStr + bMag + bWis + bRes + bSci + bFlat
+			if (base <= 0) continue
+			// Recharge : l'item ne part qu'un tour sur (recharge + 1).
+			var avail = 1 / (1 + max(0, info.COOLDOWN))
+			push(items, [i, info.COST, max(1, info.MAX_USES), avail, bStr, bMag, bWis, bRes, bSci, bFlat])
+		}
+		if (count(items) > 1) {
+			items = arraySort(items, function(a, b) {
+				return (b[4] + b[5] + b[6] + b[7] + b[8] + b[9]) / b[1] - (a[4] + a[5] + a[6] + a[7] + a[8] + a[9]) / a[1]
+			})
+		}
+		CAPABILITY_ITEMS_BY_ID[id] = items
+		return items
+	}
+}
 
 class ImportanceClass {
 
-    /*
-     * Importance d'une entité, dans [0,1] — FIGÉE à sa première évaluation du REPLAN réel
-     * (Play vide IMPORTANCE_BY_ID avant chaque getBestAction : la racine du BFS score les
-     * entités réelles avec leurs stats à jour, puis tout l'arbre sert ces valeurs ; un bulbe
-     * virtuel se fige à ses stats de constructeur). Basse pour une entité faible, 1 pour un
-     * build max.
-     */
-    static get(stat) {
-        var id = stat.ID
-        if (id in IMPORTANCE_BY_ID) return IMPORTANCE_BY_ID[id]
-        var imp = rawImportanceOf(stat)
-        IMPORTANCE_BY_ID[id] = imp
-        return imp
-    }
+	/*
+	 * Importance d'une entité dans [0,1], figée au replan (Play vide IMPORTANCE_BY_ID).
+	 */
+	static get(stat) {
+		var id = stat.ID
+		if (id in IMPORTANCE_BY_ID) return IMPORTANCE_BY_ID[id]
+		var imp = rawImportanceOf(stat)
+		IMPORTANCE_BY_ID[id] = imp
+		return imp
+	}
 
-    /*
-     * La formule seule, SANS mémo. Sert à comparer l'importance d'une planification à l'autre
-     * sans amorcer la map : l'amorçage paresseux décide quel état fige la valeur du replan,
-     * une lecture de contrôle ne doit pas le devancer.
-     */
-    static rawImportanceOf(stat) {
-        var raw = IMP_W_STRENGTH   * stat.STRENGTH   * (1 + IMP_CONVEX * stat.STRENGTH)
-                + IMP_W_MAGIC      * stat.MAGIC      * (1 + IMP_CONVEX * stat.MAGIC)
-                + IMP_W_WISDOM     * stat.WISDOM     * (1 + IMP_CONVEX * stat.WISDOM)
-                + IMP_W_SCIENCE    * stat.SCIENCE    * (1 + IMP_CONVEX * stat.SCIENCE)
-                + IMP_W_AGILITY    * stat.AGILITY    * (1 + IMP_CONVEX * stat.AGILITY)
-                + IMP_W_RESISTANCE * stat.RESISTANCE * (1 + IMP_CONVEX * stat.RESISTANCE)
-                + IMP_W_TOTAL_TP   * stat.TOTAL_TP   * (1 + IMP_CONVEX * stat.TOTAL_TP)
-                + IMP_W_TOTAL_MP   * stat.TOTAL_MP   * (1 + IMP_CONVEX * stat.TOTAL_MP)
-        return max(0, min(1, raw / IMP_SCALE))   // borné [0,1] : ultra-shacklée (stats négatives) = 0, jamais négatif
-    }
-
-    /*
-     * Canal LIVE des buffs/debuffs (formule du header). Le (1 + stat/100) est LA formule du
-     * moteur : un item sort sa base même à stat 0. Memoïsé sur l'objet stat (CAP_MEMO,
-     * copié au clone puis validé par champs — StateClass.diffMaskOf). Me est
-     * INCLUS exprès : le delta immédiat de mes buffs n'a aucun autre
-     * canal (Me est exclu du contexte danger ET de la heal map — mes sorties sont simulées,
-     * pas projetées), capability(Me) est le ticket d'exploration qui garde les chaînes
-     * buff→attaque au-dessus du filtre sub-epsilon ; le vrai payoff de la chaîne domine
-     * ensuite la décision.
-     */
-    static capability(stat) {
-        if (stat.CAP_MEMO != null) return stat.CAP_MEMO
-        var combo = getCapabilityCombo(stat)   // [STAT_X -> HP des effets scalés par X], buckets non nuls
-        var v = 0
-        for (var s: var hp in combo) {
-            if      (s == STAT_STRENGTH)   v += hp * (1 + max(0, stat.STRENGTH) / 100)
-            else if (s == STAT_MAGIC)      v += hp * (1 + max(0, stat.MAGIC) / 100)
-            else if (s == STAT_WISDOM)     v += hp * max(0, 1 + stat.WISDOM / 100)   // moteur : le SOIN est flooré, WIS -50 = 50%
-            else if (s == STAT_SCIENCE)    v += hp * (1 + max(0, stat.SCIENCE) / 100)
-            else if (s == STAT_AGILITY)    v += hp * max(0, 1 + stat.AGILITY / 100)   // moteur : EffectDamageReturn appliqué si positif seulement
-            else if (s == STAT_RESISTANCE) v += hp * (1 + max(0, stat.RESISTANCE) / 100)
-        }
-        v *= CAP_SCALE * (1 + CAP_MP_FACTOR * max(0, stat.TOTAL_MP))
-        // Shields "au repos" : ticket d'exploration du shield préventif / de la vulné (le net
-        // ne les paie que sous danger réel). Memo-safe : les shields ne changent que sur des
-        // clones frais, qui nullent CAP_MEMO.
-        v += W_IDLE_ABS * stat.ABSOLUTE_SHIELD + W_IDLE_REL * stat.RELATIVE_SHIELD
-        stat.CAP_MEMO = v
-        return v
-    }
-
-    /*
-     * Liste d'items castables de l'entité [[item, hpValue, coût], ...] — gate cooldown <= 1
-     * de début de tour (convention de l'inventaire danger), valorisés via CAP_HP_W, triés
-     * HP/TP décroissant. Cachée par id pour le tour.
-     */
-    static getCapabilityItems(stat) {
-        var id = stat.ID
-        if (id in CAPABILITY_ITEMS_BY_ID) return CAPABILITY_ITEMS_BY_ID[id]
-        var items = []
-        // Parcourt INVENTORY (même ordre que l'ancienne map de cooldowns) + cooldown effectif.
-        for (var i in stat.INVENTORY) {
-            if (StateClass.cooldownOf(stat, i) > 1) continue
-            var hpValue = 0
-            for (var eff in ITEMINFO[i].EFFECTS) {
-                if (eff[0] in CAP_HP_W) hpValue += eff[1] * CAP_HP_W[eff[0]]
-            }
-            if (hpValue <= 0) continue
-            push(items, [i, hpValue, ITEMINFO[i].COST])
-        }
-        if (count(items) > 1) items = arraySort(items, function(a, b) { return (b[1] / b[2]) - (a[1] / a[2]) })
-        CAPABILITY_ITEMS_BY_ID[id] = items
-        return items
-    }
-
-    /*
-     * Le combo glouton au TOTAL_TP courant de l'entité, en buckets HP par stat
-     * [STAT_X -> HP des effets scalés par X]. Clé (id << 10) | max(0, TOTAL_TP) — le TP est
-     * DANS la clé pour que les buffs/shackles TP en branche relancent le glouton au nouveau
-     * budget (peu de TP distincts par tour -> peu de runs).
-     */
-    static getCapabilityCombo(stat) {
-        var tp = max(0, stat.TOTAL_TP)
-        var key = (stat.ID << 10) | tp
-        if (key in CAPABILITY_COMBO_CACHE) return CAPABILITY_COMBO_CACHE[key]
-        var combo = [: ]
-        for (var it in getCapabilityItems(stat)) {
-            var maxUses = ITEMINFO[it[0]].MAX_USES
-            var n = 0
-            while (tp >= it[2] && n < maxUses) { tp -= it[2]; n++ }
-            if (n == 0) continue
-            for (var eff in ITEMINFO[it[0]].EFFECTS) {
-                if (!(eff[0] in CAP_STAT_OF_EFFECT) || !(eff[0] in CAP_HP_W)) continue
-                var s = CAP_STAT_OF_EFFECT[eff[0]]
-                combo[s] = ((s in combo) ? combo[s] : 0) + n * eff[1] * CAP_HP_W[eff[0]]
-            }
-        }
-        CAPABILITY_COMBO_CACHE[key] = combo
-        return combo
-    }
+	/*
+	 * La formule seule, sans mémo : sert à comparer d'une planification à l'autre.
+	 */
+	static rawImportanceOf(stat) {
+		var raw = IMP_W_STRENGTH   * stat.STRENGTH   * (1 + IMP_CONVEX * stat.STRENGTH)
+				+ IMP_W_MAGIC      * stat.MAGIC      * (1 + IMP_CONVEX * stat.MAGIC)
+				+ IMP_W_WISDOM     * stat.WISDOM     * (1 + IMP_CONVEX * stat.WISDOM)
+				+ IMP_W_SCIENCE    * stat.SCIENCE    * (1 + IMP_CONVEX * stat.SCIENCE)
+				+ IMP_W_AGILITY    * stat.AGILITY    * (1 + IMP_CONVEX * stat.AGILITY)
+				+ IMP_W_RESISTANCE * stat.RESISTANCE * (1 + IMP_CONVEX * stat.RESISTANCE)
+				+ IMP_W_TOTAL_TP   * stat.TOTAL_TP   * (1 + IMP_CONVEX * stat.TOTAL_TP)
+				+ IMP_W_TOTAL_MP   * stat.TOTAL_MP   * (1 + IMP_CONVEX * stat.TOTAL_MP)
+		return max(0, min(1, raw / IMP_SCALE))
+	}
 }

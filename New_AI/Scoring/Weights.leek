@@ -1,105 +1,128 @@
 /*
- * Tous les scalaires réglables du scoring (monnaie : HP). Les nombres se balayent ici
- * sans toucher à la logique.
+ * Paramètres de la famille de scoring v3 : « PV pondérés par la production ».
  *
- * Par entité VIVANTE — deux canaux, chaque input a UN seul canal :
- *   afterPeriodic = max(0, LIFE − COEF_PERIODIC_TICK·netTick)  // STOCK : netTick = poison + aftereffect − HoT
- *   ttk         = rounds avant la mort                // HORIZON : danger net + traînée poison
- *   value       = BASE_ALIVE + W_LIFE · sqrt(afterPeriodic) + W_TTK · g(ttk)
- *               + W_TOTAL_LIFE · sqrt(TOTAL_LIFE)
- * score = Σ sign·(importance·value + capability + drDeterrence). Les morts contribuent 0
- * => BASE_ALIVE apporte une contribution fixe d'être vivant : importance·BASE_ALIVE.
+ * Monnaie : le point de vie (PV). Un nombre de ce fichier se lit toujours comme « combien de
+ * PV vaut ceci ». Le score d'un état est la somme, sur les entités vivantes, de leur valeur
+ * (positive pour mon camp, négative pour l'adversaire), plus un terme d'issue du combat.
+ *
+ * Valeur d'une entité vivante (Scoring.leek) :
+ *
+ *   maintenant = PV − prochain tick périodique net (poison + contrecoup − soin continu)
+ *                − K_PERIODIC · reste de ces flux au-delà du prochain tick, plafonnés à la vie max
+ *   stock(x)   = x · (1 + CONCAVITY · (1 − x / vie max)) : un PV vaut (1 + CONCAVITY) près de la
+ *                mort et (1 − CONCAVITY) au plafond ; 0 = linéaire
+ *   pression   = dégâts nets projetés sur le prochain round (Delta), moins le soin continu qui
+ *                déborde du plafond de vie
+ *   survie     = 1 / (1 + (pression / (R0 · maintenant))^SF_POW)       dans ]0, 1]
+ *   valeur     = poids · (K_HP · stock(maintenant) + (PRESENCE + K_ALIVE · survie) · vie max)
+ *              + (OUTPUT_PRESENCE + K_OUTPUT · survie) · production
+ *              + garde au repos
+ *
+ *   garde      = ce que ses boucliers et son renvoi de dégâts vaudraient contre un tour d'attaques
+ *                typique (GUARD_HITS coups, GUARD_SHARE de sa vie max encaissée), qu'une menace
+ *                soit projetée ou non : c'est la seule valeur qu'une protection de Me ait dans
+ *                l'arbre, où sa cellule finale n'est pas encore choisie
+ *   production = PV par tour que son kit peut produire à ses stats courantes (dégâts, poison,
+ *                soins, boucliers), estimée par un remplissage glouton de ses PT, multipliée
+ *                par l'espérance de critique et par sa mobilité
+ *   poids      = production gelée au tour / production moyenne des poireaux vivants, bornée
+ *
+ * Chaque entrée n'a qu'UN canal : les PV et les flux périodiques vivent dans « maintenant », le
+ * danger projeté dans « pression », la puissance dans « production ». Aucune donnée n'est
+ * comptée deux fois ; la survie les couple seulement, un poireau empoisonné étant plus fragile
+ * au même danger.
  */
 
 include("../includes.leek")
 
-// Valeur fixe d'être en vie, dans survival (multiplié ensuite par importance) : contribution
-// de BASE_ALIVE au terme = importance·BASE_ALIVE — une faible importance rend volontairement
-// un summon ou une entité faible moins précieux. Valorise aussi summons/résus.
-global BASE_ALIVE = 1000
+// ----- Valeur des PV présents, par PV -----
+global V3_K_HP_ALLY  = 1.0
+global V3_K_HP_ENEMY = 1.0
+// Concavité du stock, dans [0, 1[ : soigner un blessé et achever une cible basse valent plus.
+global V3_HP_CONCAVITY = 0.5
 
-// Canal STOCK : W_LIFE · sqrt(afterPeriodic) — la vie brute, AUCUNE projection dedans (le
-// danger et la traînée de poison vivent dans le TTK). sqrt est concave -> un HP vaut plus
-// près de la mort (pousse à finir les blessés). Paie le chip damage et les heals même sur
-// des cibles hors de toute menace. (~0.75 de concavité ? sqrt(x·sqrt(x)).)
-global W_LIFE = 14.0
+// ----- Valeur d'être debout, en fraction de la vie max, modulée par la survie -----
+// Un kill retire à la victime tout ce qu'elle valait : ses PV, cette part, et sa production.
+global V3_K_ALIVE_LEEK   = 0.5
+global V3_K_ALIVE_SUMMON = 0.2
 
-// Terme de vie max : le capital DURABLE de l'entité. Seul canal de l'érosion/nova (permanent,
-// aucun heal ne le rend) et de la moitié vie-max des buffs de vitalité.
-// Vit HORS de SURVIVAL_CACHE (clé pleine) — ajouté après la lecture.
-global W_TOTAL_LIFE = 1.0 * W_LIFE
+// ----- Survie projetée -----
+// Pression relative (dégâts projetés / PV attendus) où la survie vaut 1/2, et raideur de la
+// transition : 2 = progressive, 4 = presque un seuil.
+global V3_R0     = 2.0
+global V3_SF_POW = 2
+// Part du poison et du contrecoup restant au-delà du prochain tick comptée comme PV perdus :
+// un antidote ou une purge peut encore les retirer.
+global V3_K_PERIODIC = 0.7
 
-// Tick périodique NET du prochain tour (poison + aftereffect − heal over time), soustrait
-// de la vie (un HoT dominant le rehausse).
-global COEF_PERIODIC_TICK = 0.5
+// ----- Tempo : production encore disponible, en tours de production -----
+global V3_K_OUTPUT_ALLY  = 0.5
+global V3_K_OUTPUT_ENEMY = 0.5
+// Invocations, des deux camps : une invocation vaut surtout par ce qu'elle produira sur les tours
+// qui viennent, là où un poireau vaut d'abord par ses PV et son maintien debout.
+global V3_K_OUTPUT_SUMMON = 3.0
 
-// Le heal amortit le danger dans le net séquencé par ordre de tour (DeltaClass) : chaque
-// heal compte à HEAL_COEF de son potentiel. Plein tarif : dans une méta où presque chaque
-// poireau porte Régénération, Rémission ou Sérum, le soin adverse tombe aussi sûrement qu'un
-// dégât, et l'escompter faisait viser des cibles qui seront remontées.
-global DANGER_COEF = 1.0
-global HEAL_COEF = 1.00
+// ----- Présence : la part de valeur qui ne dépend PAS de la survie projetée -----
+// La projection additionne tous les attaquants possibles sur chaque cible : une invocation posée
+// près de l'ennemi y paraît presque toujours condamnée (pression médiane 1,5 à 2 fois ses PV,
+// mesurée), et tout ce que la survie multiplie s'effondre avec elle. Ces parts restent acquises
+// tant que l'entité est debout. 0 = éteint.
+global V3_K_PRESENCE_LEEK = 0.0           // en fraction de la vie max
+global V3_K_PRESENCE_SUMMON = 0.0         // en fraction de la vie max
+global V3_K_OUTPUT_PRESENCE_SUMMON = 0.0  // en tours de production
+// Une plante ne produit qu'à ses réveils.
+global V3_K_PLANT_OUTPUT = 0.5
 
-// ----- Canal HORIZON : TTK (kill-horizon) — LE canal de menace -----
-// survivalValue gagne W_TTK · g en forme DIRECTE : g = horizonLife/(horizonLife +
-// TTK_HALF·pression) ∈ [0,1] — algébriquement ttk/(ttk+TTK_HALF) avec ttk = rounds avant
-// la mort sous la pression courante : danger net + traînée périodique NUISIBLE,
-// harmfulRemaining = max(0, coefAntidote·POISON_OVER_TIME + AFTEREFFECT_OVER_TIME −
-// HEAL_OVER_TIME) — le coef antidote ne porte que sur le VRAI poison (calcul dans
-// survivalValue). Pression nulle -> g = 1 exactement : aucun +1 protecteur, une entité
-// vivante sans pression touche tout W_TTK.
-// C'est le SEUL endroit où le danger projeté et la traînée de poison entrent dans la valeur
-// (l'ancien canal pressure/effLife double-comptait ET était concave -> saupoudrage de
-// vulnés ; remplacé).
-//
-// g a sa pente MAXIMALE près de ttk 0-1.5 : franchir un seuil de kill est la plus grosse
-// monnaie du canal (TTK_HALF=2 : ttk 2->1 = Δg 0.167, ·W_TTK = ~67 ; 1->0.5 = ~53), puis g
-// s'aplatit (cible condamnée, rien à gratter) et l'IA passe à la suivante.
-// -> stack de vulnés jusqu'au one-turn-kill ÉMERGENT ; POT-léthal couvert (un empoisonné
-// condamné a ttk ~ sa durée de poison -> valeur effondrée) ; menace RELATIVE à la vie
-// (jamais noyée) ; l'overkill garde un gradient (ttk descend sous 1 en continu).
-//
-// Tuning à la main :
-//   W_TTK    : l'ampleur de TOUTE la sensibilité au danger (l'équivalent de l'ancien
-//              couple DANGER_WEIGHT/BUFFER). 400 ≈ l'ancienne ampleur sur un build 3k HP.
-//              0 = plus AUCUNE peur (stock seul) — à ne pas laisser en combat.
-//   TTK_HALF : où est le "milieu" de g (g = 0.5 à ttk = TTK_HALF). Monter -> les seuils
-//              lointains (3-4 rounds) paient aussi ; descendre -> seuls les kills
-//              imminents comptent.
-global W_TTK = 400.0
-global TTK_HALF = 2.0
+// ----- Poids d'une entité : sa production relative, bornée -----
+global V3_WORTH_MIN = 0.25
+global V3_WORTH_MAX = 3.0
+// 1 = proportionnel ; au-dessus, les entités qui produisent le plus comptent davantage.
+global V3_WORTH_POW = 1.0
+// Faux = les PV de mon camp valent tous 1 : le poids ne classe plus que les cibles adverses.
+global V3_WORTH_ALLIES = true
 
-// Dissuasion du damage return : le terme d'un porteur gagne DR_RETURN_EXPECT · physRatio
-// (équipe adverse) · min(net, LIFE) · DR/100 — la menace qui lui arrive se convertit en
-// retours que ses attaquants saigneront (ScoringClass.drDeterrence). Facteur de confiance,
-// même philosophie que HEAL_COEF.
-global DR_RETURN_EXPECT = 0.4
+// ----- Garde au repos -----
+// Part de la protection comptée hors menace projetée (0 = aucune), coups encaissés par tour,
+// et part de la vie max encaissée par tour qui sert d'assiette au bouclier relatif et au renvoi.
+global V3_K_IDLE_SHIELD = 0.3
+global V3_K_IDLE_DR = 0.3
+global V3_K_IDLE_HOT = 0.3
+global V3_GUARD_HITS = 3
+global V3_GUARD_SHARE = 0.3
 
-// Shields "au repos" (dans capability, memo-safe) : le net ne paie les shields que sous
-// danger réel — ce petit terme donne au shield préventif son ticket d'exploration quand il
-// n'y a rien de mieux à faire. NON clampé : une vulné (shield négatif) paie le même canal
-// en sens inverse (déshabiller un ennemi score même sans allié pour en profiter).
-global W_IDLE_ABS = 0.12   // par point de shield absolu
-global W_IDLE_REL = 0.60   // par % de shield relatif
+// ----- Placement : multiplie la perte de valeur de Me sous le danger de sa cellule finale -----
+global V3_K_EXPOSURE = 0.15
 
-// Coût de cast à la main pour quelques items d'économie : soustrait au SCORE du nœud qui
-// les caste (coût d'ACTION porté par le chemin, hors TERMS). L'item doit rapporter PLUS que
-// son coût pour partir maintenant — Régé (une fois par combat) exige un vrai gros payoff,
-// Antidote un vrai poison à nettoyer, Manumission de vrais shackles.
+// ----- Issue du combat : plus aucun poireau adverse debout (et l'inverse) -----
+global V3_WIN = 50000
+
+// ----- Estimation de la production : PV par point d'effet de base -----
+global V3_OUT_DAMAGE     = 1.0    // dégâts directs et érosion
+global V3_OUT_POISON     = 0.8    // poison, par tick attendu sur sa durée (antidotes, purges)
+global V3_OUT_HEAL       = 1.0    // soin et vitalité
+global V3_OUT_ABS_SHIELD = 2.0    // un bouclier absolu arrête plusieurs coups
+global V3_OUT_REL_SHIELD = 10.0   // un % de bouclier relatif sur un flux de l'ordre du millier de PV
+global V3_OUT_CRIT = 0.3          // gain d'un critique ; chance = agilité / 1000 (moteur)
+// Production de SOUTIEN : buffs donnés, shackles et vulnérabilités posés. Leur valeur passe par
+// les stats de la cible quand ils sont actifs ; ici, c'est le POTENTIEL d'un soutien qui compte
+// dans son poids — un bulbe savant ne produit rien lui-même. 0 = éteint.
+global V3_OUT_SUPPORT = 0.0
+global V3_OUT_SUP_STAT = 1.0      // PV par point de caractéristique et par tour d'effet
+global V3_OUT_SUP_TP = 40.0       // PV par PT et par tour d'effet (un lancer de plus)
+global V3_OUT_SUP_MP = 15.0       // PV par PM et par tour d'effet
+global V3_OUT_MP = 0.03           // gain de production par PM total (atteindre sa cible)
+
+// Coût de cast à la main pour quelques items d'économie, soustrait au score du nœud qui les
+// lance : l'item doit rapporter PLUS que ce coût pour partir maintenant.
 global CAST_COST = [
 	CHIP_REGENERATION: 100,
 	CHIP_ANTIDOTE: 10,
 	CHIP_MANUMISSION: 2
 ]
 
-// Poison antidote-aware : harmfulRemaining utilise coef(entité)·POISON_OVER_TIME (le coef
-// ne touche NI l'aftereffect NI les soins futurs), avec
-// coef = 1/(1 + POISON_CLEANSE_W · protection). protection = son antidote 1/(1+cd) + chaque
-// porteur allié 1/(1+cd) DILUÉ par le nombre de coéquipiers qu'il couvre (un antidote
-// nettoie ~une cible par cycle de cd de 4 tours — un porteur seul couvrant 4 protège chacun
-// à 1/4 : le poison garde ~80% de sa valeur là-bas, ~35% contre une équipe full-antidote).
-// Monter => dévaloriser le poison plus fort contre les équipes couvertes.
-global POISON_CLEANSE_W = 1.0
+// Facteurs appliqués à la source des cartes de danger et de soin (Maps/Danger, Maps/Heal).
+global DANGER_COEF = 1.0
+global HEAL_COEF = 1.00
 
 // Valeur rendue par ScoringClass.actionUpperBound quand il ne sait pas borner l'action :
 // assez grande pour qu'elle soit toujours simulée plutôt qu'élaguée.

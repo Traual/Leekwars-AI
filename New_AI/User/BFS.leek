@@ -544,7 +544,9 @@ class ActionSuite {
 					BOUND_CHECKED++
 					if (ub < delta) {
 						BOUND_VIOLATED++
-						debugE("[MAJORANT VIOLE] " + ITEMINFO[Item].NAME + " majorant " + ub + " < delta " + delta)
+						// La coupe n'emploie le majorant que depuis une cellule de MARCHE : une violation
+						// hors marche (saut, téléportation) ne fausse aucune coupe, elle se lit à part.
+						debugE("[MAJORANT VIOLE] " + ((act.From in MyWalkCells.WALK) ? "marche " : "hors-marche ") + ITEMINFO[Item].NAME + " majorant " + ub + " < delta " + delta)
 					}
 				} else {
 					BOUND_SKIPPED++
