@@ -1,5 +1,5 @@
 /*
- * Aucun modèle appris dans la famille de scoring v3.
+ * Aucun modèle appris.
  */
 
 include("../includes.leek")

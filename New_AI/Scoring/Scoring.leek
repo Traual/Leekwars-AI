@@ -1,430 +1,190 @@
 /*
- * Scoring v3 : valeur d'un état en PV pondérés par la production (formule dans Weights.leek).
+ * Scoring : la valeur d'un état est une somme par statistique.
  *
- *   score = Σ terme(e) sur les vivants  +  issue
- *   terme(e) = +valeur(e) pour mon camp, −valeur(e) pour l'adversaire
- *   issue    = +V3_WIN si plus aucun poireau adverse n'est debout, −V3_WIN si plus aucun des miens
+ *   valeur(e)    = bonus de présence + Σ coefficient × statistique   (0 si e est morte)
+ *   score(état)  = Σ valeur(alliés) − Σ valeur(adversaires)
+ *   gain(action) = score(après) − score(avant)
  *
- * Me fait exception : sa pression projetée vaut 0 pendant la recherche. Là où il finira le
- * tour n'est pas décidé, et FinalCell facture ensuite, cellule par cellule, la valeur qu'il
- * perdrait sous le danger de sa cellule finale.
- *
- * La recherche patche les termes de nœud en nœud : un terme n'est recalculé que si ses entrées
- * ont bougé — ses champs locaux (masque du Node), le danger d'un lanceur qui la couvre, ou les
- * soigneurs de son camp. L'issue est un pseudo-terme, relu seulement quand un poireau meurt.
+ * Coefficients et signification de chaque statistique : Weights.leek. Le score ne lit ni le
+ * danger projeté, ni les soins projetés, ni la production d'un kit : la sécurité de la cellule
+ * de fin de tour est jugée à part, par FinalCell.
  */
 
 include("../includes.leek")
 
-// Pseudo-entité de l'issue dans la map de termes. Aucun identifiant d'entité n'est négatif.
-global V3_OUTCOME_ID = -1
-
-// Poids gelés au tour : [id d'un poireau, ou signature d'une invocation -> poids], et la
-// production moyenne des poireaux vivants qui sert d'unité.
-global V3_WORTH_BY_KEY = [: ]
-global V3_WORTH_TURN = -1
-global V3_OUT_REF = 1
+// Journalise les contributions de la décision retenue (ScoringClass.explainDecision).
+global SCORE_EXPLAIN = false
 
 class ScoringClass {
 
 	/*
-	 * Poids gelés au tour, préparés à la première lecture du tour. Un poireau et ses bulbes
-	 * partagent la VM : un poids est une propriété de l'entité évaluée, pas de celle qui cherche.
+	 * Valeur d'une entité pour son propre camp, toujours >= 0 pour des coefficients positifs.
+	 * Une entité morte ne vaut rien : ni présence, ni caractéristiques.
+	 *
+	 * @param stat état de l'entité
+	 * @param out map [nom -> contribution] remplie quand elle n'est pas nulle (diagnostic)
+	 * @return la valeur
 	 */
-	static prepareTurn(State) {
-		var turn = getTurn()
-		if (V3_WORTH_TURN == turn) return;
-		V3_WORTH_TURN = turn
-		V3_WORTH_BY_KEY = [: ]
-		var sum = 0
-		var n = 0
-		for (var e: var stat in State) {
-			if (stat.LIFE <= 0 || stat.IS_SUMMON) continue
-			sum += OutputClass.of(stat)
-			n++
+	static entityValue(stat, out) {
+		if (stat.LIFE <= 0) return 0
+		var presence    = stat.IS_SUMMON ? SCORE_ALIVE_SUMMON : SCORE_ALIVE_LEEK
+		var life        = COEF_LIFE * stat.LIFE
+		var totalLife   = COEF_TOTAL_LIFE * stat.TOTAL_LIFE
+		var strength    = COEF_STRENGTH * stat.STRENGTH
+		var wisdom      = COEF_WISDOM * stat.WISDOM
+		var agility     = COEF_AGILITY * stat.AGILITY
+		var resistance  = COEF_RESISTANCE * stat.RESISTANCE
+		var science     = COEF_SCIENCE * stat.SCIENCE
+		var magic       = COEF_MAGIC * stat.MAGIC
+		var power       = COEF_POWER * stat.POWER
+		var tp          = COEF_TOTAL_TP * stat.TOTAL_TP
+		var mp          = COEF_TOTAL_MP * stat.TOTAL_MP
+		var absShield   = COEF_ABSOLUTE_SHIELD * stat.ABSOLUTE_SHIELD
+		var relShield   = COEF_RELATIVE_SHIELD * stat.RELATIVE_SHIELD
+		var damageReturn = COEF_DAMAGE_RETURN * stat.DAMAGE_RETURN
+		var poison      = COEF_POISON * stat.POISON_OVER_TIME
+		var aftereffect = COEF_AFTEREFFECT * stat.AFTEREFFECT_OVER_TIME
+		var heal        = COEF_HEAL * stat.HEAL_OVER_TIME
+		if (out != null) {
+			out["présence"] = presence
+			out["vie"] = life
+			out["vie max"] = totalLife
+			out["force"] = strength
+			out["sagesse"] = wisdom
+			out["agilité"] = agility
+			out["résistance"] = resistance
+			out["science"] = science
+			out["magie"] = magic
+			out["puissance"] = power
+			out["PT"] = tp
+			out["PM"] = mp
+			out["bouclier absolu"] = absShield
+			out["bouclier relatif"] = relShield
+			out["renvoi"] = damageReturn
+			out["poison"] = poison
+			out["contrecoup"] = aftereffect
+			out["soin continu"] = heal
 		}
-		V3_OUT_REF = (n > 0 && sum > 0) ? sum / n : 1
+		return presence + life + totalLife + strength + wisdom + agility + resistance + science
+			+ magic + power + tp + mp + absShield + relShield + damageReturn + poison
+			+ aftereffect + heal
 	}
 
 	/*
-	 * Poids d'une entité : sa production relative, bornée. Figé à sa première lecture du tour.
-	 * Une invocation est rangée sous la signature de ses stats et de son invocateur : deux
-	 * branches qui invoquent sous le même identifiant virtuel ne partagent un poids que si les
-	 * invocations sont indiscernables.
+	 * Score COMPLET d'un état : la somme signée des valeurs de ses entités. Passé OpsLimit,
+	 * rend null plutôt que de laisser le moteur couper le tour.
+	 *
+	 * @param State [id -> stats]
+	 * @param MySide mon camp
+	 * @param OpsLimit plafond d'opérations au-delà duquel on renonce
+	 * @return le score, ou null
 	 */
-	static worthOf(e, stat) {
-		var key = stat.IS_SUMMON ? HistoricalWeightsFactory.summonKey(stat) : e
-		if (key in V3_WORTH_BY_KEY) return V3_WORTH_BY_KEY[key]
-		var out = OutputClass.of(stat)
-		if (e in PLANT_ZONE_BY_ID) out *= V3_K_PLANT_OUTPUT
-		var w = out / V3_OUT_REF
-		if (V3_WORTH_POW != 1) w = pow(max(0, w), V3_WORTH_POW)
-		if (w < V3_WORTH_MIN) w = V3_WORTH_MIN
-		if (w > V3_WORTH_MAX) w = V3_WORTH_MAX
-		V3_WORTH_BY_KEY[key] = w
-		return w
-	}
-
-	/*
-	 * Terme SIGNÉ d'une entité vivante, sous une pression projetée `net` (0 pour Me dans l'arbre).
-	 */
-	static entityTerm(e, stat, net, MySide) {
-		// Flux périodiques EFFECTIFS : le moteur annule le tick de poison d'un INVINCIBLE et le
-		// tick de soin d'un UNHEALABLE ; le contrecoup tombe toujours.
-		var tickDmg = stat.POISON + stat.AFTEREFFECT
-		var restDmg = (stat.POISON_OVER_TIME - stat.POISON) + (stat.AFTEREFFECT_OVER_TIME - stat.AFTEREFFECT)
-		var tickHeal = stat.HEAL
-		var restHeal = stat.HEAL_OVER_TIME - stat.HEAL
-		if (stat.STATES != 0) {
-			if (EntityStateClass.hasState(stat, STATE_INVINCIBLE)) {
-				tickDmg = stat.AFTEREFFECT
-				restDmg = stat.AFTEREFFECT_OVER_TIME - stat.AFTEREFFECT
-			}
-			if (EntityStateClass.hasState(stat, STATE_UNHEALABLE)) {
-				tickHeal = 0
-				restHeal = 0
-			}
-		}
-		var lifeMax = stat.TOTAL_LIFE
-		// PV attendus : le prochain tick net tombe, le reste des flux compte pour V3_K_PERIODIC.
-		// Les soins continus remplissent d'abord la vie manquante ; ce qui déborde du plafond n'est
-		// pas perdu, il absorbera les dégâts à venir — il compense le danger projeté et entre dans la
-		// garde, jamais dans les PV.
-		var filled = stat.LIFE - tickDmg + tickHeal + V3_K_PERIODIC * restHeal
-		var overflow = 0
-		if (filled > lifeMax) {
-			overflow = filled - lifeMax
-			filled = lifeMax
-		}
-		var now = filled - V3_K_PERIODIC * restDmg
-		// Condamnée par ses flux : plus rien à défendre ni à attaquer.
-		if (now <= 0) return 0
-
-		var survival = 1
-		var pressure = net - overflow
-		if (pressure > 0) {
-			var r = pressure / (V3_R0 * now)
-			var rp = r * r
-			if (V3_SF_POW == 4) rp = rp * rp
-			else if (V3_SF_POW == 3) rp = rp * r
-			survival = 1 / (1 + rp)
-		}
-		var ally = stat.SIDE == MySide
-		var out = OutputClass.of(stat)
-		if (e in PLANT_ZONE_BY_ID) out *= V3_K_PLANT_OUTPUT
-		var worth = (ally && !V3_WORTH_ALLIES) ? 1 : worthOf(e, stat)
-		var stock = now
-		if (V3_HP_CONCAVITY != 0) stock = now * (1 + V3_HP_CONCAVITY * (1 - now / lifeMax))
-		var value = worth * ((ally ? V3_K_HP_ALLY : V3_K_HP_ENEMY) * stock
-				+ (stat.IS_SUMMON ? V3_K_PRESENCE_SUMMON + V3_K_ALIVE_SUMMON * survival : V3_K_PRESENCE_LEEK + V3_K_ALIVE_LEEK * survival) * lifeMax)
-			+ (stat.IS_SUMMON ? V3_K_OUTPUT_PRESENCE_SUMMON + V3_K_OUTPUT_SUMMON * survival : (ally ? V3_K_OUTPUT_ALLY : V3_K_OUTPUT_ENEMY) * survival) * out
-		// Garde au repos : boucliers et renvoi contre un tour d'attaques typique. Signée comme le
-		// reste : retirer la protection d'un adversaire vaut autant que protéger un allié.
-		if (V3_K_IDLE_SHIELD != 0) value += V3_K_IDLE_SHIELD * (stat.ABSOLUTE_SHIELD * V3_GUARD_HITS + stat.RELATIVE_SHIELD * lifeMax * V3_GUARD_SHARE / 100)
-		if (V3_K_IDLE_DR != 0 && stat.DAMAGE_RETURN != 0) value += V3_K_IDLE_DR * stat.DAMAGE_RETURN * lifeMax * V3_GUARD_SHARE / 100
-		if (V3_K_IDLE_HOT != 0 && overflow > 0) value += V3_K_IDLE_HOT * min(overflow, lifeMax * V3_GUARD_SHARE)
-		return ally ? value : -value
-	}
-
-	/*
-	 * Issue du combat : un camp sans poireau debout a perdu. Les invocations ne comptent pas.
-	 */
-	static outcomeOf(State, MySide) {
-		var allies = false
-		var enemies = false
-		for (var e: var stat in State) {
-			if (stat.LIFE <= 0 || stat.IS_SUMMON) continue
-			if (stat.SIDE == MySide) allies = true
-			else enemies = true
-			if (allies && enemies) return 0
-		}
-		return (enemies ? 0 : V3_WIN) - (allies ? 0 : V3_WIN)
-	}
-
-	/*
-	 * Map complète des termes [id -> terme signé], pseudo-terme d'issue compris. Utilisée à la
-	 * racine du BFS, puis patchée de nœud en nœud. Passé OpsLimit, rend null plutôt que de
-	 * laisser le moteur couper le tour.
-	 */
-	static buildTermsMap(State, MySide, BaseHash, contextBySide, hfpBySide, poisonKey, OpsLimit) {
+	static stateValue(State, MySide, OpsLimit) {
 		BenchOps.Start("Scoring")
-		prepareTurn(State)
-		var combinedFp = 0
-		for (var s: var h in hfpBySide) combinedFp ^= h
-		var healMap = HealClass.getHealMapByFp(State, combinedFp)
-		var terms = [: ]
+		var total = 0
 		for (var e: var stat in State) {
-			if (stat.LIFE <= 0) continue
 			if (getOperations() > OpsLimit) {
 				BenchOps.Stop("Scoring")
 				return null
 			}
-			var net = 0
-			if (e != Me) {
-				BenchOps.Start("Delta")
-				net = DeltaClass.netOf(e, stat, State, BaseHash, contextBySide, hfpBySide, healMap)
-				BenchOps.Stop("Delta")
-			}
-			terms[e] = entityTerm(e, stat, net, MySide)
+			if (stat.LIFE <= 0) continue
+			var v = entityValue(stat, null)
+			total += (stat.SIDE == MySide) ? v : -v
 		}
-		terms[V3_OUTCOME_ID] = outcomeOf(State, MySide)
 		BenchOps.Stop("Scoring")
-		return terms
-	}
-
-	static sumTerms(terms) {
-		var s = 0
-		for (var e: var t in terms) s += t
-		return s
+		return total
 	}
 
 	/*
-	 * Score incrémental : score(enfant) = score(parent) + Δ sur les termes dont une entrée a
-	 * bougé. Mêmes déclencheurs que la recherche fournit déjà : LOCAL_TERM_DIRTY (champs
-	 * locaux), casters dont la couverture offensive a changé, soigneurs d'un camp. Un terme
-	 * sauté n'est pas écrit dans le patch : il se résout chez l'ancêtre (TERMS_PARENT).
+	 * Score d'un nœud depuis celui de son parent. Seules les entités CLONÉES par l'action ont pu
+	 * changer de valeur : les autres sont les objets du parent, partagés tels quels. La somme des
+	 * écarts est donc exactement la différence des scores complets.
+	 *
+	 * @param node nœud dont CLONED porte [id -> état d'AVANT l'action] (null = entité née)
+	 * @param State état de travail APRÈS l'action
+	 * @param ParentScore score de l'état parent
+	 * @param MySide mon camp
+	 * @return le score du nœud
 	 */
-	static getStateScoreFromParent(node, EffectiveState, ParentScore, ParentTermNode, ParentHfp, MySide, ParentPoisonKey) {
+	static getStateScoreFromParent(node, State, ParentScore, MySide) {
 		BenchOps.Start("Scoring")
-		var State = EffectiveState
-		var cloned = node.CLONED
-		var hfpMap = node.HFP_BY_SIDE
-
-		var combinedHfp
-		var healChanged = null
-		if (node.HFP_OWNED) {
-			combinedHfp = 0
-			for (var s: var h in hfpMap) {
-				combinedHfp ^= h
-				if (((s in ParentHfp) ? ParentHfp[s] : 0) != h) {
-					if (healChanged == null) healChanged = [: ]
-					healChanged[s] = true
-				}
-			}
-		} else {
-			combinedHfp = ParentTermNode.COMBINED_HFP
-		}
-		node.COMBINED_HFP = combinedHfp
-		var healMap = HealClass.getHealMapByFp(State, combinedHfp)
-
-		var hasDirtyCasters = node.DANGER_DIRTY_CASTERS != null
-		var casterDeps = null
-		// La clé antidote reste portée par le nœud (FinalCell et les enfants la lisent), mais aucun
-		// terme de cette famille n'en dépend.
-		node.POISON_KEY = poisonKeyOnNode(node, State)
-		var nBase = node.BASE_HASH
-		var nCtx = node.CONTEXT_BY_SIDE
-		var nHfp = node.HFP_BY_SIDE
-
 		var delta = 0
-		var termsPatch = [: ]
-		node.TERMS_PARENT = ParentTermNode
-
-		if (!hasDirtyCasters && healChanged == null) {
-			for (var e: var stat in node.LOCAL_TERM_DIRTY) {
-				delta += termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, nBase, nCtx, nHfp)
-			}
-		} else {
-			for (var e: var stat in State) {
-				if (stat.LIFE <= 0 && !(e in cloned)) continue
-				if (e in node.LOCAL_TERM_DIRTY) {
-					delta += termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, nBase, nCtx, nHfp)
-					continue
-				}
-				// Me ne lit ni danger ni soins projetés : seul son masque local peut le salir.
-				if (e == Me) continue
-				var globalDirty = healChanged != null && stat.SIDE in healChanged
-				if (!globalDirty && hasDirtyCasters) {
-					if (casterDeps == null) casterDeps = buildCasterDeps(node, State)
-					globalDirty = dangerAffectsCell(casterDeps, stat.SIDE, stat.CELL)
-				}
-				if (!globalDirty) continue
-				delta += termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, nBase, nCtx, nHfp)
-			}
+		for (var e: var parentStat in node.CLONED) {
+			var newStat = State[e]
+			var d = entityValue(newStat, null)
+			if (parentStat != null) d -= entityValue(parentStat, null)
+			if (d != 0) delta += (newStat.SIDE == MySide) ? d : -d
 		}
-		// Issue : relue seulement quand un poireau meurt dans ce nœud.
-		for (var e: var stat in node.LOCAL_TERM_DIRTY) {
-			if (stat.LIFE > 0 || stat.IS_SUMMON) continue
-			var newOutcome = outcomeOf(State, MySide)
-			var oldOutcome = termOf(ParentTermNode, V3_OUTCOME_ID)
-			if (newOutcome != oldOutcome) {
-				termsPatch[V3_OUTCOME_ID] = newOutcome
-				delta += newOutcome - oldOutcome
-			}
-			break
-		}
-		if (hasDirtyCasters) node.DANGER_DIRTY_CASTERS = null
-		node.TERMS = termsPatch
+		// Le score ne lit plus le danger : la liste des lanceurs salis n'a plus de lecteur.
+		node.DANGER_DIRTY_CASTERS = null
 		BenchOps.Stop("Scoring")
-		return ParentScore + delta - ((node.ACTION.Item in CAST_COST) ? CAST_COST[node.ACTION.Item] : 0)
+		return ParentScore + delta
 	}
 
 	/*
-	 * Descripteurs des casters sales, à plat : [ancienCamp, ancienneMap, nouveauCamp,
-	 * nouvelleMap, ...]. Une map nulle = le caster ne menaçait (ou ne menace) personne.
+	 * Pénalité d'exposition de Me à sa cellule de fin de tour, pour FinalCell : les PV que le net
+	 * projeté à cette cellule lui coûterait réellement. Toujours >= 0, et jamais plafonnée à sa
+	 * vie — le net compte l'overkill, c'est ce qui départage deux cellules également mortelles.
+	 *
+	 * @param net dégâts nets projetés sur un round à la cellule
+	 * @return la pénalité, en points de score
 	 */
-	static buildCasterDeps(node, State) {
-		var deps = []
-		var cloned = node.CLONED
-		for (var caster: var _d in node.DANGER_DIRTY_CASTERS) {
-			var oldStat = cloned[caster]
-			var newStat = State[caster]
-			var oldKey = (oldStat != null && oldStat.LIFE > 0) ? DangerPlanClass.mapCellItemAoeKeyOf(oldStat) : null
-			var newKey = (newStat.LIFE > 0) ? DangerPlanClass.mapCellItemAoeKeyOf(newStat) : null
-			var oldMap = null
-			var newMap = null
-			if (oldKey != null && oldKey == newKey) {
-				oldMap = DangerPlanClass.offensiveCoverageOf(oldStat, caster, oldKey)
-				newMap = oldMap
-			} else {
-				if (oldKey != null) oldMap = DangerPlanClass.offensiveCoverageOf(oldStat, caster, oldKey)
-				if (newKey != null) newMap = DangerPlanClass.offensiveCoverageOf(newStat, caster, newKey)
-			}
-			push(deps, (oldMap == null) ? -1 : oldStat.SIDE)
-			push(deps, oldMap)
-			push(deps, (newMap == null) ? -1 : newStat.SIDE)
-			push(deps, newMap)
-		}
-		return deps
+	static exposureLoss(net) {
+		return EXPOSURE_FACTOR * COEF_LIFE * net
 	}
 
 	/*
-	 * Une cible de camp TargetSide, à la cellule Cell, dépend-elle d'un caster sale ? Union de
-	 * l'ancienne et de la nouvelle couverture ; prédicat conservateur.
+	 * Valeur qu'aurait un mort allié une fois relevé : le moteur le ressuscite propre — vie et
+	 * vie max rendues par les formules de ResurrectionClass, caractéristiques remises à leurs
+	 * bases, ni effet, ni bouclier, ni puissance. Classe les candidats de la Résurrection.
+	 *
+	 * @param entity_state état du mort
+	 * @param State état courant (vie de résurrection : critique du lanceur)
+	 * @return la valeur du ressuscité
 	 */
-	static dangerAffectsCell(Deps, TargetSide, Cell) {
-		var n = count(Deps)
-		for (var i = 0; i < n; i += 4) {
-			var oldMap = Deps[i + 1]
-			if (oldMap != null && TargetSide != Deps[i] && (Cell in oldMap)) return true
-			var newMap = Deps[i + 3]
-			if (newMap != null && TargetSide != Deps[i + 2] && (Cell in newMap)) return true
-		}
-		return false
-	}
-
-	/* newTerm(e) − oldTerm(e) ; le nouveau terme n'est écrit que dans le patch du nœud. */
-	static termDelta(e, stat, State, termsPatch, ParentTermNode, healMap, MySide, NodeBaseHash, NodeContext, NodeHfp) {
-		var newTerm = 0
-		if (stat.LIFE > 0) {
-			var net = 0
-			if (e != Me) net = DeltaClass.netOf(e, stat, State, NodeBaseHash, NodeContext, NodeHfp, healMap)
-			newTerm = entityTerm(e, stat, net, MySide)
-		}
-		var oldTerm = termOf(ParentTermNode, e)
-		termsPatch[e] = newTerm
-		return newTerm - oldTerm
+	static getResurrectionScore(entity_state, State) {
+		var reviveTotalLife = ResurrectionClass.reviveTotalLife(entity_state.TOTAL_LIFE, State)
+		var reviveLife = ResurrectionClass.reviveLife(reviveTotalLife)
+		var bases = entity_state.BASE_STATS
+		return (entity_state.IS_SUMMON ? SCORE_ALIVE_SUMMON : SCORE_ALIVE_LEEK)
+			+ COEF_LIFE * reviveLife + COEF_TOTAL_LIFE * reviveTotalLife
+			+ COEF_STRENGTH * bases[STAT_STRENGTH] + COEF_WISDOM * bases[STAT_WISDOM]
+			+ COEF_AGILITY * bases[STAT_AGILITY] + COEF_RESISTANCE * bases[STAT_RESISTANCE]
+			+ COEF_SCIENCE * bases[STAT_SCIENCE] + COEF_MAGIC * bases[STAT_MAGIC]
+			+ COEF_TOTAL_TP * bases[STAT_TP] + COEF_TOTAL_MP * bases[STAT_MP]
 	}
 
 	/*
-	 * Terme courant d'une entité dans la chaîne de snapshots : le patch le plus proche gagne, la
-	 * racine porte la map complète, absente partout -> 0.
+	 * Contribution de ce porteur à la clé de couverture antidote. Plus aucun score ne dépend de
+	 * cette clé ; la fonction reste pour Node.leek, qui ne l'appelle que si ANY_ANTIDOTE est
+	 * vrai — ce que plus personne ne pose.
 	 */
-	static termOf(termNode, entityId) {
-		var n = termNode
-		while (n != null) {
-			if (entityId in n.TERMS) return n.TERMS[entityId]
-			n = n.TERMS_PARENT
-		}
+	static carrierContribOf(stat, id) {
 		return 0
 	}
 
 	/*
-	 * Perte de valeur de Me s'il encaissait `net` à sa cellule finale, jamais négative.
-	 * La valeur sans danger est invariante sur tout un balayage : elle arrive déjà calculée.
-	 */
-	static exposureLoss(MyStats, safeTerm, net, MySide) {
-		var loss = V3_K_EXPOSURE * (safeTerm - entityTerm(Me, MyStats, net, MySide))
-		return loss > 0 ? loss : 0
-	}
-
-	/*
-	 * Classe les morts alliés pour la résurrection : la valeur qu'aurait le ressuscité, sans
-	 * pression, avec les arrondis moteur de la vie rendue.
-	 */
-	static getResurrectionScore(entity_state, State) {
-		prepareTurn(State)
-		var reviveTL = ResurrectionClass.reviveTotalLife(entity_state.TOTAL_LIFE, State)
-		var reviveLife = ResurrectionClass.reviveLife(reviveTL)
-		return (V3_WORTH_ALLIES ? worthOf(entity_state.ID, entity_state) : 1) * (V3_K_HP_ALLY * reviveLife
-				+ (entity_state.IS_SUMMON ? V3_K_PRESENCE_SUMMON + V3_K_ALIVE_SUMMON : V3_K_PRESENCE_LEEK + V3_K_ALIVE_LEEK) * reviveTL)
-			+ (entity_state.IS_SUMMON ? V3_K_OUTPUT_PRESENCE_SUMMON + V3_K_OUTPUT_SUMMON : V3_K_OUTPUT_ALLY) * OutputClass.of(entity_state)
-	}
-
-	/*
-	 * Clé de couverture antidote : aucun terme de cette famille ne la lit, mais le Node la
-	 * patche, et FinalCell l'emploie dans sa clé de mémo. Mêmes définitions qu'avant.
-	 */
-	static anyAntidote(State) {
-		if (ANY_ANTIDOTE == null) {
-			ANTIDOTE_CARRIER_IDS = []
-			ANTIDOTE_CARRIER_SET = [: ]
-			for (var e: var stat in State) {
-				if (StateClass.hasInventoryItem(stat, CHIP_ANTIDOTE)) {
-					push(ANTIDOTE_CARRIER_IDS, e)
-					ANTIDOTE_CARRIER_SET[e] = true
-				}
-			}
-			ANY_ANTIDOTE = count(ANTIDOTE_CARRIER_IDS) > 0
-			ME_HAS_ANTIDOTE = Me in ANTIDOTE_CARRIER_SET
-		}
-		return ANY_ANTIDOTE
-	}
-
-	static poisonKeyFromFold(State, BaseHash, FoldOthers) {
-		var key = BaseHash ^ MY_REPLAN_CELL_HASH ^ FoldOthers
-		var meStat = State[Me]
-		if (meStat.LIFE <= 0) return key ^ POISON_ME_DEAD_SALT
-		if (ME_HAS_ANTIDOTE) key ^= carrierContribOf(meStat, Me)
-		return key
-	}
-
-	static carrierContribOf(stat, id) {
-		var contrib = stat.PKEY_MEMO
-		if (contrib == null) {
-			contrib = mix64((id << 20) | (max(0, stat.TOTAL_MP) << 10) | min(1023, StateClass.cooldownOf(stat, CHIP_ANTIDOTE)))
-			stat.PKEY_MEMO = contrib
-		}
-		return contrib
-	}
-
-	static carrierFoldOthers(State) {
-		if (!anyAntidote(State)) return 0
-		var fold = 0
-		for (var e in ANTIDOTE_CARRIER_IDS) {
-			if (e == Me) continue
-			var s = State[e]
-			if (s.LIFE > 0) fold ^= carrierContribOf(s, e)
-		}
-		return fold
-	}
-
-	static poisonKeyOnNode(node, State) {
-		if (ANY_ANTIDOTE != true) return 0
-		return poisonKeyFromFold(State, node.BASE_HASH, node.POISON_FOLD)
-	}
-
-	/*
-	 * MAJORANT du gain d'une action, calculé SANS la simuler. CONTRAT : toujours >= au Δ réel.
+	 * MAJORANT du gain d'une action, calculé SANS la simuler. CONTRAT : toujours >= au gain réel.
 	 * Tout ce qui n'est pas borné rend BOUND_MUST_SIMULATE : item qui n'est pas que des dégâts
-	 * directs sur ennemi, allié touché, cible tuée, plantes réveillables, passif de critique.
+	 * directs sur ennemi, allié touché, cible tuée, plante réveillable, passif d'arme, renvoi qui
+	 * pourrait me tuer.
 	 *
-	 * Par cible ennemie touchée sans être tuée, seul SON terme bouge — le danger et les soins
-	 * projetés des autres ne lisent pas sa vie :
-	 *   - PV présents : baissent au plus des dégâts, plus l'érosion quand la vie était au plafond ;
-	 *   - survie : dans [0, 1], ne peut que baisser (moins de PV, pression non décroissante), sa
-	 *     part vaut au plus poids · K_ALIVE · vie max + K_OUTPUT · production.
-	 * Pour Me, le vol de vie monte ses PV présents et sa survie, bornés de la même façon.
+	 * Sur une cible ennemie touchée sans être tuée, seule SA valeur bouge, et de deux lignes :
+	 * la vie retirée et l'érosion de sa vie max. Ses passifs d'arme ne peuvent que lui RENDRE des
+	 * caractéristiques, donc réduire mon gain. Chez moi, seul le vol de vie ajoute quelque chose.
 	 * Me n'est borné que depuis une cellule de marche (voir BFS) : saut et téléportation posent
 	 * sur lui des valeurs que cette formule ignore.
 	 */
 	static actionUpperBound(Item, From, To, State, MySide, BaseHash) {
 		var Infos = ITEMINFO[Item]
 		if (!Infos.IS_BOUNDABLE_DAMAGE) return BOUND_MUST_SIMULATE
+		// Le raisonnement suppose qu'une statistique RETIRÉE à un adversaire ne peut que me
+		// profiter : sous un coefficient négatif, la borne ne tient plus.
+		if (COEF_LIFE < 0 || COEF_TOTAL_LIFE < 0 || COEF_STRENGTH < 0 || COEF_RESISTANCE < 0
+			|| COEF_MAGIC < 0 || COEF_ABSOLUTE_SHIELD < 0) return BOUND_MUST_SIMULATE
 		var MyStats = State[Me]
 		if (!mapIsEmpty(PLANT_ZONE_BY_ID) && From != MyStats.CELL && AwakeningClass.livingZones(State) != null) return BOUND_MUST_SIMULATE
 		if ((MyStats.SPECIAL_WEAPON & SPW_UNSTABLE_DESTROYER) && MyStats.LIFE < MyStats.TOTAL_LIFE) return BOUND_MUST_SIMULATE
-		prepareTurn(State)
 		// Jet maximal compté deux fois, critique supposé, force plancherée, puissance non plancherée.
 		var gainFactor = (1 + max(0, MyStats.STRENGTH) / 100) * (1 + MyStats.POWER / 100) * CRITICAL_FACTOR
 		var raw = 0
@@ -434,48 +194,104 @@ class ScoringClass {
 			nEff++
 		}
 		raw = raw * gainFactor
+		// Passifs qui rendent des caractéristiques à qui encaisse des dégâts ou de l'érosion.
+		var damagePassives = SPW_REVOKED_M_LASER | SPW_MYSTERIOUS_ELECTRISOR | SPW_PLUTONIUM_BAZOOKA | SPW_UNBRIDLED_GAZOR
 		var Targets = ConsequencesClass.ConsequenceTargets(Item, From, To, State, Me, BaseHash)
 		var bound = 0
-		var stealFactor = EntityStateClass.hasState(MyStats, STATE_UNHEALABLE) ? 0 : max(0, MyStats.WISDOM) / 1000
-		var stolen = 0
+		var dealtTotal = 0
+		var returned = 0
 		for (var tar: var dist in Targets) {
 			var stat = State[tar]
 			if (stat == null || stat.LIFE <= 0) continue
+			var base = raw * AOE_FALLOFF[dist]
 			if (stat.SIDE == MySide) {
 				if (tar != Me) return BOUND_MUST_SIMULATE
+				// Me dans ma propre zone : je n'y perds que de la vie, sauf si un passif m'en
+				// rend en caractéristiques, ou si le coup peut me tuer.
+				if (MyStats.SPECIAL_WEAPON & damagePassives) return BOUND_MUST_SIMULATE
+				if (base + nEff >= MyStats.LIFE) return BOUND_MUST_SIMULATE
 				continue
 			}
 			var relFactor = 1 - stat.RELATIVE_SHIELD / 100
 			if (relFactor < 0) relFactor = 0
 			var absShield = stat.ABSOLUTE_SHIELD
-			var dealt = raw * AOE_FALLOFF[dist] * relFactor - (absShield > 0 ? absShield : nEff * absShield) + nEff
+			// Un bouclier absolu ne peut que retirer : le compter une fois majore. Une
+			// vulnérabilité absolue, elle, s'ajoute à CHAQUE effet. Un point par effet couvre
+			// les arrondis du moteur.
+			var dealt = base * relFactor - (absShield > 0 ? absShield : nEff * absShield) + nEff
+			if (stat.DAMAGE_RETURN > 0) returned += base * stat.DAMAGE_RETURN / 100 + nEff
 			if (dealt <= 0) continue
 			if (dealt >= stat.LIFE) return BOUND_MUST_SIMULATE
-			var out = OutputClass.of(stat)
-			if (tar in PLANT_ZONE_BY_ID) out *= V3_K_PLANT_OUTPUT
-			// Pente du stock <= 1 + c ; l'érosion baisse en plus la vie max, ce qui retire au plus
-			// c · érosion : (1 + EROSION_CRIT) · (1 + 2c) couvre les deux.
-			bound += worthOf(tar, stat) * (V3_K_HP_ENEMY * dealt * (1 + EROSION_CRIT) * (1 + 2 * max(0, V3_HP_CONCAVITY))
-					+ (stat.IS_SUMMON ? V3_K_ALIVE_SUMMON : V3_K_ALIVE_LEEK) * stat.TOTAL_LIFE
-					+ max(0, stat.IS_SUMMON ? V3_K_PRESENCE_SUMMON : V3_K_PRESENCE_LEEK) * EROSION_CRIT * dealt)
-				+ (stat.IS_SUMMON ? V3_K_OUTPUT_SUMMON : V3_K_OUTPUT_ENEMY) * out
-			if (V3_K_IDLE_HOT > 0 && stat.HEAL_OVER_TIME > 0) bound += V3_K_IDLE_HOT * dealt
-			stolen += dealt * stealFactor
+			bound += COEF_LIFE * dealt + COEF_TOTAL_LIFE * (EROSION_CRIT * dealt + nEff)
+			dealtTotal += dealt
 		}
-		var room = MyStats.TOTAL_LIFE - MyStats.LIFE
-		if (stolen > 0 && room > 0) {
-			if (stolen > room) stolen = room
-			var myOut = OutputClass.of(MyStats)
-			bound += (V3_WORTH_ALLIES ? worthOf(Me, MyStats) : 1) * (V3_K_HP_ALLY * stolen * (1 + max(0, V3_HP_CONCAVITY))
-					+ (MyStats.IS_SUMMON ? V3_K_ALIVE_SUMMON : V3_K_ALIVE_LEEK) * MyStats.TOTAL_LIFE)
-				+ (MyStats.IS_SUMMON ? V3_K_OUTPUT_SUMMON : V3_K_OUTPUT_ALLY) * myOut
-			// Le vol de vie peut aussi faire déborder mon soin continu, donc monter ma garde.
-			if (V3_K_IDLE_HOT > 0 && MyStats.HEAL_OVER_TIME > 0) bound += V3_K_IDLE_HOT * stolen
-			// Condamné par ses flux, Me valait 0 : sa présence revient avec lui.
-			bound += (V3_WORTH_ALLIES ? worthOf(Me, MyStats) : 1) * max(0, MyStats.IS_SUMMON ? V3_K_PRESENCE_SUMMON : V3_K_PRESENCE_LEEK) * MyStats.TOTAL_LIFE
-				+ (MyStats.IS_SUMMON ? max(0, V3_K_OUTPUT_PRESENCE_SUMMON) : 0) * myOut
+		if (returned > 0) {
+			// Renvoi qui peut me tuer, ou dont l'érosion nourrirait mon passif de magie.
+			if (returned >= MyStats.LIFE) return BOUND_MUST_SIMULATE
+			if (MyStats.SPECIAL_WEAPON & SPW_UNBRIDLED_GAZOR) return BOUND_MUST_SIMULATE
 		}
-		if (V3_K_HP_ENEMY < 0 || V3_K_HP_ALLY < 0) return BOUND_MUST_SIMULATE
+		// Vol de vie : plafonné à ma vie manquante, nul sous UNHEALABLE.
+		if (dealtTotal > 0 && !EntityStateClass.hasState(MyStats, STATE_UNHEALABLE)) {
+			var stolen = dealtTotal * max(0, MyStats.WISDOM) / 1000
+			if (stolen > 0) {
+				stolen += nEff
+				var room = MyStats.TOTAL_LIFE - MyStats.LIFE
+				if (stolen > room) stolen = room
+				if (stolen > 0) bound += COEF_LIFE * stolen
+			}
+		}
 		return bound
+	}
+
+	/*
+	 * Contributions d'un gain, entité par entité et statistique par statistique, calculées par la
+	 * fonction de valeur elle-même. Une ligne de journal par entité dont la valeur bouge.
+	 *
+	 * @param Before état de départ
+	 * @param After état d'arrivée
+	 * @param MySide mon camp
+	 * @return la somme des contributions journalisées
+	 */
+	static explainDelta(Before, After, MySide) {
+		var total = 0
+		for (var e: var stat in After) {
+			var apres = [: ]
+			var avant = [: ]
+			entityValue(stat, apres)
+			if (e in Before) entityValue(Before[e], avant)
+			var reference = (mapSize(apres) > 0) ? apres : avant
+			if (mapSize(reference) == 0) continue
+			var sign = (stat.SIDE == MySide) ? 1 : -1
+			var ligne = ""
+			var somme = 0
+			for (var nom: var _c in reference) {
+				var d = sign * (((nom in apres) ? apres[nom] : 0) - ((nom in avant) ? avant[nom] : 0))
+				if (d == 0) continue
+				somme += d
+				ligne += " | " + nom + " " + d
+			}
+			if (ligne == "") continue
+			total += somme
+			debug("[score] " + ((sign > 0) ? "allié " : "ennemi ") + stat.NAME + " #" + e + " : " + somme + ligne)
+		}
+		return total
+	}
+
+	/*
+	 * Détail de la décision retenue : contributions du gain brut, puis pénalité de placement.
+	 * Appelée par le BFS uniquement quand SCORE_EXPLAIN est vrai.
+	 *
+	 * @param RootNode nœud « ne rien jouer » (état de départ)
+	 * @param BestNode nœud retenu
+	 * @param FinalScore score final du nœud retenu (brut moins pénalité)
+	 * @param MySide mon camp
+	 */
+	static explainDecision(RootNode, BestNode, FinalScore, MySide) {
+		var brut = BestNode.SCORE - RootNode.SCORE
+		var somme = explainDelta(StateClass.materializeNodeState(RootNode),
+			StateClass.materializeNodeState(BestNode), MySide)
+		debug("[score] gain brut " + brut + " | contributions " + somme + " | pénalité de placement "
+			+ (BestNode.SCORE - FinalScore) + " | gain final " + (FinalScore - RootNode.SCORE))
+		if (abs(somme - brut) > 0.001) debugE("[score] ECART contributions " + somme + " contre gain brut " + brut)
 	}
 }

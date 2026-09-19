@@ -1,7 +1,7 @@
 /*
- * FinalCell : l'évaluateur TERMINAL. Le score de l'arbre ne dit rien d'où je me tiens — le
- * terme de Me y est statique — donc toute ma sécurité et tout mon positionnement se décident
- * ici, sous forme d'une PÉNALITÉ à retrancher au score.
+ * FinalCell : l'évaluateur TERMINAL. Le score de l'arbre ne dit rien d'où je me tiens — la
+ * valeur de Me ne lit pas sa cellule — donc toute ma sécurité et tout mon positionnement se
+ * décident ici, sous forme d'une PÉNALITÉ à retrancher au score.
  *
  *   placementPenalty = coût spatial (GravityClass) + coût du danger à la cellule
  *
@@ -36,10 +36,6 @@ class FinalCell {
         var hfpBySide = HealClass.buildHfpBySide(State)
         var combinedHfp = 0
         for (var s: var h in hfpBySide) combinedHfp ^= h
-        // carrierFoldOthers résout anyAntidote, dont poisonKeyFromFold dépend. Même convention
-        // que poisonKeyOnNode : sans antidote en jeu la clé vaut 0.
-        var fold = ScoringClass.carrierFoldOthers(State)
-        var poisonKey = (ANY_ANTIDOTE == true) ? ScoringClass.poisonKeyFromFold(State, BaseHash, fold) : 0
         var meWalkFp = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(State[Me])
         // Le placement REEL de fin de tour se tronque au plus pres du plafond, en ne gardant que de
         // quoi bouger : c'est lui que le moteur tue quand le budget est epuise (585 tours mesures sur
@@ -47,9 +43,28 @@ class FinalCell {
         // courante : s'arreter en route rend donc une reponse VALIDE, seulement moins bonne —
         // strictement mieux que de mourir dedans, et mieux que de ne pas se placer du tout (mesure :
         // sauter le placement coute -0,055, et -0,425 sous 8 coeurs).
-        var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey, meWalkFp, OPS_CAP - OPS_MOVE_MARGIN)
+        var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, OPS_CAP - OPS_MOVE_MARGIN)
         debug("Best final cell: " + res[0] + " (pénalité: " + res[1] + ", net: " + res[2] + ")")
         return res[0]
+    }
+
+    /*
+     * Construit les objets que le balayage lira : la carte de soin et le plan de danger de mon
+     * camp, avec les deux séquences de Me. Le score de la recherche ne lit plus ni danger ni
+     * soins, donc plus personne ne les chauffe : sans cet appel à la RACINE, la première clôture
+     * terminale les paie en fin de tour, budget déjà dépensé, et le moteur coupe le tour dedans.
+     *
+     * @param State état de la racine
+     * @param BaseHash hash (id, cellule) des vivants
+     * @param contextBySide [side -> hash de l'équipe adverse]
+     * @param combinedHfp fold XOR des empreintes de soigneurs
+     */
+    static prewarm(State, BaseHash, contextBySide, combinedHfp) {
+        HealClass.getHealMapByFp(State, combinedHfp)
+        var mySide = State[Me].SIDE
+        var plan = DangerPlanClass.getTeamPlan(State, BaseHash, contextBySide[mySide], mySide)
+        DangerPlanClass.coverageSequenceFor(plan, Me)
+        DangerPlanClass.netSequenceFor(plan, Me)
     }
 
     /*
@@ -63,7 +78,6 @@ class FinalCell {
      * @param contextBySide [side -> hash de l'équipe adverse] (node.CONTEXT_BY_SIDE)
      * @param hfpBySide [side -> fingerprint des soigneurs] (node.HFP_BY_SIDE)
      * @param combinedHfp fold XOR des empreintes, clé de la heal map (node.COMBINED_HFP)
-     * @param poisonKey clé de couverture antidote (node.POISON_KEY)
      * @param meWalkFp empreinte de mobilité de Me (node.ME_WALK_FINGERPRINT) : avec BaseHash,
      *        elle fixe exactement mes cellules accessibles
      * @param truncateAt nombre d'opérations au-delà duquel le balayage s'arrête sur le meilleur
@@ -71,7 +85,7 @@ class FinalCell {
      * @return [meilleure cellule, pénalité (>= 0), net à cette cellule], suivi de true si le
      *        balayage a été tronqué — sa pénalité n'est alors qu'un majorant du minimum
      */
-    static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, poisonKey, meWalkFp, truncateAt) {
+    static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, truncateAt) {
         BenchOps.Start("FinalCell")
         var MyState = State[Me]
         var mySide = MyState.SIDE
@@ -86,26 +100,12 @@ class FinalCell {
         var seed                 = DeltaClass.fleeSeedOf(MyState, targetSeed, hfpBySide[mySide])
 
         // Le reclassement terminal rouvre deux fois sur trois un état déjà évalué : le memo
-        // épargne alors le balayage entier. Sa clé est la signature COMPLÈTE des entrées —
-        // le terrain et ma mobilité (donc mes cellules accessibles), la graine de fuite (qui
-        // porte déjà menace adverse, mes boucliers, mon antidote, mes soigneurs, ma vie et ma
-        // vie max), les soigneurs des deux camps, la couverture antidote, mes flux périodiques
-        // et le masque d'états qui dit lesquels s'appliquent — les derniers à décider ce qu'un
-        // net me coûte en survie.
-        // Les six flux sont packés BRUTS plus bas : c'est l'état qui tranche lesquels comptent,
-        // donc deux placements aux mêmes flux et aux états différents n'ont ni la même survie
-        // sans danger ni la même perte sous danger. Le masque vaut exactement 0 tant que je ne
-        // porte aucun état : la clé est alors inchangée et rien ne refroidit.
-        var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp ^ poisonKey) ^ MyState.STATES)
-        memoKey = mix64(memoKey ^ combinedHfp
-            ^ ((MyState.POISON & 0xFFFFF) << 44) ^ ((MyState.AFTEREFFECT & 0x7FF) << 33)
-            ^ ((MyState.HEAL & 0x7FF) << 22) ^ ((MyState.DAMAGE_RETURN & 0x7FF) << 11))
-        memoKey = mix64(memoKey ^ ((MyState.POISON_OVER_TIME & 0xFFFFF) << 40)
-            ^ ((MyState.AFTEREFFECT_OVER_TIME & 0xFFFFF) << 20) ^ (MyState.HEAL_OVER_TIME & 0xFFFFF))
-        // Ma production entre dans la valeur que le danger me ferait perdre : elle bouge avec mes
-        // stats et mes PT, que rien d'autre dans la clé ne porte.
-        ScoringClass.prepareTurn(State)
-        memoKey = mix64(memoKey ^ floor(OutputClass.of(MyState)))
+        // épargne alors le balayage entier. Sa clé porte TOUT ce dont la pénalité dépend — le
+        // terrain et ma mobilité (donc mes cellules accessibles), la graine de fuite (qui porte
+        // déjà menace adverse, mes boucliers, mon antidote, ma vie et ma vie max, dont le masque
+        // d'immunités) et les soigneurs des deux camps. La pénalité ne lit rien d'autre : ni mes
+        // flux périodiques, ni mes caractéristiques, qui ne changent pas ce qu'un net me coûte.
+        var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp) ^ combinedHfp)
         if (memoKey in FINAL_PLACEMENT_CACHE) {
             BenchOps.Stop("FinalCell")
             return FINAL_PLACEMENT_CACHE[memoKey]
@@ -115,9 +115,6 @@ class FinalCell {
         var possibleCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
         var healMap = HealClass.getHealMapByFp(State, combinedHfp)
 
-        // Mon terme SANS danger : invariant sur toutes les cellules, c'est celui que le score de
-        // l'arbre a déjà compté. La pénalité ne facture que l'écart, jamais deux fois ma valeur.
-        var safeTerm = ScoringClass.entityTerm(Me, MyState, 0, mySide)
         var finalWeights = REPLAN_WEIGHTS.FINAL_CELL_WEIGHTS
         // Le coût de soin n'est calculé que si un poids le réclame : sans lui, la map de danger
         // n'est même pas parcourue.
@@ -155,8 +152,9 @@ class FinalCell {
             // le spatial reste un minorant de la pénalité et la coupure du balayage reste exacte.
             if (wantHealCost) penalty += finalWeights.HEAL_COST * CELL_FLEE_HEALCOST_CACHE[seed ^ cell]
             if (net > 0) {
-                // Ce que mon terme vaudrait en moins s'il encaissait ce net, planché à zéro.
-                penalty += finalWeights.NET * ScoringClass.exposureLoss(MyState, safeTerm, net, mySide)
+                // Les PV que ce net me coûterait réellement (ScoringClass.exposureLoss) : une
+                // valeur positive, donc le spatial reste un minorant de la pénalité.
+                penalty += finalWeights.NET * ScoringClass.exposureLoss(net)
             }
             if (penalty < bestPenalty) {
                 bestPenalty = penalty

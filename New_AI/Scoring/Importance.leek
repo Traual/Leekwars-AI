@@ -1,15 +1,7 @@
 /*
- * Deux mesures d'une entité, indépendantes du scoring d'un état.
- *
- * PRODUCTION (OutputClass) — ce que son kit peut produire en un tour, en PV, à ses stats
- * courantes : dégâts, poison sur sa durée, soins, vitalité, boucliers. Un remplissage glouton
- * de ses PT par rendement, les items en recharge comptant pour la fraction de tours où ils sont
- * disponibles, multiplié par l'espérance de critique (agilité / 1000) et par la mobilité. Les
- * buffs et les shackles n'y ont pas de ligne propre : ils agissent sur les stats, les PT et les
- * PM, donc sur la production elle-même.
- *
- * IMPORTANCE (ImportanceClass) — classement historique par stats, conservé pour les seuls
- * poids de placement spatial (GravityClass, via HistoricalWeightsFactory).
+ * Importance : classement d'une entité par ses caractéristiques, figé au replan. N'entre PAS
+ * dans le score ; elle ne pondère que le coût spatial du placement (GravityClass, via
+ * HistoricalWeightsFactory).
  */
 
 include("../includes.leek")
@@ -24,95 +16,6 @@ global IMP_W_TOTAL_TP   = 0.10
 global IMP_W_TOTAL_MP   = 0.05
 global IMP_CONVEX       = 0.0003
 global IMP_SCALE        = 9.0
-
-class OutputClass {
-
-	/*
-	 * Production d'une entité, en PV par tour. Mémoïsée sur l'objet stat (CAP_MEMO) : ses seuls
-	 * inputs variables sont FOR, MAG, SAG, SCI, RES, AGI, PT et PM totaux, qui font partie des dix
-	 * entrées dont la modification périme ce mémo (StateClass.diffMaskOf). La liste d'items,
-	 * elle, est figée au tour.
-	 */
-	static of(stat) {
-		if (stat.CAP_MEMO != null) return stat.CAP_MEMO
-		var str = 1 + max(0, stat.STRENGTH) / 100
-		var mag = 1 + max(0, stat.MAGIC) / 100
-		var wis = max(0, 1 + stat.WISDOM / 100)
-		var sci = 1 + max(0, stat.SCIENCE) / 100
-		var res = 1 + max(0, stat.RESISTANCE) / 100
-		var tp = max(0, stat.TOTAL_TP)
-		var total = 0
-		for (var it in itemsOf(stat)) {
-			if (tp <= 0) break
-			var cost = it[1]
-			// Nombre de lancers par tour de disponibilité, dans les PT restants.
-			var n = min(it[2], floor(tp / cost))
-			if (n <= 0) continue
-			var avail = it[3]
-			tp -= n * cost * avail
-			total += n * avail * (it[4] * str + it[5] * mag + it[6] * wis + it[7] * res + it[8] * sci + it[9])
-		}
-		total *= (1 + V3_OUT_CRIT * min(1, max(0, stat.AGILITY) / 1000)) * (1 + V3_OUT_MP * max(0, stat.TOTAL_MP))
-		stat.CAP_MEMO = total
-		return total
-	}
-
-	/*
-	 * Items productifs d'une entité, triés par rendement de base décroissant :
-	 * [item, coût, lancers par tour, disponibilité, base FOR, base MAG, base SAG, base RES, base SCI,
-	 * base fixe]. Le soutien suit la caractéristique qui le multiplie au moteur : SCI pour les
-	 * buffs, MAG pour les shackles ; les buffs bruts et les vulnérabilités ne sont pas multipliés.
-	 * La base est la moyenne des jets, déjà pondérée par V3_OUT_*. Figée au tour, par id.
-	 */
-	static itemsOf(stat) {
-		var id = stat.ID
-		if (id in CAPABILITY_ITEMS_BY_ID) return CAPABILITY_ITEMS_BY_ID[id]
-		var items = []
-		for (var i in stat.INVENTORY) {
-			var info = ITEMINFO[i]
-			if (info == null || info.COST <= 0) continue
-			var bStr = 0, bMag = 0, bWis = 0, bRes = 0, bSci = 0, bFlat = 0
-			for (var eff in info.EFFECTS) {
-				var t = eff[0]
-				var avg = (eff[1] + eff[2]) / 2
-				var turns = max(1, eff[3])
-				if (V3_OUT_SUPPORT != 0) {
-					var sup = V3_OUT_SUPPORT * avg * turns
-					if (t == EFFECT_BUFF_STRENGTH || t == EFFECT_BUFF_AGILITY || t == EFFECT_BUFF_WISDOM || t == EFFECT_BUFF_RESISTANCE) bSci += sup * V3_OUT_SUP_STAT
-					else if (t == EFFECT_BUFF_TP) bSci += sup * V3_OUT_SUP_TP
-					else if (t == EFFECT_BUFF_MP) bSci += sup * V3_OUT_SUP_MP
-					else if (t == EFFECT_SHACKLE_STRENGTH || t == EFFECT_SHACKLE_MAGIC || t == EFFECT_SHACKLE_AGILITY || t == EFFECT_SHACKLE_WISDOM) bMag += sup * V3_OUT_SUP_STAT
-					else if (t == EFFECT_SHACKLE_TP) bMag += sup * V3_OUT_SUP_TP
-					else if (t == EFFECT_SHACKLE_MP) bMag += sup * V3_OUT_SUP_MP
-					else if (t == EFFECT_RAW_BUFF_STRENGTH || t == EFFECT_RAW_BUFF_MAGIC || t == EFFECT_RAW_BUFF_SCIENCE || t == EFFECT_RAW_BUFF_AGILITY || t == EFFECT_RAW_BUFF_RESISTANCE || t == EFFECT_RAW_BUFF_WISDOM) bFlat += sup * V3_OUT_SUP_STAT
-					else if (t == EFFECT_RAW_BUFF_TP) bFlat += sup * V3_OUT_SUP_TP
-					else if (t == EFFECT_RAW_BUFF_MP) bFlat += sup * V3_OUT_SUP_MP
-					else if (t == EFFECT_VULNERABILITY) bFlat += V3_OUT_SUPPORT * avg * V3_OUT_REL_SHIELD
-					else if (t == EFFECT_ABSOLUTE_VULNERABILITY) bFlat += V3_OUT_SUPPORT * avg * V3_OUT_ABS_SHIELD
-				}
-				if (t == EFFECT_DAMAGE) bStr += avg * V3_OUT_DAMAGE
-				else if (t == EFFECT_POISON) bMag += avg * turns * V3_OUT_POISON
-				else if (t == EFFECT_NOVA_DAMAGE) bSci += avg * V3_OUT_DAMAGE
-				else if (t == EFFECT_HEAL) bWis += avg * turns * V3_OUT_HEAL
-				else if (t == EFFECT_BOOST_MAX_LIFE) bWis += avg * V3_OUT_HEAL
-				else if (t == EFFECT_ABSOLUTE_SHIELD) bRes += avg * V3_OUT_ABS_SHIELD
-				else if (t == EFFECT_RELATIVE_SHIELD) bRes += avg * V3_OUT_REL_SHIELD
-			}
-			var base = bStr + bMag + bWis + bRes + bSci + bFlat
-			if (base <= 0) continue
-			// Recharge : l'item ne part qu'un tour sur (recharge + 1).
-			var avail = 1 / (1 + max(0, info.COOLDOWN))
-			push(items, [i, info.COST, max(1, info.MAX_USES), avail, bStr, bMag, bWis, bRes, bSci, bFlat])
-		}
-		if (count(items) > 1) {
-			items = arraySort(items, function(a, b) {
-				return (b[4] + b[5] + b[6] + b[7] + b[8] + b[9]) / b[1] - (a[4] + a[5] + a[6] + a[7] + a[8] + a[9]) / a[1]
-			})
-		}
-		CAPABILITY_ITEMS_BY_ID[id] = items
-		return items
-	}
-}
 
 class ImportanceClass {
 

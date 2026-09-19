@@ -1,125 +1,57 @@
 /*
- * Paramètres de la famille de scoring v3 : « PV pondérés par la production ».
+ * Coefficients du scoring. Monnaie : le point de vie — 1 PV vaut 1 point de score.
  *
- * Monnaie : le point de vie (PV). Un nombre de ce fichier se lit toujours comme « combien de
- * PV vaut ceci ». Le score d'un état est la somme, sur les entités vivantes, de leur valeur
- * (positive pour mon camp, négative pour l'adversaire), plus un terme d'issue du combat.
+ *   valeur(entité vivante) = bonus de présence + Σ coefficient × statistique
+ *   valeur(entité morte)   = 0
+ *   score(état)            = Σ valeur(alliés) − Σ valeur(adversaires)
  *
- * Valeur d'une entité vivante (Scoring.leek) :
- *
- *   maintenant = PV − prochain tick périodique net (poison + contrecoup − soin continu)
- *                − K_PERIODIC · reste de ces flux au-delà du prochain tick, plafonnés à la vie max
- *   stock(x)   = x · (1 + CONCAVITY · (1 − x / vie max)) : un PV vaut (1 + CONCAVITY) près de la
- *                mort et (1 − CONCAVITY) au plafond ; 0 = linéaire
- *   pression   = dégâts nets projetés sur le prochain round (Delta), moins le soin continu qui
- *                déborde du plafond de vie
- *   survie     = 1 / (1 + (pression / (R0 · maintenant))^SF_POW)       dans ]0, 1]
- *   valeur     = poids · (K_HP · stock(maintenant) + (PRESENCE + K_ALIVE · survie) · vie max)
- *              + (OUTPUT_PRESENCE + K_OUTPUT · survie) · production
- *              + garde au repos
- *
- *   garde      = ce que ses boucliers et son renvoi de dégâts vaudraient contre un tour d'attaques
- *                typique (GUARD_HITS coups, GUARD_SHARE de sa vie max encaissée), qu'une menace
- *                soit projetée ou non : c'est la seule valeur qu'une protection de Me ait dans
- *                l'arbre, où sa cellule finale n'est pas encore choisie
- *   production = PV par tour que son kit peut produire à ses stats courantes (dégâts, poison,
- *                soins, boucliers), estimée par un remplissage glouton de ses PT, multipliée
- *                par l'espérance de critique et par sa mobilité
- *   poids      = production gelée au tour / production moyenne des poireaux vivants, bornée
- *
- * Chaque entrée n'a qu'UN canal : les PV et les flux périodiques vivent dans « maintenant », le
- * danger projeté dans « pression », la puissance dans « production ». Aucune donnée n'est
- * comptée deux fois ; la survie les couple seulement, un poireau empoisonné étant plus fragile
- * au même danger.
+ * Un coefficient se lit « combien de PV vaut une unité de cette statistique pour son porteur ».
+ * Les deux camps partagent les mêmes coefficients : le signe du camp fait le reste.
+ * Ce sont des HYPOTHÈSES INITIALES, choisies pour être lisibles, pas des valeurs réglées.
  */
 
 include("../includes.leek")
 
-// ----- Valeur des PV présents, par PV -----
-global V3_K_HP_ALLY  = 1.0
-global V3_K_HP_ENEMY = 1.0
-// Concavité du stock, dans [0, 1[ : soigner un blessé et achever une cible basse valent plus.
-global V3_HP_CONCAVITY = 0.5
+// ----- Présence : ce que vaut le seul fait d'être debout, perdu d'un bloc à la mort -----
+global SCORE_ALIVE_LEEK   = 1000
+global SCORE_ALIVE_SUMMON = 100
 
-// ----- Valeur d'être debout, en fraction de la vie max, modulée par la survie -----
-// Un kill retire à la victime tout ce qu'elle valait : ses PV, cette part, et sa production.
-global V3_K_ALIVE_LEEK   = 0.5
-global V3_K_ALIVE_SUMMON = 0.2
+// ----- Vie -----
+global COEF_LIFE       = 1.0   // PV courants : l'unité
+global COEF_TOTAL_LIFE = 0.5   // vie max : plafond des soins, seule cible de l'érosion et des novas
 
-// ----- Survie projetée -----
-// Pression relative (dégâts projetés / PV attendus) où la survie vaut 1/2, et raideur de la
-// transition : 2 = progressive, 4 = presque un seuil.
-global V3_R0     = 2.0
-global V3_SF_POW = 2
-// Part du poison et du contrecoup restant au-delà du prochain tick comptée comme PV perdus :
-// un antidote ou une purge peut encore les retirer.
-global V3_K_PERIODIC = 0.7
+// ----- Caractéristiques, par point -----
+global COEF_STRENGTH   = 1.0   // dégâts directs
+global COEF_WISDOM     = 1.0   // soins, vitalité, vol de vie
+global COEF_AGILITY    = 1.0   // chances de critique, renvoi de dégâts
+global COEF_RESISTANCE = 1.0   // boucliers posés
+global COEF_SCIENCE    = 1.0   // buffs, dégâts nova
+global COEF_MAGIC      = 1.0   // poison, entraves
+global COEF_POWER      = 1.0   // puissance : multiplie dégâts, poison et nova
 
-// ----- Tempo : production encore disponible, en tours de production -----
-global V3_K_OUTPUT_ALLY  = 0.5
-global V3_K_OUTPUT_ENEMY = 0.5
-// Invocations, des deux camps : une invocation vaut surtout par ce qu'elle produira sur les tours
-// qui viennent, là où un poireau vaut d'abord par ses PV et son maintien debout.
-global V3_K_OUTPUT_SUMMON = 3.0
+// ----- Ressources d'un tour, en totaux (les points COURANTS ne sont pas comptés) -----
+global COEF_TOTAL_TP = 30.0   // un PT produit de l'ordre de 30 PV dans un tour
+global COEF_TOTAL_MP = 15.0   // un PM vaut la moitié d'un PT
 
-// ----- Présence : la part de valeur qui ne dépend PAS de la survie projetée -----
-// La projection additionne tous les attaquants possibles sur chaque cible : une invocation posée
-// près de l'ennemi y paraît presque toujours condamnée (pression médiane 1,5 à 2 fois ses PV,
-// mesurée), et tout ce que la survie multiplie s'effondre avec elle. Ces parts restent acquises
-// tant que l'entité est debout. 0 = éteint.
-global V3_K_PRESENCE_LEEK = 0.0           // en fraction de la vie max
-global V3_K_PRESENCE_SUMMON = 0.0         // en fraction de la vie max
-global V3_K_OUTPUT_PRESENCE_SUMMON = 0.0  // en tours de production
-// Une plante ne produit qu'à ses réveils.
-global V3_K_PLANT_OUTPUT = 0.5
+// ----- Protections -----
+global COEF_ABSOLUTE_SHIELD = 1.0    // par point : un PV retiré à chaque coup encaissé
+global COEF_RELATIVE_SHIELD = 10.0   // par % : 1 % d'un millier de PV encaissés
+global COEF_DAMAGE_RETURN   = 10.0   // par % : même assiette que le bouclier relatif
 
-// ----- Poids d'une entité : sa production relative, bornée -----
-global V3_WORTH_MIN = 0.25
-global V3_WORTH_MAX = 3.0
-// 1 = proportionnel ; au-dessus, les entités qui produisent le plus comptent davantage.
-global V3_WORTH_POW = 1.0
-// Faux = les PV de mon camp valent tous 1 : le poids ne classe plus que les cibles adverses.
-global V3_WORTH_ALLIES = true
+// ----- Effets périodiques : le TOTAL RESTANT au registre, ticks à venir compris -----
+// Mesuré sur des combats du champion : du reste au-delà du prochain tick, il tombe 0,30 du
+// poison (les purges sont fréquentes), 0,7 à 0,9 du contrecoup, 0,8 à 0,96 du soin — et le soin
+// continu est en plus plafonné à la vie manquante au moment du tick.
+global COEF_POISON      = -0.5
+global COEF_AFTEREFFECT = -0.75
+global COEF_HEAL        = 0.5
 
-// ----- Garde au repos -----
-// Part de la protection comptée hors menace projetée (0 = aucune), coups encaissés par tour,
-// et part de la vie max encaissée par tour qui sert d'assiette au bouclier relatif et au renvoi.
-global V3_K_IDLE_SHIELD = 0.3
-global V3_K_IDLE_DR = 0.3
-global V3_K_IDLE_HOT = 0.3
-global V3_GUARD_HITS = 3
-global V3_GUARD_SHARE = 0.3
+// ----- Placement final (FinalCell) -----
+// Part du net projeté qui devient une perte réelle de PV : le net additionne tous les
+// attaquants possibles et vaut environ vingt fois la perte mesurée au round suivant.
+global EXPOSURE_FACTOR = 0.05
 
-// ----- Placement : multiplie la perte de valeur de Me sous le danger de sa cellule finale -----
-global V3_K_EXPOSURE = 0.15
-
-// ----- Issue du combat : plus aucun poireau adverse debout (et l'inverse) -----
-global V3_WIN = 50000
-
-// ----- Estimation de la production : PV par point d'effet de base -----
-global V3_OUT_DAMAGE     = 1.0    // dégâts directs et érosion
-global V3_OUT_POISON     = 0.8    // poison, par tick attendu sur sa durée (antidotes, purges)
-global V3_OUT_HEAL       = 1.0    // soin et vitalité
-global V3_OUT_ABS_SHIELD = 2.0    // un bouclier absolu arrête plusieurs coups
-global V3_OUT_REL_SHIELD = 10.0   // un % de bouclier relatif sur un flux de l'ordre du millier de PV
-global V3_OUT_CRIT = 0.3          // gain d'un critique ; chance = agilité / 1000 (moteur)
-// Production de SOUTIEN : buffs donnés, shackles et vulnérabilités posés. Leur valeur passe par
-// les stats de la cible quand ils sont actifs ; ici, c'est le POTENTIEL d'un soutien qui compte
-// dans son poids — un bulbe savant ne produit rien lui-même. 0 = éteint.
-global V3_OUT_SUPPORT = 0.0
-global V3_OUT_SUP_STAT = 1.0      // PV par point de caractéristique et par tour d'effet
-global V3_OUT_SUP_TP = 40.0       // PV par PT et par tour d'effet (un lancer de plus)
-global V3_OUT_SUP_MP = 15.0       // PV par PM et par tour d'effet
-global V3_OUT_MP = 0.03           // gain de production par PM total (atteindre sa cible)
-
-// Coût de cast à la main pour quelques items d'économie, soustrait au score du nœud qui les
-// lance : l'item doit rapporter PLUS que ce coût pour partir maintenant.
-global CAST_COST = [
-	CHIP_REGENERATION: 100,
-	CHIP_ANTIDOTE: 10,
-	CHIP_MANUMISSION: 2
-]
-
+// ----- Hors score -----
 // Facteurs appliqués à la source des cartes de danger et de soin (Maps/Danger, Maps/Heal).
 global DANGER_COEF = 1.0
 global HEAL_COEF = 1.00

@@ -1,6 +1,6 @@
 /*
- * Poids contextuels. La famille de scoring v3 n'emploie aucun réseau : le commutateur reste,
- * fermé, pour que la boucle de jeu garde un seul point de choix des poids de placement.
+ * Poids de placement contextuels. Aucun réseau n'est employé : le commutateur reste fermé, pour
+ * que la boucle de jeu garde un seul point de choix des poids de placement.
  */
 
 include("../includes.leek")

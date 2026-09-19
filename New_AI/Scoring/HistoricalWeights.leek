@@ -1,27 +1,14 @@
 /*
- * Fabrique des poids HISTORIQUES : elle produit exactement les coefficients que la formule
- * calculait en dur. Tant qu'aucun modèle appris n'est chargé, c'est elle qui alimente le
- * contexte de poids, et le scoring doit rendre le même score au dernier bit.
+ * Fabrique des poids de PLACEMENT : elle produit les coefficients que la pénalité de fin de
+ * tour calculait en dur.
  *
- * Correspondance, relue sur la formule effective :
- *   terme = importance · survivalValue + capability + drDeterrence
- *     -> ALIVE = LIFE = THREAT = MAXLIFE = importance, CAPABILITY = 1, DR = 1
- *        (la formule historique applique UN seul coefficient aux quatre morceaux de la survie ;
- *         les séparer ne change donc rien tant que la fabrique leur donne la même valeur)
- *     -> NET = 1 (la perte de survie porte déjà les poids de Me)
- *     -> HEAL_COST = 0 : la formule historique ne facture pas le soin consommé. Un poids nul
- *        laisse le terme éteint, et il n'est même pas calculé.
- *   pénalité de placement, part par entité (GravityClass)
+ *   part par entité (GravityClass)
  *     -> FINAL_DISTANCE = GRAV_W_ALLY · importance pour un allié,
  *                         GRAV_W_ENEMY · importance pour un ennemi
  *     -> FINAL_COVID    = (GRAV_COVID_W_PER_HP · covid) · importance, nul hors contagion
- *   pénalité de placement, part globale (FinalCell)
- *     -> DANGER = 1 (la perte de survie porte déjà l'importance de Me),
- *        CENTER = GRAV_W_CENTER, CROWDING = GRAV_AOE_PENALTY
- *
- * Les multiplications par 1 sont EXACTES sur un flottant : brancher ces poids ne déplace donc
- * aucun bit. Les produits qui existaient déjà (poids · importance) sont écrits ici dans le
- * même ordre gauche-à-droite qu'avant.
+ *   part globale (FinalCell)
+ *     -> NET = 1, CENTER = GRAV_W_CENTER, CROWDING = GRAV_AOE_PENALTY, HEAL_COST = 0
+ *        (un poids nul laisse le terme éteint, et il n'est même pas calculé)
  */
 
 include("../includes.leek")
@@ -57,12 +44,6 @@ class HistoricalWeightsFactory {
 	static forEntityOn(stat, isAlly, covidWeight) {
 		var imp = ImportanceClass.get(stat)
 		return new EntityWeightsClass(
-			imp,
-			imp,
-			imp,
-			imp,
-			1,
-			1,
 			(isAlly ? GRAV_W_ALLY : GRAV_W_ENEMY) * imp,
 			covidWeight > 0 ? covidWeight * imp : 0,
 			0)

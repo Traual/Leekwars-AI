@@ -77,29 +77,25 @@ class ActionSuite {
 		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 		var basePairs = getBaseActions(State, BaseHash, RootResurrectId, MyWalkCells)
 		// basePairs = les actions réellement JOUABLES. Vide -> rien à scorer : sortie avant
-		// Context/HFP/Terms (le gros du coût racine).
+		// Context/HFP et le score de la racine.
 		if (count(basePairs) == 0) {
 			BenchOps.Stop("BFS")
 			return null
 		}
 		var RootContext = DeltaClass.buildContextBySide(State)
 		var RootHfp = HealClass.buildHfpBySide(State)
-		var RootPoisonFold = ScoringClass.carrierFoldOthers(State)
-		var RootPoisonKey = ScoringClass.poisonKeyFromFold(State, BaseHash, RootPoisonFold)
 		// Empreinte de mobilité de Me à la racine : construite UNE fois par getBestAction
 		// effectif, portée par noPlay et héritée par ses enfants. Elle sale le filtre de
-		// cellules de tir du ScoredCache — plus aucun terme de scoring n'en dépend.
+		// cellules de tir du ScoredCache — aucune valeur de scoring n'en dépend.
 		var RootWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MyStats)
-		// La racine s'interrompt entre deux cibles quand elle entame la part stricte du placement
-		// final : une racine froide coûte jusqu'à plusieurs millions d'opérations, et le moteur qui
-		// la coupait emportait aussi le placement. Sans racine, aucune décision : le placement prend
-		// la main.
-		var RootTerms = ScoringClass.buildTermsMap(State, MySide, BaseHash, RootContext, RootHfp, RootPoisonKey, OPS_CAP - OPS_RESERVE_PLACEMENT)
-		if (RootTerms == null) {
+		// La racine s'interrompt entre deux entités quand elle entame la part stricte du placement
+		// final : le moteur qui la coupait emportait aussi le placement. Sans racine, aucune
+		// décision : le placement prend la main.
+		var initialScore = ScoringClass.stateValue(State, MySide, OPS_CAP - OPS_RESERVE_PLACEMENT)
+		if (initialScore == null) {
 			BenchOps.Stop("BFS")
 			return null
 		}
-		var initialScore = ScoringClass.sumTerms(RootTerms)
 
 		// Cache par appel : scoredKeyOf(BaseHash, candidat résu) -> liste triée
 		// [act, delta, node, nodeScore, cellule de tir, item].
@@ -108,31 +104,28 @@ class ActionSuite {
 		// salée par l'empreinte de mobilité, qui fixe exactement ce set avec le terrain.
 		var ReachableCache = [:]
 
-		// noPlay = plancher "ne rien jouer" ET racine de la chaîne de termes : il porte la
-		// map complète, chaque nœud n'empile ensuite qu'un PATCH (TERMS_PARENT).
+		// noPlay = plancher "ne rien jouer" ET racine de la chaîne d'états.
 		var noPlay = new NodeClass(null, State, null)
-		noPlay.TERMS = RootTerms
-		noPlay.TERMS_PARENT = null
 		noPlay.SCORE = initialScore
-		noPlay.BASE_HASH = BaseHash   // terrain de la racine des termes (comparaison parent/enfant pour Me)
+		noPlay.BASE_HASH = BaseHash
 		noPlay.ME_WALK_FINGERPRINT = RootWalkFingerprint
-		noPlay.POISON_FOLD = RootPoisonFold   // moitié stable de la clé antidote, héritée par ses enfants
-		// Fold des empreintes de soigneurs de la racine : ses enfants l'héritent tant qu'aucun
-		// n'a sa propre map (copie-sur-écriture du Nœud).
+		noPlay.POISON_FOLD = 0   // recopié de nœud en nœud, plus aucun lecteur
+		noPlay.HFP_OWNED = true
+		// Métadonnées que le reclassement terminal lit sur TOUT candidat, plancher compris.
+		noPlay.CONTEXT_BY_SIDE = RootContext
+		noPlay.HFP_BY_SIDE = RootHfp
 		var rootCombinedHfp = 0
 		for (var s: var h in RootHfp) rootCombinedHfp ^= h
 		noPlay.COMBINED_HFP = rootCombinedHfp
-		noPlay.HFP_OWNED = true
-		// Métadonnées que la racine ne portait pas : le reclassement terminal les lit sur
-		// TOUT candidat, plancher compris, comme sur n'importe quel nœud.
-		noPlay.CONTEXT_BY_SIDE = RootContext
-		noPlay.HFP_BY_SIDE = RootHfp
-		noPlay.POISON_KEY = RootPoisonKey
+		// Le score ne lit plus le danger ni les soins projetés : personne ne les chauffe plus. On les
+		// construit ICI, budget intact, sinon la première clôture terminale les paie en fin de tour
+		// et le moteur coupe le tour dedans.
+		FinalCell.prewarm(State, BaseHash, RootContext, rootCombinedHfp)
 		// Racine des ÉTATS : elle seule porte la map complète d'office, patch vide.
 		noPlay.STATE_PARENT = null
 		noPlay.STATE_PATCH = [: ]
 
-		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, RootPoisonKey, MyWalkCells, basePairs)
+		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, MyWalkCells, basePairs)
 		ScoredCache[scoredKeyOf(BaseHash, RootResurrectId)] = rootEntries
 		BFS_CHAIN_STEPS = 0
 		debugC("--- " + count(rootEntries) + " base actions ---", COLOR_BLUE)
@@ -246,6 +239,8 @@ class ActionSuite {
 		}
 		reverse(chain)   // en place : reverse ne rend rien
 		BFS_LAST_CHAIN = chain
+		// Diagnostic ciblé : les contributions du gain retenu, une fois par décision.
+		if (SCORE_EXPLAIN) ScoringClass.explainDecision(candidates[0], best, bestFinal, candidates[0].END_STATS[Me].SIDE)
 		debug("Best: " + ITEMINFO[ancestor.ACTION.Item].NAME + " | From: " + ancestor.ACTION.From + " | To: " + ancestor.ACTION.To + " | Delta: " + (bestFinal - initialScore) + " | " + nBases + " bases, " + BFS_CHAIN_STEPS + " steps")
 		return ancestor.ACTION
 	}
@@ -258,7 +253,14 @@ class ActionSuite {
 	 */
 	static closeOf(node, truncateAt) {
 		var NodeState = StateClass.materializeNodeState(node)
-		return FinalCell.evaluate(NodeState, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, node.COMBINED_HFP, node.POISON_KEY, node.ME_WALK_FINGERPRINT, truncateAt)
+		// Fold des empreintes de soigneurs : clé de la carte de soin que FinalCell consomme. Le
+		// scoring ne la lit plus, elle n'est donc repliée que sur les nœuds réellement clos.
+		if (node.COMBINED_HFP == null) {
+			var combined = 0
+			for (var s: var h in node.HFP_BY_SIDE) combined ^= h
+			node.COMBINED_HFP = combined
+		}
+		return FinalCell.evaluate(NodeState, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, node.COMBINED_HFP, node.ME_WALK_FINGERPRINT, truncateAt)
 	}
 
 	/*
@@ -310,7 +312,7 @@ class ActionSuite {
 			// Miss : WalkCells + jouables produits UNE seule fois pour ce nouvel état, puis scorés.
 			var FreshWalk = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 			var freshPairs = getBaseActions(State, BaseHash, ResurrectId, FreshWalk)
-			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, Parent.POISON_KEY, FreshWalk, freshPairs)
+			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, FreshWalk, freshPairs)
 			ScoredCache[CacheKey] = Entries
 
 			// Chemin frais : toutes les entrées sont positives et triées pour cet état.
@@ -411,7 +413,7 @@ class ActionSuite {
 			if (Workspace == null) Workspace = clone(State, 1)
 			var act = entry[0]
 			var candidate = NodeClass.ActionToNodeInTree(act, Workspace, from, MyWalkCells, cost, ITEMINFO[item], item, act.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, baseUses[item])
-			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, Workspace, ParentScore, Parent, Parent.HFP_BY_SIDE, MySide, Parent.POISON_KEY)
+			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, Workspace, ParentScore, MySide)
 			StateClass.restoreWorkspace(Workspace, candidate.CLONED)
 			candidate.CLONED = null
 			// Rendement sur le coût COURANT, celui que ce candidat paie vraiment dans cet état
@@ -464,11 +466,11 @@ class ActionSuite {
 			if (cost2 < 0) continue
 			var from2 = entry[4]
 			// Le majorant ne couvre QUE les effets de l'item. Une cellule de tir hors de la couche
-			// de MARCHE s'atteint par le saut ou la teleportation, qui posent sur moi une valeur
-			// que la formule ignore : 100 d'agilite (Node.leek:104) ou 15 de vie et de vie max
-			// (Node.leek:126). Couper la ecarterait une branche reellement meilleure : on ne coupe
-			// pas, on simule. Une cellule de marche, elle, n'ajoute rien au score — Me est hors du
-			// BaseHash, hors du contexte danger (Delta.leek:243), et son terme ne lit pas sa cellule.
+			// de MARCHE s'atteint par le saut ou la teleportation, qui posent sur moi des
+			// caracteristiques que la formule ignore : 100 d'agilite (Node.leek:104) ou 15 de vie et
+			// de vie max (Node.leek:126). Couper la ecarterait une branche reellement meilleure : on
+			// ne coupe pas, on simule. Une cellule de marche, elle, n'ajoute rien au score — la
+			// valeur de Me ne lit ni sa cellule, ni ses PM, ni ses PT courants.
 			var boundCovers = true
 			if (!(from2 in MyOnlyWalk)) {
 				boundCovers = false
@@ -487,7 +489,7 @@ class ActionSuite {
 			}
 			if (Workspace == null) Workspace = clone(State, 1)
 			var cand2 = NodeClass.ActionToNodeInTree(act2, Workspace, from2, MyWalkCells, cost2, ITEMINFO[item2], item2, act2.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, baseUses[item2])
-			var score2 = ScoringClass.getStateScoreFromParent(cand2, Workspace, ParentScore, Parent, Parent.HFP_BY_SIDE, MySide, Parent.POISON_KEY)
+			var score2 = ScoringClass.getStateScoreFromParent(cand2, Workspace, ParentScore, MySide)
 			StateClass.restoreWorkspace(Workspace, cand2.CLONED)
 			cand2.CLONED = null
 			var prio2 = priorityOf(score2 - ParentScore, cost2)
@@ -505,22 +507,22 @@ class ActionSuite {
 	 * Applique + score chaque action JOUABLE reçue (basePairs = sortie de getBaseActions,
 	 * produite une seule fois par l'appelant avec MyWalkCells), trie par delta décroissant.
 	 * Renvoie des entrées [act, priorité, node, nodeScore, cellule de tir, item], triées par
-	 * priorité décroissante ; node avec PARENT=null mais TERMS_PARENT = ParentTermNode (la
-	 * chaîne de termes est posée ici et jamais réassignée, contrairement à PARENT que le
-	 * déroulé reconstruit).
+	 * priorité décroissante ; node avec PARENT=null mais STATE_PARENT = ParentStateNode (la
+	 * chaîne d'états est posée ici et jamais réassignée, contrairement à PARENT que le déroulé
+	 * reconstruit).
 	 * INVARIANT : toute entrée renvoyée a delta > BFS_DELTA_EPSILON — jouable (basePairs)
 	 * n'implique donc pas retenu ; les sub-epsilon sont injouables partout en aval
 	 * (plancher, chemin frais, borne du tri), les dropper ici libère leur nœud immédiatement.
 	 * Le seuil porte sur le Δscore, pas sur la priorité : c'est la question « cette action
 	 * apporte-t-elle quoi que ce soit ? », indépendante de ce qu'elle coûte.
 	 */
-	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentTermNode, ParentPoisonKey, MyWalkCells, basePairs) {
+	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentStateNode, MyWalkCells, basePairs) {
 		var Entries = []
 		// UN seul workspace pour toute la liste : chaque candidat le mute, se score dessus,
 		// puis le rend EXACTEMENT à l'état parent — plus de copie de map par candidat. Créé
 		// au premier candidat (une liste vide n'en paie aucun).
-		// INVARIANT : ParentTermNode est AUSSI le nœud d'état parent — State doit être son
-		// état matérialisé, sinon les enfants reconstruiraient un état faux.
+		// INVARIANT : State doit être l'état matérialisé de ParentStateNode, sinon les enfants
+		// reconstruiraient un état faux.
 		var Workspace = null
 		for (var pair in basePairs) {
 			// Les racines deja scorees restent des candidats valides : s'arreter ici revient a
@@ -529,8 +531,8 @@ class ActionSuite {
 			var act = pair[0]
 			var Item = act.Item
 			if (Workspace == null) Workspace = clone(State, 1)
-			var node = NodeClass.ActionToNodeInTree(act, Workspace, act.From, MyWalkCells, pair[1], ITEMINFO[Item], Item, act.To, BaseHash, null, ParentTermNode, ParentContext, ParentHfp, pair[2])
-			var nodeScore = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, ParentTermNode, ParentHfp, MySide, ParentPoisonKey)
+			var node = NodeClass.ActionToNodeInTree(act, Workspace, act.From, MyWalkCells, pair[1], ITEMINFO[Item], Item, act.To, BaseHash, null, ParentStateNode, ParentContext, ParentHfp, pair[2])
+			var nodeScore = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, MySide)
 			// Scoring fait : le workspace redevient le State parent pour le candidat suivant,
 			// et CLONED est libéré (STATE_PATCH porte désormais les entités modifiées).
 			StateClass.restoreWorkspace(Workspace, node.CLONED)
