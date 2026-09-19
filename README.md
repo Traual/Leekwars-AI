@@ -26,7 +26,8 @@ après chaque action. Entrée principale : [`New_AI/Main.leek`](New_AI/Main.leek
   première action de la meilleure suite puis replanifie.
 - **Danger / Heal / Delta** projettent la pression future : ce que chaque ennemi peut infliger
   (Danger), ce que chaque allié peut soigner (Heal), agrégés en net séquencé par ordre de tour
-  (Delta) — c'est la « pression » consommée par le TTK du scoring.
+  (Delta) — le score ne les lit pas, ils ne servent qu'au placement de fin de tour (FinalCell),
+  que la racine de la recherche préchauffe.
 - **Quatre PALIERS de déplacement**, dans Danger comme dans Heal. Un caster choisit une
   position ET une panoplie : marcher ne coûte rien, sauter coûte 4 TP, se téléporter 9, les
   deux 13. Chaque palier a donc sa propre géométrie de couverture, et le combo joué depuis une
@@ -48,40 +49,33 @@ après chaque action. Entrée principale : [`New_AI/Main.leek`](New_AI/Main.leek
 
 ## Scoring
 
-Formule réellement active (monnaie : HP d'équipe), par entité vivante :
+Monnaie : le point de vie — 1 PV vaut 1 point de score. Par entité VIVANTE :
 
 ```
-survival = BASE_ALIVE + W_LIFE·sqrt(afterPeriodic) + W_TTK·g + W_TOTAL_LIFE·sqrt(TOTAL_LIFE)
-term     = sign × (importance × survival + capability + drDeterrence)
-score    = Σ term          (sign = +1 allié, −1 ennemi ; les morts contribuent 0)
+valeur(e) = présence + Σ coefficient × statistique      (une entité morte vaut 0)
+score     = Σ valeur(alliés) − Σ valeur(adversaires)
+gain      = score(après) − score(avant)
 ```
 
-- **Stock** : `sqrt(afterPeriodic)` — vie après le tick périodique net, concave (finir les
-  blessés paie plus par HP).
-- **TTK (horizon)** : `g = horizonLife / (horizonLife + TTK_HALF × pressure)` — le seul canal
-  où le danger projeté et la traînée périodique nuisible entrent dans la valeur ; pente
-  maximale près des seuils de kill.
-- **Capital durable** : `sqrt(TOTAL_LIFE)` — seul canal de l'érosion/nova et des buffs de
-  vitalité.
-- **Six flux périodiques distincts** : POISON / POISON_OVER_TIME, AFTEREFFECT /
-  AFTEREFFECT_OVER_TIME, HEAL / HEAL_OVER_TIME. Le tick net = POISON + AFTEREFFECT − HEAL ;
-  la traînée nuisible restante = max(0, coefAntidote·POT + AFT_OT − HEAL_OT) — le coef
-  antidote ne porte que sur le vrai poison.
-- **Capability** : valeur live des buffs, debuffs et shields (Importance.leek).
-- **Importance** : figée pendant un replan/BFS (classement stable des cibles), rafraîchie à
-  chaque replanification réelle.
-- **`CAST_COST`** : coût d'action porté par le chemin, soustrait du score du nœud (le score
-  n'est donc pas strictement Σ termes).
-- **FinalCell** : meilleure gravity parmi les cellules à net nul, sinon net strictement
-  minimal.
-
-**Nuance importante** : `BASE_ALIVE` appartient à `survival`, et `survival` est multiplié par
-`importance`. `BASE_ALIVE` apporte donc une **contribution fixe d'être vivant** de
-`importance × BASE_ALIVE` au terme de l'entité ; la valeur complète retirée par un kill
-contient aussi les autres composantes de survival, capability et drDeterrence — capability
-pouvant être négative, ce n'est pas un plancher universel strict. Ne jamais écrire qu'un
-kill vaut systématiquement au moins 1000 dans le score final : une faible importance rend
-volontairement un summon ou une entité faible moins précieux.
+- **Statistiques comptées** : vie, vie max, les six caractéristiques, puissance, PT et PM
+  TOTAUX, bouclier absolu, bouclier relatif, renvoi de dégâts, et les trois flux périodiques
+  pris en TOTAL RESTANT (`POISON_OVER_TIME`, `AFTEREFFECT_OVER_TIME`, `HEAL_OVER_TIME`).
+- **Présence** : bonus fixe d'être debout, distinct pour un poireau et une invocation, perdu
+  d'un bloc à la mort. Il n'y a PAS de second bonus de kill : ce qu'un kill rapporte est
+  exactement la valeur que la victime cessait de porter.
+- **Coefficients** : constantes explicites dans [`Weights.leek`](New_AI/Scoring/Weights.leek),
+  les mêmes pour les deux camps — le signe du camp fait le reste. Ce sont des hypothèses
+  initiales, pas des valeurs réglées.
+- **Rien d'autre** : ni danger projeté, ni soins projetés, ni production de kit, ni horizon de
+  mort, ni coût de cast. La vie est LINÉAIRE (aucune racine, aucune concavité).
+- **Score incrémental** : le score d'un nœud vaut celui de son parent plus la somme des écarts
+  de valeur des seules entités que l'action a clonées — exactement la différence des scores
+  complets, puisque les autres entités sont les objets du parent.
+- **FinalCell** : pénalité de placement = coût spatial (GravityClass) + `EXPOSURE_FACTOR` ×
+  les PV que le net projeté à la cellule coûterait. Positive par construction, donc le
+  reclassement terminal coupe exactement.
+- **Diagnostic** : `SCORE_EXPLAIN = true` journalise, une fois par décision, les contributions
+  du gain retenu par statistique et par entité, calculées par la fonction de valeur elle-même.
 
 ## Invariants techniques
 
@@ -181,8 +175,6 @@ Documentés comme des choix, pas des bugs à corriger immédiatement :
   reconstruit sa séquence par partition sur les ordres COURANTS, ce qui reproduit exactement
   le comportement hybride historique. Corriger la péremption du tri est un chantier distinct.
 - Collision théorique de certaines clés de cache au-delà de 4096 de force.
-- Cellule de Me **gelée** pendant un BFS pour la couverture Antidote.
-- LoS ignorée pour la couverture Antidote.
 - Dédoublonnage des actions par ensemble de cibles : un seul `From` conservé par ensemble.
 - Mobilité future de Danger ignorant les entités (portées de déplacement sans obstacles
   vivants).
@@ -225,4 +217,5 @@ Documentés comme des choix, pas des bugs à corriger immédiatement :
    un sac à dos borné exact coûte 1 522 opérations par appel contre 165 au glouton, soit
    **+39,2 % des opérations de toute l'IA**. Rejeté. Le glouton n'est pas monotone en l'ensemble
    d'items (ajouter un item peut dégrader la pile retenue), ce qui reste le vrai résidu.
-3. Instrumenter les composantes du scoring si un réglage des poids devient nécessaire.
+3. ~~Instrumenter les composantes du scoring si un réglage des poids devient nécessaire.~~
+   FAIT : `SCORE_EXPLAIN` rend les contributions de la décision retenue.
