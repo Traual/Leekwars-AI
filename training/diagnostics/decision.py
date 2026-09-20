@@ -176,6 +176,100 @@ def fenetre_visee(brut: dict, tour: int, entite: int) -> dict | None:
     return None
 
 
+def table_templates() -> tuple[dict[int, tuple[str, int]], dict[int, tuple[str, int]]]:
+    """[template -> (nom, id d'item de l'IA)] pour les puces et pour les armes, SEPAREMENT.
+
+    Le journal du moteur enregistre le TEMPLATE, pas l'identifiant d'item, et les deux espaces
+    se recouvrent : le template 34 est la puce `adrenaline` ET l'arme `unstable_destroyer`. Seul
+    le TYPE de l'action tranche. L'identifiant d'item de l'IA est `id` pour une puce et `item`
+    pour une arme (l'arme `sword` a l'id moteur 35 et l'item 277).
+    """
+    donnees = GEN / "data"
+    puces = {}
+    for v in json.loads((donnees / "chips.json").read_text(encoding="utf-8")).values():
+        puces[v["template"]] = (v["name"], v["id"])
+    armes = {}
+    for v in json.loads((donnees / "weapons.json").read_text(encoding="utf-8")).values():
+        armes[v["template"]] = (v["name"], v.get("item", v["id"]))
+    return puces, armes
+
+
+def actions_jouees(brut: dict, tour: int, entite: int) -> list[dict]:
+    """Ce que l'entite a REELLEMENT joue pendant ce tour, lu dans le journal du moteur.
+
+    Source de verite : `fight.actions`. Les lignes de debug « Using : » n'en couvrent qu'une
+    partie — ni l'invocation ni le saut n'en produisent, et elles s'arretent avant la fin du
+    tour — s'y fier fait disparaitre des casts.
+
+    Payloads du moteur : USE_CHIP [12, template, cellule, succes], SET_WEAPON [13, template],
+    USE_WEAPON [16, cellule, succes] (l'arme vient du dernier SET_WEAPON), MOVE_TO
+    [10, entite, cellule, chemin], SUMMON [9, invocateur, invoque, cellule, resultat].
+    """
+    puces, armes = table_templates()
+    fen = fenetre_visee(brut, tour, entite)
+    if fen is None:
+        return []
+    actes = actions(brut)
+    # L'arme courante est posee par SET_WEAPON, qui ne porte pas d'entite : elle appartient a
+    # celle dont c'est le tour. Elle persiste d'un tour a l'autre, donc on balaie depuis le debut.
+    arme_de: dict[int, int] = {}
+    actif = None
+    for i, act in enumerate(actes):
+        if not act:
+            continue
+        if act[0] == A_LEEK_TURN and len(act) > 1:
+            actif = act[1]
+        elif act[0] == 13 and len(act) > 1 and actif is not None:
+            arme_de[actif] = act[1]
+        if i >= fen["fin"]:
+            break
+    sortie = []
+    for i in range(fen["debut"], fen["fin"]):
+        act = actes[i]
+        if not act:
+            continue
+        if act[0] == 12 and len(act) > 2:
+            nom, item = puces.get(act[1], ("template %d inconnu" % act[1], None))
+            sortie.append({"indice": i, "sorte": "puce", "nom": nom, "item": item, "cible": act[2]})
+        elif act[0] == 16 and len(act) > 1:
+            t = arme_de.get(entite)
+            nom, item = armes.get(t, ("arme inconnue", None)) if t is not None else ("arme inconnue", None)
+            sortie.append({"indice": i, "sorte": "arme", "nom": nom, "item": item, "cible": act[1]})
+        elif act[0] == 10 and len(act) > 2 and act[1] == entite:
+            sortie.append({"indice": i, "sorte": "deplacement", "nom": "->%d" % act[2], "item": None,
+                           "cible": act[2]})
+        elif act[0] == 9 and len(act) > 3 and act[1] == entite:
+            sortie.append({"indice": i, "sorte": "invocation", "nom": "invoque #%d" % act[2],
+                           "item": None, "cible": act[3]})
+        elif act[0] == 13 and len(act) > 1:
+            nom, item = armes.get(act[1], ("arme inconnue", None))
+            sortie.append({"indice": i, "sorte": "arme equipee", "nom": nom, "item": item, "cible": None})
+    return sortie
+
+
+def cmd_joue(args) -> int:
+    """Les actions REELLEMENT jouees d'un tour, depuis le combat NORMAL archive."""
+    travail = Path(args.travail).resolve()
+    index = json.loads((travail / "index.json").read_text(encoding="utf-8"))
+    combat = next(c for c in index["combats"] if c["etiquette"] == args.combat)
+    brut = json.loads((travail / combat["fichier"]).read_text(encoding="utf-8"))
+    ents = entites(brut)
+    fen = fenetre_visee(brut, args.tour, args.entite)
+    if fen is None:
+        print("CIBLE ABSENTE : l'entite %d ne joue pas au tour %d" % (args.entite, args.tour))
+        return 2
+    jouees = actions_jouees(brut, args.tour, args.entite)
+    casts = [a for a in jouees if a["sorte"] in ("puce", "arme")]
+    print("%s | %s tour %d | entite %d %s | fenetre [%d, %d)"
+          % (travail.name, args.combat, args.tour, args.entite,
+             ents.get(args.entite, {}).get("name"), fen["debut"], fen["fin"]))
+    for a in jouees:
+        print("   %4d  %-13s %s%s" % (a["indice"], a["sorte"], a["nom"],
+                                      (" #%s" % a["item"]) if a["item"] else ""))
+    print("   => %d casts joues : %s" % (len(casts), ", ".join(a["nom"] for a in casts)))
+    return 0
+
+
 def actions_par_tour(brut: dict) -> list[dict]:
     """Chaque tour d'entite avec ses actions et la vie retiree a chacun pendant ce tour."""
     actes = actions(brut)
@@ -391,6 +485,12 @@ def main() -> int:
     d.add_argument("--sans-item", type=int, default=-1, dest="sans_item",
                    help="rendre aussi la meilleure suite exploree qui ne lance PAS cet item")
     d.set_defaults(fonction=cmd_decision)
+    j = sous.add_parser("joue")
+    j.add_argument("travail")
+    j.add_argument("--combat", required=True)
+    j.add_argument("--tour", type=int, required=True)
+    j.add_argument("--entite", type=int, required=True)
+    j.set_defaults(fonction=cmd_joue)
     args = p.parse_args()
     return args.fonction(args)
 
