@@ -15,6 +15,17 @@
 
 include("../includes.leek")
 
+// Cout d'une construction A FROID des deux structures lourdes que le placement lit, relevé par
+// le prechauffage de la racine a chaque tour : aucune des deux ne s'interrompt en route, et une
+// evaluation ne s'ouvre que si le budget couvre ce qui lui manque encore.
+// Mesure sur les builds du meta : la PREMIERE carte de soin d'un tour coute 1,6 M (toutes les
+// couvertures de soigneurs), une carte REBATIE ensuite 17 k en mediane et 485 k au pire ; un plan
+// de danger a couvertures froides coute 1,4 a 4 MILLIONS. Valeurs de depart au-dessus du courant,
+// relevees par chaque mesure du tour.
+global OPS_COLD_HEAL = 3000000
+global OPS_REBUILD_HEAL = 500000
+global OPS_COLD_PLAN = 3000000
+
 class FinalCell {
 
     /*
@@ -37,13 +48,25 @@ class FinalCell {
         var combinedHfp = 0
         for (var s: var h in hfpBySide) combinedHfp ^= h
         var meWalkFp = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(State[Me])
+        // Le deplacement qui suit lit les QUATRE couches de mobilite (WalkCellsClass.MoveTo),
+        // la ou le balayage n'en demande qu'une : les construire ICI, budget intact. Sinon
+        // elles se paient APRES le balayage, quand il ne reste que la marge de deplacement,
+        // et le moteur coupe le tour dans le deplacement lui-meme.
+        WalkCellsClass.getAllLayers(State, Me, BaseHash)
         // Le placement REEL de fin de tour se tronque au plus pres du plafond, en ne gardant que de
         // quoi bouger : c'est lui que le moteur tue quand le budget est epuise (585 tours mesures sur
         // 480 combats, contre 3 pour main). Le balayage est un MINIMUM dont la graine est ma cellule
         // courante : s'arreter en route rend donc une reponse VALIDE, seulement moins bonne —
         // strictement mieux que de mourir dedans, et mieux que de ne pas se placer du tout (mesure :
         // sauter le placement coute -0,055, et -0,425 sous 8 coeurs).
-        var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, OPS_CAP - OPS_MOVE_MARGIN)
+        // Le danger d'une cellule demande parfois de reconstruire A FROID le plan de danger, ce
+        // que la fin de tour ne finance plus — et cette reconstruction ne s'interrompt pas, donc
+        // le moteur tuait le tour dedans. Sous cette marge, le balayage garde son seul cout
+        // SPATIAL : une reponse degradee, mais complete sur toutes mes cellules accessibles.
+        var budget = OPS_CAP - OPS_MOVE_MARGIN
+        var withDanger = getOperations() + coldCost(State, combinedHfp) <= budget
+        if (!withDanger) debugW("[placement] danger non financable : cout spatial seul")
+        var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, budget, withDanger)
         debug("Best final cell: " + res[0] + " (pénalité: " + res[1] + ", net: " + res[2] + ")")
         return res[0]
     }
@@ -60,11 +83,52 @@ class FinalCell {
      * @param combinedHfp fold XOR des empreintes de soigneurs
      */
     static prewarm(State, BaseHash, contextBySide, combinedHfp) {
+        var avant = getOperations()
+        // Premiere carte de soin du tour ou simple reconstruction : deux regimes de cout, donc
+        // deux marges. Les caches de soin sont vides au debut de chaque tour.
+        var premiereDuTour = mapIsEmpty(HEAL_MAP_CACHE)
         HealClass.getHealMapByFp(State, combinedHfp)
+        var apresSoin = getOperations()
         var mySide = State[Me].SIDE
         var plan = DangerPlanClass.getTeamPlan(State, BaseHash, contextBySide[mySide], mySide)
         DangerPlanClass.coverageSequenceFor(plan, Me)
         DangerPlanClass.netSequenceFor(plan, Me)
+        // Seules constructions a froid que l'IA paie en les voyant : elles calibrent les marges.
+        var coutSoin = apresSoin - avant
+        if (premiereDuTour) {
+            if (coutSoin > OPS_COLD_HEAL) OPS_COLD_HEAL = coutSoin
+        } else if (coutSoin > OPS_REBUILD_HEAL) {
+            OPS_REBUILD_HEAL = coutSoin
+        }
+        var coutPlan = getOperations() - apresSoin
+        if (coutPlan > OPS_COLD_PLAN) OPS_COLD_PLAN = coutPlan
+    }
+
+    /*
+     * Ce qu'une evaluation de placement devrait encore CONSTRUIRE, en operations : la carte de
+     * soin si son empreinte est inconnue, et les couvertures d'items des menaces adverses si
+     * elles manquent. Ce sont les deux seules parts lourdes — un plan d'equipe rebati sur des
+     * couvertures deja chaudes coute quelques milliers d'operations — et les deux seules qui ne
+     * s'interrompent pas. Lecture seule, memes cles que DangerPlanClass.getTeamPlan.
+     *
+     * @param State etat a evaluer
+     * @param combinedHfp fold XOR des empreintes de soigneurs
+     * @return le cout a prevoir, 0 si tout est deja construit
+     */
+    static coldCost(State, combinedHfp) {
+        var cout = 0
+        if (!(combinedHfp in HEAL_MAP_CACHE)) cout = mapIsEmpty(HEAL_MAP_CACHE) ? OPS_COLD_HEAL : OPS_REBUILD_HEAL
+        var mySide = State[Me].SIDE
+        for (var e: var stat in State) {
+            if (e == Me || stat.LIFE <= 0 || stat.SIDE == mySide) continue
+            if (count(EntityDangerClass.getItemsList(stat)) == 0) continue
+            if (!(DangerPlanClass.mapCellItemAoeKeyOf(stat) in MAP_CELL_ITEM_AOE_CACHE)) return cout + OPS_COLD_PLAN
+            for (var t = 0; t < 4; t++) {
+                if (!WalkCellsClass.dangerTierAvailable(stat, t)) continue
+                if (!(DangerPlanClass.mapCellItemAoeKeyForLayer(stat, t) in MAP_CELL_ITEM_AOE_CACHE)) return cout + OPS_COLD_PLAN
+            }
+        }
+        return cout
     }
 
     /*
@@ -82,10 +146,12 @@ class FinalCell {
      *        elle fixe exactement mes cellules accessibles
      * @param truncateAt nombre d'opérations au-delà duquel le balayage s'arrête sur le meilleur
      *        trouvé : près du plafond pour le placement réel, plus tôt pour le reclassement du BFS
+     * @param withDanger faux quand le budget ne finance plus le danger des cellules : la pénalité
+     *        se réduit alors au coût spatial, et le résultat n'entre pas dans le mémo
      * @return [meilleure cellule, pénalité (>= 0), net à cette cellule], suivi de true si le
      *        balayage a été tronqué — sa pénalité n'est alors qu'un majorant du minimum
      */
-    static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, truncateAt) {
+    static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, truncateAt, withDanger) {
         BenchOps.Start("FinalCell")
         var MyState = State[Me]
         var mySide = MyState.SIDE
@@ -113,7 +179,9 @@ class FinalCell {
 
         // Cellules accessibles avec mes MP restants.
         var possibleCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
-        var healMap = HealClass.getHealMapByFp(State, combinedHfp)
+        // Sans danger, la carte de soin n'a aucun lecteur — et c'est justement une des deux
+        // constructions que le budget ne finançait pas.
+        var healMap = withDanger ? HealClass.getHealMapByFp(State, combinedHfp) : null
 
         var finalWeights = REPLAN_WEIGHTS.FINAL_CELL_WEIGHTS
         // Le coût de soin n'est calculé que si un poids le réclame : sans lui, la map de danger
@@ -146,11 +214,11 @@ class FinalCell {
             var spatial = GravityClass.costAt(State, BaseHash, cell)
             if (spatial >= bestPenalty) continue
 
-            var net = DeltaClass.netAtFleeCell(cell, seed, dangerCellSeed, MyState, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy, wantHealCost)
+            var net = withDanger ? DeltaClass.netAtFleeCell(cell, seed, dangerCellSeed, MyState, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy, wantHealCost) : 0
             var penalty = spatial
             // Le soin que la cellule consomme s'ajoute au coût. Positif par construction, donc
             // le spatial reste un minorant de la pénalité et la coupure du balayage reste exacte.
-            if (wantHealCost) penalty += finalWeights.HEAL_COST * CELL_FLEE_HEALCOST_CACHE[seed ^ cell]
+            if (withDanger && wantHealCost) penalty += finalWeights.HEAL_COST * CELL_FLEE_HEALCOST_CACHE[seed ^ cell]
             if (net > 0) {
                 // Les PV que ce net me coûterait réellement (ScoringClass.exposureLoss) : une
                 // valeur positive, donc le spatial reste un minorant de la pénalité.
@@ -168,7 +236,9 @@ class FinalCell {
         // Un balayage tronque n'est pas l'optimum : il le dit a l'appelant, et le memoriser servirait
         // une reponse degradee a un etat qui, lui, aurait le budget de faire mieux.
         var res = truncated ? [bestCell, bestPenalty, bestNet, true] : [bestCell, bestPenalty, bestNet]
-        if (!truncated) FINAL_PLACEMENT_CACHE[memoKey] = res
+        // Une penalite sans danger est PARTIELLE : elle ne doit pas etre servie a un etat qui,
+        // lui, aurait le budget de la calculer en entier.
+        if (!truncated && withDanger) FINAL_PLACEMENT_CACHE[memoKey] = res
         BenchOps.Stop("FinalCell")
         return res
     }

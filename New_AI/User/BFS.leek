@@ -65,25 +65,33 @@ class ActionSuite {
 	static getBestAction(State) {
 		BenchOps.Start("BFS")
 		var MyStats = State[Me]
-		// Fast-path racine : sous le coût du moindre item jouable du tour (même garde que
-		// findBestNextNode), aucune action de base n'existe — rien à calculer, pas même BaseHash.
-		if (MyStats.TP < MINIMUM_COST_ITEM) {
-			BenchOps.Stop("BFS")
-			return null
-		}
 		var MySide = MyStats.SIDE
 		var BaseHash = StateClass.getBaseHash(State)
-		var RootResurrectId = resurrectIdOf(State)
+		// Les quatre couches de mobilite servent a la recherche ET au deplacement de fin de tour.
+		// Construites ici, elles sont chaudes quand le tour s'arrete ; sinon le placement puis le
+		// deplacement les paient a froid avec la seule marge de deplacement, et le moteur coupe.
 		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
-		var basePairs = getBaseActions(State, BaseHash, RootResurrectId, MyWalkCells)
-		// basePairs = les actions réellement JOUABLES. Vide -> rien à scorer : sortie avant
-		// Context/HFP et le score de la racine.
-		if (count(basePairs) == 0) {
+		var RootContext = DeltaClass.buildContextBySide(State)
+		var RootHfp = HealClass.buildHfpBySide(State)
+		var rootCombinedHfp = 0
+		for (var s: var h in RootHfp) rootCombinedHfp ^= h
+		// Fast-path racine : sous le coût du moindre item jouable du tour (même garde que
+		// findBestNextNode), aucune action de base n'existe — rien à chercher. Le tour se termine
+		// donc ici, et le placement suit : on lui prépare ses structures avant de rendre la main.
+		if (MyStats.TP < MINIMUM_COST_ITEM) {
+			prewarmIfAffordable(State, BaseHash, RootContext, rootCombinedHfp)
 			BenchOps.Stop("BFS")
 			return null
 		}
-		var RootContext = DeltaClass.buildContextBySide(State)
-		var RootHfp = HealClass.buildHfpBySide(State)
+		var RootResurrectId = resurrectIdOf(State)
+		var basePairs = getBaseActions(State, BaseHash, RootResurrectId, MyWalkCells)
+		// basePairs = les actions réellement JOUABLES. Vide -> rien à scorer, même fin de tour.
+		if (count(basePairs) == 0) {
+			prewarmIfAffordable(State, BaseHash, RootContext, rootCombinedHfp)
+			BenchOps.Stop("BFS")
+			return null
+		}
+		prewarmIfAffordable(State, BaseHash, RootContext, rootCombinedHfp)
 		// Empreinte de mobilité de Me à la racine : construite UNE fois par getBestAction
 		// effectif, portée par noPlay et héritée par ses enfants. Elle sale le filtre de
 		// cellules de tir du ScoredCache — aucune valeur de scoring n'en dépend.
@@ -114,13 +122,7 @@ class ActionSuite {
 		// Métadonnées que le reclassement terminal lit sur TOUT candidat, plancher compris.
 		noPlay.CONTEXT_BY_SIDE = RootContext
 		noPlay.HFP_BY_SIDE = RootHfp
-		var rootCombinedHfp = 0
-		for (var s: var h in RootHfp) rootCombinedHfp ^= h
 		noPlay.COMBINED_HFP = rootCombinedHfp
-		// Le score ne lit plus le danger ni les soins projetés : personne ne les chauffe plus. On les
-		// construit ICI, budget intact, sinon la première clôture terminale les paie en fin de tour
-		// et le moteur coupe le tour dedans.
-		FinalCell.prewarm(State, BaseHash, RootContext, rootCombinedHfp)
 		// Racine des ÉTATS : elle seule porte la map complète d'office, patch vide.
 		noPlay.STATE_PARENT = null
 		noPlay.STATE_PATCH = [: ]
@@ -146,6 +148,19 @@ class ActionSuite {
 		BenchOps.Stop("BFS")
 
 		return pickTerminal(candidates, initialScore, count(rootEntries))
+	}
+
+	/*
+	 * Construit ce que la fin de tour lira — plan de danger, carte de soin — tant que le budget
+	 * couvre ce qui lui manque VRAIMENT (FinalCell.coldCost). Le score ne les lit plus : sans cet
+	 * appel, la première clôture terminale ou le placement les paierait à froid en fin de tour, et
+	 * le moteur couperait le tour dedans. En dessous, on s'abstient : le placement se rabattra sur
+	 * son coût spatial plutôt que de se faire couper.
+	 */
+	static prewarmIfAffordable(State, BaseHash, contextBySide, combinedHfp) {
+		if (getOperations() + FinalCell.coldCost(State, combinedHfp) <= OPS_CAP - OPS_RESERVE_PLACEMENT) {
+			FinalCell.prewarm(State, BaseHash, contextBySide, combinedHfp)
+		}
 	}
 
 	/*
@@ -184,7 +199,7 @@ class ActionSuite {
 		var terminalDeadline = terminalLimit - TERMINAL_EVAL_MARGIN
 		var best = null
 		var bestFinal = 0
-		var seedClose = (getOperations() <= terminalDeadline) ? closeOf(seed, terminalLimit) : null
+		var seedClose = (getOperations() <= terminalDeadline && canCloseNow(seed, terminalLimit)) ? closeOf(seed, terminalLimit) : null
 		if (seedClose != null && count(seedClose) == 3) {
 			var bound = bestRaw - seedClose[1]
 			// Un candidat dont le score BRUT n'atteint pas déjà cette borne ne peut plus gagner : son
@@ -205,6 +220,9 @@ class ActionSuite {
 				if (best != null && raw <= bestFinal) break
 				// Budget épuisé : le meilleur candidat déjà clos l'emporte sur ceux qu'on n'ouvrira pas.
 				if (best != null && getOperations() > terminalDeadline) break
+				// Reconstruction à froid non finançable : ce candidat reste non clos, les
+				// suivants peuvent encore l'être.
+				if (!canCloseNow(node, terminalLimit)) continue
 				var close = closeOf(node, terminalLimit)
 				// Balayage tronqué : le budget des évaluations est épuisé, on garde ce qui est déjà clos.
 				if (count(close) > 3) break
@@ -253,14 +271,33 @@ class ActionSuite {
 	 */
 	static closeOf(node, truncateAt) {
 		var NodeState = StateClass.materializeNodeState(node)
-		// Fold des empreintes de soigneurs : clé de la carte de soin que FinalCell consomme. Le
-		// scoring ne la lit plus, elle n'est donc repliée que sur les nœuds réellement clos.
+		// Toujours avec le danger : canCloseNow a deja verifie qu'il est finançable.
+		return FinalCell.evaluate(NodeState, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, combinedHfpOf(node), node.ME_WALK_FINGERPRINT, truncateAt, true)
+	}
+
+	/*
+	 * Fold des empreintes de soigneurs du nœud : clé de la carte de soin que FinalCell consomme.
+	 * Le scoring ne la lit plus, elle n'est donc repliée que sur les nœuds qu'on envisage de clore.
+	 */
+	static combinedHfpOf(node) {
 		if (node.COMBINED_HFP == null) {
 			var combined = 0
 			for (var s: var h in node.HFP_BY_SIDE) combined ^= h
 			node.COMBINED_HFP = combined
 		}
-		return FinalCell.evaluate(NodeState, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, node.COMBINED_HFP, node.ME_WALK_FINGERPRINT, truncateAt)
+		return node.COMBINED_HFP
+	}
+
+	/*
+	 * Peut-on ouvrir la clôture de ce candidat ? Une clôture qui doit reconstruire À FROID le
+	 * plan de danger ou la carte de soin coûte des millions d'opérations et ne s'interrompt pas
+	 * en route : sous cette marge, on laisse le candidat non clos plutôt que de faire tuer le
+	 * tour par le moteur. Le test de chaleur n'est payé que quand le budget est déjà court.
+	 */
+	static canCloseNow(node, truncateAt) {
+		// Au large, rien à vérifier : même le pire des constructions tient.
+		if (getOperations() + OPS_COLD_HEAL + OPS_COLD_PLAN <= truncateAt) return true
+		return getOperations() + FinalCell.coldCost(StateClass.materializeNodeState(node), combinedHfpOf(node)) <= truncateAt
 	}
 
 	/*
