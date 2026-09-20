@@ -209,41 +209,47 @@ def actions_jouees(brut: dict, tour: int, entite: int) -> list[dict]:
     fen = fenetre_visee(brut, tour, entite)
     if fen is None:
         return []
-    actes = actions(brut)
-    # L'arme courante est posee par SET_WEAPON, qui ne porte pas d'entite : elle appartient a
-    # celle dont c'est le tour. Elle persiste d'un tour a l'autre, donc on balaie depuis le debut.
+
+    def arme_nommee(template):
+        if template is None:
+            return ("arme inconnue", None)
+        return armes.get(template, ("template %d inconnu" % template, None))
+
+    # UN SEUL balayage CHRONOLOGIQUE depuis le debut du combat. L'arme equipee est posee par
+    # SET_WEAPON, qui ne porte pas d'entite — elle appartient a celle dont c'est le tour — et
+    # elle persiste d'un tour a l'autre. Chaque USE_WEAPON est donc decode avec l'arme equipee
+    # A CET INSTANT : reconstruire l'etat jusqu'a la fin du tour puis l'appliquer a tous les
+    # tirs attribuait la DERNIERE arme du tour a ceux qui l'avaient precedee.
     arme_de: dict[int, int] = {}
     actif = None
-    for i, act in enumerate(actes):
-        if not act:
-            continue
-        if act[0] == A_LEEK_TURN and len(act) > 1:
-            actif = act[1]
-        elif act[0] == 13 and len(act) > 1 and actif is not None:
-            arme_de[actif] = act[1]
+    sortie = []
+    for i, act in enumerate(actions(brut)):
         if i >= fen["fin"]:
             break
-    sortie = []
-    for i in range(fen["debut"], fen["fin"]):
-        act = actes[i]
         if not act:
             continue
-        if act[0] == 12 and len(act) > 2:
+        dans = i >= fen["debut"]
+        if act[0] == A_LEEK_TURN and len(act) > 1:
+            actif = act[1]
+        elif act[0] == 13 and len(act) > 1:
+            if actif is not None:
+                arme_de[actif] = act[1]
+            if dans:
+                nom, item = arme_nommee(act[1])
+                sortie.append({"indice": i, "sorte": "arme equipee", "nom": nom, "item": item,
+                               "cible": None})
+        elif dans and act[0] == 12 and len(act) > 2:
             nom, item = puces.get(act[1], ("template %d inconnu" % act[1], None))
             sortie.append({"indice": i, "sorte": "puce", "nom": nom, "item": item, "cible": act[2]})
-        elif act[0] == 16 and len(act) > 1:
-            t = arme_de.get(entite)
-            nom, item = armes.get(t, ("arme inconnue", None)) if t is not None else ("arme inconnue", None)
+        elif dans and act[0] == 16 and len(act) > 1:
+            nom, item = arme_nommee(arme_de.get(entite))
             sortie.append({"indice": i, "sorte": "arme", "nom": nom, "item": item, "cible": act[1]})
-        elif act[0] == 10 and len(act) > 2 and act[1] == entite:
+        elif dans and act[0] == 10 and len(act) > 2 and act[1] == entite:
             sortie.append({"indice": i, "sorte": "deplacement", "nom": "->%d" % act[2], "item": None,
                            "cible": act[2]})
-        elif act[0] == 9 and len(act) > 3 and act[1] == entite:
+        elif dans and act[0] == 9 and len(act) > 3 and act[1] == entite:
             sortie.append({"indice": i, "sorte": "invocation", "nom": "invoque #%d" % act[2],
                            "item": None, "cible": act[3]})
-        elif act[0] == 13 and len(act) > 1:
-            nom, item = armes.get(act[1], ("arme inconnue", None))
-            sortie.append({"indice": i, "sorte": "arme equipee", "nom": nom, "item": item, "cible": None})
     return sortie
 
 
