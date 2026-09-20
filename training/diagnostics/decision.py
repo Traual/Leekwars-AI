@@ -3,24 +3,22 @@
 Trois sous-commandes, un repertoire de travail, des fichiers JSON :
 
   combats     joue des combats eleveur aux coeurs reels contre une reference (le champion par
-              defaut) et archive, pour chacun, le journal d'actions du moteur et les journaux
-              des IA.
+              defaut), archive le journal d'actions et les journaux des IA de chacun, et
+              ARCHIVE LE BUNDLE joue. Sans cette archive, un rejeu ne peut pas certifier qu'il
+              diagnostique le meme code que le combat d'origine.
   situations  classe les tours de nos poireaux par ce qu'ils ont PAYE pour ce qu'ils ont
-              obtenu : vie encaissee jusqu'a leur tour suivant, moins vie retiree pendant leur
-              tour. Une defaite n'est pas une erreur ; cette liste ne fait que proposer ou
+              obtenu. Une defaite n'est pas une erreur ; cette liste ne fait que proposer ou
               regarder.
-  decision    rejoue UN combat avec le diagnostic arme sur (tour, entite), VERIFIE que les
-              actions qui precedent la decision sont celles du combat normal, et rend le
-              detail : contexte, suite retenue, alternatives explorees depuis le meme etat,
-              contributions par entite et par statistique, placement reellement calcule.
+  decision    rejoue UN combat DEPUIS SON BUNDLE ARCHIVE, diagnostic arme sur (tour, entite),
+              verifie la trajectoire, et rend le detail de chaque replanification du tour.
 
 Le diagnostic est eteint dans le depot (DIAG_TURN = 0) : seule la copie deployee par la
-sous-commande `decision` l'arme, sur une seule decision.
+sous-commande `decision` l'arme.
 
 Usage :
-  python decision.py combats   <travail> [--graine N] [--combats N] [--reference <commit>]
-  python decision.py situations <travail> [--combien N]
-  python decision.py decision  <travail> --combat <etiquette> --tour T --entite E
+  python decision.py combats    <travail> [--graine N] [--combats N] [--reference <commit>]
+  python decision.py situations <travail> [--combien N] [--invocations]
+  python decision.py decision   <travail> --combat <etiquette> --tour T --entite E [--sans-item ID]
 """
 from __future__ import annotations
 
@@ -47,40 +45,30 @@ from fumee300 import GEN, BUILD  # noqa: E402
 
 CHAMPION = "c8ce20e"
 # Types d'actions du moteur (generator/action/Action.java) utiles ici.
-A_NEW_TURN, A_LEEK_TURN, A_END_TURN = 6, 7, 8
-A_MOVE_TO, A_USE_CHIP, A_USE_WEAPON = 10, 12, 16
-A_PLAYER_DEAD, A_KILL = 5, 11
+A_MORT, A_NEW_TURN, A_LEEK_TURN = 5, 6, 7
 A_LOST_LIFE, A_DAMAGE_RETURN, A_LIFE_DAMAGE, A_POISON, A_AFTEREFFECT = 101, 108, 109, 110, 111
-A_NOVA_DAMAGE, A_HEAL = 107, 103
-A_AI_ERROR = 1002
+A_ERREUR_IA = 1002
 DEGATS = (A_LOST_LIFE, A_DAMAGE_RETURN, A_LIFE_DAMAGE, A_POISON, A_AFTEREFFECT)
 
 
 # ------------------------------------------------------------------ deploiement et execution
 
-def empreinte_travail() -> str:
+def empreinte(racine: Path) -> str:
     h = hashlib.sha256()
-    src = DEPOT / "New_AI"
-    for f in sorted(src.rglob("*.leek")):
-        h.update(str(f.relative_to(src)).encode() + b"\0" + f.read_bytes())
+    for f in sorted(racine.rglob("*.leek")):
+        h.update(str(f.relative_to(racine)).encode() + b"\0" + f.read_bytes())
     return h.hexdigest()[:10]
 
 
-def deployer(ref: str, tour: int = 0, entite: int = 0) -> str:
-    """Un commit, ou WORK pour l'arbre de travail. Un nom NEUF a chaque appel : le generateur
-    recompile par date de repertoire, et resservirait sinon un binaire perime."""
-    marque = "diag" if tour else "ref"
-    if ref == "WORK":
-        nom = "%s-work-%s-%d" % (marque, empreinte_travail(), int(time.time() * 1000) % 10 ** 9)
-        dest = GEN / "test" / "ai" / "bundles" / nom
-        shutil.copytree(DEPOT / "New_AI", dest)
-    else:
-        emp = mod_bundle.empreinte(ref)
-        nom = "%s-%s-%d" % (marque, emp["sha256"][:10], int(time.time() * 1000) % 10 ** 9)
-        dest = GEN / "test" / "ai" / "bundles" / nom
-        mod_bundle.materialiser(ref, dest)
+def deployer_source(source: Path, marque: str, tour: int = 0, entite: int = -1,
+                    sans_item: int = -1) -> str:
+    """Copie un arbre d'IA sous un nom NEUF — le generateur recompile par date de repertoire et
+    resservirait sinon un binaire perime — et y arme le diagnostic si un tour est demande."""
+    nom = "%s-%s-%d" % (marque, empreinte(source), int(time.time() * 1000) % 10 ** 9)
+    dest = GEN / "test" / "ai" / "bundles" / nom
+    shutil.copytree(source, dest)
     if tour:
-        armer(dest, tour, entite)
+        armer(dest, tour, entite, sans_item)
     maintenant = time.time()
     for f in dest.rglob("*"):
         if f.is_file():
@@ -88,14 +76,27 @@ def deployer(ref: str, tour: int = 0, entite: int = 0) -> str:
     return "test/ai/bundles/%s/Main.leek" % nom
 
 
-def armer(dest: Path, tour: int, entite: int) -> None:
-    """Arme le diagnostic dans la COPIE deployee : deux constantes, rien d'autre."""
+def deployer_commit(ref: str) -> str:
+    emp = mod_bundle.empreinte(ref)
+    nom = "ref-%s-%d" % (emp["sha256"][:10], int(time.time() * 1000) % 10 ** 9)
+    dest = GEN / "test" / "ai" / "bundles" / nom
+    mod_bundle.materialiser(ref, dest)
+    maintenant = time.time()
+    for f in dest.rglob("*"):
+        if f.is_file():
+            os.utime(f, (maintenant, maintenant))
+    return "test/ai/bundles/%s/Main.leek" % nom
+
+
+def armer(dest: Path, tour: int, entite: int, sans_item: int) -> None:
+    """Arme le diagnostic dans la COPIE deployee : trois constantes, rien d'autre."""
     fichier = dest / "Scoring" / "Scoring.leek"
     texte = fichier.read_text(encoding="utf-8")
-    for ancre, remplacement in (("global DIAG_TURN = 0", "global DIAG_TURN = %d" % tour),
-                                ("global DIAG_ENTITY = 0", "global DIAG_ENTITY = %d" % entite)):
+    for ancre, valeur in (("global DIAG_TURN = 0", tour),
+                          ("global DIAG_ENTITY = -1", entite),
+                          ("global DIAG_WITHOUT_ITEM = -1", sans_item)):
         assert texte.count(ancre) == 1, "ancre absente : %s" % ancre
-        texte = texte.replace(ancre, remplacement)
+        texte = texte.replace(ancre, ancre.rsplit(" ", 1)[0] + " " + str(valeur))
     fichier.write_text(texte, encoding="utf-8")
 
 
@@ -103,8 +104,8 @@ def jouer(chemins: list[Path], timeout: int = 7200) -> list[dict]:
     """Joue les scenarios et rend la sortie COMPLETE du moteur : actions, journaux, vainqueur."""
     cp = os.pathsep.join([str(TRAINING / "runs" / "v3" / ".build-fid"), str(GEN / "generator.jar"),
                           str(GEN / "leekscript" / "leekscript.jar")])
-    # Sans forcer l'encodage, la JVM ecrit les journaux dans la page de code Windows et
-    # tous les accents des lignes de diagnostic reviennent casses.
+    # Sans forcer l'encodage, la JVM ecrit les journaux dans la page de code Windows et tous les
+    # accents des lignes de diagnostic reviennent casses.
     env = dict(os.environ, JAVA_TOOL_OPTIONS="-Dtraual.profile=true -Dfile.encoding=UTF-8"
                                              " -Dsun.stdout.encoding=UTF-8 -Dstdout.encoding=UTF-8")
     proc = subprocess.run(["java", "-cp", cp, "training.fidelite.FideliteRunner"]
@@ -125,79 +126,72 @@ def jouer(chemins: list[Path], timeout: int = 7200) -> list[dict]:
 
 # ------------------------------------------------------------------ lecture d'un combat
 
-def journaux(brut: dict) -> list[tuple[int, str]]:
-    """Les lignes de debug des IA, dans l'ordre du moteur : [(entite, texte)]."""
-    lignes = []
-    for _f, par_entite in ((brut.get("outcome") or {}).get("logs") or {}).items():
-        for _a, journal in par_entite.items():
-            for l in journal:
-                if len(l) >= 3 and isinstance(l[2], str):
-                    lignes.append((l[0], l[2]))
-    return lignes
-
-
-def erreurs_systeme(brut: dict) -> list[list]:
-    sorties = []
-    for _f, par_entite in ((brut.get("outcome") or {}).get("logs") or {}).items():
-        for _a, journal in par_entite.items():
-            for l in journal:
-                if len(l) >= 4 and l[1] in (7, 8):
-                    sorties.append(l)
-    return sorties
-
-
-def actions_par_tour(brut: dict) -> list[dict]:
-    """Decoupe le journal d'actions du moteur en tours d'entite.
-
-    Rend, pour chaque tour joue : le numero de tour, l'entite, ses actions brutes, la vie
-    retiree a chaque entite pendant ce tour. Le moteur emet NEW_TURN puis un LEEK_TURN par
-    entite qui joue ; tout ce qui suit appartient a cette entite jusqu'au LEEK_TURN suivant.
-    """
-    fight = (brut.get("outcome") or {}).get("fight") or {}
-    # Le moteur n'emet pas de NEW_TURN pour le PREMIER tour : il commence a 1 d'office.
-    tours, tour, courant = [], 1, None
-    for act in fight.get("actions") or []:
-        if not act:
-            continue
-        type_ = act[0]
-        if type_ == A_NEW_TURN:
-            tour = act[1] if len(act) > 1 else tour + 1
-            continue
-        if type_ == A_LEEK_TURN:
-            courant = {"tour": tour, "entite": act[1], "actions": [], "degats": collections.Counter(),
-                       "soins": collections.Counter(), "morts": []}
-            tours.append(courant)
-            continue
-        if courant is None:
-            continue
-        courant["actions"].append(act)
-        if type_ in DEGATS and len(act) >= 3:
-            courant["degats"][act[1]] += act[2]
-        elif type_ == A_NOVA_DAMAGE and len(act) >= 3:
-            courant["degats"][act[1]] += 0
-        elif type_ == A_HEAL and len(act) >= 3:
-            courant["soins"][act[1]] += act[2]
-        elif type_ == A_PLAYER_DEAD and len(act) >= 2:
-            courant["morts"].append(act[1])
-    return tours
+def actions(brut: dict) -> list:
+    return ((brut.get("outcome") or {}).get("fight") or {}).get("actions") or []
 
 
 def entites(brut: dict) -> dict[int, dict]:
-    fight = (brut.get("outcome") or {}).get("fight") or {}
-    return {e["id"]: e for e in fight.get("leeks") or []}
+    return {e["id"]: e for e in (((brut.get("outcome") or {}).get("fight") or {}).get("leeks") or [])}
 
 
-def resume_action(act: list, noms: dict[int, str]) -> str:
-    type_ = act[0]
-    if type_ == A_MOVE_TO:
-        return "deplacement -> %s" % (act[2] if len(act) > 2 else "?")
-    if type_ == A_USE_CHIP:
-        return "puce %s sur %s" % (act[2] if len(act) > 2 else "?", act[3] if len(act) > 3 else "?")
-    if type_ == A_USE_WEAPON:
-        return "arme sur %s" % (act[2] if len(act) > 2 else "?")
-    if type_ == A_PLAYER_DEAD:
-        return "mort de %s" % noms.get(act[1], act[1])
-    return "action %s" % type_
+def journaux(brut: dict) -> list[tuple[int, int, str]]:
+    """Lignes de debug : [(indice d'action, entite JOURNALISEE, texte)], dans l'ordre du moteur.
+
+    L'entite journalisee est celle de la VM : un bulbe ecrit sous son invocateur. L'entite qui
+    JOUE se lit sur la fenetre de tour qui contient l'indice d'action, jamais sur ce champ.
+    """
+    lignes = []
+    for _vm, par_indice in ((brut.get("outcome") or {}).get("logs") or {}).items():
+        for indice, journal in par_indice.items():
+            for rang, l in enumerate(journal):
+                if len(l) >= 3 and isinstance(l[2], str):
+                    lignes.append((int(indice), rang, l[0], l[2]))
+    # Par indice d'action, puis dans l'ORDRE D'EMISSION du journal. Trier sur le texte
+    # melangerait les lignes d'une meme decision par ordre alphabetique.
+    lignes.sort(key=lambda x: (x[0], x[1]))
+    return [(i, vm, t) for i, _r, vm, t in lignes]
+
+
+def fenetres(brut: dict) -> list[dict]:
+    """Une fenetre par tour d'entite : numero de tour, entite ACTIVE, [debut, fin[ en indices."""
+    actes = actions(brut)
+    sortie, tour = [], 1
+    for i, act in enumerate(actes):
+        if not act:
+            continue
+        if act[0] == A_NEW_TURN:
+            # Le moteur n'emet pas de NEW_TURN pour le PREMIER tour : il commence a 1 d'office.
+            tour = act[1] if len(act) > 1 else tour + 1
+        elif act[0] == A_LEEK_TURN and len(act) > 1:
+            if sortie:
+                sortie[-1]["fin"] = i
+            sortie.append({"tour": tour, "entite": act[1], "debut": i, "fin": len(actes)})
+    return sortie
+
+
+def fenetre_visee(brut: dict, tour: int, entite: int) -> dict | None:
+    for f in fenetres(brut):
+        if f["tour"] == tour and f["entite"] == entite:
+            return f
+    return None
+
+
+def actions_par_tour(brut: dict) -> list[dict]:
+    """Chaque tour d'entite avec ses actions et la vie retiree a chacun pendant ce tour."""
+    actes = actions(brut)
+    sortie = []
+    for f in fenetres(brut):
+        bloc = {"tour": f["tour"], "entite": f["entite"], "actions": actes[f["debut"] + 1:f["fin"]],
+                "degats": collections.Counter(), "morts": []}
+        for act in bloc["actions"]:
+            if not act:
+                continue
+            if act[0] in DEGATS and len(act) >= 3:
+                bloc["degats"][act[1]] += act[2]
+            elif act[0] == A_MORT and len(act) >= 2:
+                bloc["morts"].append(act[1])
+        sortie.append(bloc)
+    return sortie
 
 
 # ------------------------------------------------------------------ sous-commande : combats
@@ -205,13 +199,17 @@ def resume_action(act: list, noms: dict[int, str]) -> str:
 def cmd_combats(args) -> int:
     travail = Path(args.travail).resolve()
     travail.mkdir(parents=True, exist_ok=True)
+    # Le bundle JOUE est archive : c'est lui, et pas l'arbre de travail, que le rejeu instrumente.
+    archive = travail / "bundle"
+    if archive.exists():
+        shutil.rmtree(archive)
+    shutil.copytree(DEPOT / "New_AI", archive)
     builds = mod_sc.charger_builds(TRAINING / "data" / "builds_v3.jsonl")
-    ia_nous = deployer("WORK")
-    ia_eux = deployer(args.reference)
+    ia_nous = deployer_source(archive, "nous")
+    ia_eux = deployer_commit(args.reference)
     chemins, etiquettes = [], []
-    blocs = list(mod_sc.plan_de_blocs("farmer", ["x"], args.combats, args.graine, builds,
-                                      vague="diagnostic"))
-    for b in blocs:
+    for b in mod_sc.plan_de_blocs("farmer", ["x"], args.combats, args.graine, builds,
+                                  vague="diagnostic"):
         for cote, (g, d) in (("gauche", (ia_nous, ia_eux)), ("droite", (ia_eux, ia_nous))):
             chemin = travail / ("scenario-%d-%s.json" % (b.indice, cote))
             mod_sc.ecrire(chemin, mod_sc.scenario(b, builds, g, d))
@@ -220,27 +218,24 @@ def cmd_combats(args) -> int:
     t0 = time.time()
     sorties = jouer(chemins)
     index = {"graine": args.graine, "reference": args.reference, "nous": ia_nous, "eux": ia_eux,
-             "empreinte_travail": empreinte_travail(), "combats": []}
+             "empreinte_bundle": empreinte(archive), "combats": []}
     for etiquette, chemin, brut in zip(etiquettes, chemins, sorties):
         cible = travail / ("combat-%s.json" % etiquette)
         cible.write_text(json.dumps(brut), encoding="utf-8")
-        ents = entites(brut)
-        # Notre camp : celui dont les entites portent NOTRE chemin d'IA dans le scenario.
         source = json.loads(chemin.read_text(encoding="utf-8"))
         notre_camp = 1 if source["entities"][0][0]["ai"] == ia_nous else 2
-        erreurs = erreurs_systeme(brut)
+        avortes = [a for a in actions(brut) if a and a[0] == A_ERREUR_IA]
         index["combats"].append({
             "etiquette": etiquette, "scenario": chemin.name, "fichier": cible.name,
             "notre_camp": notre_camp, "vainqueur": brut.get("winner"),
-            "tours": (brut.get("outcome") or {}).get("duration"),
-            "erreurs_systeme": len(erreurs),
-            "entites": {str(i): {"nom": e.get("name"), "camp": e.get("team")} for i, e in ents.items()},
+            "tours": (brut.get("outcome") or {}).get("duration"), "tours_avortes": len(avortes),
         })
-        print("combat %-10s | camp %d | vainqueur %s | tours %s | erreurs systeme %d"
+        print("combat %-10s | camp %d | vainqueur %s | tours %s | tours avortes %d"
               % (etiquette, notre_camp, brut.get("winner"),
-                 (brut.get("outcome") or {}).get("duration"), len(erreurs)))
+                 (brut.get("outcome") or {}).get("duration"), len(avortes)))
     (travail / "index.json").write_text(json.dumps(index, indent=1), encoding="utf-8")
-    print("%d combats en %.0f s -> %s" % (len(sorties), time.time() - t0, travail))
+    print("%d combats en %.0f s | bundle archive %s -> %s"
+          % (len(sorties), time.time() - t0, index["empreinte_bundle"], travail))
     return 0
 
 
@@ -254,11 +249,10 @@ def cmd_situations(args) -> int:
         brut = json.loads((travail / combat["fichier"]).read_text(encoding="utf-8"))
         ents = entites(brut)
         notre = {i for i, e in ents.items() if e.get("team") == combat["notre_camp"]}
-        # Les invocations meurent par dizaines sans que ce soit une erreur : seuls les
-        # poireaux sont classes, sauf demande contraire.
+        # Les invocations meurent par dizaines sans que ce soit une erreur : seuls les poireaux
+        # sont classes, sauf demande contraire.
         vises = notre if args.invocations else {i for i in notre if not ents[i].get("summon")}
         tours = actions_par_tour(brut)
-        # Vie encaissee par une entite ENTRE la fin de son tour et son tour suivant.
         for k, t in enumerate(tours):
             if t["entite"] not in vises:
                 continue
@@ -292,36 +286,38 @@ def cmd_situations(args) -> int:
 
 # ------------------------------------------------------------------ sous-commande : decision
 
-def signature_actions(brut: dict, tour: int, entite: int) -> list:
-    """Les actions du moteur JUSQU'AU debut du tour vise, sous une forme comparable."""
-    fight = (brut.get("outcome") or {}).get("fight") or {}
-    prefixe, courant_tour = [], 1
-    for act in fight.get("actions") or []:
-        if not act:
-            continue
-        if act[0] == A_NEW_TURN:
-            courant_tour = act[1] if len(act) > 1 else courant_tour + 1
-        if act[0] == A_LEEK_TURN and courant_tour == tour and len(act) > 1 and act[1] == entite:
-            return prefixe
-        if act[0] == A_AI_ERROR:
-            continue
-        prefixe.append(act)
-    return prefixe
+def premier_ecart(a: list, b: list) -> str | None:
+    for i in range(min(len(a), len(b))):
+        if a[i] != b[i]:
+            return "action %d : %s contre %s" % (i, a[i], b[i])
+    if len(a) != len(b):
+        return "longueurs differentes : %d contre %d" % (len(a), len(b))
+    return None
 
 
 def cmd_decision(args) -> int:
     travail = Path(args.travail).resolve()
     index = json.loads((travail / "index.json").read_text(encoding="utf-8"))
     combat = next(c for c in index["combats"] if c["etiquette"] == args.combat)
-    if index["empreinte_travail"] != empreinte_travail():
-        print("ATTENTION : l'arbre de travail a change depuis les combats de reference")
+    archive = travail / "bundle"
+    if not archive.exists():
+        print("BUNDLE D'ORIGINE ABSENT (%s) : ce lot a ete joue avant l'archivage, et l'arbre de"
+              " travail ne prouve pas qu'il porte le meme code. Rejouer `combats`." % archive)
+        return 2
+    if empreinte(archive) != index.get("empreinte_bundle"):
+        print("ARCHIVE ALTEREE : empreinte %s contre %s enregistree."
+              % (empreinte(archive), index.get("empreinte_bundle")))
+        return 2
     reference = json.loads((travail / combat["fichier"]).read_text(encoding="utf-8"))
+    cible_ref = fenetre_visee(reference, args.tour, args.entite)
+    if cible_ref is None:
+        print("CIBLE ABSENTE du combat de reference : l'entite %d ne joue pas au tour %d."
+              % (args.entite, args.tour))
+        return 2
 
-    # Le MEME scenario, seuls les chemins d'IA de notre camp pointent la copie armee.
-    ia_diag = deployer("WORK", args.tour, args.entite)
+    ia_diag = deployer_source(archive, "diag", args.tour, args.entite, args.sans_item)
     source = json.loads((travail / combat["scenario"]).read_text(encoding="utf-8"))
-    nous = index["nous"]
-    remplaces = 0
+    nous, remplaces = index["nous"], 0
     for groupe in source["entities"]:
         for e in groupe:
             if e["ai"] == nous:
@@ -332,30 +328,38 @@ def cmd_decision(args) -> int:
     chemin.write_text(json.dumps(source), encoding="utf-8")
     brut = jouer([chemin])[0]
 
-    # L'instrumentation coute des operations : la trajectoire peut diverger. On ne garde la
-    # decision que si tout ce qui la precede est identique au combat normal.
-    avant_ref = signature_actions(reference, args.tour, args.entite)
-    avant_diag = signature_actions(brut, args.tour, args.entite)
-    divergence = None
-    if len(avant_ref) != len(avant_diag):
-        divergence = "longueurs differentes : %d contre %d" % (len(avant_ref), len(avant_diag))
+    # L'instrumentation coute des operations, et des operations changent ce qu'un tour a le temps
+    # de faire. Deux controles, car le diagnostic parle a CHAQUE replanification du tour :
+    #  - le PREFIXE valide la premiere decision du tour ;
+    #  - le TOUR COMPLET valide toutes les suivantes, qui se jouent apres la premiere emission.
+    cible_diag = fenetre_visee(brut, args.tour, args.entite)
+    if cible_diag is None:
+        print("CIBLE ABSENTE du rejeu : l'entite %d ne joue pas au tour %d — l'instrumentation a"
+              " change la trajectoire avant la decision." % (args.entite, args.tour))
+        return 2
+    a, b = actions(reference), actions(brut)
+    ecart_prefixe = premier_ecart(a[:cible_ref["debut"]], b[:cible_diag["debut"]])
+    ecart_tour = premier_ecart(a[:cible_ref["fin"]], b[:cible_diag["fin"]])
+    if ecart_prefixe is None:
+        print("prefixe identique au combat normal (%d actions) : la PREMIERE decision du tour est"
+              " validee" % cible_ref["debut"])
     else:
-        for i, (a, b) in enumerate(zip(avant_ref, avant_diag)):
-            if a != b:
-                divergence = "action %d : %s contre %s" % (i, a, b)
-                break
-    if divergence is None:
-        print("trajectoire identique au combat normal jusqu'a la decision (%d actions)" % len(avant_ref))
+        print("DIVERGENCE avant le tour : %s" % ecart_prefixe)
+    if ecart_tour is None:
+        print("tour complet identique (indices %d a %d) : TOUTES les decisions du tour sont validees"
+              % (cible_ref["debut"], cible_ref["fin"] - 1))
     else:
-        print("DIVERGENCE due a l'instrumentation avant la decision : %s" % divergence)
+        print("DIVERGENCE dans le tour vise : %s" % ecart_tour)
+        print("   -> seules les decisions anterieures a cet ecart decrivent le combat de reference")
 
-    lignes = [t for e, t in journaux(brut) if e == args.entite and t.startswith(("[diag]", "[score]"))]
-    if not lignes:
-        print("aucune ligne de diagnostic : le tour %d de l'entite %d n'a pas ete joue"
-              % (args.tour, args.entite))
+    avortes = [x for x in b if x and x[0] == A_ERREUR_IA]
+    lignes = [t for i, _vm, t in journaux(brut)
+              if cible_diag["debut"] <= i < cible_diag["fin"] and t.startswith(("[diag]", "[score]"))]
     sortie = {"combat": args.combat, "tour": args.tour, "entite": args.entite,
-              "divergence": divergence, "actions_avant": len(avant_ref),
-              "erreurs_systeme": len(erreurs_systeme(brut)), "lignes": lignes}
+              "bundle": index["empreinte_bundle"], "sans_item": args.sans_item,
+              "prefixe_identique": ecart_prefixe is None, "tour_identique": ecart_tour is None,
+              "ecart_prefixe": ecart_prefixe, "ecart_tour": ecart_tour,
+              "actions_avant": cible_ref["debut"], "tours_avortes": len(avortes), "lignes": lignes}
     cible = travail / ("decision-%s-t%d-e%d.json" % (args.combat, args.tour, args.entite))
     cible.write_text(json.dumps(sortie, indent=1, ensure_ascii=False), encoding="utf-8")
     for l in lignes:
@@ -382,7 +386,10 @@ def main() -> int:
     d.add_argument("travail")
     d.add_argument("--combat", required=True)
     d.add_argument("--tour", type=int, required=True)
+    # 0 est un identifiant d'entite VALIDE : la sentinelle « toutes » est -1.
     d.add_argument("--entite", type=int, required=True)
+    d.add_argument("--sans-item", type=int, default=-1, dest="sans_item",
+                   help="rendre aussi la meilleure suite exploree qui ne lance PAS cet item")
     d.set_defaults(fonction=cmd_decision)
     args = p.parse_args()
     return args.fonction(args)

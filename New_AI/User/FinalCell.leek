@@ -69,7 +69,7 @@ class FinalCell {
         var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, budget, withDanger)
         debug("Best final cell: " + res[0] + " (pénalité: " + res[1] + ", net: " + res[2] + ")")
         // Le placement RÉELLEMENT joué, sous la même forme que les suites du diagnostic.
-        if (DIAG_TURN != 0 && getTurn() == DIAG_TURN && (DIAG_ENTITY == 0 || Me == DIAG_ENTITY)) {
+        if (ScoringClass.diagActive()) {
             debug("[diag] placement joue | cellule " + res[0] + " | depuis " + State[Me].CELL
                 + " | penalite " + res[1] + " | net " + res[2] + " | mode " + DIAG_PLACEMENT_MODE
                 + " | tronque " + (count(res) > 3))

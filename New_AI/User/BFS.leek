@@ -337,6 +337,22 @@ class ActionSuite {
 			ScoringClass.explainCandidate("alternative" + rang, c, RootState, RootNode.SCORE, MySide,
 				diagStatut(c, diagClose, diagBound, diagStop))
 		}
+		// Meilleure suite explorée qui se PRIVE d'un item : une vraie concurrente, scorée par les
+		// mêmes coefficients, au lieu de retrancher une contribution à la main. Elle peut être
+		// absente des têtes montrées, et n'est donc cherchée que sur demande.
+		if (DIAG_WITHOUT_ITEM >= 0) {
+			var sans = null
+			for (var c in candidates) {
+				if (ScoringClass.chainUsesItem(c, DIAG_WITHOUT_ITEM)) continue
+				if (sans == null || c.SCORE > sans.SCORE) sans = c
+			}
+			if (sans == null) {
+				debug("[diag] aucune suite explorée ne se prive de l'item " + DIAG_WITHOUT_ITEM)
+			} else {
+				ScoringClass.explainCandidate("sans-item" + DIAG_WITHOUT_ITEM, sans, RootState,
+					RootNode.SCORE, MySide, diagStatut(sans, diagClose, diagBound, diagStop))
+			}
+		}
 		return;
 	}
 

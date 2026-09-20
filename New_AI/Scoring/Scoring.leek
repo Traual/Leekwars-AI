@@ -15,11 +15,17 @@ include("../includes.leek")
 // Journalise les contributions de la décision retenue (ScoringClass.explainDecision).
 global SCORE_EXPLAIN = false
 
-// Diagnostic d'UNE décision : tour et entité visés, 0 = éteint. Il détaille le contexte, la
-// suite retenue et les autres têtes de chaîne explorées depuis le même état. Éteint, il ne
-// coûte qu'une comparaison par décision ; allumé, il ne vise qu'un tour d'une entité.
+// Diagnostic d'UNE décision : tour visé, 0 = éteint. Il détaille le contexte, la suite retenue
+// et les autres têtes de chaîne explorées depuis le même état. Éteint, il ne coûte qu'une
+// comparaison par décision ; allumé, il ne vise qu'un tour d'une entité.
 global DIAG_TURN = 0
-global DIAG_ENTITY = 0
+// Entité visée. La sentinelle est -1, PAS 0 : 0 est un identifiant d'entité valide, et le
+// prendre pour « toutes » instrumentait tout le tour quand on visait l'entité 0.
+global DIAG_ENTITY = -1
+// Item dont on veut la meilleure suite explorée SANS aucun cast (-1 = aucun). Sert à comparer
+// la suite retenue à une vraie concurrente qui se prive de cet item, sous les mêmes
+// coefficients, au lieu de soustraire une contribution à la main.
+global DIAG_WITHOUT_ITEM = -1
 // Mode du dernier placement évalué, renseigné par FinalCell quand le diagnostic est armé :
 // « danger » calculé, « memo » servi par le cache, « spatial » quand le danger n'est pas
 // finançable. Un danger non calculé n'est pas un danger nul.
@@ -315,7 +321,24 @@ class ScoringClass {
 	static diagActive() {
 		if (DIAG_TURN == 0) return false
 		if (getTurn() != DIAG_TURN) return false
-		return DIAG_ENTITY == 0 || Me == DIAG_ENTITY
+		return DIAG_ENTITY < 0 || Me == DIAG_ENTITY
+	}
+
+	/*
+	 * La suite d'un nœud lance-t-elle cet item ? Sert à retrouver la meilleure suite explorée qui
+	 * s'en prive.
+	 *
+	 * @param node nœud terminal de la suite
+	 * @param item identifiant d'item
+	 * @return vrai si un des casts de la suite est cet item
+	 */
+	static chainUsesItem(node, item) {
+		var cur = node
+		while (cur != null && cur.ACTION != null) {
+			if (cur.ACTION.Item == item) return true
+			cur = cur.PARENT
+		}
+		return false
 	}
 
 	/*
@@ -358,7 +381,8 @@ class ScoringClass {
 		var noms = []
 		var cur = node
 		while (cur != null && cur.ACTION != null) {
-			push(noms, ITEMINFO[cur.ACTION.Item].NAME + "(" + cur.ACTION.From + ">" + cur.ACTION.To + ")")
+			push(noms, ITEMINFO[cur.ACTION.Item].NAME + "#" + cur.ACTION.Item
+				+ "(" + cur.ACTION.From + ">" + cur.ACTION.To + ")")
 			cur = cur.PARENT
 		}
 		if (count(noms) == 0) return "ne-rien-jouer"
