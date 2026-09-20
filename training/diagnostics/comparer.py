@@ -4,8 +4,11 @@ L'unite de comparaison est le BLOC, pas l'orientation : chaque bloc est joue a g
 droite, et son score est la moyenne des deux. C'est l'appariement qui annule le biais de
 position ; compter chaque orientation comme une observation independante le reintroduirait.
 
-Les lots compares doivent porter la meme graine, le meme nombre de blocs et la meme reference —
-le script le verifie et refuse sinon.
+Les lots compares doivent porter la meme graine, la meme reference, les memes blocs ET les memes
+scenarios reellement joues. Chaque bloc doit porter EXACTEMENT une orientation gauche et une
+droite, chacune avec un resultat valide : un doublon ou une orientation manquante rendrait une
+moyenne de bloc qui n'est plus appariee, donc plus comparable. Le script refuse dans tous ces
+cas au lieu de rendre un tableau muet.
 
 Ce tableau sert au TRI. Huit combats ne departagent rien : aucune borne, aucune significativite.
 
@@ -17,6 +20,46 @@ import json
 import sys
 from pathlib import Path
 
+ORIENTATIONS = ("gauche", "droite")
+
+
+class Refus(Exception):
+    """Un controle d'appariement a echoue : on ne rend aucun chiffre."""
+
+
+def scenarios_par_role(travail: Path, index: dict) -> dict[str, dict]:
+    """Les scenarios REELLEMENT joues, chemins d'IA remplaces par leur ROLE.
+
+    Deux lots ne sont comparables que s'ils ont joue les memes compositions, les memes graines et
+    les memes cœurs ; seuls les bundles doivent differer. Normaliser par role rend ces scenarios
+    directement comparables d'un lot a l'autre.
+    """
+    sortie = {}
+    for combat in index["combats"]:
+        source = json.loads((travail / combat["scenario"]).read_text(encoding="utf-8"))
+        for groupe in source.get("entities", []):
+            for e in groupe:
+                if e.get("ai") == index["nous"]:
+                    e["ai"] = "ROLE_NOUS"
+                elif e.get("ai") == index["eux"]:
+                    e["ai"] = "ROLE_REFERENCE"
+                else:
+                    raise Refus("%s : %s porte une IA inconnue (%s)"
+                                % (travail.name, combat["scenario"], e.get("ai")))
+        sortie[combat["etiquette"]] = source
+    return sortie
+
+
+def tours_joues(fight: dict) -> dict[int, int]:
+    """Tours REELLEMENT joues par chaque entite, comptes sur les actions de debut de tour
+    (LEEK_TURN). La duree du combat ne les donne pas : une entite morte en cours de route,
+    invoquee plus tard ou dont un tour est avorte n'en joue pas autant que le combat dure."""
+    compte: dict[int, int] = {}
+    for act in fight.get("actions") or []:
+        if act and act[0] == 7 and len(act) > 1:
+            compte[act[1]] = compte.get(act[1], 0) + 1
+    return compte
+
 
 def lire(travail: Path) -> dict:
     index = json.loads((travail / "index.json").read_text(encoding="utf-8"))
@@ -26,44 +69,72 @@ def lire(travail: Path) -> dict:
     for combat in index["combats"]:
         indice, cote = combat["etiquette"].rsplit("-", 1)
         indice = int(indice)
+        if cote not in ORIENTATIONS:
+            raise Refus("%s : orientation inconnue « %s »" % (travail.name, cote))
+        if cote in blocs.get(indice, {}):
+            raise Refus("%s : le bloc %d porte DEUX fois l'orientation « %s »"
+                        % (travail.name, indice, cote))
         # winner vaut 0 pour le camp de gauche, 1 pour celui de droite, -1 pour un nul.
         v = combat["vainqueur"]
         if v is None:
-            score = None
-        elif v == -1:
-            score = 0.5
-        else:
-            score = 1.0 if (v == 0) == (combat["notre_camp"] == 1) else 0.0
+            raise Refus("%s : le combat %s n'a pas de resultat"
+                        % (travail.name, combat["etiquette"]))
+        score = 0.5 if v == -1 else (1.0 if (v == 0) == (combat["notre_camp"] == 1) else 0.0)
         blocs.setdefault(indice, {})[cote] = score
         brut = json.loads((travail / combat["fichier"]).read_text(encoding="utf-8"))
         fight = (brut.get("outcome") or {}).get("fight") or {}
         ents = {e["id"]: e for e in fight.get("leeks") or []}
-        duree = max(1, (brut.get("outcome") or {}).get("duration") or 1)
+        joues = tours_joues(fight)
         for e, o in (fight.get("ops") or {}).items():
             e = int(e)
-            if e not in ents or ents[e].get("summon"):
+            if e not in ents or ents[e].get("summon") or joues.get(e, 0) == 0:
                 continue
+            # Le compteur d'operations est celui de la VM : le poireau ET ses invocations. On le
+            # ramene aux tours que le POIREAU a joues, jamais a la duree du combat.
             cle = "nous" if ents[e].get("team") == combat["notre_camp"] else "reference"
-            ops[cle].append(o / duree)
+            ops[cle].append(o / joues[e])
         # Un tour avorte est une erreur 1002 du journal d'actions ; on l'attribue par entite.
         for act in fight.get("actions") or []:
             if act and act[0] == 1002 and len(act) > 1:
                 cle = "nous" if ents.get(act[1], {}).get("team") == combat["notre_camp"] else "reference"
                 avortes[cle] += 1
-    par_bloc = {}
     for i, cotes in blocs.items():
-        vals = [v for v in cotes.values() if v is not None]
-        par_bloc[i] = sum(vals) / len(vals) if vals else None
+        manquantes = [c for c in ORIENTATIONS if c not in cotes]
+        if manquantes:
+            raise Refus("%s : le bloc %d n'a pas d'orientation %s"
+                        % (travail.name, i, " ni ".join(manquantes)))
+    par_bloc = {i: sum(cotes.values()) / len(ORIENTATIONS) for i, cotes in blocs.items()}
     return {"index": index, "blocs": par_bloc, "avortes": avortes,
-            "ops": {k: (sum(v) / len(v) if v else 0) for k, v in ops.items()},
-            "tours": sum(c["tours"] or 0 for c in index["combats"]) / len(index["combats"])}
+            "scenarios": scenarios_par_role(travail, index),
+            "ops": {k: (sum(v) / len(v) if v else 0) for k, v in ops.items()}}
+
+
+def verifier_appariement(base: dict, autre: dict, nom: str) -> None:
+    """Deux lots ne sont apparies que s'ils portent la meme graine, la meme reference, les memes
+    blocs et les memes scenarios reellement joues."""
+    for champ in ("graine", "reference"):
+        if autre["index"][champ] != base["index"][champ]:
+            raise Refus("%s a %s = %s, la reference a %s"
+                        % (nom, champ, autre["index"][champ], base["index"][champ]))
+    if set(autre["blocs"]) != set(base["blocs"]):
+        raise Refus("%s ne porte pas les memes blocs" % nom)
+    if set(autre["scenarios"]) != set(base["scenarios"]):
+        raise Refus("%s ne porte pas les memes combats" % nom)
+    for etiquette, scenario in base["scenarios"].items():
+        if autre["scenarios"][etiquette] != scenario:
+            raise Refus("%s : le scenario joue de %s differe de celui de la reference"
+                        % (nom, etiquette))
 
 
 def divergences(base: Path, autre: Path) -> None:
     """Premiere action ou les deux lots divergent, scenario par scenario, et le tour d'entite
-    qui la contient : c'est la que la variante a change une decision, pas ailleurs."""
+    qui la contient : c'est la que la variante a change une decision, pas ailleurs.
+
+    Memes controles d'appariement que le tableau : comparer action par action deux combats qui
+    n'ont pas joue le meme scenario ne dit rien du tout."""
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import decision as dec
+    verifier_appariement(lire(base), lire(autre), autre.name)
     index = json.loads((base / "index.json").read_text(encoding="utf-8"))
     for combat in index["combats"]:
         a = json.loads((base / combat["fichier"]).read_text(encoding="utf-8"))
@@ -94,23 +165,20 @@ def divergences(base: Path, autre: Path) -> None:
 
 def main() -> int:
     lots = [Path(a).resolve() for a in sys.argv[1:] if not a.startswith("--")]
-    if "--divergences" in sys.argv and len(lots) == 2:
-        divergences(lots[0], lots[1])
-        return 0
-    if len(lots) < 2:
-        print(__doc__)
-        return 1
-    donnees = [lire(l) for l in lots]
-    base = donnees[0]
-    for d, l in zip(donnees[1:], lots[1:]):
-        for champ in ("graine", "reference"):
-            if d["index"][champ] != base["index"][champ]:
-                print("REFUS : %s a %s = %s, la reference a %s"
-                      % (l.name, champ, d["index"][champ], base["index"][champ]))
-                return 2
-        if set(d["blocs"]) != set(base["blocs"]):
-            print("REFUS : %s ne porte pas les memes blocs" % l.name)
-            return 2
+    try:
+        if "--divergences" in sys.argv and len(lots) == 2:
+            divergences(lots[0], lots[1])
+            return 0
+        if len(lots) < 2:
+            print(__doc__)
+            return 1
+        donnees = [lire(l) for l in lots]
+        base = donnees[0]
+        for d, l in zip(donnees[1:], lots[1:]):
+            verifier_appariement(base, d, l.name)
+    except Refus as refus:
+        print("REFUS : %s" % refus)
+        return 2
     indices = sorted(base["blocs"])
     print("graine %d | reference %s | %d blocs, chacun joue dans les deux orientations"
           % (base["index"]["graine"], base["index"]["reference"], len(indices)))
