@@ -61,3 +61,14 @@ DIVERGENCE due a l'instrumentation avant la decision : action 214 : [...] contre
 ```
 
 Une décision lue après une divergence ne décrit pas le combat de référence.
+
+## Calibration de la pénalité d'exposition
+
+```bash
+python training/diagnostics/exposition.py training/runs/diagnostics/lot-1 training/runs/diagnostics/lot-2
+```
+
+Sur les combats déjà archivés, sans aucune instrumentation : le net retenu par le placement
+contre les PV réellement perdus avant le tour suivant, pour les deux camps. C'est la population
+exacte où `EXPOSURE_FACTOR` s'applique — Me, à sa cellule de fin de tour — et non celle de la
+sonde `sonde_dilution.py`, qui mesure le net projeté sur mes ALLIÉS à leur cellule courante.
