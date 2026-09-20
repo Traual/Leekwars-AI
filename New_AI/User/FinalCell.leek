@@ -68,6 +68,12 @@ class FinalCell {
         if (!withDanger) debugW("[placement] danger non financable : cout spatial seul")
         var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, budget, withDanger)
         debug("Best final cell: " + res[0] + " (pénalité: " + res[1] + ", net: " + res[2] + ")")
+        // Le placement RÉELLEMENT joué, sous la même forme que les suites du diagnostic.
+        if (DIAG_TURN != 0 && getTurn() == DIAG_TURN && (DIAG_ENTITY == 0 || Me == DIAG_ENTITY)) {
+            debug("[diag] placement joue | cellule " + res[0] + " | depuis " + State[Me].CELL
+                + " | penalite " + res[1] + " | net " + res[2] + " | mode " + DIAG_PLACEMENT_MODE
+                + " | tronque " + (count(res) > 3))
+        }
         return res[0]
     }
 
@@ -173,9 +179,13 @@ class FinalCell {
         // flux périodiques, ni mes caractéristiques, qui ne changent pas ce qu'un net me coûte.
         var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp) ^ combinedHfp)
         if (memoKey in FINAL_PLACEMENT_CACHE) {
+            // Diagnostic armé : dire lequel des trois modes a produit cette pénalité. Un danger
+            // servi par le mémo a bien été calculé ; un danger sauté ne vaut PAS un danger nul.
+            if (DIAG_TURN != 0) DIAG_PLACEMENT_MODE = "memo"
             BenchOps.Stop("FinalCell")
             return FINAL_PLACEMENT_CACHE[memoKey]
         }
+        if (DIAG_TURN != 0) DIAG_PLACEMENT_MODE = withDanger ? "danger calcule" : "spatial seul"
 
         // Cellules accessibles avec mes MP restants.
         var possibleCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)

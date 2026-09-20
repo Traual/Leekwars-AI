@@ -199,9 +199,24 @@ class ActionSuite {
 		var terminalDeadline = terminalLimit - TERMINAL_EVAL_MARGIN
 		var best = null
 		var bestFinal = 0
+		// Diagnostic d'une décision visée : on relève le statut de placement de chaque suite que
+		// le reclassement ouvre RÉELLEMENT, sans rien évaluer de plus. Éteint, un booléen.
+		var diag = ScoringClass.diagActive()
+		var diagClose = diag ? [: ] : null
+		var diagStop = "parcours complet"
+		var diagBound = null
 		var seedClose = (getOperations() <= terminalDeadline && canCloseNow(seed, terminalLimit)) ? closeOf(seed, terminalLimit) : null
+		if (diag) {
+			if (seedClose == null) {
+				diagClose[ScoringClass.chainKeyOf(seed)] = ["refusee faute de budget", null, null, ""]
+			} else {
+				var seedStatut = (count(seedClose) > 3) ? "tronquee" : "evaluee"
+				diagClose[ScoringClass.chainKeyOf(seed)] = [seedStatut, seedClose[1], seedClose[2], DIAG_PLACEMENT_MODE]
+			}
+		}
 		if (seedClose != null && count(seedClose) == 3) {
 			var bound = bestRaw - seedClose[1]
+			diagBound = bound
 			// Un candidat dont le score BRUT n'atteint pas déjà cette borne ne peut plus gagner : son
 			// score final lui est inférieur ou égal. Les écarter AVANT le tri est ce qui compte —
 			// le parcours n'en ouvre qu'une poignée, et trier des milliers de nœuds pour cela coûtait
@@ -217,21 +232,39 @@ class ActionSuite {
 			for (var i = 0; i < n; i++) {
 				var node = sorted[i]
 				var raw = node.SCORE
-				if (best != null && raw <= bestFinal) break
+				if (best != null && raw <= bestFinal) {
+					if (diag) diagStop = "borne atteinte"
+					break
+				}
 				// Budget épuisé : le meilleur candidat déjà clos l'emporte sur ceux qu'on n'ouvrira pas.
-				if (best != null && getOperations() > terminalDeadline) break
+				if (best != null && getOperations() > terminalDeadline) {
+					if (diag) diagStop = "date limite des evaluations"
+					break
+				}
 				// Reconstruction à froid non finançable : ce candidat reste non clos, les
 				// suivants peuvent encore l'être.
-				if (!canCloseNow(node, terminalLimit)) continue
+				if (!canCloseNow(node, terminalLimit)) {
+					if (diag) diagClose[ScoringClass.chainKeyOf(node)] = ["refusee faute de budget", null, null, ""]
+					continue
+				}
 				var close = closeOf(node, terminalLimit)
+				if (diag) {
+					var statut = (count(close) > 3) ? "tronquee" : "evaluee"
+					diagClose[ScoringClass.chainKeyOf(node)] = [statut, close[1], close[2], DIAG_PLACEMENT_MODE]
+				}
 				// Balayage tronqué : le budget des évaluations est épuisé, on garde ce qui est déjà clos.
-				if (count(close) > 3) break
+				if (count(close) > 3) {
+					if (diag) diagStop = "balayage tronque"
+					break
+				}
 				var finalScore = raw - close[1]
 				if (best == null || finalScore > bestFinal) {
 					best = node
 					bestFinal = finalScore
 				}
 			}
+		} else if (diag) {
+			diagStop = "graine non close : aucun reclassement"
 		}
 		// Aucun candidat n'a pu être clos : le meilleur score brut est joué tel quel. Le placement
 		// réel de fin de tour se décidera ensuite, avec son balayage qui sait se tronquer.
@@ -240,6 +273,7 @@ class ActionSuite {
 			bestFinal = bestRaw
 		}
 		BenchOps.Stop("Terminal")
+		if (diag) diagDecision(candidates, best, bestFinal, seed, diagClose, diagBound, diagStop, nBases)
 
 		if (best.ACTION == null) {
 			BFS_LAST_CHAIN = []
@@ -261,6 +295,71 @@ class ActionSuite {
 		if (SCORE_EXPLAIN) ScoringClass.explainDecision(candidates[0], best, bestFinal, candidates[0].END_STATS[Me].SIDE)
 		debug("Best: " + ITEMINFO[ancestor.ACTION.Item].NAME + " | From: " + ancestor.ACTION.From + " | To: " + ancestor.ACTION.To + " | Delta: " + (bestFinal - initialScore) + " | " + nBases + " bases, " + BFS_CHAIN_STEPS + " steps")
 		return ancestor.ACTION
+	}
+
+	/*
+	 * Diagnostic d'UNE décision visée : le contexte, la suite retenue, puis jusqu'à cinq autres
+	 * têtes de chaîne réellement explorées depuis le même état — pour chacune, sa MEILLEURE
+	 * suite. On compare ainsi des suites entières depuis le même état de départ : le score d'une
+	 * suite n'est jamais prêté à sa première action.
+	 *
+	 * Rien n'est réévalué : le statut de placement de chaque suite vient du reclassement qui
+	 * vient d'avoir lieu, et une suite que le reclassement n'a pas ouverte est annoncée non
+	 * évaluée, avec sa raison.
+	 */
+	static diagDecision(candidates, best, bestFinal, seed, diagClose, diagBound, diagStop, nBases) {
+		var RootNode = candidates[0]
+		var RootState = StateClass.materializeNodeState(RootNode)
+		var MySide = RootState[Me].SIDE
+		ScoringClass.explainContext(RootState, MySide)
+		debug("[diag] candidats " + count(candidates) + " | bases " + nBases + " | steps " + BFS_CHAIN_STEPS
+			+ " | meilleur brut " + seed.SCORE + " | retenu final " + bestFinal
+			+ " | borne de coupe " + diagBound + " | arret " + diagStop)
+		// Une entrée par tête de chaîne : la meilleure suite qui commence par cette action.
+		var parTete = [: ]
+		for (var c in candidates) {
+			var cle = diagHeadKeyOf(c)
+			if (!(cle in parTete)) parTete[cle] = c
+			else if (c.SCORE > parTete[cle].SCORE) parTete[cle] = c
+		}
+		var cleRetenue = diagHeadKeyOf(best)
+		ScoringClass.explainCandidate("retenue", best, RootState, RootNode.SCORE, MySide,
+			diagStatut(best, diagClose, diagBound, diagStop))
+		var autres = []
+		for (var cle: var c in parTete) {
+			if (cle != cleRetenue) push(autres, c)
+		}
+		var ordre = arraySort(autres, function(a, b) { return b.SCORE - a.SCORE })
+		var rang = 0
+		for (var c in ordre) {
+			if (rang >= 5) break
+			rang++
+			ScoringClass.explainCandidate("alternative" + rang, c, RootState, RootNode.SCORE, MySide,
+				diagStatut(c, diagClose, diagBound, diagStop))
+		}
+		return;
+	}
+
+	/*
+	 * Clé de la PREMIÈRE action d'une suite : deux suites de même tête partagent leur première
+	 * action, donc la même décision immédiate. « - » pour le plancher « ne rien jouer ».
+	 */
+	static diagHeadKeyOf(node) {
+		var tete = node
+		while (tete.PARENT != null) tete = tete.PARENT
+		if (tete.ACTION == null) return "-"
+		return tete.ACTION.Item + ":" + tete.ACTION.From + ":" + tete.ACTION.To
+	}
+
+	/*
+	 * Statut de placement d'une suite : celui relevé si le reclassement l'a ouverte, sinon la
+	 * raison pour laquelle il ne l'a pas fait — coupure exacte par la borne, ou budget.
+	 */
+	static diagStatut(node, diagClose, diagBound, diagStop) {
+		var cle = ScoringClass.chainKeyOf(node)
+		if (cle in diagClose) return diagClose[cle]
+		if (diagBound != null && node.SCORE < diagBound) return ["non evaluee : sous la borne de coupe", null, null, ""]
+		return ["non evaluee : " + diagStop, null, null, ""]
 	}
 
 	/*

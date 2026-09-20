@@ -15,6 +15,16 @@ include("../includes.leek")
 // Journalise les contributions de la décision retenue (ScoringClass.explainDecision).
 global SCORE_EXPLAIN = false
 
+// Diagnostic d'UNE décision : tour et entité visés, 0 = éteint. Il détaille le contexte, la
+// suite retenue et les autres têtes de chaîne explorées depuis le même état. Éteint, il ne
+// coûte qu'une comparaison par décision ; allumé, il ne vise qu'un tour d'une entité.
+global DIAG_TURN = 0
+global DIAG_ENTITY = 0
+// Mode du dernier placement évalué, renseigné par FinalCell quand le diagnostic est armé :
+// « danger » calculé, « memo » servi par le cache, « spatial » quand le danger n'est pas
+// finançable. Un danger non calculé n'est pas un danger nul.
+global DIAG_PLACEMENT_MODE = ""
+
 class ScoringClass {
 
 	/*
@@ -250,9 +260,10 @@ class ScoringClass {
 	 * @param Before état de départ
 	 * @param After état d'arrivée
 	 * @param MySide mon camp
+	 * @param tag étiquette préfixant chaque ligne, pour regrouper plusieurs gains d'une décision
 	 * @return la somme des contributions journalisées
 	 */
-	static explainDelta(Before, After, MySide) {
+	static explainDelta(Before, After, MySide, tag) {
 		var total = 0
 		for (var e: var stat in After) {
 			var apres = [: ]
@@ -272,7 +283,7 @@ class ScoringClass {
 			}
 			if (ligne == "") continue
 			total += somme
-			debug("[score] " + ((sign > 0) ? "allié " : "ennemi ") + stat.NAME + " #" + e + " : " + somme + ligne)
+			debug("[score] " + tag + " " + ((sign > 0) ? "allié " : "ennemi ") + stat.NAME + " #" + e + " : " + somme + ligne)
 		}
 		return total
 	}
@@ -289,9 +300,116 @@ class ScoringClass {
 	static explainDecision(RootNode, BestNode, FinalScore, MySide) {
 		var brut = BestNode.SCORE - RootNode.SCORE
 		var somme = explainDelta(StateClass.materializeNodeState(RootNode),
-			StateClass.materializeNodeState(BestNode), MySide)
+			StateClass.materializeNodeState(BestNode), MySide, "retenue")
 		debug("[score] gain brut " + brut + " | contributions " + somme + " | pénalité de placement "
 			+ (BestNode.SCORE - FinalScore) + " | gain final " + (FinalScore - RootNode.SCORE))
 		if (abs(somme - brut) > 0.001) debugE("[score] ECART contributions " + somme + " contre gain brut " + brut)
+	}
+
+	/*
+	 * Le diagnostic de décision vise-t-il CETTE décision ? Un tour nul n'en vise aucune : le
+	 * diagnostic est éteint par défaut et ne coûte alors qu'une comparaison par décision.
+	 *
+	 * @return vrai si la décision courante est celle qu'on veut détailler
+	 */
+	static diagActive() {
+		if (DIAG_TURN == 0) return false
+		if (getTurn() != DIAG_TURN) return false
+		return DIAG_ENTITY == 0 || Me == DIAG_ENTITY
+	}
+
+	/*
+	 * Contexte de la décision visée : le tour, le budget, puis une ligne par entité vivante —
+	 * camp, cellule, vie, ressources, caractéristiques et sa valeur pour le score. Exactement ce
+	 * que la fonction de valeur lit, et rien d'autre.
+	 *
+	 * @param State état de départ de la décision
+	 * @param MySide mon camp
+	 */
+	static explainContext(State, MySide) {
+		var MyStats = State[Me]
+		debug("[diag] decision tour " + getTurn() + " entite " + Me + " " + MyStats.NAME + " camp " + MySide
+			+ " cellule " + MyStats.CELL + " operations " + getOperations() + " plafond " + OPS_CAP)
+		for (var e: var stat in State) {
+			if (stat.LIFE <= 0) continue
+			debug("[diag] entite " + e + " " + stat.NAME
+				+ ((stat.SIDE == MySide) ? " allie" : " ennemi") + (stat.IS_SUMMON ? " invocation" : " poireau")
+				+ " cellule " + stat.CELL + " vie " + stat.LIFE + "/" + stat.TOTAL_LIFE
+				+ " PT " + stat.TP + "/" + stat.TOTAL_TP + " PM " + stat.MP + "/" + stat.TOTAL_MP
+				+ " force " + stat.STRENGTH + " sagesse " + stat.WISDOM + " agilite " + stat.AGILITY
+				+ " resistance " + stat.RESISTANCE + " science " + stat.SCIENCE + " magie " + stat.MAGIC
+				+ " puissance " + stat.POWER
+				+ " bouclier " + stat.ABSOLUTE_SHIELD + "+" + stat.RELATIVE_SHIELD + "%"
+				+ " renvoi " + stat.DAMAGE_RETURN + "%"
+				+ " poison " + stat.POISON_OVER_TIME + " contrecoup " + stat.AFTEREFFECT_OVER_TIME
+				+ " soin " + stat.HEAL_OVER_TIME + " valeur " + entityValue(stat, null))
+		}
+		return;
+	}
+
+	/*
+	 * La suite d'actions d'un nœud, de la racine vers lui. Remontée bornée par la longueur de
+	 * chaîne (médiane 2, maximum 7).
+	 *
+	 * @param node nœud terminal de la suite
+	 * @return le texte de la suite, « ne rien jouer » pour le plancher
+	 */
+	static chainTextOf(node) {
+		var noms = []
+		var cur = node
+		while (cur != null && cur.ACTION != null) {
+			push(noms, ITEMINFO[cur.ACTION.Item].NAME + "(" + cur.ACTION.From + ">" + cur.ACTION.To + ")")
+			cur = cur.PARENT
+		}
+		if (count(noms) == 0) return "ne-rien-jouer"
+		reverse(noms)
+		var texte = ""
+		for (var n in noms) {
+			if (texte != "") texte += " puis "
+			texte += n
+		}
+		return texte
+	}
+
+	/*
+	 * Clé d'une suite, identique pour deux nœuds portant la même chaîne d'actions. Sert à
+	 * retrouver le statut de placement relevé pendant le reclassement, sans comparer d'objets.
+	 *
+	 * @param node nœud terminal de la suite
+	 * @return la clé
+	 */
+	static chainKeyOf(node) {
+		var cle = ""
+		var cur = node
+		while (cur != null && cur.ACTION != null) {
+			cle += cur.ACTION.Item + ":" + cur.ACTION.From + ":" + cur.ACTION.To + ";"
+			cur = cur.PARENT
+		}
+		return cle
+	}
+
+	/*
+	 * Une suite candidate : ses actions, son score brut, sa pénalité de placement quand elle a
+	 * RÉELLEMENT été calculée, puis les contributions de son gain par entité et par statistique.
+	 * Une suite non close annonce son statut et n'affiche aucune pénalité : une pénalité absente
+	 * n'est pas une pénalité nulle.
+	 *
+	 * @param etiquette « retenue » ou le rang de l'alternative
+	 * @param node nœud de la suite
+	 * @param RootState état de départ, commun à toutes les suites comparées
+	 * @param RootScore score de cet état de départ
+	 * @param MySide mon camp
+	 * @param close [statut, pénalité ou null, net, mode de placement]
+	 */
+	static explainCandidate(etiquette, node, RootState, RootScore, MySide, close) {
+		var ligne = ("[diag] suite " + etiquette + " | " + chainTextOf(node)
+			+ " | brut " + node.SCORE + " | gain " + (node.SCORE - RootScore) + " | placement " + close[0])
+		if (close[1] != null) {
+			ligne += (" (" + close[3] + ") | penalite " + close[1] + " | net " + close[2]
+				+ " | final " + (node.SCORE - close[1]))
+		}
+		debug(ligne)
+		explainDelta(RootState, StateClass.materializeNodeState(node), MySide, etiquette)
+		return;
 	}
 }
