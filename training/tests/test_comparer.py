@@ -95,8 +95,19 @@ def main() -> int:
              refuse(doublon) or "ACCEPTE")
 
     sans = ecrire_lot(racine, "lot-sans-resultat", [("0-gauche", 1, None), ("0-droite", 2, 0)])
-    verifier("resultat absent refuse", "n'a pas de resultat" in (refuse(sans) or ""),
+    verifier("resultat absent refuse", "inexploitable" in (refuse(sans) or ""),
              refuse(sans) or "ACCEPTE")
+
+    # Le moteur ne rend que -1, 0 ou 1 ; toute autre valeur est un resultat non tranche.
+    for valeur in (2, -2, "0"):
+        etrange = ecrire_lot(racine, "lot-vainqueur-%s" % valeur,
+                             [("0-gauche", 1, valeur), ("0-droite", 2, 0)])
+        verifier("vainqueur %r refuse" % valeur, "inexploitable" in (refuse(etrange) or ""),
+                 refuse(etrange) or "ACCEPTE")
+    for valeur in (-1, 0, 1):
+        bon = ecrire_lot(racine, "lot-vainqueur-ok-%d" % valeur,
+                         [("0-gauche", 1, valeur), ("0-droite", 2, 0)])
+        verifier("vainqueur %d accepte" % valeur, refuse(bon) is None, refuse(bon) or "accepte")
 
     # Scenarios : memes roles, mais une cellule de depart differente -> lots non comparables.
     autre = ecrire_lot(racine, "lot-autre-scenario",

@@ -74,11 +74,13 @@ def lire(travail: Path) -> dict:
         if cote in blocs.get(indice, {}):
             raise Refus("%s : le bloc %d porte DEUX fois l'orientation « %s »"
                         % (travail.name, indice, cote))
-        # winner vaut 0 pour le camp de gauche, 1 pour celui de droite, -1 pour un nul.
+        # winner vaut 0 pour le camp de gauche, 1 pour celui de droite, -1 pour un nul. Toute
+        # autre valeur est un resultat que le moteur n'a pas tranche : la traiter comme une
+        # defaite ou une victoire inventerait un demi-point.
         v = combat["vainqueur"]
-        if v is None:
-            raise Refus("%s : le combat %s n'a pas de resultat"
-                        % (travail.name, combat["etiquette"]))
+        if v not in (-1, 0, 1):
+            raise Refus("%s : le combat %s a un vainqueur inexploitable (%r)"
+                        % (travail.name, combat["etiquette"], v))
         score = 0.5 if v == -1 else (1.0 if (v == 0) == (combat["notre_camp"] == 1) else 0.0)
         blocs.setdefault(indice, {})[cote] = score
         brut = json.loads((travail / combat["fichier"]).read_text(encoding="utf-8"))
