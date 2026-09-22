@@ -24,6 +24,22 @@ class HistoricalWeightsFactory {
 	 * @param mySide mon camp, qui décide le sens de l'éloignement de chaque entité
 	 */
 	static build(State, mySide) {
+		Coefficients.prepare(State)
+		var meProfile = Coefficients.profile(State[Me])
+		var enemyDistance = max(1, min(6, meProfile.reach - 1))
+		var allyDistance = meProfile.support ? 3 : 4
+		if (enemyDistance != SCORE_ENEMY_DISTANCE || allyDistance != SCORE_ALLY_DISTANCE) {
+			PLACEMENT_COST_CACHE = [:]
+			GRAV_ENTS_CACHE = [:]
+			FINAL_PLACEMENT_CACHE = [:]
+		}
+		// Ce mémo inclut implicitement le prix du PV (figé par replan), distinct des
+		// anciennes clés d'importance. Les cartes lourdes gardent leurs caches.
+		var exposure = meProfile.life * meProfile.exposure
+		if (exposure != SCORE_PLACEMENT_LIFE) FINAL_PLACEMENT_CACHE = [:]
+		SCORE_PLACEMENT_LIFE = exposure
+		SCORE_ENEMY_DISTANCE = enemyDistance
+		SCORE_ALLY_DISTANCE = allyDistance
 		var covidWeight = GRAV_COVID_W_PER_HP * GravityClass.covidValue()
 		var weights = new ReplanWeightsClass(
 			new FinalCellWeightsClass(1, 0, GRAV_W_CENTER, GRAV_AOE_PENALTY), null)
@@ -46,7 +62,7 @@ class HistoricalWeightsFactory {
 		return new EntityWeightsClass(
 			(isAlly ? GRAV_W_ALLY : GRAV_W_ENEMY) * imp,
 			covidWeight > 0 ? covidWeight * imp : 0,
-			0)
+			isAlly ? SCORE_ALLY_DISTANCE : SCORE_ENEMY_DISTANCE)
 	}
 
 	/*

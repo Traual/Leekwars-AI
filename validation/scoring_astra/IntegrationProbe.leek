@@ -1,0 +1,311 @@
+/*
+ * Sonde de reception du scoring simple : deltas par statistique, mort, resurrection, egalite
+ * entre score incremental et recalcul complet, majorant d'action, penalite de placement.
+ * Deployee a cote de Main.leek par reception_simple.py, jamais dans New_AI.
+ */
+
+include("includes.leek")
+
+global PROBE_CASTS = []
+global PROBE_LIMITE = 1000000000
+
+class ScoringProbe {
+
+	static dire(nom, ok, detail) {
+		debug("RECEPTION " + jsonEncode(["test": nom, "ok": ok, "detail": detail]))
+	}
+
+	static proche(a, b) {
+		return abs(a - b) <= 0.000001
+	}
+
+	static champs() {
+		return ["vie", "vie max", "force", "sagesse", "agilite", "resistance", "science", "magie",
+			"puissance", "PT", "PM", "bouclier absolu", "bouclier relatif", "renvoi", "poison",
+			"contrecoup", "soin continu"]
+	}
+
+	static muter(stat, champ, delta) {
+		if (champ == "vie") stat.LIFE += delta
+		else if (champ == "vie max") stat.TOTAL_LIFE += delta
+		else if (champ == "force") stat.STRENGTH += delta
+		else if (champ == "sagesse") stat.WISDOM += delta
+		else if (champ == "agilite") stat.AGILITY += delta
+		else if (champ == "resistance") stat.RESISTANCE += delta
+		else if (champ == "science") stat.SCIENCE += delta
+		else if (champ == "magie") stat.MAGIC += delta
+		else if (champ == "puissance") stat.POWER += delta
+		else if (champ == "PT") stat.TOTAL_TP += delta
+		else if (champ == "PM") stat.TOTAL_MP += delta
+		else if (champ == "bouclier absolu") stat.ABSOLUTE_SHIELD += delta
+		else if (champ == "bouclier relatif") stat.RELATIVE_SHIELD += delta
+		else if (champ == "renvoi") stat.DAMAGE_RETURN += delta
+		else if (champ == "poison") stat.POISON_OVER_TIME += delta
+		else if (champ == "contrecoup") stat.AFTEREFFECT_OVER_TIME += delta
+		else if (champ == "soin continu") stat.HEAL_OVER_TIME += delta
+	}
+
+	static noeudDe(clones) {
+		var n = new NodeClass(null, null, null)
+		n.CLONED = clones
+		return n
+	}
+
+	/* Un changement isole de statistique produit-il le delta attendu, du bon signe ? */
+	static testDeltas(S, MySide) {
+		var base = ScoringClass.stateValue(S, MySide, PROBE_LIMITE)
+		var echecs = []
+		var n = 0
+		for (var e: var stat in S) {
+			if (stat.LIFE <= 0) continue
+			var signe = (stat.SIDE == MySide) ? 1 : -1
+			for (var champ in champs()) {
+				var W = clone(S, 1)
+				var c = StateClass.cloneEntityForSim(stat, e == Me)
+				W[e] = c
+				muter(c, champ, 10)
+				var apres = ScoringClass.stateValue(W, MySide, PROBE_LIMITE)
+				n++
+				var clones = [: ]
+				clones[e] = stat
+				var inc = ScoringClass.getStateScoreFromParent(noeudDe(clones), W, base, MySide)
+				if (!proche(inc, apres)) {
+					push(echecs, "" + e + " " + champ + " : incremental " + inc + " contre complet " + apres)
+				}
+				var somme = ScoringClass.explainDelta(S, W, MySide, "sonde")
+				if (!proche(somme, apres - base)) {
+					push(echecs, "" + e + " " + champ + " : contributions " + somme + " contre delta " + (apres - base))
+				}
+			}
+		}
+		dire("deltas par statistique", count(echecs) == 0,
+			"" + n + " mutations, " + count(echecs) + " ecart(s) " + jsonEncode(echecs))
+	}
+
+	/* Une entite morte ne rapporte plus rien : ni presence, ni caracteristiques. */
+	static testMort(S, MySide) {
+		var base = ScoringClass.stateValue(S, MySide, PROBE_LIMITE)
+		var echecs = []
+		var n = 0
+		for (var e: var stat in S) {
+			if (stat.LIFE <= 0) continue
+			var signe = (stat.SIDE == MySide) ? 1 : -1
+			var valeur = ScoringClass.entityValue(stat, null)
+			var W = clone(S, 1)
+			var c = StateClass.cloneEntityForSim(stat, e == Me)
+			c.LIFE = 0
+			W[e] = c
+			var apres = ScoringClass.stateValue(W, MySide, PROBE_LIMITE)
+			n++
+			if (!proche(apres - base, -signe * valeur)) {
+				push(echecs, "" + e + " : " + (apres - base) + " au lieu de " + (-signe * valeur))
+			}
+			if (!proche(ScoringClass.entityValue(c, null), 0)) push(echecs, "" + e + " : un mort vaut " + ScoringClass.entityValue(c, null))
+			var clones = [: ]
+			clones[e] = stat
+			var inc = ScoringClass.getStateScoreFromParent(noeudDe(clones), W, base, MySide)
+			if (!proche(inc, apres)) push(echecs, "" + e + " : incremental " + inc + " contre complet " + apres)
+			var somme = ScoringClass.explainDelta(S, W, MySide, "sonde")
+			if (!proche(somme, apres - base)) push(echecs, "" + e + " : contributions " + somme + " contre delta " + (apres - base))
+		}
+		dire("mort", count(echecs) == 0, "" + n + " entites tuees, " + count(echecs) + " ecart(s) " + jsonEncode(echecs))
+	}
+
+	/* Un ressuscite retrouve exactement la valeur que le classement de la Resurrection lui prete. */
+	static testResurrection(S, MySide) {
+		var echecs = []
+		var n = 0
+		for (var a: var stat in S) {
+			if (a == Me || stat.SIDE != MySide || stat.LIFE <= 0) continue
+			var D = clone(S, 1)
+			var mort = StateClass.cloneEntityForSim(stat, false)
+			mort.LIFE = 0
+			D[a] = mort
+			var score0 = ScoringClass.stateValue(D, MySide, PROBE_LIMITE)
+			var attendu = ScoringClass.getResurrectionScore(mort, D)
+			var W = clone(D, 1)
+			var clones = [: ]
+			ResurrectionClass.Update(S[Me].CELL, W, a, clones)
+			var releve = ScoringClass.entityValue(W[a], null)
+			var score1 = ScoringClass.stateValue(W, MySide, PROBE_LIMITE)
+			n++
+			if (!proche(releve, attendu)) push(echecs, "" + a + " : valeur relevee " + releve + " contre score de resurrection " + attendu)
+			if (!proche(score1 - score0, releve)) push(echecs, "" + a + " : delta d'etat " + (score1 - score0) + " contre " + releve)
+			var inc = ScoringClass.getStateScoreFromParent(noeudDe(clones), W, score0, MySide)
+			if (!proche(inc, score1)) push(echecs, "" + a + " : incremental " + inc + " contre complet " + score1)
+		}
+		dire("resurrection", count(echecs) == 0, "" + n + " allie(s) releve(s), " + count(echecs) + " ecart(s) " + jsonEncode(echecs))
+	}
+
+	/* Sur de vraies actions : score depuis le parent contre recalcul complet, et majorant. */
+	static testArbre(S, MySide, etiquette) {
+		var baseHash = StateClass.getBaseHash(S)
+		var couches = WalkCellsClass.getAllLayers(S, Me, baseHash)
+		var contexte = DeltaClass.buildContextBySide(S)
+		var hfp = HealClass.buildHfpBySide(S)
+		var base = ScoringClass.stateValue(S, MySide, PROBE_LIMITE)
+		var racine = new NodeClass(null, S, null)
+		racine.SCORE = base
+		racine.BASE_HASH = baseHash
+		racine.POISON_FOLD = 0
+		racine.HFP_OWNED = true
+		racine.CONTEXT_BY_SIDE = contexte
+		racine.HFP_BY_SIDE = hfp
+		racine.STATE_PARENT = null
+		racine.STATE_PATCH = [: ]
+		racine.ME_WALK_FINGERPRINT = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(S[Me])
+		var paires = ActionSuite.getBaseActions(S, baseHash, ActionSuite.resurrectIdOf(S), couches)
+		var W = clone(S, 1)
+		var echecs = []
+		var violations = []
+		var nNoeuds = 0
+		var nMajores = 0
+		var nEnfants = 0
+		for (var pair in paires) {
+			var act = pair[0]
+			var item = act.Item
+			var noeud = NodeClass.ActionToNodeInTree(act, W, act.From, couches, pair[1], ITEMINFO[item], item, act.To, baseHash, null, racine, contexte, hfp, pair[2])
+			var inc = ScoringClass.getStateScoreFromParent(noeud, W, base, MySide)
+			var plein = ScoringClass.stateValue(W, MySide, PROBE_LIMITE)
+			nNoeuds++
+			if (!proche(inc, plein)) push(echecs, "racine " + ITEMINFO[item].NAME + " : incremental " + inc + " contre complet " + plein)
+			var ub = ScoringClass.actionUpperBound(item, act.From, act.To, S, MySide, baseHash)
+			if (ub != BOUND_MUST_SIMULATE) {
+				nMajores++
+				if (ub < inc - base && (act.From in couches.WALK)) {
+					push(violations, ITEMINFO[item].NAME + " : majorant " + ub + " < gain " + (inc - base))
+				}
+			}
+			noeud.SCORE = inc
+			StateClass.restoreWorkspace(W, noeud.CLONED)
+			noeud.CLONED = null
+			if (nEnfants < 40) {
+				var etatFils = StateClass.materializeNodeState(noeud)
+				var couches2 = WalkCellsClass.getAllLayers(etatFils, Me, noeud.BASE_HASH)
+				var paires2 = ActionSuite.getBaseActions(etatFils, noeud.BASE_HASH, ActionSuite.resurrectIdOf(etatFils), couches2)
+				var W2 = clone(etatFils, 1)
+				for (var pair2 in paires2) {
+					if (nEnfants >= 40) break
+					var act2 = pair2[0]
+					var item2 = act2.Item
+					var fils = NodeClass.ActionToNodeInTree(act2, W2, act2.From, couches2, pair2[1], ITEMINFO[item2], item2, act2.To, noeud.BASE_HASH, noeud, noeud, noeud.CONTEXT_BY_SIDE, noeud.HFP_BY_SIDE, pair2[2])
+					var inc2 = ScoringClass.getStateScoreFromParent(fils, W2, inc, MySide)
+					var plein2 = ScoringClass.stateValue(W2, MySide, PROBE_LIMITE)
+					nNoeuds++
+					nEnfants++
+					if (!proche(inc2, plein2)) {
+						push(echecs, "chaine " + ITEMINFO[item].NAME + " > " + ITEMINFO[item2].NAME + " : incremental " + inc2 + " contre complet " + plein2)
+					}
+					StateClass.restoreWorkspace(W2, fils.CLONED)
+					fils.CLONED = null
+				}
+			}
+		}
+		dire("score depuis le parent = recalcul complet (" + etiquette + ")", count(echecs) == 0,
+			"" + nNoeuds + " noeuds, " + count(echecs) + " ecart(s) " + jsonEncode(echecs))
+		dire("majorant >= gain reel (" + etiquette + ")", count(violations) == 0,
+			"" + nMajores + " actions majorees sur " + count(paires) + ", " + count(violations) + " violation(s) " + jsonEncode(violations))
+	}
+
+	/* La penalite de placement reste positive et vaut spatial + exposition lineaire. */
+	static testPlacement(S, MySide, etiquette) {
+		var baseHash = StateClass.getBaseHash(S)
+		REPLAN_WEIGHTS = HistoricalWeightsFactory.build(S, MySide)
+		var contexte = DeltaClass.buildContextBySide(S)
+		var hfp = HealClass.buildHfpBySide(S)
+		var combined = 0
+		for (var s: var h in hfp) combined ^= h
+		var meWalk = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(S[Me])
+		var res = FinalCell.evaluate(S, baseHash, contexte, hfp, combined, meWalk, PROBE_LIMITE, true)
+		var echecs = []
+		if (res[1] < 0) push(echecs, "penalite negative " + res[1])
+		var spatial = SCORE_SPATIAL_SCALE * GravityClass.costAt(S, baseHash, res[0])
+		var attendu = spatial
+		if (res[2] > 0) attendu += REPLAN_WEIGHTS.FINAL_CELL_WEIGHTS.NET * ScoringClass.exposureLoss(res[2], S[Me])
+		if (!proche(res[1], attendu)) push(echecs, "penalite " + res[1] + " contre spatial+exposition " + attendu)
+		if (!proche(ScoringClass.exposureLoss(0), 0)) push(echecs, "exposition non nulle a net nul")
+		if (!proche(ScoringClass.exposureLoss(200), 2 * ScoringClass.exposureLoss(100))) push(echecs, "exposition non lineaire")
+		dire("placement (" + etiquette + ")", count(echecs) == 0,
+			"cellule " + res[0] + ", penalite " + res[1] + ", net " + res[2] + ", spatial " + spatial + " " + jsonEncode(echecs))
+	}
+
+	/*
+	 * Un etat de travail charge : flux periodiques, boucliers (dont un relatif au-dela de 100),
+	 * renvoi, vies entamees et un ennemi a portee de mort. Sert a exercer les chemins que le
+	 * debut de combat ne produit pas.
+	 */
+	static enrichir(S) {
+		var E = clone(S, 1)
+		var mySide = S[Me].SIDE
+		var i = 0
+		for (var e: var stat in S) {
+			var c = StateClass.cloneEntityForSim(stat, e == Me)
+			E[e] = c
+			c.POISON += 60
+			c.POISON_OVER_TIME += 200 + 50 * i
+			c.AFTEREFFECT += 30
+			c.AFTEREFFECT_OVER_TIME += 90
+			c.HEAL += 20
+			c.HEAL_OVER_TIME += 80
+			if (e == Me) {
+				c.LIFE = max(1, c.LIFE - 600)
+			} else if (stat.SIDE == mySide) {
+				c.LIFE = max(1, c.LIFE - 900)
+				c.ABSOLUTE_SHIELD += 35
+			} else if (i % 2 == 0) {
+				c.ABSOLUTE_SHIELD += 45
+				c.RELATIVE_SHIELD += 25
+				c.DAMAGE_RETURN += 12
+			} else {
+				c.LIFE = 220
+				c.RELATIVE_SHIELD += 120
+			}
+			i++
+		}
+		return E
+	}
+
+	/* Tour 1 : quelques lancers pour enrichir l'etat (poison, bouclier, buff, soin continu). */
+	static preparer() {
+		var ennemis = getEnemies()
+		var allies = getAllies()
+		var cibleEnnemie = count(ennemis) > 0 ? getCell(ennemis[0]) : getCell()
+		var cibleAlliee = getCell()
+		for (var a in allies) {
+			if (a != Me) {
+				cibleAlliee = getCell(a)
+				break
+			}
+		}
+		for (var c in PROBE_CASTS) {
+			var cible = (c[1] == "ennemi") ? cibleEnnemie : ((c[1] == "allie") ? cibleAlliee : getCell())
+			var r = useChipOnCell(c[0], cible)
+			debug("RECEPTION_SETUP item " + c[0] + " vers " + c[1] + " code " + r)
+		}
+	}
+
+	static play() {
+		ReloadCacheNewTurn()
+		Preload.InitStateClass()
+		if (OPS_CAP == null) OPS_CAP = getCores() * 1000000
+		OPS_DEADLINE = OPS_CAP - OPS_RESERVE_TURN
+		if (getTurn() == 1) {
+			preparer()
+			return;
+		}
+		var S = StateClass.Virtualize()
+		var MySide = S[Me].SIDE
+		IMPORTANCE_BY_ID = [: ]
+		REPLAN_WEIGHTS = HistoricalWeightsFactory.build(S, MySide)
+		debug("RECEPTION_ETAT score " + ScoringClass.stateValue(S, MySide, PROBE_LIMITE) + " entites " + mapSize(S))
+		testDeltas(S, MySide)
+		testMort(S, MySide)
+		testResurrection(S, MySide)
+		testArbre(S, MySide, "etat reel")
+		testPlacement(S, MySide, "etat reel")
+		var E = enrichir(S)
+		testMort(E, MySide)
+		testArbre(E, MySide, "etat charge")
+		testPlacement(E, MySide, "etat charge")
+	}
+}

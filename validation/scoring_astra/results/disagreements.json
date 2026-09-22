@@ -1,0 +1,656 @@
+[
+  {
+    "id": "force-03",
+    "horizon": 4,
+    "score_difference": 228.52983203124998,
+    "oracle_difference": -78.53125,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            8,
+            false
+          ]
+        ],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 2562.90625,
+        "final_enemy_life": 0,
+        "raw_score": 1403.27858203125,
+        "placement_penalty": 466.49564287581694
+      },
+      {
+        "option": 1,
+        "actions": [],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 2641.4375,
+        "final_enemy_life": 0,
+        "raw_score": 1174.74875,
+        "placement_penalty": 466.49564287581694
+      }
+    ]
+  },
+  {
+    "id": "force-07",
+    "horizon": 5,
+    "score_difference": -109.77393945312492,
+    "oracle_difference": 35.375,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            8,
+            false
+          ]
+        ],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 1963.6875,
+        "final_enemy_life": 0,
+        "raw_score": 1172.089810546875,
+        "placement_penalty": 682.8277735947713
+      },
+      {
+        "option": 1,
+        "actions": [],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 1928.3125,
+        "final_enemy_life": 0,
+        "raw_score": 1281.86375,
+        "placement_penalty": 682.8277735947713
+      }
+    ]
+  },
+  {
+    "id": "agilite-07",
+    "horizon": 5,
+    "score_difference": -380.4162500000001,
+    "oracle_difference": 101.28125,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            9,
+            false
+          ]
+        ],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 1995.375,
+        "final_enemy_life": 0,
+        "raw_score": 972.32625,
+        "placement_penalty": 682.8277735947713
+      },
+      {
+        "option": 1,
+        "actions": [],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 1894.09375,
+        "final_enemy_life": 0,
+        "raw_score": 1352.7425,
+        "placement_penalty": 682.8277735947713
+      }
+    ]
+  },
+  {
+    "id": "resistance-00",
+    "horizon": 4,
+    "score_difference": -49.5665625,
+    "oracle_difference": 208.71875,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            96,
+            false
+          ]
+        ],
+        "victories": 0,
+        "defeats": 0,
+        "unresolved": 32,
+        "final_own_life": 1670.9375,
+        "final_enemy_life": 2488.40625,
+        "raw_score": 115.92843749999989,
+        "placement_penalty": 304.2775508496732
+      },
+      {
+        "option": 1,
+        "actions": [
+          [
+            "chip",
+            22,
+            false
+          ]
+        ],
+        "victories": 0,
+        "defeats": 0,
+        "unresolved": 32,
+        "final_own_life": 1390.15625,
+        "final_enemy_life": 2416.34375,
+        "raw_score": 100.49499999999989,
+        "placement_penalty": 239.27755084967322
+      }
+    ]
+  },
+  {
+    "id": "resistance-05",
+    "horizon": 6,
+    "score_difference": -179.27609374999992,
+    "oracle_difference": 5006.0625,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            96,
+            false
+          ]
+        ],
+        "victories": 0,
+        "defeats": 0,
+        "unresolved": 32,
+        "final_own_life": 805.46875,
+        "final_enemy_life": 1801.125,
+        "raw_score": 257.90203125000016,
+        "placement_penalty": 574.6615074509804
+      },
+      {
+        "option": 1,
+        "actions": [
+          [
+            "chip",
+            22,
+            false
+          ]
+        ],
+        "victories": 0,
+        "defeats": 14,
+        "unresolved": 18,
+        "final_own_life": 64.34375,
+        "final_enemy_life": 1691.0625,
+        "raw_score": 307.17812500000014,
+        "placement_penalty": 444.6615074509804
+      }
+    ]
+  },
+  {
+    "id": "resistance-08",
+    "horizon": 6,
+    "score_difference": -37.01738828125018,
+    "oracle_difference": 13733.71875,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            96,
+            false
+          ]
+        ],
+        "victories": 21,
+        "defeats": 11,
+        "unresolved": 0,
+        "final_own_life": 140.34375,
+        "final_enemy_life": 408.09375,
+        "raw_score": 663.11261171875,
+        "placement_penalty": 736.9644674509806
+      },
+      {
+        "option": 1,
+        "actions": [
+          [
+            "chip",
+            22,
+            false
+          ]
+        ],
+        "victories": 0,
+        "defeats": 32,
+        "unresolved": 0,
+        "final_own_life": 0,
+        "final_enemy_life": 876.46875,
+        "raw_score": 618.2300000000001,
+        "placement_penalty": 655.0644674509805
+      }
+    ]
+  },
+  {
+    "id": "science-00",
+    "horizon": 4,
+    "score_difference": 15.897859374999754,
+    "oracle_difference": -12.625,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            276,
+            false
+          ]
+        ],
+        "victories": 0,
+        "defeats": 0,
+        "unresolved": 32,
+        "final_own_life": 1072.4375,
+        "final_enemy_life": 2464.3125,
+        "raw_score": 88.22525000000005,
+        "placement_penalty": 304.2775508496732
+      },
+      {
+        "option": 1,
+        "actions": [
+          [
+            "chip",
+            27,
+            false
+          ]
+        ],
+        "victories": 0,
+        "defeats": 0,
+        "unresolved": 32,
+        "final_own_life": 1072.96875,
+        "final_enemy_life": 2452.21875,
+        "raw_score": 72.32739062500029,
+        "placement_penalty": 304.2775508496732
+      }
+    ]
+  },
+  {
+    "id": "science-04",
+    "horizon": 5,
+    "score_difference": 153.73099500000035,
+    "oracle_difference": -15281.84375,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            276,
+            false
+          ]
+        ],
+        "victories": 2,
+        "defeats": 30,
+        "unresolved": 0,
+        "final_own_life": 21.5,
+        "final_enemy_life": 235.4375,
+        "raw_score": 657.3559950000003,
+        "placement_penalty": 520.6194028758171
+      },
+      {
+        "option": 1,
+        "actions": [
+          [
+            "chip",
+            27,
+            false
+          ]
+        ],
+        "victories": 26,
+        "defeats": 6,
+        "unresolved": 0,
+        "final_own_life": 151.71875,
+        "final_enemy_life": 83.8125,
+        "raw_score": 503.625,
+        "placement_penalty": 520.6194028758171
+      }
+    ]
+  },
+  {
+    "id": "ressources-03",
+    "horizon": 4,
+    "score_difference": -652.8788281249999,
+    "oracle_difference": 129.65625,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            15,
+            false
+          ]
+        ],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 2644.5,
+        "final_enemy_life": 0,
+        "raw_score": 1351.516953125,
+        "placement_penalty": 466.49564287581694
+      },
+      {
+        "option": 1,
+        "actions": [
+          [
+            "chip",
+            16,
+            false
+          ]
+        ],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 2514.84375,
+        "final_enemy_life": 0,
+        "raw_score": 2004.39578125,
+        "placement_penalty": 466.49564287581694
+      }
+    ]
+  },
+  {
+    "id": "vie_max-07",
+    "horizon": 5,
+    "score_difference": 382.57566757084675,
+    "oracle_difference": -4955.5,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            154,
+            false
+          ]
+        ],
+        "victories": 2,
+        "defeats": 0,
+        "unresolved": 30,
+        "final_own_life": 2852.0625,
+        "final_enemy_life": 203.0625,
+        "raw_score": 1444.8950425708467,
+        "placement_penalty": 682.8277735947713
+      },
+      {
+        "option": 1,
+        "actions": [
+          [
+            "chip",
+            3,
+            false
+          ]
+        ],
+        "victories": 19,
+        "defeats": 0,
+        "unresolved": 13,
+        "final_own_life": 2320.21875,
+        "final_enemy_life": 28.21875,
+        "raw_score": 1062.319375,
+        "placement_penalty": 682.8277735947713
+      }
+    ]
+  },
+  {
+    "id": "vie_max-09",
+    "horizon": 4,
+    "score_difference": 574.5585831931786,
+    "oracle_difference": -5549.90625,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            154,
+            false
+          ]
+        ],
+        "victories": 12,
+        "defeats": 0,
+        "unresolved": 20,
+        "final_own_life": 3029.15625,
+        "final_enemy_life": 61.3125,
+        "raw_score": 2383.2804581931787,
+        "placement_penalty": 790.9944413071897
+      },
+      {
+        "option": 1,
+        "actions": [
+          [
+            "chip",
+            3,
+            false
+          ]
+        ],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 2267.75,
+        "final_enemy_life": 0,
+        "raw_score": 1808.721875,
+        "placement_penalty": 790.9944413071895
+      }
+    ]
+  },
+  {
+    "id": "renvoi-03",
+    "horizon": 4,
+    "score_difference": -702.6228427968749,
+    "oracle_difference": 6245.03125,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            100,
+            false
+          ]
+        ],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 2631.46875,
+        "final_enemy_life": 0,
+        "raw_score": 779.924907203125,
+        "placement_penalty": 466.49564287581694
+      },
+      {
+        "option": 1,
+        "actions": [
+          [
+            "chip",
+            20,
+            false
+          ]
+        ],
+        "victories": 12,
+        "defeats": 0,
+        "unresolved": 20,
+        "final_own_life": 2716.40625,
+        "final_enemy_life": 79.96875,
+        "raw_score": 1020.8364999999999,
+        "placement_penalty": 4.784392875816988
+      }
+    ]
+  },
+  {
+    "id": "renvoi-07",
+    "horizon": 5,
+    "score_difference": -860.2449383124999,
+    "oracle_difference": 2620.59375,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            100,
+            false
+          ]
+        ],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 1668.03125,
+        "final_enemy_life": 0,
+        "raw_score": 1004.218960125,
+        "placement_penalty": 682.8277735947713
+      },
+      {
+        "option": 1,
+        "actions": [
+          [
+            "chip",
+            20,
+            false
+          ]
+        ],
+        "victories": 21,
+        "defeats": 0,
+        "unresolved": 11,
+        "final_own_life": 2507.71875,
+        "final_enemy_life": 22.78125,
+        "raw_score": 1366.5638984375,
+        "placement_penalty": 184.9277735947713
+      }
+    ]
+  },
+  {
+    "id": "periodique-02",
+    "horizon": 6,
+    "score_difference": -1.283179687500004,
+    "oracle_difference": 263.78125,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            11,
+            false
+          ]
+        ],
+        "victories": 0,
+        "defeats": 0,
+        "unresolved": 32,
+        "final_own_life": 1920.84375,
+        "final_enemy_life": 499.625,
+        "raw_score": 766.0718203125,
+        "placement_penalty": 412.4480752941177
+      },
+      {
+        "option": 1,
+        "actions": [
+          [
+            "chip",
+            3,
+            false
+          ]
+        ],
+        "victories": 0,
+        "defeats": 0,
+        "unresolved": 32,
+        "final_own_life": 1540.21875,
+        "final_enemy_life": 382.78125,
+        "raw_score": 767.355,
+        "placement_penalty": 412.4480752941177
+      }
+    ]
+  },
+  {
+    "id": "periodique-04",
+    "horizon": 5,
+    "score_difference": -111.63245898437502,
+    "oracle_difference": 68.90625,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            11,
+            false
+          ]
+        ],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 2154.21875,
+        "final_enemy_life": 0,
+        "raw_score": 1081.058791015625,
+        "placement_penalty": 520.6194028758171
+      },
+      {
+        "option": 1,
+        "actions": [
+          [
+            "chip",
+            3,
+            false
+          ]
+        ],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 2085.3125,
+        "final_enemy_life": 0,
+        "raw_score": 1192.69125,
+        "placement_penalty": 520.6194028758171
+      }
+    ]
+  },
+  {
+    "id": "periodique-08",
+    "horizon": 6,
+    "score_difference": 7.085687500000002,
+    "oracle_difference": -215.03125,
+    "alternatives": [
+      {
+        "option": 0,
+        "actions": [
+          [
+            "chip",
+            11,
+            false
+          ]
+        ],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 1858.71875,
+        "final_enemy_life": 0,
+        "raw_score": 1355.4594375,
+        "placement_penalty": 736.9644674509806
+      },
+      {
+        "option": 1,
+        "actions": [
+          [
+            "chip",
+            3,
+            false
+          ]
+        ],
+        "victories": 32,
+        "defeats": 0,
+        "unresolved": 0,
+        "final_own_life": 2073.75,
+        "final_enemy_life": 0,
+        "raw_score": 1348.37375,
+        "placement_penalty": 736.9644674509806
+      }
+    ]
+  }
+]

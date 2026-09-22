@@ -1,7 +1,7 @@
 /*
  * Poids de PLACEMENT d'une planification : les coefficients que FinalCell et GravityClass
- * appliquent au coût d'une cellule de fin de tour. Ils ne touchent pas au score brut, qui est
- * une somme de statistiques à coefficients constants (Weights.leek).
+ * appliquent au coût d'une cellule de fin de tour. Le score brut utilise séparément les
+ * profils de Coefficients.leek, eux aussi préparés et figés pour la recherche.
  *
  * Objets IMMUABLES, construits une fois par replan, pour qu'une source apprise puisse un jour
  * les produire à la place de la formule historique sans que FinalCell ait à changer.

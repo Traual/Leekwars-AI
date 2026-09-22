@@ -1,13 +1,9 @@
 /*
- * Scoring : la valeur d'un état est une somme par statistique.
- *
- *   valeur(e)    = bonus de présence + Σ coefficient × statistique   (0 si e est morte)
- *   score(état)  = Σ valeur(alliés) − Σ valeur(adversaires)
- *   gain(action) = score(après) − score(avant)
- *
- * Coefficients et signification de chaque statistique : Weights.leek. Le score ne lit ni le
- * danger projeté, ni les soins projetés, ni la production d'un kit : la sécurité de la cellule
- * de fin de tour est jugée à part, par FinalCell.
+ * Score = somme signée des valeurs par entité + bonus de victoire terminale.
+ * Valeur = vie, vie max, présence du kit + somme coef(stat, profil) × delta depuis la base
+ *        + protections et flux périodiques utiles.
+ * Les profils sont figés par recherche. Pas de moteur ni de danger dans entityValue.
+ * La cellule de Me est évaluée seulement à la clôture, dans FinalCell.
  */
 
 include("../includes.leek")
@@ -34,7 +30,7 @@ global DIAG_PLACEMENT_MODE = ""
 class ScoringClass {
 
 	/*
-	 * Valeur d'une entité pour son propre camp, toujours >= 0 pour des coefficients positifs.
+	 * Valeur d'une entité pour son propre camp, plancher positif tant qu'elle vit.
 	 * Une entité morte ne vaut rien : ni présence, ni caractéristiques.
 	 *
 	 * @param stat état de l'entité
@@ -43,24 +39,39 @@ class ScoringClass {
 	 */
 	static entityValue(stat, out) {
 		if (stat.LIFE <= 0) return 0
-		var presence    = stat.IS_SUMMON ? SCORE_ALIVE_SUMMON : SCORE_ALIVE_LEEK
-		var life        = COEF_LIFE * stat.LIFE
-		var totalLife   = COEF_TOTAL_LIFE * stat.TOTAL_LIFE
-		var strength    = COEF_STRENGTH * stat.STRENGTH
-		var wisdom      = COEF_WISDOM * stat.WISDOM
-		var agility     = COEF_AGILITY * stat.AGILITY
-		var resistance  = COEF_RESISTANCE * stat.RESISTANCE
-		var science     = COEF_SCIENCE * stat.SCIENCE
-		var magic       = COEF_MAGIC * stat.MAGIC
-		var power       = COEF_POWER * stat.POWER
-		var tp          = COEF_TOTAL_TP * stat.TOTAL_TP
-		var mp          = COEF_TOTAL_MP * stat.TOTAL_MP
-		var absShield   = COEF_ABSOLUTE_SHIELD * stat.ABSOLUTE_SHIELD
-		var relShield   = COEF_RELATIVE_SHIELD * stat.RELATIVE_SHIELD
-		var damageReturn = COEF_DAMAGE_RETURN * stat.DAMAGE_RETURN
-		var poison      = COEF_POISON * stat.POISON_OVER_TIME
-		var aftereffect = COEF_AFTEREFFECT * stat.AFTEREFFECT_OVER_TIME
-		var heal        = COEF_HEAL * stat.HEAL_OVER_TIME
+		var p = Coefficients.profile(stat)
+		var b = stat.BASE_STATS
+		var presence    = Coefficients.presence(stat, p)
+		var life        = Coefficients.life(stat, p) * stat.LIFE
+		var totalLife   = Coefficients.totalLife(stat, p) * stat.TOTAL_LIFE
+		// Les bases du kit sont déjà dans la présence. Seuls buffs et entraves s'ajoutent :
+		// relever un blessé ne recrée pas artificiellement des milliers de points de stats.
+		var strength    = Coefficients.strength(stat, p) * (max(0, stat.STRENGTH) - max(0, b[STAT_STRENGTH]))
+		var wisdom      = Coefficients.wisdom(stat, p) * (max(-100, stat.WISDOM) - max(-100, b[STAT_WISDOM]))
+		var agility     = Coefficients.agility(stat, p) * (min(1000, max(0, stat.AGILITY)) - min(1000, max(0, b[STAT_AGILITY])))
+			+ p.reflection * (max(-100, stat.AGILITY) - max(-100, b[STAT_AGILITY]))
+		var resistance  = Coefficients.resistance(stat, p) * (max(-100, stat.RESISTANCE) - max(-100, b[STAT_RESISTANCE]))
+		var science     = Coefficients.science(stat, p) * (max(-100, stat.SCIENCE) - max(-100, b[STAT_SCIENCE]))
+		var magic       = Coefficients.magic(stat, p) * (max(0, stat.MAGIC) - max(0, b[STAT_MAGIC]))
+		var power       = Coefficients.power(stat, p) * max(-100, stat.POWER)
+		var tp          = Coefficients.totalTP(stat, p) * (max(0, stat.TOTAL_TP) - max(0, b[STAT_TP]))
+		var mp          = Coefficients.totalMP(stat, p) * max(0, stat.TOTAL_MP) - p.mp * max(0, b[STAT_MP])
+		var absShield   = Coefficients.absoluteShield(stat, p) * stat.ABSOLUTE_SHIELD
+		var relShield   = Coefficients.relativeShield(stat, p) * stat.RELATIVE_SHIELD
+		var damageReturn = Coefficients.damageReturn(stat, p) * max(0, stat.DAMAGE_RETURN)
+		var states = Coefficients.states(stat, p)
+		var poison = Coefficients.periodic(stat.POISON_OVER_TIME, stat.POISON, Coefficients.poison(stat, p))
+		var aftereffect = Coefficients.periodic(stat.AFTEREFFECT_OVER_TIME, stat.AFTEREFFECT, Coefficients.aftereffect(stat, p))
+		var loss = poison + aftereffect
+		var lossScale = loss > stat.LIFE ? stat.LIFE / loss : 1
+		poison *= -lossScale * p.life
+		aftereffect *= -lossScale * p.life
+		var projectedLife = max(0, stat.LIFE - loss)
+		var heal = min(max(0, stat.TOTAL_LIFE - projectedLife) + p.healReserve, Coefficients.periodic(stat.HEAL_OVER_TIME, stat.HEAL, Coefficients.heal(stat, p))) * p.life
+		var value = presence + life + totalLife + strength + wisdom + agility + resistance + science
+			+ magic + power + tp + mp + absShield + relShield + damageReturn + poison + aftereffect + heal + states
+		// Une entité vivante ne devient jamais un passif qu'il serait rentable de tuer.
+		var floorBonus = max(0, (stat.IS_SUMMON ? 5 : 20) - value)
 		if (out != null) {
 			out["présence"] = presence
 			out["vie"] = life
@@ -80,10 +91,10 @@ class ScoringClass {
 			out["poison"] = poison
 			out["contrecoup"] = aftereffect
 			out["soin continu"] = heal
+			out["états"] = states
+			out["plancher vivant"] = floorBonus
 		}
-		return presence + life + totalLife + strength + wisdom + agility + resistance + science
-			+ magic + power + tp + mp + absShield + relShield + damageReturn + poison
-			+ aftereffect + heal
+		return value + floorBonus
 	}
 
 	/*
@@ -108,7 +119,24 @@ class ScoringClass {
 			total += (stat.SIDE == MySide) ? v : -v
 		}
 		BenchOps.Stop("Scoring")
-		return total
+		return total + terminalValue(State, MySide, null)
+	}
+
+	// Un gain matériel ne vaut jamais une victoire immédiate. Les formats spéciaux
+	// (coffres, guerre/tourelles) ont d'autres règles : bonus désactivé dans ces modes.
+	// `before` permet de relire le parent depuis les clones, sans copier le plateau.
+	static terminalValue(State, MySide, before) {
+		if (!SCORE_TERMINAL_STANDARD) return 0
+		var mine = false
+		var enemy = false
+		for (var id: var s in State) {
+			var old = before != null && id in before ? before[id] : s
+			if (old == null || old.LIFE <= 0) continue
+			if (old.SIDE == MySide) mine = true
+			else enemy = true
+			if (mine && enemy) return 0
+		}
+		return mine ? SCORE_VICTORY : (enemy ? -SCORE_VICTORY : 0)
 	}
 
 	/*
@@ -125,12 +153,15 @@ class ScoringClass {
 	static getStateScoreFromParent(node, State, ParentScore, MySide) {
 		BenchOps.Start("Scoring")
 		var delta = 0
+		var populationChanged = false
 		for (var e: var parentStat in node.CLONED) {
 			var newStat = State[e]
+			if (parentStat == null || (parentStat.LIFE > 0) != (newStat.LIFE > 0)) populationChanged = true
 			var d = entityValue(newStat, null)
 			if (parentStat != null) d -= entityValue(parentStat, null)
 			if (d != 0) delta += (newStat.SIDE == MySide) ? d : -d
 		}
+		if (populationChanged) delta += terminalValue(State, MySide, null) - terminalValue(State, MySide, node.CLONED)
 		// Le score ne lit plus le danger : la liste des lanceurs salis n'a plus de lecteur.
 		node.DANGER_DIRTY_CASTERS = null
 		BenchOps.Stop("Scoring")
@@ -139,14 +170,15 @@ class ScoringClass {
 
 	/*
 	 * Pénalité d'exposition de Me à sa cellule de fin de tour, pour FinalCell : les PV que le net
-	 * projeté à cette cellule lui coûterait réellement. Toujours >= 0, et jamais plafonnée à sa
+	 * projeté à cette cellule, pondéré par une hypothèse d'exposition. Toujours >= 0, et jamais plafonnée à sa
 	 * vie — le net compte l'overkill, c'est ce qui départage deux cellules également mortelles.
 	 *
 	 * @param net dégâts nets projetés sur un round à la cellule
 	 * @return la pénalité, en points de score
 	 */
-	static exposureLoss(net) {
-		return EXPOSURE_FACTOR * COEF_LIFE * net
+	static exposureLoss(net, stat = null) {
+		if (stat == null) return EXPOSURE_FACTOR * max(0, net)
+		return Coefficients.placement(stat, Coefficients.profile(stat)) * max(0, net)
 	}
 
 	/*
@@ -159,15 +191,11 @@ class ScoringClass {
 	 * @return la valeur du ressuscité
 	 */
 	static getResurrectionScore(entity_state, State) {
-		var reviveTotalLife = ResurrectionClass.reviveTotalLife(entity_state.TOTAL_LIFE, State)
-		var reviveLife = ResurrectionClass.reviveLife(reviveTotalLife)
-		var bases = entity_state.BASE_STATS
-		return (entity_state.IS_SUMMON ? SCORE_ALIVE_SUMMON : SCORE_ALIVE_LEEK)
-			+ COEF_LIFE * reviveLife + COEF_TOTAL_LIFE * reviveTotalLife
-			+ COEF_STRENGTH * bases[STAT_STRENGTH] + COEF_WISDOM * bases[STAT_WISDOM]
-			+ COEF_AGILITY * bases[STAT_AGILITY] + COEF_RESISTANCE * bases[STAT_RESISTANCE]
-			+ COEF_SCIENCE * bases[STAT_SCIENCE] + COEF_MAGIC * bases[STAT_MAGIC]
-			+ COEF_TOTAL_TP * bases[STAT_TP] + COEF_TOTAL_MP * bases[STAT_MP]
+		// Même transition que la simulation : aucun second calcul parallèle à maintenir.
+		var copy = clone(State, 1)
+		var changed = [:]
+		ResurrectionClass.Update(entity_state.CELL, copy, entity_state.ID, changed)
+		return entityValue(copy[entity_state.ID], null)
 	}
 
 	/*
@@ -185,8 +213,9 @@ class ScoringClass {
 	 * directs sur ennemi, allié touché, cible tuée, plante réveillable, passif d'arme, renvoi qui
 	 * pourrait me tuer.
 	 *
-	 * Sur une cible ennemie touchée sans être tuée, seule SA valeur bouge, et de deux lignes :
-	 * la vie retirée et l'érosion de sa vie max. Ses passifs d'arme ne peuvent que lui RENDRE des
+	 * Sur une cible ennemie touchée sans être tuée, la vie retirée et l'érosion changent aussi
+	 * les plafonds du poison et des soins continus. La borne couvre leurs pentes maximales.
+	 * Ses passifs d'arme ne peuvent que lui RENDRE des
 	 * caractéristiques, donc réduire mon gain. Chez moi, seul le vol de vie ajoute quelque chose.
 	 * Me n'est borné que depuis une cellule de marche (voir BFS) : saut et téléportation posent
 	 * sur lui des valeurs que cette formule ignore.
@@ -194,10 +223,7 @@ class ScoringClass {
 	static actionUpperBound(Item, From, To, State, MySide, BaseHash) {
 		var Infos = ITEMINFO[Item]
 		if (!Infos.IS_BOUNDABLE_DAMAGE) return BOUND_MUST_SIMULATE
-		// Le raisonnement suppose qu'une statistique RETIRÉE à un adversaire ne peut que me
-		// profiter : sous un coefficient négatif, la borne ne tient plus.
-		if (COEF_LIFE < 0 || COEF_TOTAL_LIFE < 0 || COEF_STRENGTH < 0 || COEF_RESISTANCE < 0
-			|| COEF_MAGIC < 0 || COEF_ABSOLUTE_SHIELD < 0) return BOUND_MUST_SIMULATE
+		if (SCORE_MAX_LIFE < 0 || SCORE_FUTURE_TURNS < 0) return BOUND_MUST_SIMULATE
 		var MyStats = State[Me]
 		if (!mapIsEmpty(PLANT_ZONE_BY_ID) && From != MyStats.CELL && AwakeningClass.livingZones(State) != null) return BOUND_MUST_SIMULATE
 		if ((MyStats.SPECIAL_WEAPON & SPW_UNSTABLE_DESTROYER) && MyStats.LIFE < MyStats.TOTAL_LIFE) return BOUND_MUST_SIMULATE
@@ -238,7 +264,11 @@ class ScoringClass {
 			if (stat.DAMAGE_RETURN > 0) returned += base * stat.DAMAGE_RETURN / 100 + nEff
 			if (dealt <= 0) continue
 			if (dealt >= stat.LIFE) return BOUND_MUST_SIMULATE
-			bound += COEF_LIFE * dealt + COEF_TOTAL_LIFE * (EROSION_CRIT * dealt + nEff)
+			var p = Coefficients.profile(stat)
+			// Le plafonnement des soins continus peut donner une unité de valeur de plus
+			// par PV max. Les plafonds de poison et le plancher vivant n'augmentent jamais
+			// la pente par PV courant. Ces constantes majorent toutes les branches.
+			bound += p.life * dealt + (p.totalLife + (stat.HEAL_OVER_TIME > 0 ? p.life : 0)) * (EROSION_CRIT * dealt + nEff)
 			dealtTotal += dealt
 		}
 		if (returned > 0) {
@@ -253,7 +283,7 @@ class ScoringClass {
 				stolen += nEff
 				var room = MyStats.TOTAL_LIFE - MyStats.LIFE
 				if (stolen > room) stolen = room
-				if (stolen > 0) bound += COEF_LIFE * stolen
+				if (stolen > 0) bound += Coefficients.profile(MyStats).life * stolen
 			}
 		}
 		return bound
@@ -291,7 +321,9 @@ class ScoringClass {
 			total += somme
 			debug("[score] " + tag + " " + ((sign > 0) ? "allié " : "ennemi ") + stat.NAME + " #" + e + " : " + somme + ligne)
 		}
-		return total
+		var terminal = terminalValue(After, MySide, null) - terminalValue(Before, MySide, null)
+		if (terminal != 0) debug("[score] " + tag + " fin de combat : " + terminal)
+		return total + terminal
 	}
 
 	/*

@@ -1,0 +1,116 @@
+include("includes.leek")
+include("ScoringProbe.leek")
+
+class PropertiesProbe {
+    static check(name, ok, detail = "") {
+        debug("PROPERTY " + jsonEncode(["name":name, "ok":ok, "detail":detail]))
+    }
+    static parts(s) {
+        var out = [:]
+        ScoringClass.entityValue(s, out)
+        return out
+    }
+    static clean(s) {
+        var c = clone(s, 1)
+        c.LIFE = 2000
+        c.TOTAL_LIFE = 3000
+        c.POISON = 0; c.POISON_OVER_TIME = 0
+        c.AFTEREFFECT = 0; c.AFTEREFFECT_OVER_TIME = 0
+        c.HEAL = 0; c.HEAL_OVER_TIME = 0
+        c.ABSOLUTE_SHIELD = 0; c.RELATIVE_SHIELD = 0; c.DAMAGE_RETURN = 0
+        c.STATES = 0; c.EFFECTS = []
+        return c
+    }
+    static play() {
+        Preload.InitEverything()
+        ReloadCacheNewTurn()
+        Preload.InitStateClass()
+        var original = StateClass.Virtualize()
+        var S = [:]
+        var enemy = null
+        for (var id: var s in original) {
+            if (id == Me || (enemy == null && s.SIDE != original[Me].SIDE)) {
+                S[id] = clean(s)
+                if (id != Me) enemy = id
+            }
+        }
+        S[Me].INVENTORY = [WEAPON_PISTOL]
+        Coefficients.prepare(S)
+        var me = S[Me]
+        var p = Coefficients.profile(me)
+        check("force utile au tireur; magie inutile", p.strength > 0 && p.magic == 0)
+        var x = clone(me,1)
+        x.AGILITY = 1000
+        var v = ScoringClass.entityValue(x,null)
+        x.AGILITY = 1400
+        check("critique sature a 1000", abs(ScoringClass.entityValue(x,null)-v)<0.000001)
+        x = clone(me,1); x.STRENGTH = -1
+        v = ScoringClass.entityValue(x,null); x.STRENGTH = -500
+        check("force moteur plancheree a zero", abs(ScoringClass.entityValue(x,null)-v)<0.000001)
+        x = clone(me,1); x.RELATIVE_SHIELD = 100
+        v = ScoringClass.entityValue(x,null); x.RELATIVE_SHIELD = 140
+        check("bouclier relatif sature", abs(ScoringClass.entityValue(x,null)-v)<0.000001)
+        x.ABSOLUTE_SHIELD = 900
+        check("ABS redondant sous 100 pourcent REL", abs(ScoringClass.entityValue(x,null)-v)<0.000001)
+        x = clone(me,1); x.RELATIVE_SHIELD = 40; x.ABSOLUTE_SHIELD = 20
+        v = ScoringClass.entityValue(x,null); x.STATES |= 1 << STATE_INVINCIBLE
+        check("invincibilite ne devalorise pas un porteur protege", ScoringClass.entityValue(x,null)>=v-0.000001)
+        x.POISON=50; x.POISON_OVER_TIME=150; x.AFTEREFFECT=50; x.AFTEREFFECT_OVER_TIME=150
+        var detail=parts(x)
+        check("poison ignore INVINCIBLE", detail["poison"]==0)
+        check("contrecoup deja pose continue sous INVINCIBLE", detail["contrecoup"]<0)
+        x.HEAL=100; x.HEAL_OVER_TIME=300; x.STATES |= 1 << STATE_UNHEALABLE
+        check("soin ignore UNHEALABLE", parts(x)["soin continu"]==0)
+        x=clone(me,1);x.STATES |= 1 << STATE_ROOTED
+        v=ScoringClass.entityValue(x,null);x.TOTAL_MP+=10
+        check("PM sans marche sous ROOTED", abs(ScoringClass.entityValue(x,null)-v)<0.000001)
+        x=clone(me,1);x.LIFE=1;x.POISON=1000;x.POISON_OVER_TIME=100000
+        v=ScoringClass.entityValue(x,null);x.LIFE=0
+        check("un porteur de poison ne gagne pas a mourir", v>0 && ScoringClass.entityValue(x,null)==0)
+        x=clone(me,1);x.WISDOM=10
+        v=ScoringClass.entityValue(x,null);x.STATES |= 1 << STATE_UNHEALABLE
+        check("UNHEALABLE ne supprime pas le cout d'une entrave sagesse", ScoringClass.entityValue(x,null)<=v+0.000001)
+
+        var checks=0
+        var failures=[]
+        for (var field in ScoringProbe.champs()) {
+            for (var step in [-5000,-1100,-101,-100,-1,0,1,100,999,1000,1001,4000]) {
+                var W=clone(S,1)
+                var c=clone(me,1)
+                W[Me]=c
+                ScoringProbe.muter(c,field,step)
+                // Keep physical life states valid; attribute debuffs may be negative.
+                c.LIFE=max(1,c.LIFE);c.TOTAL_LIFE=max(c.LIFE,c.TOTAL_LIFE)
+                c.POISON=max(0,c.POISON);c.POISON_OVER_TIME=max(0,c.POISON_OVER_TIME)
+                c.AFTEREFFECT_OVER_TIME=max(0,c.AFTEREFFECT_OVER_TIME)
+                c.HEAL_OVER_TIME=max(0,c.HEAL_OVER_TIME)
+                var root=ScoringClass.stateValue(S,me.SIDE,100000000)
+                var full=ScoringClass.stateValue(W,me.SIDE,100000000)
+                var n=ScoringProbe.noeudDe([Me:me])
+                var inc=ScoringClass.getStateScoreFromParent(n,W,root,me.SIDE)
+                if (abs(inc-full)>0.000001) push(failures,field+":"+step)
+                checks++
+            }
+        }
+        check("incrementation aux seuils et valeurs negatives", count(failures)==0, [checks,failures])
+        var W=clone(S,1);W[enemy]=clone(S[enemy],1);W[enemy].LIFE=0
+        var root=ScoringClass.stateValue(S,me.SIDE,100000000)
+        var full=ScoringClass.stateValue(W,me.SIDE,100000000)
+        var inc=ScoringClass.getStateScoreFromParent(ScoringProbe.noeudDe([enemy:S[enemy]]),W,root,me.SIDE)
+        check("victoire terminale et delta", full>SCORE_VICTORY && abs(full-inc)<0.000001)
+        W[enemy].IS_SUMMON=true;W[enemy].LIFE=10
+        check("un summon adverse vivant empeche la victoire", ScoringClass.terminalValue(W,me.SIDE,null)==0)
+        var a=clone(me,1);a.ID=999;a.IS_SUMMON=true
+        var b=clone(a,1);b.BASE_STATS=clone(a.BASE_STATS,1);b.BASE_STATS[STAT_TP]+=2
+        var pa=Coefficients.profile(a);var pb=Coefficients.profile(b)
+        check("profils virtuels critiques distincts", pa!=pb)
+
+        S[Me].INVENTORY=[CHIP_BANDAGE]
+        Coefficients.prepare(S)
+        p=Coefficients.profile(S[Me])
+        check("kit de soin sans force artificielle", p.strength==0 && p.wisdom>0 && p.power==0)
+        var start=getOperations()
+        for(var i=0;i<100;i++) ScoringClass.entityValue(S[Me],null)
+        debug("PROPERTY_COST "+((getOperations()-start)/100))
+    }
+}

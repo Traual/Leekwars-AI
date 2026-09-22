@@ -1,0 +1,77 @@
+// Programme de laboratoire, jamais inclus par l'IA livrée.
+include("includes.leek")
+include("Cases.leek")
+
+class RolloutProbe {
+    static chip(id, target) {
+        if (id == 0 || getCooldown(id) > 0 || getTP() < getChipCost(id)) return 0
+        if (!canUseChipOnCell(id, target)) return 0
+        return useChipOnCell(id, target)
+    }
+    static fire(target) {
+        var weapons = getWeapons()
+        if (count(weapons) == 0) return;
+        if (getWeapon() != weapons[0]) setWeapon(weapons[0])
+        for (var i = 0; i < 5; i++) {
+            if (!canUseWeaponOnCell(target)) break
+            if (useWeaponOnCell(target) <= 0) break
+        }
+    }
+    static play() {
+        var parts = split(getName(), "|")
+        var cfg = ROLLOUT_CASES[parts[0]]
+        var enemies = getAliveEnemies()
+        if (count(enemies) == 0) return;
+        var enemy = enemies[0]
+        if (parts[1] == "foe") {
+            fire(getCell(enemy))
+            return;
+        }
+        if (getTurn() == 1) {
+            if (cfg["setup"] > 0) chip(cfg["setup"], getCell())
+            return;
+        }
+        var before = 0
+        var choice = number(parts[1])
+        if (getTurn() == 2) {
+            Preload.InitEverything()
+            ReloadCacheNewTurn()
+            Preload.InitStateClass()
+            var S = StateClass.Virtualize()
+            REPLAN_WEIGHTS = HistoricalWeightsFactory.build(S, S[Me].SIDE)
+            before = ScoringClass.stateValue(S, S[Me].SIDE, 100000000)
+            debug("ORACLE_ROOT " + jsonEncode([S[Me].LIFE, S[enemy].LIFE, S[Me].STRENGTH, S[Me].AGILITY]))
+            var prefix = cfg["options"][choice]
+            var codes = []
+            for (var action in prefix) {
+                if (action[0] == "chip") push(codes, chip(action[1], action[2] ? getCell(enemy) : getCell()))
+                else if (action[0] == "move") push(codes, moveTowardCell(action[1], getMP()))
+            }
+            debug("ORACLE_PREFIX " + jsonEncode(codes))
+        } else {
+            for (var action in cfg["continuation"]) chip(action[0], action[1] ? getCell(enemy) : getCell())
+        }
+        fire(getCell(enemy))
+        if (getTurn() == 2) {
+            var S = StateClass.Virtualize()
+            var raw = ScoringClass.stateValue(S, S[Me].SIDE, 100000000) - before
+            var penalty = 0
+            if (cfg["placement"]) {
+                // Force la cellule choisie pour le diagnostic de cette alternative,
+                // sans modifier ni la marche réelle ni les stats du scénario sauvegardé.
+                S[Me].MP = 0
+                var context = DeltaClass.buildContextBySide(S)
+                var hfp = HealClass.buildHfpBySide(S)
+                var combined = 0
+                for (var side: var h in hfp) combined ^= h
+                var result = FinalCell.evaluate(S, StateClass.getBaseHash(S), context, hfp, combined,
+                    WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(S[Me]), 100000000, true)
+                penalty = result[1]
+            }
+            debug("ORACLE_SCORE " + jsonEncode([raw - penalty, raw, penalty, getOperations()]))
+        }
+        var out = []
+        for (var id in getAllies() + getEnemies()) push(out, [id, getLife(id), getTotalLife(id), isAlive(id)])
+        debug("ORACLE_LIFE " + jsonEncode(out))
+    }
+}

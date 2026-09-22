@@ -1,0 +1,391 @@
+/*
+ * Valeurs marginales en PV. Le catalogue est parcouru seulement à la préparation du replan
+ * et à la première rencontre d'un nouveau profil d'invocation.
+ * Rien ici ne lance de carte de danger, de getEffects, ni d'appel moteur par nœud.
+ * Les hypothèses stratégiques sont dans Weights ; les équations moteur et leurs limites
+ * sont documentées dans docs/scoring-astra.md.
+ */
+include("../includes.leek")
+
+global SCORE_PROFILES = [:]
+global SCORE_BIRTH_PROFILES = [:]
+global SCORE_ENV = [:]
+global SCORE_TERMINAL_STANDARD = true
+global SCORE_SUMMON_STATS = [:]
+global SCORE_LEVEL_BY_ID = [:]
+global SCORE_REVIVE_BY_SIDE = [:]
+
+class ScoreProfile {
+    strength = 0
+    wisdom = 0
+    steal = 0
+    critical = 0
+    criticalHeal = 0
+    criticalSummon = 0
+    reflection = 0
+    resistance = 0
+    resistanceLimit = -100
+    science = 0
+    novaScience = 0
+    magic = 0
+    power = 0
+    tp = 0
+    mp = 0
+    life = 1
+    totalLife = 0
+    presence = 0
+    hit = 0
+    hits = 0
+    incoming = 0
+    invincibleLifeHits = 0
+    healReserve = 0
+    exposure = 0.05
+    returnable = 1
+    returnCeiling = 0
+    reach = 1
+    support = false
+}
+
+class Coefficients {
+    // Etat de référence FIGÉ : le changement d'un allié ne modifie pas rétroactivement
+    // la valeur des entités non clonées. Indispensable au score incrémental du BFS.
+    static prepare(State) {
+        var mode = getFightType()
+        SCORE_TERMINAL_STANDARD = mode == FIGHT_TYPE_SOLO || mode == FIGHT_TYPE_FARMER
+            || mode == FIGHT_TYPE_TEAM || mode == FIGHT_TYPE_BATTLE_ROYALE
+        SCORE_PROFILES = [:]
+        SCORE_BIRTH_PROFILES = [:]
+        SCORE_ENV = [:]
+        SCORE_LEVEL_BY_ID = [:]
+        SCORE_REVIVE_BY_SIDE = [:]
+        var sides = [:]
+        for (var id: var s in State) {
+            SCORE_LEVEL_BY_ID[id] = getLevel(id)
+            if (!(s.SIDE in SCORE_REVIVE_BY_SIDE)) SCORE_REVIVE_BY_SIDE[s.SIDE] = 0
+            if (s.LIFE <= 0) SCORE_REVIVE_BY_SIDE[s.SIDE] = max(SCORE_REVIVE_BY_SIDE[s.SIDE], s.TOTAL_LIFE)
+            // Catalogue immuable, une lecture API par puce d'invocation et par VM.
+            for (var item in s.INVENTORY) {
+                var it = ITEMINFO[item]
+                for (var eff in it.EFFECTS) {
+                    if (eff[0] == EFFECT_SUMMON && !(item in SCORE_SUMMON_STATS)) SCORE_SUMMON_STATS[item] = getBulbStats(item)
+                }
+            }
+            if (!(s.SIDE in sides)) sides[s.SIDE] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            if (s.LIFE <= 0) continue
+            var a = sides[s.SIDE]
+            a[0]++
+            a[1] += max(0, s.TOTAL_LIFE - s.LIFE)
+            a[2] += s.TOTAL_LIFE
+            a[3] += max(0, 1 - s.RELATIVE_SHIELD / 100)
+            a[4] += max(0, s.ABSOLUTE_SHIELD)
+            if (!EntityStateClass.hasState(s, STATE_UNHEALABLE)) a[5]++
+            if (!EntityStateClass.hasState(s, STATE_INVINCIBLE)) a[6]++
+            // Une seule allocation des PT : meilleur item répété dans ses limites.
+            // Chaque effet direct est un hit (mitraillette : trois), car l'ABS est
+            // soustrait à CHAQUE impact et non une seule fois au total du cast.
+            var turnDamage = 0
+            var turnHits = 0
+            var turnLifeHits = 0
+            for (var item in s.INVENTORY) {
+                var it = ITEMINFO[item]
+                if (it.COST > s.TOTAL_TP) continue
+                var h = 0
+                var impacts = 0
+                var lifeImpacts = 0
+                for (var e in it.EFFECTS) {
+                    if (!(e[4] & EFFECT_TARGET_ENEMIES)) continue
+                    if (e[5] & EFFECT_MODIFIER_ON_CASTER) continue
+                    if (e[0] == EFFECT_DAMAGE) { h += ((e[1] + e[2]) / 2) * (1 + max(0, s.STRENGTH) / 100); impacts++ }
+                    if (e[0] == EFFECT_LIFE_DAMAGE) { h += ((e[1] + e[2]) / 2) * s.LIFE / 100; impacts++; lifeImpacts++ }
+                }
+                h *= max(0, 1 + s.POWER / 100) * (1 + 0.3 * min(1000, max(0, s.AGILITY)) / 1000)
+                var casts = min(s.TOTAL_TP / max(1, it.COST), max(1, it.MAX_USES))
+                if (it.COOLDOWN > 0) casts = min(casts, 1)
+                if (h * casts > turnDamage) {
+                    turnDamage = h * casts
+                    turnHits = impacts * casts
+                    turnLifeHits = lifeImpacts * casts
+                }
+            }
+            a[7] += turnDamage
+            a[8] += turnHits
+            a[9] += turnLifeHits
+        }
+        for (var side: var a in sides) {
+            var foes = 0
+            var hit = 0
+            var hits = 0
+            var lifeHits = 0
+            var armor = 0
+            var absArmor = 0
+            var vulnerable = 0
+            var foeLife = 0
+            for (var other: var b in sides) {
+                if (other == side) continue
+                foes += b[0]
+                hit += b[7]
+                hits += b[8]
+                lifeHits += b[9]
+                armor += b[3]
+                absArmor += b[4]
+                vulnerable += b[6]
+                foeLife += b[2] - b[1]
+            }
+            // [hit brut, nombre de hits alloués, facteur armure adverse, abs adverse,
+            //  débouché des soins, part adverse non invincible]
+            SCORE_ENV[side] = [hit / max(1, hits),
+                min(SCORE_MAX_INCOMING_HITS, SCORE_ENEMY_ACTIVITY * hits / max(1, a[0])),
+                armor / max(1, foes), absArmor / max(1, foes),
+                a[5] / max(1, a[0]) * (SCORE_HEAL_RESERVE + (1 - SCORE_HEAL_RESERVE) * a[1] / max(1, a[2])),
+                vulnerable / max(1, foes),
+                EXPOSURE_FACTOR + (SCORE_SOLO_EXPOSURE - EXPOSURE_FACTOR) / max(1, a[0] * a[0]),
+                SCORE_ENEMY_ACTIVITY * lifeHits / max(1, a[0]), foeLife]
+        }
+        for (var id: var s in State) {
+            var p = build(s)
+            p.healReserve = EntityStateClass.hasState(s, STATE_INVINCIBLE) ? 0
+                : SCORE_HEAL_RESERVE * p.hits * max(0, p.hit * (1 - s.RELATIVE_SHIELD / 100) - s.ABSOLUTE_SHIELD)
+            SCORE_PROFILES[id] = p
+        }
+    }
+
+    static profile(s) {
+        if (s.ID in SCORE_PROFILES) return SCORE_PROFILES[s.ID]
+        // IDs virtuels réutilisés entre branches : la BASE vraie (critique de l'invocation
+        // compris) entre dans la clé, jamais ses buffs ni l'ordre d'exploration.
+        var b = s.BASE_STATS
+        var key = s.ID + ":" + s.SIDE + ":" + b[STAT_STRENGTH] + ":" + b[STAT_WISDOM]
+            + ":" + b[STAT_AGILITY] + ":" + b[STAT_RESISTANCE] + ":" + b[STAT_SCIENCE]
+            + ":" + b[STAT_MAGIC] + ":" + b[STAT_TP] + ":" + b[STAT_MP]
+        if (!(key in SCORE_BIRTH_PROFILES)) SCORE_BIRTH_PROFILES[key] = build(s)
+        return SCORE_BIRTH_PROFILES[key]
+    }
+
+    static build(s) {
+        var p = new ScoreProfile()
+        var env = (s.SIDE in SCORE_ENV) ? SCORE_ENV[s.SIDE] : [300, 1, 1, 0, 0.35, 1, EXPOSURE_FACTOR, 0, 3000]
+        p.hit = env[0]
+        p.hits = env[1]
+        p.incoming = p.hit * p.hits
+        p.healReserve = SCORE_HEAL_RESERVE * p.incoming
+        p.exposure = env[6]
+        p.invincibleLifeHits = min(p.hits, env[7])
+        p.returnCeiling = max(0, env[8])
+        p.returnable = env[5]
+        // Bases immuables : la première branche qui rencontre un nouveau bulbe ne peut
+        // contaminer ses coefficients avec les buffs de cette branche.
+        var b = s.BASE_STATS
+        var str = 1 + max(0, b[STAT_STRENGTH]) / 100
+        var wis = max(0, 1 + b[STAT_WISDOM] / 100)
+        var sci = max(0, 1 + b[STAT_SCIENCE] / 100)
+        var mag = 1 + max(0, b[STAT_MAGIC]) / 100
+        var res = max(0, 1 + b[STAT_RESISTANCE] / 100)
+        var agi = max(0, 1 + b[STAT_AGILITY] / 100)
+        var critical = 1 + 0.3 * min(1000, max(0, b[STAT_AGILITY])) / 1000
+        var tp = max(0, b[STAT_TP])
+        var bestTurn = 0
+        var critHeal = 0
+        var maxCasts = 0
+        for (var item in s.INVENTORY) {
+            var it = ITEMINFO[item]
+            // Les passifs de TOUTES les armes équipées s'activent, même si une autre
+            // arme ou une puce a produit le critique (Entity.onCritical).
+            for (var pe in it.PASSIVE_EFFECTS) {
+                if (pe[0] == EFFECT_CRITICAL_TO_HEAL) critHeal += (pe[1] + pe[2]) / 2
+            }
+            if (it.COST <= 0 || it.COST > tp) continue
+            var casts = min(tp / it.COST, max(1, it.MAX_USES))
+            if (it.COOLDOWN > 0) casts = min(casts, 1)
+            maxCasts = max(maxCasts, casts)
+            var ds = 0
+            var dw = 0
+            var dr = 0
+            var dc = 0
+            var dn = 0
+            var dm = 0
+            var da = 0
+            var dp = 0
+            var dl = 0
+            var direct = 0
+            var summonCritical = 0
+            var utility = 0
+            var summonUtility = 0
+            for (var e in it.EFFECTS) {
+                var t = e[0]
+                // getFeatureArray expose [MIN, MAX], les JSON moteur [MIN, AMPLITUDE].
+                var v = max(0, (e[1] + e[2]) / 2)
+                var enemy = (e[4] & EFFECT_TARGET_ENEMIES) && !(e[5] & EFFECT_MODIFIER_ON_CASTER)
+                var friendly = (e[4] & (EFFECT_TARGET_ALLIES | EFFECT_TARGET_CASTER)) || (e[5] & EFFECT_MODIFIER_ON_CASTER)
+                if (t == EFFECT_DAMAGE && enemy) {
+                    var damage = max(0, v * str * env[2] - env[3]) * env[5]
+                    utility += damage
+                    direct += damage
+                    ds += v * env[2] * env[5] / 100
+                    dp += v * str * env[2] * env[5] / 100
+                } else if (t == EFFECT_LIFE_DAMAGE && enemy) {
+                    // La vie sert de carburant. Une réserve fixe évite un profil variant
+                    // avec les blessures de la première branche qui crée une invocation.
+                    var damage = max(0, v * 1000 / 100 * env[2] - env[3]) * env[5]
+                    utility += damage
+                    dl += v / 100 * env[2] * env[5]
+                    dp += damage / 100
+                } else if (t == EFFECT_POISON && enemy) {
+                    var ticks = 1 + SCORE_POISON_TAIL * max(0, min(4, e[3]) - 1)
+                    utility += v * mag * ticks * env[5]
+                    dm += v * ticks * env[5] / 100
+                    dp += v * mag * ticks * env[5] / 100
+                } else if (t == EFFECT_AFTEREFFECT && enemy) {
+                    var ticks = 1 + SCORE_AFTER_TAIL * max(0, min(4, e[3]))
+                    utility += v * sci * ticks
+                    dc += v * ticks / 100
+                } else if (t == EFFECT_NOVA_DAMAGE && enemy) {
+                    utility += SCORE_MAX_LIFE * v * sci * env[5]
+                    dn += SCORE_MAX_LIFE * v * env[5] / 100
+                    dp += SCORE_MAX_LIFE * v * sci * env[5] / 100
+                } else if (t == EFFECT_NOVA_VITALITY && friendly) {
+                    utility += SCORE_MAX_LIFE * v * sci
+                    dc += SCORE_MAX_LIFE * v / 100
+                } else if (t == EFFECT_SUMMON && item in SCORE_SUMMON_STATS) {
+                    var row = SCORE_SUMMON_STATS[item][STAT_LIFE]
+                    var level = s.ID in SCORE_LEVEL_BY_ID ? SCORE_LEVEL_BY_ID[s.ID] : 301
+                    var hp = BulbState.interpolate(row, (level - 1) / 300, 1)
+                    // Critique d'invocation = +20 %, et non +30 %. On ne prédit ici
+                    // que son apport en PV ; le kit et les arrondis sont simulés à la pose.
+                    var extra = BulbState.interpolate(row, (level - 1) / 300, 1.2) - hp
+                    summonCritical += extra / 1000
+                    summonUtility += hp * SCORE_SUMMON_OPTION
+                    utility += hp * SCORE_SUMMON_OPTION
+                } else if (t == EFFECT_RESURRECT && s.SIDE in SCORE_REVIVE_BY_SIDE) {
+                    var hp = SCORE_REVIVE_BY_SIDE[s.SIDE]
+                    utility += hp * (0.25 + SCORE_MAX_LIFE * 0.5)
+                } else if ((t == EFFECT_HEAL || t == EFFECT_BOOST_MAX_LIFE) && friendly) {
+                    var ticks = e[3] > 0 && t == EFFECT_HEAL ? 1 + SCORE_HEAL_TAIL * max(0, min(4, e[3]) - 1) : 1
+                    var outlet = t == EFFECT_BOOST_MAX_LIFE ? 1 + SCORE_MAX_LIFE : env[4]
+                    utility += v * wis * ticks * outlet
+                    dw += v * ticks * outlet / 100
+                    p.support = true
+                } else if (t == EFFECT_ABSOLUTE_SHIELD && friendly) {
+                    utility += min(v * res, p.hit) * p.hits
+                    dr += v * p.hits / 100
+                    if (v > 0) p.resistanceLimit = max(p.resistanceLimit, 100 * p.hit / (v * critical) - 100)
+                    p.support = true
+                } else if (t == EFFECT_RELATIVE_SHIELD && friendly) {
+                    utility += min(100, v * res) * p.incoming / 100
+                    dr += v * p.incoming / 10000
+                    if (v > 0) p.resistanceLimit = max(p.resistanceLimit, 10000 / (v * critical) - 100)
+                    p.support = true
+                } else if (t == EFFECT_DAMAGE_RETURN && friendly) {
+                    utility += v * agi * p.incoming * env[5] / 100
+                    da += v * p.incoming * env[5] / 10000
+                } else if ((t == EFFECT_BUFF_STRENGTH || t == EFFECT_BUFF_AGILITY || t == EFFECT_BUFF_RESISTANCE || t == EFFECT_BUFF_WISDOM) && friendly) {
+                    utility += v * sci * SCORE_ATTRIBUTE_EXCHANGE
+                    dc += v * SCORE_ATTRIBUTE_EXCHANGE / 100
+                    p.support = true
+                } else if ((t == EFFECT_BUFF_TP || t == EFFECT_BUFF_MP) && friendly) {
+                    var exchange = t == EFFECT_BUFF_TP ? SCORE_TP_EXCHANGE : SCORE_MP_EXCHANGE
+                    utility += v * sci * exchange
+                    dc += v * exchange / 100
+                    p.support = true
+                } else if ((t == EFFECT_SHACKLE_TP || t == EFFECT_SHACKLE_MP || t == EFFECT_SHACKLE_STRENGTH || t == EFFECT_SHACKLE_AGILITY || t == EFFECT_SHACKLE_WISDOM || t == EFFECT_SHACKLE_MAGIC) && enemy) {
+                    var exchange = t == EFFECT_SHACKLE_TP ? SCORE_TP_EXCHANGE : (t == EFFECT_SHACKLE_MP ? SCORE_MP_EXCHANGE : SCORE_ATTRIBUTE_EXCHANGE)
+                    utility += v * mag * exchange
+                    dm += v * exchange / 100
+                } else if (t == EFFECT_RAW_HEAL && friendly) {
+                    utility += v * env[4]
+                } else if (t == EFFECT_RAW_ABSOLUTE_SHIELD && friendly) {
+                    utility += min(v, p.hit) * p.hits
+                } else if (t == EFFECT_RAW_RELATIVE_SHIELD && friendly) {
+                    utility += min(100, v) * p.incoming / 100
+                }
+            }
+            var scale = SCORE_FUTURE_TURNS * casts * critical
+            p.strength = max(p.strength, ds * scale)
+            p.wisdom = max(p.wisdom, dw * scale)
+            p.steal = max(p.steal, direct * casts * critical * SCORE_FUTURE_TURNS * SCORE_STEAL_USE / 1000)
+            p.resistance = max(p.resistance, dr * scale)
+            p.science = max(p.science, dc * scale)
+            p.novaScience = max(p.novaScience, dn * scale)
+            p.magic = max(p.magic, dm * scale)
+            p.reflection = max(p.reflection, da * scale)
+            p.power = max(p.power, dp * scale)
+            p.life = max(p.life, 1 + dl * scale)
+            p.critical = max(p.critical, (utility - summonUtility) * casts * SCORE_FUTURE_TURNS * 0.3 / 1000)
+            p.criticalSummon = max(p.criticalSummon, summonCritical * casts * SCORE_FUTURE_TURNS)
+            bestTurn = max(bestTurn, utility * casts * critical)
+            if (ds > 0 || dm > 0 || dl > 0 || dp > 0) p.reach = max(p.reach, min(8, it.MAXRANGE))
+        }
+        p.criticalHeal = critHeal * maxCasts * SCORE_FUTURE_TURNS * SCORE_STEAL_USE / 1000
+        p.tp = min(SCORE_TP_CAP, SCORE_FUTURE_TURNS * bestTurn / max(1, tp))
+        p.mp = min(SCORE_MP_CAP, p.tp * SCORE_MP_TO_TP)
+        p.totalLife = SCORE_MAX_LIFE * (SCORE_HEAL_RESERVE + env[4])
+        p.presence = (s.IS_SUMMON ? SCORE_ALIVE_SUMMON : SCORE_ALIVE_LEEK) + min(SCORE_CAPACITY_CAP, SCORE_CAPACITY_WEIGHT * bestTurn)
+        return p
+    }
+
+    static presence(s, p) { return p.presence }
+    static life(s, p) { return p.life }
+    static totalLife(s, p) { return p.totalLife }
+    static strength(s, p) { return p.strength }
+    static wisdom(s, p) {
+        var d = max(-100, s.WISDOM) - max(-100, s.BASE_STATS[STAT_WISDOM])
+        var steal = p.steal
+        if (d == 0) return p.wisdom + steal
+        return p.wisdom + steal * (max(0, s.WISDOM) - max(0, s.BASE_STATS[STAT_WISDOM])) / d
+    }
+    static agility(s, p) {
+        return p.critical + p.criticalHeal + p.criticalSummon
+    }
+    static resistance(s, p) {
+        var d = max(-100, s.RESISTANCE) - max(-100, s.BASE_STATS[STAT_RESISTANCE])
+        if (d == 0) return p.resistance
+        return p.resistance * (min(p.resistanceLimit, max(-100, s.RESISTANCE))
+            - min(p.resistanceLimit, max(-100, s.BASE_STATS[STAT_RESISTANCE]))) / d
+    }
+    static science(s, p) {
+        var d = max(-100, s.SCIENCE) - max(-100, s.BASE_STATS[STAT_SCIENCE])
+        if (d == 0) return p.science + p.novaScience
+        return p.science + p.novaScience * (max(0, s.SCIENCE) - max(0, s.BASE_STATS[STAT_SCIENCE])) / d
+    }
+    static magic(s, p) { return p.magic }
+    static power(s, p) { return p.power }
+    static totalTP(s, p) { return p.tp }
+    static totalMP(s, p) {
+        return s.STATIC || EntityStateClass.hasState(s, STATE_ROOTED) ? 0 : p.mp
+    }
+    // Coefficients sécants : coef(stat) * stat = gain de protection, saturé au vrai
+    // point où le hit est annulé. Les vulnérabilités restent des coûts négatifs.
+    static relativeShield(s, p) {
+        if (s.RELATIVE_SHIELD == 0 || EntityStateClass.hasState(s, STATE_INVINCIBLE)) return 0
+        return p.hits * (p.hit - max(0, p.hit * (1 - s.RELATIVE_SHIELD / 100))) / s.RELATIVE_SHIELD
+    }
+    static absoluteShield(s, p) {
+        if (s.ABSOLUTE_SHIELD == 0) return 0
+        // EffectLifeDamage clampe l'invincibilité AVANT de soustraire l'ABS : une
+        // vulnérabilité absolue passe encore. EffectDamage fait le clamp APRÈS.
+        if (EntityStateClass.hasState(s, STATE_INVINCIBLE)) return s.ABSOLUTE_SHIELD < 0 ? p.invincibleLifeHits : 0
+        var afterRelative = p.hit * (1 - s.RELATIVE_SHIELD / 100)
+        return p.hits * (max(0, afterRelative) - max(0, afterRelative - s.ABSOLUTE_SHIELD)) / s.ABSOLUTE_SHIELD
+    }
+    static damageReturn(s, p) {
+        if (s.DAMAGE_RETURN <= 0) return 0
+        return min(p.returnCeiling, s.DAMAGE_RETURN * p.incoming * p.returnable * SCORE_RETURN_USE / 100) / s.DAMAGE_RETURN
+    }
+    static poison(s, p) { return EntityStateClass.hasState(s, STATE_INVINCIBLE) ? 0 : SCORE_POISON_TAIL }
+    // EffectAftereffect.applyStartTurn ne reteste PAS INVINCIBLE (contrairement au poison).
+    static aftereffect(s, p) { return SCORE_AFTER_TAIL }
+    static heal(s, p) { return EntityStateClass.hasState(s, STATE_UNHEALABLE) ? 0 : SCORE_HEAL_TAIL }
+    static states(s, p) {
+        var value = EntityStateClass.hasState(s, STATE_INVINCIBLE) ? p.incoming : 0
+        if (EntityStateClass.hasState(s, STATE_UNHEALABLE)) {
+            value -= p.steal * max(0, s.WISDOM) + p.criticalHeal * min(1000, max(0, s.AGILITY))
+        }
+        if (EntityStateClass.hasState(s, STATE_STERILE)) value -= p.criticalSummon * min(1000, max(0, s.AGILITY))
+        return value
+    }
+    static periodic(total, first, tail) {
+        if (tail == 0 || total <= 0) return 0
+        var next = min(total, max(0, first))
+        return next + tail * (total - next)
+    }
+    static placement(s, p) { return p.exposure * p.life }
+}

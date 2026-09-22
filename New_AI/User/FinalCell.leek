@@ -221,7 +221,7 @@ class FinalCell {
             // danger ne peut que s'y ajouter. Une cellule dont le seul spatial dépasse déjà le
             // meilleur total ne peut pas gagner — coupure EXACTE, et elle épargne le net,
             // de loin le calcul le plus cher des deux.
-            var spatial = GravityClass.costAt(State, BaseHash, cell)
+            var spatial = SCORE_SPATIAL_SCALE * GravityClass.costAt(State, BaseHash, cell)
             if (spatial >= bestPenalty) continue
 
             var net = withDanger ? DeltaClass.netAtFleeCell(cell, seed, dangerCellSeed, MyState, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy, wantHealCost) : 0
@@ -232,7 +232,7 @@ class FinalCell {
             if (net > 0) {
                 // Les PV que ce net me coûterait réellement (ScoringClass.exposureLoss) : une
                 // valeur positive, donc le spatial reste un minorant de la pénalité.
-                penalty += finalWeights.NET * ScoringClass.exposureLoss(net)
+                penalty += finalWeights.NET * ScoringClass.exposureLoss(net, MyState)
             }
             if (penalty < bestPenalty) {
                 bestPenalty = penalty

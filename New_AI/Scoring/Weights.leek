@@ -1,61 +1,60 @@
 /*
- * Coefficients du scoring. Monnaie : le point de vie — 1 PV vaut 1 point de score.
- *
- *   valeur(entité vivante) = bonus de présence + Σ coefficient × statistique
- *   valeur(entité morte)   = 0
- *   score(état)            = Σ valeur(alliés) − Σ valeur(adversaires)
- *
- * Un coefficient se lit « combien de PV vaut une unité de cette statistique pour son porteur ».
- * Les deux camps partagent les mêmes coefficients : le signe du camp fait le reste.
- * Ce sont des HYPOTHÈSES INITIALES, choisies pour être lisibles, pas des valeurs réglées.
+ * Réglages du score Astra. Unité : le PV.
+ * Les fonctions par stat sont dans Coefficients.leek ; entityValue fait leur somme.
+ * Les règles du moteur ne sont pas des paramètres. Les valeurs ci-dessous sont des
+ * hypothèses stratégiques explicites, à affiner en observant les combats.
  */
-
 include("../includes.leek")
 
-// ----- Présence : ce que vaut le seul fait d'être debout, perdu d'un bloc à la mort -----
-global SCORE_ALIVE_LEEK   = 1000
-global SCORE_ALIVE_SUMMON = 100
+// Présence = petit bonus vivant + une fraction du potentiel du kit de base.
+// Les caractéristiques de base ne sont pas ajoutées une seconde fois : leurs
+// buffs/entraves sont comptés par différence à BASE_STATS, cf. Scoring.leek.
+global SCORE_ALIVE_LEEK = 200
+global SCORE_ALIVE_SUMMON = 40
+global SCORE_CAPACITY_WEIGHT = 0.30
+global SCORE_CAPACITY_CAP = 600
+global SCORE_VICTORY = 10000000
 
-// ----- Vie -----
-global COEF_LIFE       = 1.0   // PV courants : l'unité
-global COEF_TOTAL_LIFE = 0.5   // vie max : plafond des soins, seule cible de l'érosion et des novas
+// Valeur d'une production future, pondérée par la disponibilité et le budget du kit.
+global SCORE_FUTURE_TURNS = 0.65
+global SCORE_SUMMON_OPTION = 0.15
+global SCORE_MAX_LIFE = 0.12
+global SCORE_ATTRIBUTE_EXCHANGE = 0.5
+// Conversions de secours pour la science des buffs et la magie des entraves.
+// Le prix des PT/PM du porteur est calculé depuis son propre kit.
+global SCORE_TP_EXCHANGE = 30
+global SCORE_MP_EXCHANGE = 15
+global SCORE_TP_CAP = 100
+global SCORE_MP_CAP = 18
+global SCORE_MP_TO_TP = 0.20
 
-// ----- Caractéristiques, par point -----
-global COEF_STRENGTH   = 1.0   // dégâts directs
-global COEF_WISDOM     = 1.0   // soins, vitalité, vol de vie
-global COEF_AGILITY    = 1.0   // chances de critique, renvoi de dégâts
-global COEF_RESISTANCE = 1.0   // boucliers posés
-global COEF_SCIENCE    = 1.0   // buffs, dégâts nova
-global COEF_MAGIC      = 1.0   // poison, entraves
-global COEF_POWER      = 1.0   // puissance : multiplie dégâts, poison et nova
+// Un plan d'attaque par ennemi, réparti entre les cibles alliées.
+// Les impacts multiples restent séparés.
+global SCORE_ENEMY_ACTIVITY = 0.65
+global SCORE_MAX_INCOMING_HITS = 12
+global SCORE_HEAL_RESERVE = 0.25
+global SCORE_STEAL_USE = 0.35
+global SCORE_RETURN_USE = 0.60
 
-// ----- Ressources d'un tour, en totaux (les points COURANTS ne sont pas comptés) -----
-global COEF_TOTAL_TP = 30.0   // un PT produit de l'ordre de 30 PV dans un tour
-global COEF_TOTAL_MP = 15.0   // un PM vaut la moitié d'un PT
+// Le prochain tick vaut 1 ; les suivants sont décotés, puis plafonnés par les PV
+// affectables. Les immunités et le soin excédentaire ne produisent pas de crédit.
+global SCORE_POISON_TAIL = 0.30
+global SCORE_AFTER_TAIL = 0.70
+global SCORE_HEAL_TAIL = 0.55
 
-// ----- Protections -----
-global COEF_ABSOLUTE_SHIELD = 1.0    // par point : un PV retiré à chaque coup encaissé
-global COEF_RELATIVE_SHIELD = 10.0   // par % : 1 % d'un millier de PV encaissés
-global COEF_DAMAGE_RETURN   = 10.0   // par % : même assiette que le bouclier relatif
-
-// ----- Effets périodiques : le TOTAL RESTANT au registre, ticks à venir compris -----
-// Mesuré sur des combats du champion : du reste au-delà du prochain tick, il tombe 0,30 du
-// poison (les purges sont fréquentes), 0,7 à 0,9 du contrecoup, 0,8 à 0,96 du soin — et le soin
-// continu est en plus plafonné à la vie manquante au moment du tick.
-global COEF_POISON      = -0.5
-global COEF_AFTEREFFECT = -0.75
-global COEF_HEAL        = 0.5
-
-// ----- Placement final (FinalCell) -----
-// Part du net projeté qui devient une perte réelle de PV : le net additionne tous les
-// attaquants possibles et vaut environ vingt fois la perte mesurée au round suivant.
+// Placement terminal seulement : aucun chargement de danger ajouté aux nœuds.
+// La pression est moins diluée quand je suis seul.
 global EXPOSURE_FACTOR = 0.05
+global SCORE_SOLO_EXPOSURE = 0.65
+global SCORE_SPATIAL_SCALE = 20
+// Contexte figé, pas des paramètres à régler.
+global SCORE_ENEMY_DISTANCE = 1
+global SCORE_ALLY_DISTANCE = 3
+global SCORE_PLACEMENT_LIFE = 1
 
-// ----- Hors score -----
-// Facteurs appliqués à la source des cartes de danger et de soin (Maps/Danger, Maps/Heal).
+// Hors score : facteurs des cartes existantes et sentinelle « simuler l'action ».
 global DANGER_COEF = 1.0
-global HEAL_COEF = 1.00
-
-// Valeur rendue par ScoringClass.actionUpperBound quand il ne sait pas borner l'action :
-// assez grande pour qu'elle soit toujours simulée plutôt qu'élaguée.
+global HEAL_COEF = 1.0
 global BOUND_MUST_SIMULATE = 1000000000
+
+include("Coefficients.leek")
