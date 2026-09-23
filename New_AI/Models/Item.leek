@@ -78,7 +78,7 @@ class ItemClass {
 			// vues précompilées Heal/Danger — lignes ORIGINALES, ordre d'EFFECTS conservé,
 			// tableaux créés au premier ajout seulement (null = vide).
 			// Item dont TOUS les effets sont des dégâts directs sur ennemi, sans multiplicateur par
-			// nombre de cibles : le seul cas que ScoringClass.actionUpperBound sait majorer.
+			// nombre de cibles. Le BFS les conserve même si leur premier score est nul.
 			this.IS_VULNERABILITY = false
 			var selfTpRaw = 0
 			this.IS_HEAL_ITEM = false

@@ -16,7 +16,7 @@ après chaque action. Entrée principale : [`New_AI/Main.leek`](New_AI/Main.leek
   (`ensureCloned` + `clonedIds`), le reste est partagé entre nœuds.
 - **`ActionsClass`** génère les actions possibles (items × cibles × cellules de lancer),
   dédoublonnées par ensemble de cibles.
-- **`NodeClass`** porte un nœud de recherche (State + hash + termes de score patchés) ;
+- **`NodeClass`** porte un nœud de recherche (patch d’état + hashs + score) ;
   **`ConsequencesClass`** simule l'application d'un cast : dégâts, effets persistants
   (ledger à neuf champs), kills et cascades, passives, push/attract, résurrection — les
   mécaniques couvertes suivent le moteur, sous réserve des limites documentées plus bas.
@@ -36,8 +36,8 @@ après chaque action. Entrée principale : [`New_AI/Main.leek`](New_AI/Main.leek
   rien. Saut posant `RAW_BUFF_AGILITY 100` dès le cast, les paliers sauteurs portent aussi
   leur propre classe de critique. Les paliers étant emboîtés, ils sont dédoublonnés par hash
   de CONTENU et par classe de critique : une seule évaluation de combo dans le cas courant.
-- **Gravity / FinalCell** choisissent le placement de fin de tour : meilleure gravity parmi les
-  cellules à net nul, sinon net strictement minimal (sécurité d'abord).
+- **Placement / FinalCell** choisissent la cellule de fin de tour en minimisant une pénalité
+  de distance et d’exposition au danger, soustraite au score des suites candidates.
 - **Caches et `BaseHash`** : les fonctions coûteuses sont cachées avec des clés qui encodent
   tous leurs inputs ; `BaseHash` (XOR incrémental des contributions `(id, cellule)` des
   entités vivantes hors Me) sert de racine aux clés positionnelles.
@@ -47,35 +47,25 @@ après chaque action. Entrée principale : [`New_AI/Main.leek`](New_AI/Main.leek
   caches persistants dépendants de Me ont Me dans leur clé. Chaque action réelle est suivie
   d'un **replan** complet sur l'état moteur.
 
-## Scoring
+## Scoring manuel
 
-Monnaie : le point de vie — 1 PV vaut 1 point de score. Par entité VIVANTE :
+Trois fichiers courts, à modifier directement :
 
+- [`Coefficients.leek`](New_AI/Scoring/Coefficients.leek) : une fonction par statistique, avec des valeurs de départ constantes.
+- [`Scoring.leek`](New_AI/Scoring/Scoring.leek) : somme des statistiques multipliées par leur coefficient.
+- [`Placement.leek`](New_AI/Scoring/Placement.leek) : distances aux alliés et ennemis, exposition au danger.
+
+```text
+valeur(vivant) = max(1, présence + somme(statistique × coefficient))
+valeur(mort)   = 0
+score         = somme(alliés) − somme(adversaires)
+gain          = score(après) − score(avant)
+score final   = score − pénalité de placement
 ```
-valeur(e) = présence + Σ coefficient × statistique      (une entité morte vaut 0)
-score     = Σ valeur(alliés) − Σ valeur(adversaires)
-gain      = score(après) − score(avant)
-```
 
-- **Statistiques comptées** : vie, vie max, les six caractéristiques, puissance, PT et PM
-  TOTAUX, bouclier absolu, bouclier relatif, renvoi de dégâts, et les trois flux périodiques
-  pris en TOTAL RESTANT (`POISON_OVER_TIME`, `AFTEREFFECT_OVER_TIME`, `HEAL_OVER_TIME`).
-- **Présence** : bonus fixe d'être debout, distinct pour un poireau et une invocation, perdu
-  d'un bloc à la mort. Il n'y a PAS de second bonus de kill : ce qu'un kill rapporte est
-  exactement la valeur que la victime cessait de porter.
-- **Coefficients** : constantes explicites dans [`Weights.leek`](New_AI/Scoring/Weights.leek),
-  les mêmes pour les deux camps — le signe du camp fait le reste. Ce sont des hypothèses
-  initiales, pas des valeurs réglées.
-- **Rien d'autre** : ni danger projeté, ni soins projetés, ni production de kit, ni horizon de
-  mort, ni coût de cast. La vie est LINÉAIRE (aucune racine, aucune concavité).
-- **Score incrémental** : le score d'un nœud vaut celui de son parent plus la somme des écarts
-  de valeur des seules entités que l'action a clonées — exactement la différence des scores
-  complets, puisque les autres entités sont les objets du parent.
-- **FinalCell** : pénalité de placement = coût spatial (GravityClass) + `EXPOSURE_FACTOR` ×
-  les PV que le net projeté à la cellule coûterait. Positive par construction, donc le
-  reclassement terminal coupe exactement.
-- **Diagnostic** : `SCORE_EXPLAIN = true` journalise, une fois par décision, les contributions
-  du gain retenu par statistique et par entité, calculées par la fonction de valeur elle-même.
+Même présence et mêmes coefficients pour tous, sans importance ni profil de kit. Le calcul incrémental ne relit que les entités modifiées. Le placement intervient à la fin des suites candidates et pour le déplacement réel ; les cartes de danger ne sont pas chargées par le score de chaque nœud.
+
+Guide : [`docs/scoring-manuel.md`](docs/scoring-manuel.md). Vérification : [`validation/scoring_simple`](validation/scoring_simple/README.md). Les coefficients sont un point de départ pour réglage manuel, sans supériorité mesurée sur `main`.
 
 ## Invariants techniques
 
@@ -134,7 +124,6 @@ Limites propres à la 3.00 :
   adverses n'y sont pas projetées.
 - Le placement final ne chiffre pas les réveils de la marche finale (le chemin canonique
   évite déjà les zones adverses quand il le peut).
-- Majorant : aucune coupe tant qu'une plante à zone est vivante et que l'action déplace Me.
 
 ## Profiler
 
@@ -179,7 +168,7 @@ Documentés comme des choix, pas des bugs à corriger immédiatement :
 - Mobilité future de Danger ignorant les entités (portées de déplacement sans obstacles
   vivants).
 - Bonus des passives BR simulé par l'approximation `POWER / 2`.
-- FinalCell strictement orientée sécurité lorsqu'aucune cellule n'a un net nul.
+- FinalCell arbitre distance et danger par une somme de pénalités : une cellule dangereuse peut gagner si son coût spatial est suffisamment meilleur.
 - Transpositions (élagage de nœuds déjà vus) **abandonnées après mesure** : trop peu de
   nœuds pour être rentable.
 - Valeurs pessimistes/minimales dans Danger et Heal (jets minimaux, heal amorti par

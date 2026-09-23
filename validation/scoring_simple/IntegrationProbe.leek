@@ -1,7 +1,7 @@
 /*
  * Sonde de reception du scoring simple : deltas par statistique, mort, resurrection, egalite
- * entre score incremental et recalcul complet, majorant d'action, penalite de placement.
- * Deployee a cote de Main.leek par reception_simple.py, jamais dans New_AI.
+ * entre score incremental et recalcul complet, penalite de placement.
+ * Deployee a cote de Main.leek par integration.py, jamais dans New_AI.
  */
 
 include("includes.leek")
@@ -72,10 +72,7 @@ class ScoringProbe {
 				if (!proche(inc, apres)) {
 					push(echecs, "" + e + " " + champ + " : incremental " + inc + " contre complet " + apres)
 				}
-				var somme = ScoringClass.explainDelta(S, W, MySide, "sonde")
-				if (!proche(somme, apres - base)) {
-					push(echecs, "" + e + " " + champ + " : contributions " + somme + " contre delta " + (apres - base))
-				}
+
 			}
 		}
 		dire("deltas par statistique", count(echecs) == 0,
@@ -90,7 +87,7 @@ class ScoringProbe {
 		for (var e: var stat in S) {
 			if (stat.LIFE <= 0) continue
 			var signe = (stat.SIDE == MySide) ? 1 : -1
-			var valeur = ScoringClass.entityValue(stat, null)
+			var valeur = ScoringClass.entityValue(stat)
 			var W = clone(S, 1)
 			var c = StateClass.cloneEntityForSim(stat, e == Me)
 			c.LIFE = 0
@@ -100,13 +97,11 @@ class ScoringProbe {
 			if (!proche(apres - base, -signe * valeur)) {
 				push(echecs, "" + e + " : " + (apres - base) + " au lieu de " + (-signe * valeur))
 			}
-			if (!proche(ScoringClass.entityValue(c, null), 0)) push(echecs, "" + e + " : un mort vaut " + ScoringClass.entityValue(c, null))
+			if (!proche(ScoringClass.entityValue(c), 0)) push(echecs, "" + e + " : un mort vaut " + ScoringClass.entityValue(c))
 			var clones = [: ]
 			clones[e] = stat
 			var inc = ScoringClass.getStateScoreFromParent(noeudDe(clones), W, base, MySide)
 			if (!proche(inc, apres)) push(echecs, "" + e + " : incremental " + inc + " contre complet " + apres)
-			var somme = ScoringClass.explainDelta(S, W, MySide, "sonde")
-			if (!proche(somme, apres - base)) push(echecs, "" + e + " : contributions " + somme + " contre delta " + (apres - base))
 		}
 		dire("mort", count(echecs) == 0, "" + n + " entites tuees, " + count(echecs) + " ecart(s) " + jsonEncode(echecs))
 	}
@@ -126,7 +121,7 @@ class ScoringProbe {
 			var W = clone(D, 1)
 			var clones = [: ]
 			ResurrectionClass.Update(S[Me].CELL, W, a, clones)
-			var releve = ScoringClass.entityValue(W[a], null)
+			var releve = ScoringClass.entityValue(W[a])
 			var score1 = ScoringClass.stateValue(W, MySide, PROBE_LIMITE)
 			n++
 			if (!proche(releve, attendu)) push(echecs, "" + a + " : valeur relevee " + releve + " contre score de resurrection " + attendu)
@@ -137,7 +132,7 @@ class ScoringProbe {
 		dire("resurrection", count(echecs) == 0, "" + n + " allie(s) releve(s), " + count(echecs) + " ecart(s) " + jsonEncode(echecs))
 	}
 
-	/* Sur de vraies actions : score depuis le parent contre recalcul complet, et majorant. */
+	/* Sur de vraies actions : score depuis le parent contre recalcul complet. */
 	static testArbre(S, MySide, etiquette) {
 		var baseHash = StateClass.getBaseHash(S)
 		var couches = WalkCellsClass.getAllLayers(S, Me, baseHash)
@@ -147,8 +142,6 @@ class ScoringProbe {
 		var racine = new NodeClass(null, S, null)
 		racine.SCORE = base
 		racine.BASE_HASH = baseHash
-		racine.POISON_FOLD = 0
-		racine.HFP_OWNED = true
 		racine.CONTEXT_BY_SIDE = contexte
 		racine.HFP_BY_SIDE = hfp
 		racine.STATE_PARENT = null
@@ -157,9 +150,7 @@ class ScoringProbe {
 		var paires = ActionSuite.getBaseActions(S, baseHash, ActionSuite.resurrectIdOf(S), couches)
 		var W = clone(S, 1)
 		var echecs = []
-		var violations = []
 		var nNoeuds = 0
-		var nMajores = 0
 		var nEnfants = 0
 		for (var pair in paires) {
 			var act = pair[0]
@@ -169,13 +160,6 @@ class ScoringProbe {
 			var plein = ScoringClass.stateValue(W, MySide, PROBE_LIMITE)
 			nNoeuds++
 			if (!proche(inc, plein)) push(echecs, "racine " + ITEMINFO[item].NAME + " : incremental " + inc + " contre complet " + plein)
-			var ub = ScoringClass.actionUpperBound(item, act.From, act.To, S, MySide, baseHash)
-			if (ub != BOUND_MUST_SIMULATE) {
-				nMajores++
-				if (ub < inc - base && (act.From in couches.WALK)) {
-					push(violations, ITEMINFO[item].NAME + " : majorant " + ub + " < gain " + (inc - base))
-				}
-			}
 			noeud.SCORE = inc
 			StateClass.restoreWorkspace(W, noeud.CLONED)
 			noeud.CLONED = null
@@ -203,14 +187,12 @@ class ScoringProbe {
 		}
 		dire("score depuis le parent = recalcul complet (" + etiquette + ")", count(echecs) == 0,
 			"" + nNoeuds + " noeuds, " + count(echecs) + " ecart(s) " + jsonEncode(echecs))
-		dire("majorant >= gain reel (" + etiquette + ")", count(violations) == 0,
-			"" + nMajores + " actions majorees sur " + count(paires) + ", " + count(violations) + " violation(s) " + jsonEncode(violations))
+
 	}
 
 	/* La penalite de placement reste positive et vaut spatial + exposition lineaire. */
 	static testPlacement(S, MySide, etiquette) {
 		var baseHash = StateClass.getBaseHash(S)
-		REPLAN_WEIGHTS = HistoricalWeightsFactory.build(S, MySide)
 		var contexte = DeltaClass.buildContextBySide(S)
 		var hfp = HealClass.buildHfpBySide(S)
 		var combined = 0
@@ -219,12 +201,12 @@ class ScoringProbe {
 		var res = FinalCell.evaluate(S, baseHash, contexte, hfp, combined, meWalk, PROBE_LIMITE, true)
 		var echecs = []
 		if (res[1] < 0) push(echecs, "penalite negative " + res[1])
-		var spatial = SCORE_SPATIAL_SCALE * GravityClass.costAt(S, baseHash, res[0])
+		var spatial = Placement.spatial(S, baseHash, res[0])
 		var attendu = spatial
-		if (res[2] > 0) attendu += REPLAN_WEIGHTS.FINAL_CELL_WEIGHTS.NET * ScoringClass.exposureLoss(res[2], S[Me])
+		if (res[2] > 0) attendu += Placement.exposure(res[2])
 		if (!proche(res[1], attendu)) push(echecs, "penalite " + res[1] + " contre spatial+exposition " + attendu)
-		if (!proche(ScoringClass.exposureLoss(0), 0)) push(echecs, "exposition non nulle a net nul")
-		if (!proche(ScoringClass.exposureLoss(200), 2 * ScoringClass.exposureLoss(100))) push(echecs, "exposition non lineaire")
+		if (!proche(Placement.exposure(0), 0)) push(echecs, "exposition non nulle a net nul")
+		if (!proche(Placement.exposure(200), 2 * Placement.exposure(100))) push(echecs, "exposition non lineaire")
 		dire("placement (" + etiquette + ")", count(echecs) == 0,
 			"cellule " + res[0] + ", penalite " + res[1] + ", net " + res[2] + ", spatial " + spatial + " " + jsonEncode(echecs))
 	}
@@ -295,8 +277,6 @@ class ScoringProbe {
 		}
 		var S = StateClass.Virtualize()
 		var MySide = S[Me].SIDE
-		IMPORTANCE_BY_ID = [: ]
-		REPLAN_WEIGHTS = HistoricalWeightsFactory.build(S, MySide)
 		debug("RECEPTION_ETAT score " + ScoringClass.stateValue(S, MySide, PROBE_LIMITE) + " entites " + mapSize(S))
 		testDeltas(S, MySide)
 		testMort(S, MySide)

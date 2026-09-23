@@ -117,8 +117,6 @@ class ActionSuite {
 		noPlay.SCORE = initialScore
 		noPlay.BASE_HASH = BaseHash
 		noPlay.ME_WALK_FINGERPRINT = RootWalkFingerprint
-		noPlay.POISON_FOLD = 0   // recopié de nœud en nœud, plus aucun lecteur
-		noPlay.HFP_OWNED = true
 		// Métadonnées que le reclassement terminal lit sur TOUT candidat, plancher compris.
 		noPlay.CONTEXT_BY_SIDE = RootContext
 		noPlay.HFP_BY_SIDE = RootHfp
@@ -199,24 +197,10 @@ class ActionSuite {
 		var terminalDeadline = terminalLimit - TERMINAL_EVAL_MARGIN
 		var best = null
 		var bestFinal = 0
-		// Diagnostic d'une décision visée : on relève le statut de placement de chaque suite que
-		// le reclassement ouvre RÉELLEMENT, sans rien évaluer de plus. Éteint, un booléen.
-		var diag = ScoringClass.diagActive()
-		var diagClose = diag ? [: ] : null
-		var diagStop = "parcours complet"
-		var diagBound = null
 		var seedClose = (getOperations() <= terminalDeadline && canCloseNow(seed, terminalLimit)) ? closeOf(seed, terminalLimit) : null
-		if (diag) {
-			if (seedClose == null) {
-				diagClose[ScoringClass.chainKeyOf(seed)] = ["refusee faute de budget", null, null, ""]
-			} else {
-				var seedStatut = (count(seedClose) > 3) ? "tronquee" : "evaluee"
-				diagClose[ScoringClass.chainKeyOf(seed)] = [seedStatut, seedClose[1], seedClose[2], DIAG_PLACEMENT_MODE]
-			}
-		}
+
 		if (seedClose != null && count(seedClose) == 3) {
 			var bound = bestRaw - seedClose[1]
-			diagBound = bound
 			// Un candidat dont le score BRUT n'atteint pas déjà cette borne ne peut plus gagner : son
 			// score final lui est inférieur ou égal. Les écarter AVANT le tri est ce qui compte —
 			// le parcours n'en ouvre qu'une poignée, et trier des milliers de nœuds pour cela coûtait
@@ -233,28 +217,21 @@ class ActionSuite {
 				var node = sorted[i]
 				var raw = node.SCORE
 				if (best != null && raw <= bestFinal) {
-					if (diag) diagStop = "borne atteinte"
 					break
 				}
 				// Budget épuisé : le meilleur candidat déjà clos l'emporte sur ceux qu'on n'ouvrira pas.
 				if (best != null && getOperations() > terminalDeadline) {
-					if (diag) diagStop = "date limite des evaluations"
 					break
 				}
 				// Reconstruction à froid non finançable : ce candidat reste non clos, les
 				// suivants peuvent encore l'être.
 				if (!canCloseNow(node, terminalLimit)) {
-					if (diag) diagClose[ScoringClass.chainKeyOf(node)] = ["refusee faute de budget", null, null, ""]
 					continue
 				}
 				var close = closeOf(node, terminalLimit)
-				if (diag) {
-					var statut = (count(close) > 3) ? "tronquee" : "evaluee"
-					diagClose[ScoringClass.chainKeyOf(node)] = [statut, close[1], close[2], DIAG_PLACEMENT_MODE]
-				}
+
 				// Balayage tronqué : le budget des évaluations est épuisé, on garde ce qui est déjà clos.
 				if (count(close) > 3) {
-					if (diag) diagStop = "balayage tronque"
 					break
 				}
 				var finalScore = raw - close[1]
@@ -263,8 +240,6 @@ class ActionSuite {
 					bestFinal = finalScore
 				}
 			}
-		} else if (diag) {
-			diagStop = "graine non close : aucun reclassement"
 		}
 		// Aucun candidat n'a pu être clos : le meilleur score brut est joué tel quel. Le placement
 		// réel de fin de tour se décidera ensuite, avec son balayage qui sait se tronquer.
@@ -273,7 +248,6 @@ class ActionSuite {
 			bestFinal = bestRaw
 		}
 		BenchOps.Stop("Terminal")
-		if (diag) diagDecision(candidates, best, bestFinal, seed, diagClose, diagBound, diagStop, nBases)
 
 		if (best.ACTION == null) {
 			BFS_LAST_CHAIN = []
@@ -291,91 +265,8 @@ class ActionSuite {
 		}
 		reverse(chain)   // en place : reverse ne rend rien
 		BFS_LAST_CHAIN = chain
-		// Diagnostic ciblé : les contributions du gain retenu, une fois par décision.
-		if (SCORE_EXPLAIN) ScoringClass.explainDecision(candidates[0], best, bestFinal, candidates[0].END_STATS[Me].SIDE)
 		debug("Best: " + ITEMINFO[ancestor.ACTION.Item].NAME + " | From: " + ancestor.ACTION.From + " | To: " + ancestor.ACTION.To + " | Delta: " + (bestFinal - initialScore) + " | " + nBases + " bases, " + BFS_CHAIN_STEPS + " steps")
 		return ancestor.ACTION
-	}
-
-	/*
-	 * Diagnostic d'UNE décision visée : le contexte, la suite retenue, puis jusqu'à cinq autres
-	 * têtes de chaîne réellement explorées depuis le même état — pour chacune, sa MEILLEURE
-	 * suite. On compare ainsi des suites entières depuis le même état de départ : le score d'une
-	 * suite n'est jamais prêté à sa première action.
-	 *
-	 * Rien n'est réévalué : le statut de placement de chaque suite vient du reclassement qui
-	 * vient d'avoir lieu, et une suite que le reclassement n'a pas ouverte est annoncée non
-	 * évaluée, avec sa raison.
-	 */
-	static diagDecision(candidates, best, bestFinal, seed, diagClose, diagBound, diagStop, nBases) {
-		var RootNode = candidates[0]
-		var RootState = StateClass.materializeNodeState(RootNode)
-		var MySide = RootState[Me].SIDE
-		ScoringClass.explainContext(RootState, MySide)
-		debug("[diag] candidats " + count(candidates) + " | bases " + nBases + " | steps " + BFS_CHAIN_STEPS
-			+ " | meilleur brut " + seed.SCORE + " | retenu final " + bestFinal
-			+ " | borne de coupe " + diagBound + " | arret " + diagStop)
-		// Une entrée par tête de chaîne : la meilleure suite qui commence par cette action.
-		var parTete = [: ]
-		for (var c in candidates) {
-			var cle = diagHeadKeyOf(c)
-			if (!(cle in parTete)) parTete[cle] = c
-			else if (c.SCORE > parTete[cle].SCORE) parTete[cle] = c
-		}
-		var cleRetenue = diagHeadKeyOf(best)
-		ScoringClass.explainCandidate("retenue", best, RootState, RootNode.SCORE, MySide,
-			diagStatut(best, diagClose, diagBound, diagStop))
-		var autres = []
-		for (var cle: var c in parTete) {
-			if (cle != cleRetenue) push(autres, c)
-		}
-		var ordre = arraySort(autres, function(a, b) { return b.SCORE - a.SCORE })
-		var rang = 0
-		for (var c in ordre) {
-			if (rang >= 5) break
-			rang++
-			ScoringClass.explainCandidate("alternative" + rang, c, RootState, RootNode.SCORE, MySide,
-				diagStatut(c, diagClose, diagBound, diagStop))
-		}
-		// Meilleure suite explorée qui se PRIVE d'un item : une vraie concurrente, scorée par les
-		// mêmes coefficients, au lieu de retrancher une contribution à la main. Elle peut être
-		// absente des têtes montrées, et n'est donc cherchée que sur demande.
-		if (DIAG_WITHOUT_ITEM >= 0) {
-			var sans = null
-			for (var c in candidates) {
-				if (ScoringClass.chainUsesItem(c, DIAG_WITHOUT_ITEM)) continue
-				if (sans == null || c.SCORE > sans.SCORE) sans = c
-			}
-			if (sans == null) {
-				debug("[diag] aucune suite explorée ne se prive de l'item " + DIAG_WITHOUT_ITEM)
-			} else {
-				ScoringClass.explainCandidate("sans-item" + DIAG_WITHOUT_ITEM, sans, RootState,
-					RootNode.SCORE, MySide, diagStatut(sans, diagClose, diagBound, diagStop))
-			}
-		}
-		return;
-	}
-
-	/*
-	 * Clé de la PREMIÈRE action d'une suite : deux suites de même tête partagent leur première
-	 * action, donc la même décision immédiate. « - » pour le plancher « ne rien jouer ».
-	 */
-	static diagHeadKeyOf(node) {
-		var tete = node
-		while (tete.PARENT != null) tete = tete.PARENT
-		if (tete.ACTION == null) return "-"
-		return tete.ACTION.Item + ":" + tete.ACTION.From + ":" + tete.ACTION.To
-	}
-
-	/*
-	 * Statut de placement d'une suite : celui relevé si le reclassement l'a ouverte, sinon la
-	 * raison pour laquelle il ne l'a pas fait — coupure exacte par la borne, ou budget.
-	 */
-	static diagStatut(node, diagClose, diagBound, diagStop) {
-		var cle = ScoringClass.chainKeyOf(node)
-		if (cle in diagClose) return diagClose[cle]
-		if (diagBound != null && node.SCORE < diagBound) return ["non evaluee : sous la borne de coupe", null, null, ""]
-		return ["non evaluee : " + diagStop, null, null, ""]
 	}
 
 	/*
@@ -583,8 +474,7 @@ class ActionSuite {
 		// Leur priorité stockée a été calculée dans un autre état ; un débuff joué depuis a pu
 		// retirer les boucliers qui les annulaient, et la liste, mémorisée sous une clé que ce
 		// débuff ne change pas, les laisserait invisibles pour tout le reste du déroulé.
-		// Le majorant tranche sans simuler : s'il ne bat pas la meilleure priorité courante,
-		// aucune simulation ne le fera, l'écarter est donc exact.
+		// Ces actions sont resimulées sous budget, sans borne dépendante des formules du score.
 		for (var entry in Reachable) {
 			// SEULES les différées : celles que le filtre epsilon aurait jetées et qui ne sont
 			// donc dans la liste que pour ce rattrapage. Étendre cette passe à toutes les
@@ -617,28 +507,14 @@ class ActionSuite {
 			}
 			if (cost2 < 0) continue
 			var from2 = entry[4]
-			// Le majorant ne couvre QUE les effets de l'item. Une cellule de tir hors de la couche
-			// de MARCHE s'atteint par le saut ou la teleportation, qui posent sur moi des
-			// caracteristiques que la formule ignore : 100 d'agilite (Node.leek:104) ou 15 de vie et
-			// de vie max (Node.leek:126). Couper la ecarterait une branche reellement meilleure : on
-			// ne coupe pas, on simule. Une cellule de marche, elle, n'ajoute rien au score — la
-			// valeur de Me ne lit ni sa cellule, ni ses PM, ni ses PT courants.
-			var boundCovers = true
 			if (!(from2 in MyOnlyWalk)) {
-				boundCovers = false
 				if (from2 in MyWalkCells.JUMP)                          cost2 += JumpCost
 				else if (from2 in MyWalkCells.TELEPORTATION)            cost2 += TeleCost
 				else if (from2 in MyWalkCells.TELEPORTATION_AND_JUMP)   cost2 += JumpCost + TeleCost
 			}
 			if (cost2 > MyTp) continue
 			var act2 = entry[0]
-			if (boundCovers) {
-				var ub = ScoringClass.actionUpperBound(item2, from2, act2.To, State, MySide, BaseHash)
-				// Les deux membres sur la MEME echelle : BestPriority est une priorite, le majorant
-				// un Δscore, et priorityOf est le seul convertisseur de l'un vers l'autre — c'est la
-				// politique de rendement qui decide s'il faut diviser par le cout, pas ce site.
-				if (priorityOf(ub, cost2) <= BestPriority) continue
-			}
+			if (getOperations() > OPS_DEADLINE) break
 			if (Workspace == null) Workspace = clone(State, 1)
 			var cand2 = NodeClass.ActionToNodeInTree(act2, Workspace, from2, MyWalkCells, cost2, ITEMINFO[item2], item2, act2.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, baseUses[item2])
 			var score2 = ScoringClass.getStateScoreFromParent(cand2, Workspace, ParentScore, MySide)
@@ -690,28 +566,12 @@ class ActionSuite {
 			StateClass.restoreWorkspace(Workspace, node.CLONED)
 			node.CLONED = null
 			var delta = nodeScore - ReferenceScore
-			// AUDIT du majorant : il doit TOUJOURS couvrir le Δ réel. Une seule violation
-			// suffit à rendre toute coupure fondée dessus incorrecte, et elle serait muette.
-			if (BOUND_AUDIT) {
-				var ub = ScoringClass.actionUpperBound(Item, act.From, act.To, State, MySide, BaseHash)
-				if (ub != BOUND_MUST_SIMULATE) {
-					BOUND_CHECKED++
-					if (ub < delta) {
-						BOUND_VIOLATED++
-						// La coupe n'emploie le majorant que depuis une cellule de MARCHE : une violation
-						// hors marche (saut, téléportation) ne fausse aucune coupe, elle se lit à part.
-						debugE("[MAJORANT VIOLE] " + ((act.From in MyWalkCells.WALK) ? "marche " : "hors-marche ") + ITEMINFO[Item].NAME + " majorant " + ub + " < delta " + delta)
-					}
-				} else {
-					BOUND_SKIPPED++
-				}
-			}
 			// Une action de dégâts que les boucliers annulent AUJOURD'HUI peut valoir beaucoup
 			// une fois ces boucliers retirés par un débuff joué plus tôt dans la même suite.
 			// La jeter ici la rendrait introuvable pour tout le reste du déroulé, puisque la
 			// liste est mémorisée sous une clé que le débuff ne change pas. On la garde donc,
 			// marquée DIFFÉRÉE : elle n'est pas déroulée comme racine, seulement réexaminée
-			// comme successeur, avec son majorant recalculé dans l'état du moment.
+			// comme successeur, en la simulant dans l'état du moment.
 			var deferred = delta <= BFS_DELTA_EPSILON
 			if (deferred && !ITEMINFO[Item].IS_BOUNDABLE_DAMAGE) continue
 			// pair[1] est le coût TP COMPLET de cette action dans CET état (item + swap d'arme

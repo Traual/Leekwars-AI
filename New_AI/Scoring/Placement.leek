@@ -1,0 +1,24 @@
+// Pénalité de fin de tour : distance + exposition. Plus petit = mieux.
+// Toutes les entités d'un même camp ont le même poids, invocations comprises.
+include("../includes.leek")
+
+class Placement {
+    // Les trois fonctions à modifier pour le placement. Garder des coûts >= 0.
+    static allyDistance(distance)  { return 0.5 * abs(distance - 3) }
+    static enemyDistance(distance) { return 0.2 * abs(distance - 5) }
+    static exposure(net)           { return 0.05 * max(0, net) }
+
+    static spatial(State, BaseHash, cell) {
+        var key = addValueToBinHash(BaseHash, cell)
+        if (key in PLACEMENT_COST_CACHE) return PLACEMENT_COST_CACHE[key]
+        var cost = 0
+        var mySide = State[Me].SIDE
+        for (var id: var s in State) {
+            if (id == Me || s.LIFE <= 0) continue
+            var distance = CellClass.getDist(cell, s.CELL)
+            cost += s.SIDE == mySide ? allyDistance(distance) : enemyDistance(distance)
+        }
+        PLACEMENT_COST_CACHE[key] = cost
+        return cost
+    }
+}

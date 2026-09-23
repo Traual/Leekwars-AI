@@ -3,7 +3,7 @@
  * valeur de Me ne lit pas sa cellule — donc toute ma sécurité et tout mon positionnement se
  * décident ici, sous forme d'une PÉNALITÉ à retrancher au score.
  *
- *   placementPenalty = coût spatial (GravityClass) + coût du danger à la cellule
+ *   placementPenalty = coût spatial (Placement) + coût du danger à la cellule
  *
  * Les deux composantes sont des COÛTS : plus bas = mieux, jamais négatives. C'est ce qui
  * rend la coupure du reclassement terminal exacte — finalScore <= rawScore, toujours.
@@ -37,12 +37,6 @@ class FinalCell {
      * @return id de cellule
      */
     static get(State, BaseHash) {
-        // Un tour qui commence déjà au-delà de sa date limite — un bulbe dont l'invocateur a
-        // consommé le compteur partagé — sort de la boucle de Play avant toute planification, et
-        // le contexte de poids n'a jamais été construit pour ce tour. Chaque lecture de poids
-        // levait alors une erreur, et leur rafale épuisait le budget jusqu'à l'avortement : ni
-        // placement, ni déplacement. Les poids historiques suffisent à se placer.
-        if (REPLAN_WEIGHTS == null) REPLAN_WEIGHTS = HistoricalWeightsFactory.build(State, State[Me].SIDE)
         var contextBySide = DeltaClass.buildContextBySide(State)
         var hfpBySide = HealClass.buildHfpBySide(State)
         var combinedHfp = 0
@@ -68,12 +62,6 @@ class FinalCell {
         if (!withDanger) debugW("[placement] danger non financable : cout spatial seul")
         var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, budget, withDanger)
         debug("Best final cell: " + res[0] + " (pénalité: " + res[1] + ", net: " + res[2] + ")")
-        // Le placement RÉELLEMENT joué, sous la même forme que les suites du diagnostic.
-        if (ScoringClass.diagActive()) {
-            debug("[diag] placement joue | cellule " + res[0] + " | depuis " + State[Me].CELL
-                + " | penalite " + res[1] + " | net " + res[2] + " | mode " + DIAG_PLACEMENT_MODE
-                + " | tronque " + (count(res) > 3))
-        }
         return res[0]
     }
 
@@ -179,24 +167,15 @@ class FinalCell {
         // flux périodiques, ni mes caractéristiques, qui ne changent pas ce qu'un net me coûte.
         var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp) ^ combinedHfp)
         if (memoKey in FINAL_PLACEMENT_CACHE) {
-            // Diagnostic armé : dire lequel des trois modes a produit cette pénalité. Un danger
-            // servi par le mémo a bien été calculé ; un danger sauté ne vaut PAS un danger nul.
-            if (DIAG_TURN != 0) DIAG_PLACEMENT_MODE = "memo"
             BenchOps.Stop("FinalCell")
             return FINAL_PLACEMENT_CACHE[memoKey]
         }
-        if (DIAG_TURN != 0) DIAG_PLACEMENT_MODE = withDanger ? "danger calcule" : "spatial seul"
 
         // Cellules accessibles avec mes MP restants.
         var possibleCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
         // Sans danger, la carte de soin n'a aucun lecteur — et c'est justement une des deux
         // constructions que le budget ne finançait pas.
         var healMap = withDanger ? HealClass.getHealMapByFp(State, combinedHfp) : null
-
-        var finalWeights = REPLAN_WEIGHTS.FINAL_CELL_WEIGHTS
-        // Le coût de soin n'est calculé que si un poids le réclame : sans lui, la map de danger
-        // n'est même pas parcourue.
-        var wantHealCost = finalWeights.HEAL_COST != 0
 
         var bestCell    = MyState.CELL
         var bestPenalty = MAX_VALUE
@@ -221,19 +200,11 @@ class FinalCell {
             // danger ne peut que s'y ajouter. Une cellule dont le seul spatial dépasse déjà le
             // meilleur total ne peut pas gagner — coupure EXACTE, et elle épargne le net,
             // de loin le calcul le plus cher des deux.
-            var spatial = SCORE_SPATIAL_SCALE * GravityClass.costAt(State, BaseHash, cell)
+            var spatial = Placement.spatial(State, BaseHash, cell)
             if (spatial >= bestPenalty) continue
 
-            var net = withDanger ? DeltaClass.netAtFleeCell(cell, seed, dangerCellSeed, MyState, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy, wantHealCost) : 0
-            var penalty = spatial
-            // Le soin que la cellule consomme s'ajoute au coût. Positif par construction, donc
-            // le spatial reste un minorant de la pénalité et la coupure du balayage reste exacte.
-            if (withDanger && wantHealCost) penalty += finalWeights.HEAL_COST * CELL_FLEE_HEALCOST_CACHE[seed ^ cell]
-            if (net > 0) {
-                // Les PV que ce net me coûterait réellement (ScoringClass.exposureLoss) : une
-                // valeur positive, donc le spatial reste un minorant de la pénalité.
-                penalty += finalWeights.NET * ScoringClass.exposureLoss(net, MyState)
-            }
+            var net = withDanger ? DeltaClass.netAtFleeCell(cell, seed, dangerCellSeed, MyState, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy, false) : 0
+            var penalty = spatial + Placement.exposure(net)
             if (penalty < bestPenalty) {
                 bestPenalty = penalty
                 bestCell = cell

@@ -1,4 +1,4 @@
-"""Real consequences and chains, incremental score, bound, resurrection and placement."""
+"""Real consequences and chains, incremental score, resurrection and placement."""
 import argparse
 import json
 from pathlib import Path
@@ -39,7 +39,7 @@ def scenario(dest, runtime_dir, cores=100):
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--runtime',required=True,type=Path)
-    ap.add_argument('--output',type=Path,default=Path('validation/scoring_astra/results/integration.json'))
+    ap.add_argument('--output',type=Path,default=Path('validation/scoring_simple/results/integration.json'))
     args=ap.parse_args(); rt=args.runtime.resolve()
     dest=runtime.bundle(rt)
     shutil.copyfile(Path(__file__).with_name('IntegrationProbe.leek'),dest/'ScoringProbe.leek')
@@ -55,7 +55,7 @@ def main():
     print('errors',errors[:10])
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps(dict(bundle=dest.name,checks=checks,errors=errors,diagnostic_cores=100),ensure_ascii=False,indent=2),encoding='utf-8')
-    if len(checks)<9 or errors or any(not c['ok'] for c in checks): raise SystemExit(1)
+    if len(checks)<8 or errors or any(not c['ok'] for c in checks): raise SystemExit(1)
 
 
 if __name__=='__main__':

@@ -255,3 +255,7 @@ global TELE_VITALITY = 15
 // non nulle suffit : elle ne sert qu'a separer deux mondes qui ne doivent jamais partager une
 // liste. Choisie dans les bits hauts pour ne recouvrir ni la cellule ni le BaseHash.
 global STERILE_KEY_SALT = 6148914691236517205
+
+// Facteurs des cartes de danger et de soin, indépendants du scoring.
+global DANGER_COEF = 1.0
+global HEAL_COEF = 1.0

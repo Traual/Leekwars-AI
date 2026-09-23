@@ -25,32 +25,11 @@ class NodeClass {
 	                  // (null pour un summon né en branche). Sert au clone-on-write, à la capture du
 	                  // patch et à la restauration du workspace, puis est libéré (null) par le BFS —
 	                  // STATE_PATCH reste la seule représentation persistante
-	LOCAL_TERM_DIRTY  // [id -> son EntityState d'APRÈS l'action] : entités dont un input LOCAL du
-	                  // terme a réellement changé. La valeur évite au scoring de rouvrir l'état
-	                  // pour chaque terme — une écriture de clé coûte le même prix qu'on y mette
-	                  // un booléen ou une référence
-	                  // (masque diffMaskOf + checks Me BaseHash/fingerprint) — le recompute-set
-	                  // du scoring l'itère directement
-	DANGER_DIRTY_CASTERS // [id -> true] : les non-Me dont la contribution au contexte danger a
-	                  // RÉELLEMENT changé dans cette action, NULL quand il n'y en a aucun (cas
-	                  // courant — aucune map vide n'est allouée). Le scoring en déduit, par
-	                  // intersection de couverture, les seules cibles à recalculer — au lieu de
-	                  // relire tout un side. Me n'y figure jamais : il est exclu du contexte.
-	TERMS             // [id -> terme signé] : PATCH local — les seuls termes recalculés par CE nœud
-	                  // (la racine noPlay porte la map complète). Résolution via ScoringClass.termOf.
-	TERMS_PARENT      // nœud portant le snapshot de termes précédent — chaîne IMMUABLE, indépendante
-	                  // de PARENT (que le déroulé du BFS réassigne) ; null = racine des termes
-	HFP_OWNED         // ce nœud a-t-il sa PROPRE map d'empreintes de soigneurs ? Faux = elle est
-	                  // celle du parent, donc aucune empreinte n'a changé (copie-sur-écriture)
 	COMBINED_HFP      // fold XOR des empreintes par camp : la clé de la heal map. Hérité tel quel
 	                  // du parent quand la map est partagée, recalculé sinon
 	ME_WALK_FINGERPRINT // empreinte de mobilité de Me pour l'état du nœud
 	                  // (HashWalkCellsWithItemsWithoutBaseHash). Sale la clé du filtre de
 	                  // cellules de tir du ScoredCache — aucun terme de scoring n'en dépend.
-	POISON_KEY        // clé de couverture antidote de l'état du nœud (posée par getStateScoreFromParent
-	                  // depuis le workspace encore muté, 0 sans antidote)
-	POISON_FOLD       // fold des porteurs d'antidote AUTRES que Me pour l'état du nœud : la moitié
-	                  // stable de POISON_KEY, héritée par les enfants (ScoringClass.poisonKeyOnNode)
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction
@@ -203,18 +182,13 @@ class NodeClass {
 		var ctx = ParentContext
 		var hfpMap = ParentHfp
 		var hfpOwned = false
-		// Quatrième hash patché : le fold des porteurs d'antidote autres que Me (moitié stable
-		// de la clé de couverture). Sans antidote en jeu il reste à 0 tout le long de l'arbre.
-		var pf = StateParent.POISON_FOLD
-		var anyAnti = ANY_ANTIDOTE == true
-		var localTermDirty = [: ]
 		// Le patch se remplit DANS la boucle ci-dessous : elle parcourt déjà clonedIds et lit
 		// déjà la référence produite dans le workspace. Le repasser ensuite refaisait le même
 		// parcours et la même lecture pour chaque entité touchée.
 		var patch = [: ]
-		// Allouée seulement si un contexte offensif bouge vraiment : une attaque ordinaire non
+		// Copie du contexte seulement si une menace bouge vraiment : une attaque ordinaire non
 		// létale clone des entités sans rien changer à leur menace, et ne doit rien payer.
-		var dangerDirtyCasters = null
+		var contextOwned = false
 		for (var tar: var parentStat in clonedIds) {
 			var newStat = ThisActionStats[tar]
 			patch[tar] = newStat
@@ -222,18 +196,15 @@ class NodeClass {
 			// AJOUTE simplement les siennes. clonedIds est enregistré à la source par
 			// Consequences, donc Node n'a plus à deviner la nature de l'action.
 			if (parentStat == null) {
-				localTermDirty[tar] = newStat
 				if (tar == Me) continue      // impossible en pratique : Me préexiste toujours
 				bh ^= StateClass.baseContribution(newStat, tar)
 				var addCtx = DeltaClass.contextContribution(newStat, tar)
 				if (addCtx != 0) {
-					// dangerDirtyCasters null vaut exactement « contexte pas encore copié » : les deux
-					// sites d'écriture du contexte sont les deux sites qui le remplissent.
-					if (dangerDirtyCasters == null) {
-						dangerDirtyCasters = [: ]
+					// Copie au premier changement du contexte.
+					if (!contextOwned) {
+						contextOwned = true
 						ctx = clone(ParentContext, 1)
 					}
-					dangerDirtyCasters[tar] = true
 					// Itération directe : seules les VALEURS bougent, jamais les clés — pas
 					// besoin de matérialiser la liste des sides.
 					var bornSide = newStat.SIDE
@@ -250,26 +221,19 @@ class NodeClass {
 				continue
 			}
 			// Masque différentiel UNIQUE : une seule comparaison parent/clone pilote les
-			// trois patchs de hash ET le terme local, et invalide les mémos dérivés
+			// trois patchs de hash et invalide les mémos dérivés
 			// (Me compris — il est seulement exclu des trois hashs).
 			var mask = StateClass.diffMaskOf(parentStat, newStat, tar == Me)
-			if (mask & DIFF_LOCAL_TERM) localTermDirty[tar] = newStat
-			if (tar == Me) continue          // Me est exclu des trois hashs (et du fold antidote)
-			if (anyAnti && (tar in ANTIDOTE_CARRIER_SET)) {
-				// Contributions LIFE-gated : un porteur tué sort du fold, un ressuscité y entre.
-				var oldC = (parentStat.LIFE > 0) ? ScoringClass.carrierContribOf(parentStat, tar) : 0
-				var newC = (newStat.LIFE > 0) ? ScoringClass.carrierContribOf(newStat, tar) : 0
-				pf ^= oldC ^ newC
-			}
+			if (tar == Me) continue          // Me est exclu des trois hashs
+
 			if (mask & DIFF_BASE) bh ^= StateClass.baseContribution(parentStat, tar) ^ StateClass.baseContribution(newStat, tar)
 			if (mask & DIFF_CONTEXT) {
 				var deltaCtx = DeltaClass.contextContribution(parentStat, tar) ^ DeltaClass.contextContribution(newStat, tar)
 				if (deltaCtx != 0) {
-					if (dangerDirtyCasters == null) {
-						dangerDirtyCasters = [: ]
+					if (!contextOwned) {
+						contextOwned = true
 						ctx = clone(ParentContext, 1)
 					}
-					dangerDirtyCasters[tar] = true
 					var side = newStat.SIDE
 					for (var s: var _h in ctx) if (s != side) ctx[s] ^= deltaCtx   // contextes des sides ADVERSES
 				}
@@ -287,19 +251,11 @@ class NodeClass {
 			}
 		}
 
-		// Me : exclu des trois hashs, et son terme est désormais STATIQUE — ni le terrain
-		// (BaseHash) ni son domaine de mobilité n'y entrent. Seul le masque différentiel de
-		// ses propres champs peut le salir, et il est déjà passé dans la boucle ci-dessus.
-
 		result.CLONED = clonedIds
-		result.LOCAL_TERM_DIRTY = localTermDirty
-		result.DANGER_DIRTY_CASTERS = dangerDirtyCasters
 		result.BASE_HASH = bh
-		result.POISON_FOLD = pf
 		result.ME_WALK_FINGERPRINT = meWalkFingerprint
 		result.CONTEXT_BY_SIDE = ctx
 		result.HFP_BY_SIDE = hfpMap
-		result.HFP_OWNED = hfpOwned
 		result.STATE_PATCH = patch
 
 		BenchOps.Stop("Node")

@@ -42,24 +42,6 @@ class Play {
 				drainChain(StateClass.countSummonsAfterMe(State))
 				break
 			}
-			// Ancre de replan : ma vraie cellule actuelle — meilleure estimation de ma cellule
-			// de fin de tour pour la couverture antidote, converge au fil des actions réelles.
-			// Portée par la POISON_KEY : les maps de l'ancienne ancre deviennent injoignables.
-			MY_REPLAN_CELL = State[Me].CELL
-			MY_REPLAN_CELL_HASH = mix64(MY_REPLAN_CELL)
-			// Importance recalculée à CHAQUE replan réel (un buff/shackle réellement exécuté
-			// devient visible), puis FIGÉE pendant tout le BFS qui suit — jamais vidée dans
-			// les nœuds ni entre branches. Quelques centaines d'opés, négligeable vs le BFS.
-			IMPORTANCE_BY_ID = [: ]
-			// Les caches de placement portent cette importance et ma valeur de covid : ils ne
-			// survivent au replan que si ni l'une ni l'autre n'a bougé.
-			ReloadPlacementCacheNewPlan(State)
-			// Poids de CETTE planification : construits une fois, immuables ensuite. Le choix
-			// entre formule historique et réseau se fait ICI et nulle part ailleurs.
-			var mySide = State[Me].SIDE
-			REPLAN_WEIGHTS = CONTEXTUAL_WEIGHTS_ENABLED
-				? ContextualWeightNetworkClass.build(State, mySide)
-				: HistoricalWeightsFactory.build(State, mySide)
 			var Action = ActionSuite.getBestAction(State)
 			if (Action == null) break
 			var From = Action.From

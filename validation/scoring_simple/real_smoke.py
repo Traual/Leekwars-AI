@@ -14,15 +14,15 @@ import scenarios
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--runtime',required=True,type=Path)
-    ap.add_argument('--builds',required=True,type=Path);ap.add_argument('--blocks',default=2,type=int)
-    ap.add_argument('--output',type=Path,default=Path('validation/scoring_astra/results/smoke.json'))
+    ap.add_argument('--builds',required=True,type=Path);ap.add_argument('--blocks',default=1,type=int)
+    ap.add_argument('--output',type=Path,default=Path('validation/scoring_simple/results/smoke.json'))
     args=ap.parse_args();rt=args.runtime.resolve()
     current=runtime.bundle(rt,'full')
     baseline=runtime.bundle(rt,'baseline',ref='3024424')
     builds=scenarios.charger_builds(args.builds.resolve())
     paths=[];labels=[]
     for fmt in ('solo','farmer','team'):
-        for block in scenarios.plan_de_blocs(fmt,['baseline'],args.blocks,20260921,builds,vague='astra-smoke'):
+        for block in scenarios.plan_de_blocs(fmt,['baseline'],args.blocks,20260921,builds,vague='simple-smoke'):
             for mirror in (False,True):
                 c=f'test/ai/bundles/{current.name}/Main.leek'
                 b=f'test/ai/bundles/{baseline.name}/Main.leek'

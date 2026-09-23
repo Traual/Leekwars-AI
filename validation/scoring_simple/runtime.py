@@ -41,12 +41,11 @@ def setup(engine: Path, runtime: Path):
     jars = [runtime / "generator.jar", runtime / "leekscript/leekscript.jar"]
     cp = os.pathsep.join(map(str, [classes, *jars]))
     source = ROOT / "training/v3/fidelite/FideliteRunner.java"
-    subprocess.run(["javac", "-encoding", "UTF-8", "-cp", cp, "-d", str(classes), str(source),
-                    str(Path(__file__).with_name('OracleRunner.java'))], check=True)
+    subprocess.run(["javac", "-encoding", "UTF-8", "-cp", cp, "-d", str(classes), str(source)], check=True)
     return cp
 
 
-def bundle(runtime: Path, label="astra", ref=None):
+def bundle(runtime: Path, label="simple", ref=None):
     if ref:
         import io
         import tarfile
@@ -72,7 +71,7 @@ def bundle(runtime: Path, label="astra", ref=None):
 
 def run(runtime: Path, paths, output: Path, timeout=180, runner="training.fidelite.FideliteRunner"):
     cp = os.pathsep.join(map(str, [runtime / "classes", runtime / "generator.jar", runtime / "leekscript/leekscript.jar"]))
-    proc = subprocess.run(["java", "-Xmx2g", "-cp", cp, runner, *map(str, paths)],
+    proc = subprocess.run(["java", "-Xmx8g", "-cp", cp, runner, *map(str, paths)],
                           cwd=runtime, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.with_suffix(".stdout").write_text(proc.stdout, encoding="utf-8")

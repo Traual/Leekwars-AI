@@ -29,16 +29,9 @@ include("Maps/Danger/Danger.leek")
 include("Maps/Heal/Heal.leek")
 include("Maps/Delta/Delta.leek")
 
-include("Scoring/Weights.leek")
-include("Scoring/Importance.leek")
+include("Scoring/Coefficients.leek")
 include("Scoring/Scoring.leek")
-
-include("Maps/Gravity/Gravity.leek")
-
-include("Scoring/ReplanWeights.leek")
-include("Scoring/HistoricalWeights.leek")
-include("Scoring/ContextualWeights.leek")
-include("Scoring/NNModel.leek")
+include("Scoring/Placement.leek")
 
 include("User/Node.leek")
 include("User/BFS.leek")

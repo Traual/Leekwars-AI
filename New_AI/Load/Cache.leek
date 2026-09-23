@@ -19,14 +19,10 @@ function ReloadCacheNewTurn() {
     CELL_FLEE_HEALCOST_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
     AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
-    SURVIVAL_CACHE = [: ]
     HEAL_COVERAGE_CACHE = [: ]
     HEAL_CELL_ITEM_AOE_CACHE = [: ]
     HEAL_COMBO_CACHE = [: ]
     HEAL_ENTITY_INVENTORY = [: ]
-    IMPORTANCE_BY_ID = [: ]
-    CAPABILITY_ITEMS_BY_ID = [: ]
-    CAPABILITY_COMBO_CACHE = [: ]
     NETDAMAGE_CACHE = [: ]
     HEAL_MAP_CACHE = [: ]
     ENTITY_ACTIONS_CACHE = [: ]
@@ -47,52 +43,9 @@ function ReloadCacheNewTurn() {
     DANGER_ENTITY_CACHE = [: ]
     DANGER_TEMPLATE_CACHE = [: ]
 
-    DR_PHYSRATIO_BY_SIDE = null
-    POISON_COEF_CACHE = [: ]
-    ANY_ANTIDOTE = null
     // Frontière de tour : les nets qu'ils portent dérivent de listes d'items filtrées par
     // cooldown (DANGER_ENTITY_CACHE), que leurs clés n'encodent pas. Vidage inconditionnel.
-    GRAV_COVID_VALUE = null
-    REPLAN_WEIGHTS = null
-    PLACEMENT_PLAN_IMP = null
-    PLACEMENT_PLAN_COVID = null
     PLACEMENT_COST_CACHE = [: ]
-    GRAV_ENTS_CACHE = [: ]
-    FINAL_PLACEMENT_CACHE = [: ]
-}
-
-/*
- * Les caches de placement portent deux entrées que leurs clés n'encodent pas : l'importance
- * des entités et ma valeur de spread de covid, toutes deux relues sur l'état RÉEL à chaque
- * planification. Les vider à chaque replan les rendait froids après chaque action jouée,
- * alors que ces deux entrées ne bougent qu'à un buff, un shackle ou une Libération
- * RÉELLEMENT joués — ce qui est rare.
- *
- * On les compare donc à l'identique, en égalité flottante EXACTE et sans la moindre
- * tolérance, et on ne vide qu'en cas de changement. La comparaison passe par la formule PURE
- * d'importance : elle n'écrit pas le mémo, dont l'amorçage paresseux décide quel état fige la
- * valeur du replan et doit rester intact.
- */
-function ReloadPlacementCacheNewPlan(State) {
-    GRAV_COVID_VALUE = null
-    var covid = GravityClass.covidValue()
-    var imps = [: ]
-    for (var e: var stat in State) imps[e] = ImportanceClass.rawImportanceOf(stat)
-    var same = PLACEMENT_PLAN_IMP != null && covid == PLACEMENT_PLAN_COVID
-        && mapSize(imps) == mapSize(PLACEMENT_PLAN_IMP)
-    if (same) {
-        for (var e: var v in imps) {
-            if (!(e in PLACEMENT_PLAN_IMP) || PLACEMENT_PLAN_IMP[e] != v) {
-                same = false
-                break
-            }
-        }
-    }
-    PLACEMENT_PLAN_IMP = imps
-    PLACEMENT_PLAN_COVID = covid
-    if (same) return;
-    PLACEMENT_COST_CACHE = [: ]
-    GRAV_ENTS_CACHE = [: ]
     FINAL_PLACEMENT_CACHE = [: ]
 }
 
@@ -334,23 +287,8 @@ global DANGER_SELF_TP_CACHE = [: ]
 // menace adverse) : le memo épargne alors tout le balayage de cellules d'un coup.
 global FINAL_PLACEMENT_CACHE = [: ]
 
-// Coût de placement SPATIAL d'une cellule, clé (BaseHash, cellule), et la liste à plat des
-// entités qui pèsent dessus, clé BaseHash. Vidés au replan (ReloadPlacementCacheNewPlan) :
-// l'importance qu'ils portent est refigée à chaque planification réelle.
+// Coût spatial, clé (BaseHash, cellule), vidé à chaque tour.
 global PLACEMENT_COST_CACHE = [: ]
-global GRAV_ENTS_CACHE = [: ]
-
-// Valeur de spread de mon covid : lue sur l'état RÉEL du moteur, relue à chaque planification.
-global GRAV_COVID_VALUE = null
-
-// Les deux entrées des caches de placement que leurs clés n'encodent pas, telles qu'elles
-// étaient à la planification précédente : elles décident si ces caches survivent au replan.
-// Contexte de poids de la planification courante (ReplanWeightsClass), immuable pendant
-// toute la recherche et partage par le scoring et par FinalCell.
-global REPLAN_WEIGHTS = null
-
-global PLACEMENT_PLAN_IMP = null
-global PLACEMENT_PLAN_COVID = null
 
 // Net de Me à UNE cellule où il pourrait finir le tour. Graine (statsHash ^ healersFP + vie
 // + (id, IS_SUMMON) de Me — le profil de couverture heal est un input du net) foldée avec la
@@ -395,30 +333,6 @@ global COEFFED_MAP_ENTITY_CACHE = [: ]
 global AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
 global AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
 
-// SCORING
-
-// Valeur de survie, clé packée (LIFE, netTick, harmfulRemaining, danger). Reset au tour.
-global SURVIVAL_CACHE = [: ]
-
-// Importance FIGÉE par replan réel : [id -> importance], vidée par Play à CHAQUE replan
-// (un buff/shackle réellement exécuté est visible à la planification suivante) puis servie
-// telle quelle dans TOUT le BFS correspondant. Les changements de stats en branche passent
-// par le canal capability et les vraies maps (danger/heal), jamais par l'importance. Le
-// reset de ReloadCacheNewTurn reste en filet de sécurité (VM du bulbe comprise) — Play
-// réinitialise ensuite à chaque replan.
-global IMPORTANCE_BY_ID = [: ]
-
-// Capability, reset au tour :
-//  - CAPABILITY_ITEMS_BY_ID : id -> sa liste d'items castables triée [[item, hpValue, coût]]
-//    (gate cooldown <= 1 de début de tour, valorisés en HP via CAP_HP_W, triés HP/TP desc).
-//    Clé id seule saine : INVENTORY constant par id, les COOLDOWNS non-Me ne bougent jamais
-//    en sim, et la liste de Me est volontairement son potentiel de DÉBUT de tour.
-//  - CAPABILITY_COMBO_CACHE : (id << 10) | max(0, TOTAL_TP) -> les buckets HP par stat du
-//    combo glouton. TP dans la clé : un buff/shackle TP en branche relance le glouton au
-//    nouveau budget, le delta TP est ÉMERGENT (un bulbe qui ne peut rien en faire score 0).
-global CAPABILITY_ITEMS_BY_ID = [: ]
-global CAPABILITY_COMBO_CACHE = [: ]
-
 // HEAL MAP — trois couches, miroir de la danger map :
 //  - HEAL_COVERAGE_CACHE : la couverture d'un caster, résolue PAR CELLULE À LA DEMANDE et par
 //    profil de cible (pas de SELF : le séquenceur exclut la cible de sa liste de casters),
@@ -451,35 +365,6 @@ global NETDAMAGE_CACHE = [: ]
 // par side du même fold sale NETDAMAGE_CACHE — porté sur les nœuds (HFP_BY_SIDE). Reset au tour.
 global HEAL_MAP_CACHE = [: ]
 
-// [side -> STR/(STR+MAG) de l'équipe adverse] pour le bonus damage-return — figé au tour,
-// construit au premier porteur évalué (ScoringClass.buildDrPhysRatios). null = pas construit.
-global DR_PHYSRATIO_BY_SIDE = null
-
-// [POISON_KEY -> [id -> coef poison ]0,1]]] — remise de couverture antidote sur le POT
-// (ScoringClass.poisonCoefOf). La clé (ScoringClass.poisonKeyFromFold) encode TOUS les inputs du
-// build : BaseHash (positions/vie des non-Me), porteurs (vivant, TOTAL_MP, cd), ancre de
-// replan de Me, Me vivant/mort — les maps d'une ancienne ancre deviennent injoignables sans
-// flush manuel. Reset au tour.
-global POISON_COEF_CACHE = [: ]
-
-// Y a-t-il un antidote dans le combat ? (morts inclus — basé inventaire, invariant en branche)
-// Court-circuite la machinerie poison. Lazy (ScoringClass.anyAntidote), reset au tour.
-// ANTIDOTE_CARRIER_IDS : ids des porteurs (morts inclus), rempli par le même scan.
-// ANTIDOTE_CARRIER_SET : le même ensemble en map, pour tester l'appartenance d'une entité
-// clonée sans parcourir la liste (héritage du fold, ScoringClass.poisonKeyOnNode).
-// ME_HAS_ANTIDOTE : Me est-il porteur ? (posé par le même scan) — sa contribution au fold est
-// relue à chaque nœud alors que celle des autres est héritée.
-global ANY_ANTIDOTE = null
-global ANTIDOTE_CARRIER_IDS = []
-global ANTIDOTE_CARRIER_SET = [: ]
-global ME_HAS_ANTIDOTE = false
-
-// Ancre de replan de Me : sa VRAIE cellule, reposée à chaque itération de Play (VM du bulbe
-// comprise) — meilleure estimation de sa cellule de fin de tour pour la couverture antidote,
-// converge au fil des actions réelles. Le hash précalculé est XORé dans chaque POISON_KEY.
-global MY_REPLAN_CELL = 0
-global MY_REPLAN_CELL_HASH = 0
-
 // ============================================================================
 // WalkCells : BFS bitmap par couples de lignes (voir Maps/WalkCells.leek)
 // ============================================================================
@@ -500,13 +385,6 @@ global MAP_CELL_TO_BITMASK  = []
 global MAP_OBSTACLES_CACHE  = []; for (var i = 0; i < 18; i++) push(MAP_OBSTACLES_CACHE, 0)
 global ACC_TEMPLATE         = []; for (var i = 0; i < 19; i++) push(ACC_TEMPLATE, 0)
 global CELL_BY_LSB          = []
-
-// Audit du majorant d'action (ScoringClass.actionUpperBound) : à true, chaque action simulée
-// vérifie que son majorant couvre bien son Δ réel. Coût nul à false.
-global BOUND_AUDIT = false
-global BOUND_CHECKED = 0
-global BOUND_VIOLATED = 0
-global BOUND_SKIPPED = 0
 
 // ---------------------------------------------------------------------------
 // BUDGET D'OPERATIONS
