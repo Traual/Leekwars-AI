@@ -1,5 +1,0 @@
-.build/
-.work/
-runs/
-__pycache__/
-*.pyc

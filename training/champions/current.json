@@ -1,8 +1,0 @@
-{
-  "champion_courant": "champion-002",
-  "manifeste": "training/champions/champion-002.json",
-  "commit_code": "c8ce20ec0d5fbbefe469d36dd92b16fd417d99cc",
-  "bundle_sha256": "be868503e3f3b016dd78730ec68d71f4e27b6e2277a64c821e8fa61b59620406",
-  "tag": "scoring-v3/champion-002",
-  "_role": "Seul le controleur ecrit ce pointeur ; l'optimiseur n'y touche pas."
-}
