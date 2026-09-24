@@ -3,22 +3,22 @@
 include("../includes.leek")
 
 class Coefficients {
-    static presence(s)       { return 100 }
-    static life(s)           { return 1 }
-    static totalLife(s)      { return 0.5 }
-    static strength(s)       { return 1 }
-    static wisdom(s)         { return 1 }
-    static agility(s)        { return 1 }
-    static resistance(s)     { return 1 }
-    static science(s)        { return 1 }
-    static magic(s)          { return 1 }
-    static power(s)          { return 1 }
-    static totalTP(s)        { return 30 }
-    static totalMP(s)        { return s.STATIC || EntityStateClass.hasState(s, STATE_ROOTED) ? 0 : 15 }
-    static absoluteShield(s) { return 1 }
-    static relativeShield(s) { return 10 }
-    static damageReturn(s)   { return 10 }
-    static poison(s)         { return EntityStateClass.hasState(s, STATE_INVINCIBLE) ? 0 : -0.5 }
-    static aftereffect(s)    { return -0.75 }
-    static heal(s)           { return EntityStateClass.hasState(s, STATE_UNHEALABLE) ? 0 : 0.5 }
+    static presence(stat)       { return 100 }
+    static life(stat)           { return 1 }
+    static totalLife(stat)      { return 0.5 }
+    static strength(stat)       { return 1 }
+    static wisdom(stat)         { return 1 }
+    static agility(stat)        { return 1 }
+    static resistance(stat)     { return 1 }
+    static science(stat)        { return 1 }
+    static magic(stat)          { return 1 }
+    static power(stat)          { return 1 }
+    static totalTP(stat)        { return 30 }
+    static totalMP(stat)        { return stat.STATIC || EntityStateClass.hasState(stat, STATE_ROOTED) ? 0 : 15 }
+    static absoluteShield(stat) { return 1 }
+    static relativeShield(stat) { return 10 }
+    static damageReturn(stat)   { return 10 }
+    static poison(stat)         { return EntityStateClass.hasState(stat, STATE_INVINCIBLE) ? 0 : -0.5 }
+    static aftereffect(stat)    { return -0.75 }
+    static heal(stat)           { return EntityStateClass.hasState(stat, STATE_UNHEALABLE) ? 0 : 0.5 }
 }

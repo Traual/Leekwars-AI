@@ -3,34 +3,34 @@
 include("../includes.leek")
 
 class ScoringClass {
-    static entityValue(s) {
-        if (s.LIFE <= 0) return 0
-        var score = Coefficients.presence(s)
-        score += s.LIFE                  * Coefficients.life(s)
-        score += s.TOTAL_LIFE            * Coefficients.totalLife(s)
-        score += s.STRENGTH              * Coefficients.strength(s)
-        score += s.WISDOM                * Coefficients.wisdom(s)
-        score += s.AGILITY               * Coefficients.agility(s)
-        score += s.RESISTANCE            * Coefficients.resistance(s)
-        score += s.SCIENCE               * Coefficients.science(s)
-        score += s.MAGIC                 * Coefficients.magic(s)
-        score += s.POWER                 * Coefficients.power(s)
-        score += s.TOTAL_TP              * Coefficients.totalTP(s)
-        score += s.TOTAL_MP              * Coefficients.totalMP(s)
-        score += s.ABSOLUTE_SHIELD       * Coefficients.absoluteShield(s)
-        score += s.RELATIVE_SHIELD       * Coefficients.relativeShield(s)
-        score += s.DAMAGE_RETURN         * Coefficients.damageReturn(s)
-        score += s.POISON_OVER_TIME      * Coefficients.poison(s)
-        score += s.AFTEREFFECT_OVER_TIME * Coefficients.aftereffect(s)
-        score += s.HEAL_OVER_TIME        * Coefficients.heal(s)
-        return max(1, score) // Un allié vivant ne devient pas plus rentable mort.
+    static entityValue(stat) {
+        if (stat.LIFE <= 0) return 0
+        var score = Coefficients.presence(stat)
+        score += stat.LIFE                  * Coefficients.life(stat)
+        score += stat.TOTAL_LIFE            * Coefficients.totalLife(stat)
+        score += stat.STRENGTH              * Coefficients.strength(stat)
+        score += stat.WISDOM                * Coefficients.wisdom(stat)
+        score += stat.AGILITY               * Coefficients.agility(stat)
+        score += stat.RESISTANCE            * Coefficients.resistance(stat)
+        score += stat.SCIENCE               * Coefficients.science(stat)
+        score += stat.MAGIC                 * Coefficients.magic(stat)
+        score += stat.POWER                 * Coefficients.power(stat)
+        score += stat.TOTAL_TP              * Coefficients.totalTP(stat)
+        score += stat.TOTAL_MP              * Coefficients.totalMP(stat)
+        score += stat.ABSOLUTE_SHIELD       * Coefficients.absoluteShield(stat)
+        score += stat.RELATIVE_SHIELD       * Coefficients.relativeShield(stat)
+        score += stat.DAMAGE_RETURN         * Coefficients.damageReturn(stat)
+        score += stat.POISON_OVER_TIME      * Coefficients.poison(stat)
+        score += stat.AFTEREFFECT_OVER_TIME * Coefficients.aftereffect(stat)
+        score += stat.HEAL_OVER_TIME        * Coefficients.heal(stat)
+        return max(0, score) // Un allié vivant ne devient pas plus rentable mort.
     }
 
     static stateValue(State, MySide, OpsLimit) {
         var score = 0
-        for (var id: var s in State) {
+        for (var id: var stat in State) {
             if (getOperations() > OpsLimit) return null
-            score += (s.SIDE == MySide ? 1 : -1) * entityValue(s)
+            score += (stat.SIDE == MySide ? 1 : -1) * entityValue(stat)
         }
         return score
     }
