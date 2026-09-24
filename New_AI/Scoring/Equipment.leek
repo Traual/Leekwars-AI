@@ -4,16 +4,47 @@ include("../includes.leek")
 // Inventaire immuable pendant la recherche. Reset au tour suivant : les identifiants
 // virtuels des invocations peuvent alors désigner d'autres inventaires.
 global EQUIPMENT_STRENGTH_YIELD = [:]
+// [camp du porteur -> poids poireaux, poids invocations], figés pendant une recherche.
+global EQUIPMENT_TARGET_WEIGHTS = [:]
 
 class Equipment {
+    // Population adverse vivante au départ de la recherche, tous camps couverts (BR inclus).
+    // Le mélange avec 50/50 garde une valeur aux deux spécialités : poids entre 25 et 75 %.
+    static prepareTargetWeights(State) {
+        var counts = [:]
+        var totalLeeks = 0
+        var totalSummons = 0
+        for (var id: var stat in State) {
+            if (!(stat.SIDE in counts)) counts[stat.SIDE] = [0, 0]
+            if (stat.LIFE <= 0) continue
+            if (stat.IS_SUMMON) {
+                counts[stat.SIDE][1]++
+                totalSummons++
+            } else {
+                counts[stat.SIDE][0]++
+                totalLeeks++
+            }
+        }
+        EQUIPMENT_TARGET_WEIGHTS = [:]
+        for (var side: var own in counts) {
+            var leeks = totalLeeks - own[0]
+            var summons = totalSummons - own[1]
+            var total = leeks + summons
+            var leekWeight = total > 0 ? 0.25 + 0.5 * leeks / total : 0.5
+            EQUIPMENT_TARGET_WEIGHTS[side] = [leekWeight, 1 - leekWeight]
+        }
+    }
+
     // Dégâts physiques de base moyens par PT, sur UNE cible au centre de la zone.
+    // Renvoie [meilleur rendement sur poireau, meilleur rendement sur invocation].
     // Ni force, puissance, critique, boucliers, vol de vie, ni multiplication de zone.
     // Coût nominal : on ignore équipement de l'arme, cooldowns, limites d'usage et portée.
     static strengthYield(stat) {
         // Une invocation simulée et une vraie peuvent partager un ID après un cast réel.
         var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
         if (key in EQUIPMENT_STRENGTH_YIELD) return EQUIPMENT_STRENGTH_YIELD[key]
-        var best = 0
+        var bestLeek = 0
+        var bestSummon = 0
         for (var item in stat.INVENTORY) {
             var info = ITEMINFO[item]
             if (info == null || info.COST <= 0) continue
@@ -29,10 +60,11 @@ class Equipment {
                 if (eff[4] & EFFECT_TARGET_NON_SUMMONS) leekDamage += damage
                 if (eff[4] & EFFECT_TARGET_SUMMONS) summonDamage += damage
             }
-            // Additionner les lignes d'un même cast, pas les profils de cibles ni
-            // les armes entre elles : elles consomment toutes le même budget de PT.
-            best = max(best, max(leekDamage, summonDamage) / info.COST)
+            // Meilleur item pour chaque profil, sans additionner les armes entre elles.
+            bestLeek = max(bestLeek, leekDamage / info.COST)
+            bestSummon = max(bestSummon, summonDamage / info.COST)
         }
+        var best = [bestLeek, bestSummon]
         EQUIPMENT_STRENGTH_YIELD[key] = best
         return best
     }

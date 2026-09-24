@@ -1,5 +1,5 @@
 // Valeurs de départ à régler à la main. Utilitaires d'équipement dans Equipment.leek.
-// Chaque fonction reçoit uniquement l'état du porteur de la statistique.
+// Chaque fonction reçoit l'état du porteur. Les poids de cibles sont figés par recherche.
 include("../includes.leek")
 
 class Coefficients {
@@ -7,7 +7,12 @@ class Coefficients {
     static life(stat)           { return 1 }
     static totalLife(stat)      { return 0.5 }
     // 10 PT futurs de référence / 100 : +1 force ajoute 1 % des dégâts de base.
-    static strength(stat)       { return Equipment.strengthYield(stat) * 0.1 }
+    static strength(stat) {
+        var yields = Equipment.strengthYield(stat)
+        var weights = EQUIPMENT_TARGET_WEIGHTS[stat.SIDE]
+        if (weights == null) weights = [0.5, 0.5]
+        return (yields[0] * weights[0] + yields[1] * weights[1]) * 0.1
+    }
     static wisdom(stat)         { return 1 }
     static agility(stat)        { return 1 }
     static resistance(stat)     { return 1 }
