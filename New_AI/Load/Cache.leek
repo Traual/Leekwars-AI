@@ -8,6 +8,7 @@ function ReloadCacheNewTurn() {
     TARGETABLECACHE = [: ]
     ENTITY_COOLDOWNS_BY_ID = [: ]
     ENTITY_CONST_BY_ID = [: ]
+    EQUIPMENT_STRENGTH_YIELD = [:]
     MAP_CELL_ITEM_AOE_CACHE = [: ]
     DANGER_ITEM_AOE_HASH_CACHE = [: ]
     DANGER_TEAM_PLAN_CACHE = [: ]

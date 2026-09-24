@@ -12,15 +12,20 @@ Les modifications courantes du scoring se font sur **`main`**.
 
 ## Modifier le scoring
 
-Trois fichiers :
+Quatre fichiers :
 
 - [`Coefficients.leek`](New_AI/Scoring/Coefficients.leek) : une fonction simple par statistique.
+- [`Equipment.leek`](New_AI/Scoring/Equipment.leek) : utilitaires de rendement de l'équipement, mis en cache par entité et par tour.
 - [`Scoring.leek`](New_AI/Scoring/Scoring.leek) : somme des statistiques multipliées par leur coefficient, alliés moins adversaires.
 - [`Placement.leek`](New_AI/Scoring/Placement.leek) : distances et exposition au danger, soustraites à la fin des suites d’actions.
 
-Une entité morte vaut zéro. Chaque vivant reçoit le même bonus de présence, sans score d’importance ni profil de kit. Les coefficients sont des valeurs de départ à régler manuellement.
+Une entité morte vaut zéro. Chaque vivant reçoit le même bonus de présence, sans score d’importance. Les coefficients sont des valeurs de départ à régler manuellement.
 
-Les fonctions de coefficient doivent rester pures et ne lire que leur état `s` pour conserver le calcul incrémental. Les pénalités de placement doivent rester positives ou nulles ; si leurs entrées changent, adapter aussi les clés de cache.
+Le coefficient de force vaut **0,1 × le meilleur rendement physique de l'inventaire** (dégâts de base moyens par PT). Ainsi, 40–60 dégâts pour 5 PT donnent un coefficient de 1 ; sans dégâts physiques, il vaut 0. Le facteur 0,1 correspond à 10 PT futurs de référence divisés par 100, et se règle dans `Coefficients.strength`. Il valorise la force conservée après la suite d'actions : les dégâts effectivement simulés sont déjà comptés dans la vie. La contribution utilise `max(0, force)`, comme le moteur pour les dégâts.
+
+Ce rendement considère une cible au centre de la zone, au coût nominal de l'item ; il ignore cooldowns, limites d'usage, portée, équipement de l'arme, protections et multiplicateurs du porteur. Les lignes d'un même cast s'additionnent, mais pas les armes entre elles. Puces et armes sont couvertes ; Châtiment, poison, nova et dégâts sur soi sont exclus. C'est une estimation simple du potentiel futur, pas une prévision de dégâts réalisables au tour courant.
+
+Les fonctions de coefficient doivent ne dépendre que de leur état `stat` et du catalogue immuable pour conserver le calcul incrémental. Le cache d'équipement suppose l'inventaire constant au sein d'une recherche. Les pénalités de placement doivent rester positives ou nulles ; si leurs entrées changent, adapter aussi les clés de cache.
 
 ## Documentation et outils
 

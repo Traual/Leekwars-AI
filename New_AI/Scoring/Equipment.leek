@@ -1,0 +1,39 @@
+// Rendement offensif de l'inventaire, indépendant des actions déjà simulées.
+include("../includes.leek")
+
+// Inventaire immuable pendant la recherche. Reset au tour suivant : les identifiants
+// virtuels des invocations peuvent alors désigner d'autres inventaires.
+global EQUIPMENT_STRENGTH_YIELD = [:]
+
+class Equipment {
+    // Dégâts physiques de base moyens par PT, sur UNE cible au centre de la zone.
+    // Ni force, puissance, critique, boucliers, vol de vie, ni multiplication de zone.
+    // Coût nominal : on ignore équipement de l'arme, cooldowns, limites d'usage et portée.
+    static strengthYield(stat) {
+        // Une invocation simulée et une vraie peuvent partager un ID après un cast réel.
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_STRENGTH_YIELD) return EQUIPMENT_STRENGTH_YIELD[key]
+        var best = 0
+        for (var item in stat.INVENTORY) {
+            var info = ITEMINFO[item]
+            if (info == null || info.COST <= 0) continue
+            var leekDamage = 0
+            var summonDamage = 0
+            for (var eff in info.EFFECTS) {
+                // Châtiment (LIFE_DAMAGE), poison, nova et passifs ne dépendent pas
+                // directement de la force comme DAMAGE. Les dégâts sur soi sont exclus.
+                if (eff[0] != EFFECT_DAMAGE || (eff[5] & EFFECT_MODIFIER_ON_CASTER)) continue
+                if (!(eff[4] & EFFECT_TARGET_ENEMIES)) continue
+                // getChipEffects/getWeaponEffects renvoient minimum et maximum.
+                var damage = (eff[1] + eff[2]) / 2
+                if (eff[4] & EFFECT_TARGET_NON_SUMMONS) leekDamage += damage
+                if (eff[4] & EFFECT_TARGET_SUMMONS) summonDamage += damage
+            }
+            // Additionner les lignes d'un même cast, pas les profils de cibles ni
+            // les armes entre elles : elles consomment toutes le même budget de PT.
+            best = max(best, max(leekDamage, summonDamage) / info.COST)
+        }
+        EQUIPMENT_STRENGTH_YIELD[key] = best
+        return best
+    }
+}

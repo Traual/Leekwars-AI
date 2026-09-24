@@ -1,4 +1,4 @@
-// Valeurs de départ à régler à la main. Aucune estimation du kit ou de l'importance.
+// Valeurs de départ à régler à la main. Utilitaires d'équipement dans Equipment.leek.
 // Chaque fonction reçoit uniquement l'état du porteur de la statistique.
 include("../includes.leek")
 
@@ -6,7 +6,8 @@ class Coefficients {
     static presence(stat)       { return 100 }
     static life(stat)           { return 1 }
     static totalLife(stat)      { return 0.5 }
-    static strength(stat)       { return 1 }
+    // 10 PT futurs de référence / 100 : +1 force ajoute 1 % des dégâts de base.
+    static strength(stat)       { return Equipment.strengthYield(stat) * 0.1 }
     static wisdom(stat)         { return 1 }
     static agility(stat)        { return 1 }
     static resistance(stat)     { return 1 }

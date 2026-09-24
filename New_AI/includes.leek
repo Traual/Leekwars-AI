@@ -29,6 +29,7 @@ include("Maps/Danger/Danger.leek")
 include("Maps/Heal/Heal.leek")
 include("Maps/Delta/Delta.leek")
 
+include("Scoring/Equipment.leek")
 include("Scoring/Coefficients.leek")
 include("Scoring/Scoring.leek")
 include("Scoring/Placement.leek")

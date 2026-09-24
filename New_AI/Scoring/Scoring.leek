@@ -8,7 +8,7 @@ class ScoringClass {
         var score = Coefficients.presence(stat)
         score += stat.LIFE                  * Coefficients.life(stat)
         score += stat.TOTAL_LIFE            * Coefficients.totalLife(stat)
-        score += stat.STRENGTH              * Coefficients.strength(stat)
+        score += max(0, stat.STRENGTH)       * Coefficients.strength(stat) // Plancher du moteur pour les dégâts.
         score += stat.WISDOM                * Coefficients.wisdom(stat)
         score += stat.AGILITY               * Coefficients.agility(stat)
         score += stat.RESISTANCE            * Coefficients.resistance(stat)
