@@ -1,0 +1,50 @@
+// Informations du plateau réutilisées par les coefficients de scoring.
+include("../includes.leek")
+
+global SCORING_STATE_CONSTANTS_CACHE = [:]
+global ROOT_SCORING_CONSTANTS = null
+
+class TargetWeights {
+    LEEKS = 0
+    SUMMONS = 0
+}
+
+class ScoringStateConstants {
+    TARGETS_BY_SIDE = [:]
+
+    constructor(State) {
+        var totalLeeks = 0
+        var totalSummons = 0
+        // Compter d'abord les vivants de chaque camp dans les objets de résultat.
+        for (var id: var stat in State) {
+            if (!(stat.SIDE in this.TARGETS_BY_SIDE)) this.TARGETS_BY_SIDE[stat.SIDE] = new TargetWeights()
+            if (stat.LIFE <= 0) continue
+            var own = this.TARGETS_BY_SIDE[stat.SIDE]
+            if (stat.IS_SUMMON) {
+                own.SUMMONS++
+                totalSummons++
+            } else {
+                own.LEEKS++
+                totalLeeks++
+            }
+        }
+        // Puis convertir en proportions ADVERSES, tous autres camps compris en BR.
+        for (var side: var weights in this.TARGETS_BY_SIDE) {
+            var leeks = totalLeeks - weights.LEEKS
+            var summons = totalSummons - weights.SUMMONS
+            var total = leeks + summons
+            weights.LEEKS = total > 0 ? leeks / total : 0
+            weights.SUMMONS = total > 0 ? summons / total : 0
+        }
+    }
+
+    // Appelé sur l'état réel à la racine : Me est vivant, camp/type fixes au tour.
+    // BaseHash encode les autres vivants ; le cache est vidé au changement de joueur.
+    // Résultat immuable une fois construit, partagé par toutes les branches de l'arbre.
+    static get(State, BaseHash) {
+        if (BaseHash in SCORING_STATE_CONSTANTS_CACHE) return SCORING_STATE_CONSTANTS_CACHE[BaseHash]
+        var constants = new ScoringStateConstants(State)
+        SCORING_STATE_CONSTANTS_CACHE[BaseHash] = constants
+        return constants
+    }
+}

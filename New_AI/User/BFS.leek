@@ -66,10 +66,10 @@ class ActionSuite {
 		BenchOps.Start("BFS")
 		var MyStats = State[Me]
 		var MySide = MyStats.SIDE
-		// Avant tout score (résurrection incluse) : poids fixes sur tout cet arbre.
-		// Les caches de scores sont locaux à cet appel ; l'inventaire reste en cache au tour.
-		Equipment.prepareTargetWeights(State)
 		var BaseHash = StateClass.getBaseHash(State)
+		// Contexte caché par BaseHash, fixé avant tout score (résurrection incluse).
+		// Reste constant dans l'arbre : seules les entités modifiées sont rescorrées.
+		ROOT_SCORING_CONSTANTS = ScoringStateConstants.get(State, BaseHash)
 		// Les quatre couches de mobilite servent a la recherche ET au deplacement de fin de tour.
 		// Construites ici, elles sont chaudes quand le tour s'arrete ; sinon le placement puis le
 		// deplacement les paient a froid avec la seule marge de deplacement, et le moteur coupe.

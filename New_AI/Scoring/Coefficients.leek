@@ -1,4 +1,4 @@
-// Valeurs de départ à régler à la main. Utilitaires d'équipement dans Equipment.leek.
+// Réglages manuels. Utilitaires dans Equipment.leek et StateConstants.leek.
 // Chaque fonction reçoit l'état du porteur. Les poids de cibles sont figés par recherche.
 include("../includes.leek")
 
@@ -9,9 +9,10 @@ class Coefficients {
     // 10 PT futurs de référence / 100 : +1 force ajoute 1 % des dégâts de base.
     static strength(stat) {
         var yields = Equipment.strengthYield(stat)
-        var weights = EQUIPMENT_TARGET_WEIGHTS[stat.SIDE]
-        if (weights == null) weights = [0.5, 0.5]
-        return (yields[0] * weights[0] + yields[1] * weights[1]) * 0.1
+        if (ROOT_SCORING_CONSTANTS == null) return 0
+        var weights = ROOT_SCORING_CONSTANTS.TARGETS_BY_SIDE[stat.SIDE]
+        if (weights == null) return 0
+        return (yields.LEEKS * weights.LEEKS + yields.SUMMONS * weights.SUMMONS) * 0.1
     }
     static wisdom(stat)         { return 1 }
     static agility(stat)        { return 1 }

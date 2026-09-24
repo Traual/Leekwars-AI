@@ -4,39 +4,20 @@ include("../includes.leek")
 // Inventaire immuable pendant la recherche. Reset au tour suivant : les identifiants
 // virtuels des invocations peuvent alors désigner d'autres inventaires.
 global EQUIPMENT_STRENGTH_YIELD = [:]
-// [camp du porteur -> poids poireaux, poids invocations], figés pendant une recherche.
-global EQUIPMENT_TARGET_WEIGHTS = [:]
+
+class StrengthYield {
+    LEEKS
+    SUMMONS
+
+    constructor(leeks, summons) {
+        this.LEEKS = leeks
+        this.SUMMONS = summons
+    }
+}
 
 class Equipment {
-    // Population adverse vivante au départ de la recherche, tous camps couverts (BR inclus).
-    // Le mélange avec 50/50 garde une valeur aux deux spécialités : poids entre 25 et 75 %.
-    static prepareTargetWeights(State) {
-        var counts = [:]
-        var totalLeeks = 0
-        var totalSummons = 0
-        for (var id: var stat in State) {
-            if (!(stat.SIDE in counts)) counts[stat.SIDE] = [0, 0]
-            if (stat.LIFE <= 0) continue
-            if (stat.IS_SUMMON) {
-                counts[stat.SIDE][1]++
-                totalSummons++
-            } else {
-                counts[stat.SIDE][0]++
-                totalLeeks++
-            }
-        }
-        EQUIPMENT_TARGET_WEIGHTS = [:]
-        for (var side: var own in counts) {
-            var leeks = totalLeeks - own[0]
-            var summons = totalSummons - own[1]
-            var total = leeks + summons
-            var leekWeight = total > 0 ? 0.25 + 0.5 * leeks / total : 0.5
-            EQUIPMENT_TARGET_WEIGHTS[side] = [leekWeight, 1 - leekWeight]
-        }
-    }
-
     // Dégâts physiques de base moyens par PT, sur UNE cible au centre de la zone.
-    // Renvoie [meilleur rendement sur poireau, meilleur rendement sur invocation].
+    // Renvoie un StrengthYield : meilleur rendement par type de cible.
     // Ni force, puissance, critique, boucliers, vol de vie, ni multiplication de zone.
     // Coût nominal : on ignore équipement de l'arme, cooldowns, limites d'usage et portée.
     static strengthYield(stat) {
@@ -64,7 +45,7 @@ class Equipment {
             bestLeek = max(bestLeek, leekDamage / info.COST)
             bestSummon = max(bestSummon, summonDamage / info.COST)
         }
-        var best = [bestLeek, bestSummon]
+        var best = new StrengthYield(bestLeek, bestSummon)
         EQUIPMENT_STRENGTH_YIELD[key] = best
         return best
     }
