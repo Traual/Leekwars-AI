@@ -6,7 +6,7 @@ class Coefficients {
     static presence(stat)       { return 100 }
     static life(stat)           { return 1 }
     static totalLife(stat)      { return 0.5 }
-    // 10 PT futurs de référence / 100 : +1 force ajoute 1 % des dégâts de base.
+    // 10 PT de référence par tour valorisé / 100. La durée se règle dans BuffDuration.
     static strength(stat) {
         var yields = Equipment.strengthYield(stat)
         if (ROOT_SCORING_CONSTANTS == null) return 0

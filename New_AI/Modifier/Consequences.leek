@@ -223,7 +223,7 @@ class ConsequencesClass {
 					var newEffects = []
 					for (var eff in targetStats.EFFECTS) {
 						if (eff[0] == EFFECT_POISON) {
-							removeCastedEffect(EFFECT_POISON, targetStats, eff[1], eff[8])
+							removeCastedEffect(EFFECT_POISON, targetStats, eff[1], eff[8], eff[3])
 						} else {
 							push(newEffects, eff)
 						}
@@ -672,7 +672,7 @@ class ConsequencesClass {
 							var kept = round(eff[1] * keep)
 							var removed = eff[1] - kept
 							converted += removed * eff[3]
-							if (removed != 0) removeCastedEffect(EFFECT_POISON, targetStats, removed, eff[8])
+							if (removed != 0) removeCastedEffect(EFFECT_POISON, targetStats, removed, eff[8], eff[3])
 							if (kept > 0) push(reducedEffects, (kept == eff[1]) ? eff : [eff[0], kept, eff[2], eff[3], eff[4], eff[5], eff[6], eff[7], eff[8]])
 						}
 						targetStats.EFFECTS = reducedEffects
@@ -797,7 +797,8 @@ class ConsequencesClass {
 		return false
 	}
 
-	static removeCastedEffect(EffectType, StatsTarget, ValueOfEffect, DurationOfEffect) {
+	// DurationOfEffect = ticks périodiques (eff[8]) ; RemainingTurns = durée brute (eff[3]).
+	static removeCastedEffect(EffectType, StatsTarget, ValueOfEffect, DurationOfEffect, RemainingTurns) {
 		if (EffectType in CAP_EFFECT_TYPES) StatsTarget.CAP_DIRTY = true
 		switch (EffectType) {
 			case EFFECT_BUFF_TP:
@@ -834,6 +835,7 @@ class ConsequencesClass {
 			case EFFECT_BUFF_STRENGTH:
 			case EFFECT_RAW_BUFF_STRENGTH:
 				StatsTarget.STRENGTH -= ValueOfEffect
+				BuffDuration.updateStrength(StatsTarget, -ValueOfEffect, RemainingTurns)
 				break
 			case EFFECT_BUFF_RESISTANCE:
 			case EFFECT_RAW_BUFF_RESISTANCE:
@@ -934,6 +936,10 @@ class ConsequencesClass {
 		// même si la ligne d'effet, elle, n'est pas enregistrable.
 		if (EffectType in CAP_EFFECT_TYPES) TarStats.CAP_DIRTY = true
 		if (Duration == 0 || AppliedValue <= 0) return;
+		// Une fusion cumule la valeur mais conserve la durée : ajouter seulement le delta.
+		if (EffectType == EFFECT_BUFF_STRENGTH || EffectType == EFFECT_RAW_BUFF_STRENGTH) {
+			BuffDuration.updateStrength(TarStats, AppliedValue, Duration)
+		}
 		var effects = TarStats.EFFECTS
 		var mergeIdx = -1
 		for (var i: var eff in effects) {
@@ -991,7 +997,7 @@ class ConsequencesClass {
 		var statesDirty = false
 		for (var eff in TarStats.EFFECTS) {
 			if (!removed && eff[0] == Effect[0] && eff[5] == Item) {
-				removeCastedEffect(eff[0], TarStats, eff[1], eff[8])
+				removeCastedEffect(eff[0], TarStats, eff[1], eff[8], eff[3])
 				if (eff[0] == EFFECT_ADD_STATE) statesDirty = true
 				removed = true
 				continue   // la ligne remplacée ne passe pas dans le nouveau tableau
@@ -1029,7 +1035,7 @@ class ConsequencesClass {
 			var statesDirty = false
 			for (var eff in stat.EFFECTS) {
 				if (eff[2] == Caster) {
-					removeCastedEffect(eff[0], stat, eff[1], eff[8])
+					removeCastedEffect(eff[0], stat, eff[1], eff[8], eff[3])
 					if (eff[0] == EFFECT_ADD_STATE) statesDirty = true
 				} else {
 					push(newEffects, eff)
@@ -1105,7 +1111,7 @@ class ConsequencesClass {
 		// la décomptera pas une seconde fois — le moteur l'a lui aussi retirée de son côté.
 		var victim = StateClass.ensureCloned(EveryStats, Killed, clonedIds)
 		if (count(victim.EFFECTS) > 0) {
-			for (var eff in victim.EFFECTS) removeCastedEffect(eff[0], victim, eff[1], eff[8])
+			for (var eff in victim.EFFECTS) removeCastedEffect(eff[0], victim, eff[1], eff[8], eff[3])
 			victim.EFFECTS = []
 			EntityStateClass.refreshShieldExpiry(victim)
 		}
@@ -1398,7 +1404,7 @@ class ConsequencesClass {
 			}
 			var newValue = round(eff[1] * DebuffPower)
 			var removedValue = eff[1] - newValue
-			if (removedValue != 0) removeCastedEffect(eff[0], TarStats, removedValue, eff[8])
+			if (removedValue != 0) removeCastedEffect(eff[0], TarStats, removedValue, eff[8], eff[3])
 			if (newValue > 0) push(newEffects, [eff[0], newValue, eff[2], eff[3], eff[4], eff[5], eff[6], eff[7], eff[8]])
 		}
 		TarStats.EFFECTS = newEffects
@@ -1419,7 +1425,7 @@ class ConsequencesClass {
 			var t = eff[0]
 			if (t == EFFECT_SHACKLE_AGILITY || t == EFFECT_SHACKLE_MAGIC || t == EFFECT_SHACKLE_MP
 				|| t == EFFECT_SHACKLE_STRENGTH || t == EFFECT_SHACKLE_TP || t == EFFECT_SHACKLE_WISDOM) {
-				removeCastedEffect(t, TarStats, eff[1], eff[8])
+				removeCastedEffect(t, TarStats, eff[1], eff[8], eff[3])
 			} else {
 				push(newEffects, eff)
 			}

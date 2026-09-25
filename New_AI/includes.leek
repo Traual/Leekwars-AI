@@ -31,6 +31,7 @@ include("Maps/Delta/Delta.leek")
 
 include("Scoring/Equipment.leek")
 include("Scoring/StateConstants.leek")
+include("Scoring/BuffDuration.leek")
 include("Scoring/Coefficients.leek")
 include("Scoring/Scoring.leek")
 include("Scoring/Placement.leek")

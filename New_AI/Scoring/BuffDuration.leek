@@ -1,0 +1,28 @@
+// Valorisation des buffs de force par leur durée restante (eff[3], pas les ticks eff[8]).
+include("../includes.leek")
+
+class BuffDuration {
+    static multiplier(turns, isMe) {
+        return isMe ? turns - 1 + 0.01 : turns
+    }
+
+    // Valeur signée : positive à la pose, négative au retrait ou à la réduction.
+    // Les effets permanents (-1) et instantanés (0) gardent leur valorisation ordinaire.
+    // Deux scalaires : clone(stat, 1) les copie sans partager de compteur mutable.
+    static updateStrength(stat, value, turns) {
+        if (turns <= 0) return;
+        stat.STRENGTH_BUFF += value
+        stat.STRENGTH_BUFF_WEIGHTED += value * multiplier(turns, stat.ID == Me)
+        if (stat.STRENGTH_BUFF == 0) stat.STRENGTH_BUFF_WEIGHTED = 0
+    }
+
+    static strengthValue(stat) {
+        if (stat.STRENGTH_BUFF <= 0) return max(0, stat.STRENGTH)
+        var withoutBuffs = stat.STRENGTH - stat.STRENGTH_BUFF
+        if (withoutBuffs >= 0) return withoutBuffs + stat.STRENGTH_BUFF_WEIGHTED
+        // Sous entrave, ne valoriser que la partie des buffs qui dépasse le zéro.
+        // Si plusieurs durées se recouvrent, répartir cette partie au prorata des valeurs.
+        if (stat.STRENGTH <= 0) return 0
+        return stat.STRENGTH_BUFF_WEIGHTED * stat.STRENGTH / stat.STRENGTH_BUFF
+    }
+}

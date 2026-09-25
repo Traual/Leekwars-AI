@@ -45,6 +45,8 @@ class BulbState {
 	TOTAL_LIFE
 	BASE_STATS   // bases vraies par constante STAT_* (même contrat qu'EntityState : immuable)
 	STRENGTH
+	STRENGTH_BUFF = 0
+	STRENGTH_BUFF_WEIGHTED = 0
 	WISDOM
 	AGILITY
 	RESISTANCE

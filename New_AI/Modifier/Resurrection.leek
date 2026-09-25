@@ -27,6 +27,8 @@ class ResurrectionClass {
 		// états parents, mais le revived est un clone frais : l'assignation ne touche que lui).
 		// Plus d'effets fantômes pour un ReplacementChangeStats ultérieur.
 		revived.EFFECTS = []
+		revived.STRENGTH_BUFF = 0
+		revived.STRENGTH_BUFF_WEIGHTED = 0
 		EntityStateClass.refreshShieldExpiry(revived)
 		revived.CAP_DIRTY = true   // les stats repartent des bases : capability à recomparer
 		revived.POISON = 0

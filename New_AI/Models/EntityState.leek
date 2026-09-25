@@ -51,6 +51,8 @@ class EntityStateClass extends EntityClass {
 	// IMMUABLE pendant toute la simulation -> clone(stat, 1) en partage la référence.
 	BASE_STATS
 	STRENGTH
+	STRENGTH_BUFF = 0           // somme des buffs additifs de force à durée positive
+	STRENGTH_BUFF_WEIGHTED = 0  // même somme, pondérée par BuffDuration.multiplier
 	WISDOM
 	AGILITY
 	RESISTANCE
@@ -195,6 +197,7 @@ class EntityStateClass extends EntityClass {
 				case EFFECT_BUFF_STRENGTH:
 				case EFFECT_RAW_BUFF_STRENGTH:
 					this.BASE_STATS[STAT_STRENGTH] -= eff[1]
+					BuffDuration.updateStrength(this, eff[1], eff[3])
 					break
 				case EFFECT_HEAL:
 					// Persistant seulement — un heal instantané (durée 0) n'entre jamais au
