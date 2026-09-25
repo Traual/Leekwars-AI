@@ -1,11 +1,12 @@
-// Rendement offensif de l'inventaire, indépendant des actions déjà simulées.
+// Rendements de l'inventaire, indépendants des actions déjà simulées.
 include("../includes.leek")
 
 // Inventaire immuable pendant la recherche. Reset au tour suivant : les identifiants
 // virtuels des invocations peuvent alors désigner d'autres inventaires.
 global EQUIPMENT_STRENGTH_YIELD = [:]
+global EQUIPMENT_DAMAGE_RETURN_YIELD = [:]
 
-class StrengthYield {
+class EquipmentYield {
     LEEKS
     SUMMONS
 
@@ -17,7 +18,7 @@ class StrengthYield {
 
 class Equipment {
     // Dégâts physiques de base moyens par PT, sur UNE cible au centre de la zone.
-    // Renvoie un StrengthYield : meilleur rendement par type de cible.
+    // Renvoie un EquipmentYield : meilleur rendement par type de cible.
     // Ni force, puissance, critique, boucliers, vol de vie, ni multiplication de zone.
     // Coût nominal : on ignore équipement de l'arme, cooldowns, limites d'usage et portée.
     static strengthYield(stat) {
@@ -45,8 +46,40 @@ class Equipment {
             bestLeek = max(bestLeek, leekDamage / info.COST)
             bestSummon = max(bestSummon, summonDamage / info.COST)
         }
-        var best = new StrengthYield(bestLeek, bestSummon)
+        var best = new EquipmentYield(bestLeek, bestSummon)
         EQUIPMENT_STRENGTH_YIELD[key] = best
+        return best
+    }
+
+    // Points de renvoi de base moyens par PT, sur UNE cible alliée au centre de la zone.
+    // Mêmes simplifications que strengthYield : coût nominal, sans cooldown ni durée du renvoi.
+    // Le renvoi déjà présent sur le porteur n'entre pas ici : seul son équipement lançable compte.
+    static damageReturnYield(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_DAMAGE_RETURN_YIELD) return EQUIPMENT_DAMAGE_RETURN_YIELD[key]
+        var bestLeek = 0
+        var bestSummon = 0
+        for (var item in stat.INVENTORY) {
+            var info = ITEMINFO[item]
+            if (info == null || info.COST <= 0) continue
+            var leekReturn = 0
+            var summonReturn = 0
+            for (var eff in info.EFFECTS) {
+                if (eff[0] != EFFECT_DAMAGE_RETURN) continue
+                var value = (eff[1] + eff[2]) / 2
+                if (eff[5] & EFFECT_MODIFIER_ON_CASTER) {
+                    if (stat.IS_SUMMON) summonReturn += value
+                    else leekReturn += value
+                } else if (eff[4] & EFFECT_TARGET_ALLIES) {
+                    if (eff[4] & EFFECT_TARGET_NON_SUMMONS) leekReturn += value
+                    if (eff[4] & EFFECT_TARGET_SUMMONS) summonReturn += value
+                }
+            }
+            bestLeek = max(bestLeek, leekReturn / info.COST)
+            bestSummon = max(bestSummon, summonReturn / info.COST)
+        }
+        var best = new EquipmentYield(bestLeek, bestSummon)
+        EQUIPMENT_DAMAGE_RETURN_YIELD[key] = best
         return best
     }
 }

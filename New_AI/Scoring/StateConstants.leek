@@ -11,6 +11,7 @@ class TargetWeights {
 
 class ScoringStateConstants {
     TARGETS_BY_SIDE = [:]
+    ALLIES_BY_SIDE = [:]
 
     constructor(State) {
         var totalLeeks = 0
@@ -28,8 +29,14 @@ class ScoringStateConstants {
                 totalLeeks++
             }
         }
-        // Puis convertir en proportions ADVERSES, tous autres camps compris en BR.
+        // Même population pour les renvois sur alliés (porteur inclus) et les dégâts adverses.
         for (var side: var weights in this.TARGETS_BY_SIDE) {
+            var allies = new TargetWeights()
+            var ownTotal = weights.LEEKS + weights.SUMMONS
+            allies.LEEKS = ownTotal > 0 ? weights.LEEKS / ownTotal : 0
+            allies.SUMMONS = ownTotal > 0 ? weights.SUMMONS / ownTotal : 0
+            this.ALLIES_BY_SIDE[side] = allies
+            // Adversaires : tous les autres camps, BR inclus.
             var leeks = totalLeeks - weights.LEEKS
             var summons = totalSummons - weights.SUMMONS
             var total = leeks + summons
@@ -46,5 +53,18 @@ class ScoringStateConstants {
         var constants = new ScoringStateConstants(State)
         SCORING_STATE_CONSTANTS_CACHE[BaseHash] = constants
         return constants
+    }
+
+    // Petite échelle de potentiel critique : meilleure caractéristique de BASE utile.
+    // Force/magie pour l'attaque, sagesse/science/résistance pour le soutien.
+    // Ni vie ni agilité : pas de score d'importance, ni de coefficient qui se renforce lui-même.
+    // BASE_STATS est immuable en branche : mémo scalaire copié avec le porteur.
+    static criticalScale(stat) {
+        if (stat.CRITICAL_SCALE_MEMO != null) return stat.CRITICAL_SCALE_MEMO
+        var bases = stat.BASE_STATS
+        var highest = max(max(bases[STAT_STRENGTH], bases[STAT_MAGIC]),
+            max(bases[STAT_WISDOM], max(bases[STAT_SCIENCE], bases[STAT_RESISTANCE])))
+        stat.CRITICAL_SCALE_MEMO = 1 + max(0, highest) / 100
+        return stat.CRITICAL_SCALE_MEMO
     }
 }

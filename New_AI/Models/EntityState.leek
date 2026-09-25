@@ -55,6 +55,9 @@ class EntityStateClass extends EntityClass {
 	STRENGTH_BUFF_WEIGHTED = 0  // même somme, pondérée par BuffDuration.multiplier
 	WISDOM
 	AGILITY
+	AGILITY_BUFF = 0
+	AGILITY_BUFF_WEIGHTED = 0
+	CRITICAL_SCALE_MEMO = null // dépend uniquement de BASE_STATS, immuable en branche
 	RESISTANCE
 	SCIENCE
 	MAGIC
@@ -219,6 +222,7 @@ class EntityStateClass extends EntityClass {
 				case EFFECT_BUFF_AGILITY:
 				case EFFECT_RAW_BUFF_AGILITY:
 					this.BASE_STATS[STAT_AGILITY] -= eff[1]
+					BuffDuration.updateAgility(this, eff[1], eff[3])
 					break
 				case EFFECT_BUFF_RESISTANCE:
 				case EFFECT_RAW_BUFF_RESISTANCE:

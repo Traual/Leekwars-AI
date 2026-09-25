@@ -1,4 +1,4 @@
-// Valorisation des buffs de force par leur durée restante (eff[3], pas les ticks eff[8]).
+// Valorisation des buffs par leur durée restante (eff[3], pas les ticks eff[8]).
 include("../includes.leek")
 
 class BuffDuration {
@@ -28,5 +28,33 @@ class BuffDuration {
         // Si plusieurs durées se recouvrent, répartir cette partie au prorata des valeurs.
         if (stat.STRENGTH <= 0) return 0
         return stat.STRENGTH_BUFF_WEIGHTED * stat.STRENGTH / stat.STRENGTH_BUFF
+    }
+
+    static updateAgility(stat, value, turns) {
+        if (turns <= 0) return;
+        stat.AGILITY_BUFF += value
+        stat.AGILITY_BUFF_WEIGHTED += value * multiplier(turns, stat.ID == Me)
+        if (stat.AGILITY_BUFF == 0) stat.AGILITY_BUFF_WEIGHTED = 0
+    }
+
+    // EffectDamageReturn utilise max(0, 1 + agilité / 100) : plancher à -100, pas à 0.
+    // Comme pour la force, seule la partie des buffs au-dessus du plancher est pondérée.
+    static agilityValue(stat) {
+        if (stat.AGILITY_BUFF <= 0) return max(-100, stat.AGILITY)
+        var withoutBuffs = stat.AGILITY - stat.AGILITY_BUFF
+        if (withoutBuffs >= -100) return withoutBuffs + stat.AGILITY_BUFF_WEIGHTED
+        if (stat.AGILITY <= -100) return -100
+        return -100 + stat.AGILITY_BUFF_WEIGHTED * (stat.AGILITY + 100) / stat.AGILITY_BUFF
+    }
+
+    // Le moteur tire le critique avec agilité / 1000 : seuls les points entre 0 et 1000
+    // augmentent cette probabilité. Le plafond ne concerne PAS le rendement du renvoi.
+    // Isoler les points utiles avant la durée. Si plusieurs buffs se recouvrent, la part
+    // retenue est répartie au prorata, comme pour la force entravée (approximation légère).
+    static criticalAgilityValue(stat) {
+        var current = min(1000, max(0, stat.AGILITY))
+        if (stat.AGILITY_BUFF <= 0) return current
+        var withoutBuffs = min(1000, max(0, stat.AGILITY - stat.AGILITY_BUFF))
+        return withoutBuffs + (current - withoutBuffs) * stat.AGILITY_BUFF_WEIGHTED / stat.AGILITY_BUFF
     }
 }

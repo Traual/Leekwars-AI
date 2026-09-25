@@ -844,6 +844,7 @@ class ConsequencesClass {
 			case EFFECT_BUFF_AGILITY:
 			case EFFECT_RAW_BUFF_AGILITY:
 				StatsTarget.AGILITY -= ValueOfEffect
+				BuffDuration.updateAgility(StatsTarget, -ValueOfEffect, RemainingTurns)
 				break
 			case EFFECT_ABSOLUTE_SHIELD:
 			case EFFECT_RAW_ABSOLUTE_SHIELD:
@@ -939,6 +940,8 @@ class ConsequencesClass {
 		// Une fusion cumule la valeur mais conserve la durée : ajouter seulement le delta.
 		if (EffectType == EFFECT_BUFF_STRENGTH || EffectType == EFFECT_RAW_BUFF_STRENGTH) {
 			BuffDuration.updateStrength(TarStats, AppliedValue, Duration)
+		} else if (EffectType == EFFECT_BUFF_AGILITY || EffectType == EFFECT_RAW_BUFF_AGILITY) {
+			BuffDuration.updateAgility(TarStats, AppliedValue, Duration)
 		}
 		var effects = TarStats.EFFECTS
 		var mergeIdx = -1

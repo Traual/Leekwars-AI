@@ -15,7 +15,17 @@ class Coefficients {
         return (yields.LEEKS * weights.LEEKS + yields.SUMMONS * weights.SUMMONS) * 0.1
     }
     static wisdom(stat)         { return 1 }
-    static agility(stat)        { return 1 }
+    // Renvois futurs : 10 PT / 100, convertis en score avec la valeur d'un point de renvoi.
+    static agility(stat) {
+        var yields = Equipment.damageReturnYield(stat)
+        if (ROOT_SCORING_CONSTANTS == null) return 0
+        var weights = ROOT_SCORING_CONSTANTS.ALLIES_BY_SIDE[stat.SIDE]
+        if (weights == null) return 0
+        return (yields.LEEKS * weights.LEEKS + yields.SUMMONS * weights.SUMMONS)
+            * 0.1 * damageReturn(stat)
+    }
+    // Réglage distinct du renvoi : 0.05 par point d'agilité utile au critique, avant échelle.
+    static criticalAgility(stat) { return 0.05 * ScoringStateConstants.criticalScale(stat) }
     static resistance(stat)     { return 1 }
     static science(stat)        { return 1 }
     static magic(stat)          { return 1 }
