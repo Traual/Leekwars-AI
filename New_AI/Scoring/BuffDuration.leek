@@ -2,6 +2,10 @@
 include("../includes.leek")
 
 class BuffDuration {
+    // Sur Me, le BFS compte déjà les bénéfices réalisés pendant ce tour dans les deltas
+    // des actions suivantes (notamment les dégâts) : -1 évite de les valoriser deux fois.
+    // +0.01 garde une petite valeur au buff d'un tour, pour ne pas l'écarter avant
+    // d'explorer les actions qui en profitent. C'est un biais de recherche, pas une durée réelle.
     static multiplier(turns, isMe) {
         return isMe ? turns - 1 + 0.01 : turns
     }
