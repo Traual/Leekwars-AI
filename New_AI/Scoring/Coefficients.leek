@@ -6,13 +6,19 @@ class Coefficients {
     static presence(stat)       { return 100 }
     static life(stat)           { return 1 }
     static totalLife(stat)      { return 0.5 }
-    // 10 PT de référence par tour valorisé / 100. La durée se règle dans BuffDuration.
+    // Paliers sur la force courante. Le rendement sert seulement à vérifier qu'on peut attaquer.
     static strength(stat) {
         var yields = Equipment.strengthYield(stat)
-        if (ROOT_SCORING_CONSTANTS == null) return 0
-        var weights = ROOT_SCORING_CONSTANTS.TARGETS_BY_SIDE[stat.SIDE]
-        if (weights == null) return 0
-        return (yields.LEEKS * weights.LEEKS + yields.SUMMONS * weights.SUMMONS) * 0.1
+        // strengthYield renvoie deux rendements : zéro sur les deux = aucun dégât physique.
+        if (yields.LEEKS == 0 && yields.SUMMONS == 0) return 0
+        var coef = 0
+        if (stat.STRENGTH > 0) coef += 1
+        if (stat.STRENGTH >= 200) coef += 1
+        if (stat.STRENGTH >= 400) coef += 1
+        if (stat.STRENGTH >= 600) coef += 0.7
+        if (stat.STRENGTH >= 800) coef += 0.5
+        if (stat.STRENGTH >= 1000) coef += 0.2
+        return coef
     }
     static wisdom(stat)         { return 1 }
     // Renvois futurs : 10 PT / 100, convertis en score avec la valeur d'un point de renvoi.
