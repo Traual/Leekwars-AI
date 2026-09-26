@@ -11,13 +11,13 @@ class Coefficients {
         var yields = Equipment.strengthYield(stat)
         // strengthYield renvoie deux rendements : zéro sur les deux = aucun dégât physique.
         if (yields.LEEKS == 0 && yields.SUMMONS == 0) return 0
-        var coef = 0
-        if (stat.STRENGTH > 0) coef += 1
-        if (stat.STRENGTH >= 200) coef += 1
-        if (stat.STRENGTH >= 400) coef += 1
-        if (stat.STRENGTH >= 600) coef += 0.7
-        if (stat.STRENGTH >= 800) coef += 0.5
-        if (stat.STRENGTH >= 1000) coef += 0.2
+        var coef = 0.2
+        if (stat.STRENGTH > 0) coef += 0.2
+        if (stat.STRENGTH >= 200) coef += 0.3
+        if (stat.STRENGTH >= 400) coef += 0.3
+        if (stat.STRENGTH >= 600) coef += 0.2
+        if (stat.STRENGTH >= 800) coef += 0.2
+        if (stat.STRENGTH >= 1000) coef += 0.1
         return coef
     }
     static wisdom(stat)         { return 1 }
