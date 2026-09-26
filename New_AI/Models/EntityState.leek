@@ -65,6 +65,8 @@ class EntityStateClass extends EntityClass {
 	RESISTANCE_BUFF_WEIGHTED = 0
 	SCIENCE
 	MAGIC
+	MAGIC_BUFF = 0
+	MAGIC_BUFF_WEIGHTED = 0
 	// Boucliers qui TOMBERONT pendant la fenêtre de danger, liste plate
 	// [lanceur, retrait absolu, retrait relatif] — null quand il n'y en a aucun, ce qui est
 	// le cas ultra-majoritaire. Jamais mutée en place : refreshShieldExpiry la REMPLACE, un
@@ -242,6 +244,7 @@ class EntityStateClass extends EntityClass {
 					break
 				case EFFECT_RAW_BUFF_MAGIC:
 					this.BASE_STATS[STAT_MAGIC] -= eff[1]
+					BuffDuration.updateMagic(this, eff[1], eff[3])
 					break
 				case EFFECT_RAW_BUFF_SCIENCE:
 					this.BASE_STATS[STAT_SCIENCE] -= eff[1]

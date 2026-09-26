@@ -107,7 +107,28 @@ class Coefficients {
         return 0.2
     }
     static science(stat)        { return 1 }
-    static magic(stat)          { return 1 }
+    // Paliers sur la magie courante, si l'équipement peut empoisonner ou entraver.
+    // Une seule entrave suffit : buffer la magie d'un allié qui entrave la force vaut le coup.
+    static magic(stat) {
+        if (!Equipment.canUseMagic(stat)) return 0
+        var coef = 0.2
+        if (stat.MAGIC > 0) coef += 0.2
+        if (stat.MAGIC >= 200) coef += 0.3
+        if (stat.MAGIC >= 400) coef += 0.3
+        if (stat.MAGIC >= 600) coef += 0.2
+        if (stat.MAGIC >= 800) coef += 0.2
+        if (stat.MAGIC >= 1000) coef += 0.1
+        return coef * magicTpMultiplier(stat)
+    }
+    // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
+    static magicTpMultiplier(stat) {
+        var tp = stat.TOTAL_TP
+        if (tp >= 32) return 1.7
+        if (tp >= 24) return 1.5
+        if (tp >= 16) return 1
+        if (tp >= 8) return 0.8
+        return 0.5
+    }
     static power(stat)          { return 1 }
     static totalTP(stat)        { return 30 }
     static totalMP(stat)        { return stat.STATIC || EntityStateClass.hasState(stat, STATE_ROOTED) ? 0 : 15 }

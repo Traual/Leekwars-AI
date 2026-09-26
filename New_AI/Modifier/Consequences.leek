@@ -855,6 +855,7 @@ class ConsequencesClass {
 				break
 			case EFFECT_RAW_BUFF_MAGIC:
 				StatsTarget.MAGIC -= ValueOfEffect
+				BuffDuration.updateMagic(StatsTarget, -ValueOfEffect, RemainingTurns)
 				break
 			case EFFECT_RAW_BUFF_SCIENCE:
 				StatsTarget.SCIENCE -= ValueOfEffect
@@ -948,6 +949,8 @@ class ConsequencesClass {
 			BuffDuration.updateWisdom(TarStats, AppliedValue, Duration)
 		} else if (EffectType == EFFECT_BUFF_RESISTANCE || EffectType == EFFECT_RAW_BUFF_RESISTANCE) {
 			BuffDuration.updateResistance(TarStats, AppliedValue, Duration)
+		} else if (EffectType == EFFECT_RAW_BUFF_MAGIC) {
+			BuffDuration.updateMagic(TarStats, AppliedValue, Duration)
 		}
 		var effects = TarStats.EFFECTS
 		var mergeIdx = -1

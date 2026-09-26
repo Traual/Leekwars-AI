@@ -35,6 +35,8 @@ class ResurrectionClass {
 		revived.WISDOM_BUFF_WEIGHTED = 0
 		revived.RESISTANCE_BUFF = 0
 		revived.RESISTANCE_BUFF_WEIGHTED = 0
+		revived.MAGIC_BUFF = 0
+		revived.MAGIC_BUFF_WEIGHTED = 0
 		EntityStateClass.refreshShieldExpiry(revived)
 		revived.CAP_DIRTY = true   // les stats repartent des bases : capability à recomparer
 		revived.POISON = 0

@@ -9,6 +9,14 @@ global EQUIPMENT_HEAL_YIELD = [:]
 global EQUIPMENT_BOOST_MAX_LIFE_YIELD = [:]
 global EQUIPMENT_ABSOLUTE_SHIELD_YIELD = [:]
 global EQUIPMENT_RELATIVE_SHIELD_YIELD = [:]
+global EQUIPMENT_POISON_YIELD = [:]
+global EQUIPMENT_SHACKLE_STRENGTH_YIELD = [:]
+global EQUIPMENT_SHACKLE_MAGIC_YIELD = [:]
+global EQUIPMENT_SHACKLE_AGILITY_YIELD = [:]
+global EQUIPMENT_SHACKLE_WISDOM_YIELD = [:]
+global EQUIPMENT_SHACKLE_TP_YIELD = [:]
+global EQUIPMENT_SHACKLE_MP_YIELD = [:]
+global EQUIPMENT_CAN_USE_MAGIC = [:]
 
 class EquipmentYield {
     LEEKS
@@ -37,6 +45,29 @@ class Equipment {
     static absoluteShieldYield(stat) { return effectYield(stat, EFFECT_ABSOLUTE_SHIELD, EQUIPMENT_ABSOLUTE_SHIELD_YIELD, false) }
     // Bouclier relatif de base moyen par PT, en %, multiplié par la résistance.
     static relativeShieldYield(stat) { return effectYield(stat, EFFECT_RELATIVE_SHIELD, EQUIPMENT_RELATIVE_SHIELD_YIELD, false) }
+
+    // Effets multipliés par la magie, tous lancés sur un ennemi : poison et les six entraves.
+    static poisonYield(stat) { return effectYield(stat, EFFECT_POISON, EQUIPMENT_POISON_YIELD, true) }
+    static shackleStrengthYield(stat) { return effectYield(stat, EFFECT_SHACKLE_STRENGTH, EQUIPMENT_SHACKLE_STRENGTH_YIELD, true) }
+    static shackleMagicYield(stat) { return effectYield(stat, EFFECT_SHACKLE_MAGIC, EQUIPMENT_SHACKLE_MAGIC_YIELD, true) }
+    static shackleAgilityYield(stat) { return effectYield(stat, EFFECT_SHACKLE_AGILITY, EQUIPMENT_SHACKLE_AGILITY_YIELD, true) }
+    static shackleWisdomYield(stat) { return effectYield(stat, EFFECT_SHACKLE_WISDOM, EQUIPMENT_SHACKLE_WISDOM_YIELD, true) }
+    static shackleTpYield(stat) { return effectYield(stat, EFFECT_SHACKLE_TP, EQUIPMENT_SHACKLE_TP_YIELD, true) }
+    static shackleMpYield(stat) { return effectYield(stat, EFFECT_SHACKLE_MP, EQUIPMENT_SHACKLE_MP_YIELD, true) }
+
+    // Vrai si au moins un effet multiplié par la magie a un rendement, sur poireaux ou
+    // invocations. Mis en cache : le scoring l'interroge à chaque nœud, pas les sept rendements.
+    static canUseMagic(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_CAN_USE_MAGIC) return EQUIPMENT_CAN_USE_MAGIC[key]
+        var result = false
+        for (var yields in [poisonYield(stat), shackleStrengthYield(stat), shackleMagicYield(stat), shackleAgilityYield(stat),
+                            shackleWisdomYield(stat), shackleTpYield(stat), shackleMpYield(stat)]) {
+            if (yields.LEEKS != 0 || yields.SUMMONS != 0) { result = true; break }
+        }
+        EQUIPMENT_CAN_USE_MAGIC[key] = result
+        return result
+    }
 
     // Valeur de base moyenne par PT d'un type d'effet, sur UNE cible au centre de la zone.
     // Renvoie un EquipmentYield : meilleur item par type de cible, sans additionner les items.

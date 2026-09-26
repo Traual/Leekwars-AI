@@ -77,6 +77,22 @@ class BuffDuration {
         return stat.RESISTANCE - stat.RESISTANCE_BUFF + stat.RESISTANCE_BUFF_WEIGHTED
     }
 
+    static updateMagic(stat, value, turns) {
+        if (turns <= 0) return;
+        stat.MAGIC_BUFF += value
+        stat.MAGIC_BUFF_WEIGHTED += value * multiplier(turns, stat.ID == Me)
+        if (stat.MAGIC_BUFF == 0) stat.MAGIC_BUFF_WEIGHTED = 0
+    }
+
+    // Poison et entraves planchent la magie à 0 à l'usage, comme la force.
+    static magicValue(stat) {
+        if (stat.MAGIC_BUFF <= 0) return max(0, stat.MAGIC)
+        var withoutBuffs = stat.MAGIC - stat.MAGIC_BUFF
+        if (withoutBuffs >= 0) return withoutBuffs + stat.MAGIC_BUFF_WEIGHTED
+        if (stat.MAGIC <= 0) return 0
+        return stat.MAGIC_BUFF_WEIGHTED * stat.MAGIC / stat.MAGIC_BUFF
+    }
+
     // Le moteur tire le critique avec agilité / 1000 : seuls les points entre 0 et 1000
     // augmentent cette probabilité. Le plafond ne concerne PAS le rendement du renvoi.
     // Isoler les points utiles avant la durée. Si plusieurs buffs se recouvrent, la part
