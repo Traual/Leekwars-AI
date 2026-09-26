@@ -47,6 +47,36 @@ class BuffDuration {
         return -100 + stat.AGILITY_BUFF_WEIGHTED * (stat.AGILITY + 100) / stat.AGILITY_BUFF
     }
 
+    static updateWisdom(stat, value, turns) {
+        if (turns <= 0) return;
+        stat.WISDOM_BUFF += value
+        stat.WISDOM_BUFF_WEIGHTED += value * multiplier(turns, stat.ID == Me)
+        if (stat.WISDOM_BUFF == 0) stat.WISDOM_BUFF_WEIGHTED = 0
+    }
+
+    // EffectHeal et EffectVitality utilisent max(0, 1 + sagesse / 100) : plancher à -100,
+    // comme l'agilité. Seule la partie des buffs au-dessus du plancher est pondérée.
+    static wisdomValue(stat) {
+        if (stat.WISDOM_BUFF <= 0) return max(-100, stat.WISDOM)
+        var withoutBuffs = stat.WISDOM - stat.WISDOM_BUFF
+        if (withoutBuffs >= -100) return withoutBuffs + stat.WISDOM_BUFF_WEIGHTED
+        if (stat.WISDOM <= -100) return -100
+        return -100 + stat.WISDOM_BUFF_WEIGHTED * (stat.WISDOM + 100) / stat.WISDOM_BUFF
+    }
+
+    static updateResistance(stat, value, turns) {
+        if (turns <= 0) return;
+        stat.RESISTANCE_BUFF += value
+        stat.RESISTANCE_BUFF_WEIGHTED += value * multiplier(turns, stat.ID == Me)
+        if (stat.RESISTANCE_BUFF == 0) stat.RESISTANCE_BUFF_WEIGHTED = 0
+    }
+
+    // Les boucliers utilisent 1 + résistance / 100 sans plancher : toute la résistance compte.
+    static resistanceValue(stat) {
+        if (stat.RESISTANCE_BUFF <= 0) return stat.RESISTANCE
+        return stat.RESISTANCE - stat.RESISTANCE_BUFF + stat.RESISTANCE_BUFF_WEIGHTED
+    }
+
     // Le moteur tire le critique avec agilité / 1000 : seuls les points entre 0 et 1000
     // augmentent cette probabilité. Le plafond ne concerne PAS le rendement du renvoi.
     // Isoler les points utiles avant la durée. Si plusieurs buffs se recouvrent, la part

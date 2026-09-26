@@ -54,11 +54,15 @@ class EntityStateClass extends EntityClass {
 	STRENGTH_BUFF = 0           // somme des buffs additifs de force à durée positive
 	STRENGTH_BUFF_WEIGHTED = 0  // même somme, pondérée par BuffDuration.multiplier
 	WISDOM
+	WISDOM_BUFF = 0
+	WISDOM_BUFF_WEIGHTED = 0
 	AGILITY
 	AGILITY_BUFF = 0
 	AGILITY_BUFF_WEIGHTED = 0
 	CRITICAL_SCALE_MEMO = null // dépend uniquement de BASE_STATS, immuable en branche
 	RESISTANCE
+	RESISTANCE_BUFF = 0
+	RESISTANCE_BUFF_WEIGHTED = 0
 	SCIENCE
 	MAGIC
 	// Boucliers qui TOMBERONT pendant la fenêtre de danger, liste plate
@@ -218,6 +222,7 @@ class EntityStateClass extends EntityClass {
 				case EFFECT_BUFF_WISDOM:
 				case EFFECT_RAW_BUFF_WISDOM:
 					this.BASE_STATS[STAT_WISDOM] -= eff[1]
+					BuffDuration.updateWisdom(this, eff[1], eff[3])
 					break
 				case EFFECT_BUFF_AGILITY:
 				case EFFECT_RAW_BUFF_AGILITY:
@@ -227,6 +232,7 @@ class EntityStateClass extends EntityClass {
 				case EFFECT_BUFF_RESISTANCE:
 				case EFFECT_RAW_BUFF_RESISTANCE:
 					this.BASE_STATS[STAT_RESISTANCE] -= eff[1]
+					BuffDuration.updateResistance(this, eff[1], eff[3])
 					break
 
 					// --- MP ---

@@ -816,6 +816,7 @@ class ConsequencesClass {
 			case EFFECT_BUFF_WISDOM:
 			case EFFECT_RAW_BUFF_WISDOM:
 				StatsTarget.WISDOM -= ValueOfEffect
+				BuffDuration.updateWisdom(StatsTarget, -ValueOfEffect, RemainingTurns)
 				break
 			case EFFECT_DAMAGE_RETURN:
 				StatsTarget.DAMAGE_RETURN -= ValueOfEffect
@@ -840,6 +841,7 @@ class ConsequencesClass {
 			case EFFECT_BUFF_RESISTANCE:
 			case EFFECT_RAW_BUFF_RESISTANCE:
 				StatsTarget.RESISTANCE -= ValueOfEffect
+				BuffDuration.updateResistance(StatsTarget, -ValueOfEffect, RemainingTurns)
 				break
 			case EFFECT_BUFF_AGILITY:
 			case EFFECT_RAW_BUFF_AGILITY:
@@ -942,6 +944,10 @@ class ConsequencesClass {
 			BuffDuration.updateStrength(TarStats, AppliedValue, Duration)
 		} else if (EffectType == EFFECT_BUFF_AGILITY || EffectType == EFFECT_RAW_BUFF_AGILITY) {
 			BuffDuration.updateAgility(TarStats, AppliedValue, Duration)
+		} else if (EffectType == EFFECT_BUFF_WISDOM || EffectType == EFFECT_RAW_BUFF_WISDOM) {
+			BuffDuration.updateWisdom(TarStats, AppliedValue, Duration)
+		} else if (EffectType == EFFECT_BUFF_RESISTANCE || EffectType == EFFECT_RAW_BUFF_RESISTANCE) {
+			BuffDuration.updateResistance(TarStats, AppliedValue, Duration)
 		}
 		var effects = TarStats.EFFECTS
 		var mergeIdx = -1
