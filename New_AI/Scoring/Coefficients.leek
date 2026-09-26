@@ -31,9 +31,10 @@ class Coefficients {
     }
     // Paliers sur la sagesse courante, si l'équipement peut soigner ou donner de la vitalité.
     static wisdom(stat) {
-        var yields = Equipment.healYield(stat)
-        // healYield renvoie deux rendements : zéro sur les deux = aucun soin possible.
-        if (yields.LEEKS == 0 && yields.SUMMONS == 0) return 0
+        // Zéro en soin et en vitalité, sur poireaux et invocations = aucun soin possible.
+        var heal = Equipment.healYield(stat)
+        var boostMaxLife = Equipment.boostMaxLifeYield(stat)
+        if (heal.LEEKS == 0 && heal.SUMMONS == 0 && boostMaxLife.LEEKS == 0 && boostMaxLife.SUMMONS == 0) return 0
         var coef = 0.2
         if (stat.WISDOM > 0) coef += 0.2
         if (stat.WISDOM >= 200) coef += 0.3
@@ -82,9 +83,10 @@ class Coefficients {
     static criticalAgility(stat) { return stat.TOTAL_TP / 100 * ScoringStateConstants.criticalScale(stat) }
     // Paliers sur la résistance courante, si l'équipement peut poser un bouclier.
     static resistance(stat) {
-        var yields = Equipment.shieldYield(stat)
-        // shieldYield renvoie deux rendements : zéro sur les deux = aucun bouclier possible.
-        if (yields.LEEKS == 0 && yields.SUMMONS == 0) return 0
+        // Zéro en bouclier absolu et relatif, sur poireaux et invocations = aucun bouclier possible.
+        var absoluteShield = Equipment.absoluteShieldYield(stat)
+        var relativeShield = Equipment.relativeShieldYield(stat)
+        if (absoluteShield.LEEKS == 0 && absoluteShield.SUMMONS == 0 && relativeShield.LEEKS == 0 && relativeShield.SUMMONS == 0) return 0
         var coef = 0.2
         if (stat.RESISTANCE > 0) coef += 0.2
         if (stat.RESISTANCE >= 200) coef += 0.3
