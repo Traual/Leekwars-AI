@@ -33,7 +33,7 @@ class ScoringDebug {
                 "aftereffect": Coefficients.aftereffect(stat),
                 "soin continu": Coefficients.heal(stat)
             ])
-            pause()
         }
+        pause()
     }
 }

@@ -18,7 +18,6 @@ class Coefficients {
         if (stat.STRENGTH >= 600) coef += 0.2
         if (stat.STRENGTH >= 800) coef += 0.2
         if (stat.STRENGTH >= 1000) coef += 0.1
-        //TODO : ADD TP and Distances
         return coef
     }
     static wisdom(stat)         { return 1 }
@@ -33,7 +32,6 @@ class Coefficients {
         if (stat.AGILITY >= 600) coef += 0.2
         if (stat.AGILITY >= 800) coef += 0.2
         if (stat.AGILITY >= 1000) coef += 0.1
-        //TODO : ADD TP and Distances ?
         return coef
     }
     // Réglage distinct du renvoi : 0.05 par point d'agilité utile au critique, avant échelle.
