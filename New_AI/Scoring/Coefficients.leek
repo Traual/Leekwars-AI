@@ -16,6 +16,11 @@ class Coefficients {
         if (stat.STRENGTH >= 600) coef += 0.2
         if (stat.STRENGTH >= 800) coef += 0.2
         if (stat.STRENGTH >= 1000) coef += 0.1
+        // La puissance multiplie les dégâts : cumulés, +0.2 dès 20, +0.5 dès 50, +1 dès 100, +2 dès 200.
+        if (stat.POWER >= 20) coef += 0.2
+        if (stat.POWER >= 50) coef += 0.3
+        if (stat.POWER >= 100) coef += 0.5
+        if (stat.POWER >= 200) coef += 1
         return coef * strengthTpMultiplier(stat)
     }
     // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
@@ -107,6 +112,13 @@ class Coefficients {
         if (stat.SCIENCE >= 600) coef += 0.2
         if (stat.SCIENCE >= 800) coef += 0.2
         if (stat.SCIENCE >= 1000) coef += 0.1
+        // La puissance multiplie les dégâts nova, pas les buffs : même cascade que la force.
+        if (Equipment.canUseNovaDamage(stat)) {
+            if (stat.POWER >= 20) coef += 0.2
+            if (stat.POWER >= 50) coef += 0.3
+            if (stat.POWER >= 100) coef += 0.5
+            if (stat.POWER >= 200) coef += 1
+        }
         return coef * scienceTpMultiplier(stat)
     }
     // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
@@ -129,6 +141,13 @@ class Coefficients {
         if (stat.MAGIC >= 600) coef += 0.2
         if (stat.MAGIC >= 800) coef += 0.2
         if (stat.MAGIC >= 1000) coef += 0.1
+        // La puissance multiplie le poison, pas les entraves : même cascade que la force.
+        if (Equipment.canUsePoison(stat)) {
+            if (stat.POWER >= 20) coef += 0.2
+            if (stat.POWER >= 50) coef += 0.3
+            if (stat.POWER >= 100) coef += 0.5
+            if (stat.POWER >= 200) coef += 1
+        }
         return coef * magicTpMultiplier(stat)
     }
     // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
