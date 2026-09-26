@@ -21,86 +21,31 @@ class EquipmentYield {
 }
 
 class Equipment {
-    // Dégâts physiques de base moyens par PT, sur UNE cible au centre de la zone.
-    // Renvoie un EquipmentYield : meilleur rendement par type de cible.
-    // Ni force, puissance, critique, boucliers, vol de vie, ni multiplication de zone.
-    // Coût nominal : on ignore équipement de l'arme, cooldowns, limites d'usage et portée.
-    static strengthYield(stat) {
-        // Une invocation simulée et une vraie peuvent partager un ID après un cast réel.
-        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
-        if (key in EQUIPMENT_STRENGTH_YIELD) return EQUIPMENT_STRENGTH_YIELD[key]
-        var bestLeek = 0
-        var bestSummon = 0
-        for (var item in stat.INVENTORY) {
-            var info = ITEMINFO[item]
-            if (info == null || info.COST <= 0) continue
-            var leekDamage = 0
-            var summonDamage = 0
-            for (var eff in info.EFFECTS) {
-                // Châtiment (LIFE_DAMAGE), poison, nova et passifs ne dépendent pas
-                // directement de la force comme DAMAGE. Les dégâts sur soi sont exclus.
-                if (eff[0] != EFFECT_DAMAGE || (eff[5] & EFFECT_MODIFIER_ON_CASTER)) continue
-                if (!(eff[4] & EFFECT_TARGET_ENEMIES)) continue
-                // getChipEffects/getWeaponEffects renvoient minimum et maximum.
-                var damage = (eff[1] + eff[2]) / 2
-                if (eff[4] & EFFECT_TARGET_NON_SUMMONS) leekDamage += damage
-                if (eff[4] & EFFECT_TARGET_SUMMONS) summonDamage += damage
-            }
-            // Meilleur item pour chaque profil, sans additionner les armes entre elles.
-            bestLeek = max(bestLeek, leekDamage / info.COST)
-            bestSummon = max(bestSummon, summonDamage / info.COST)
-        }
-        var best = new EquipmentYield(bestLeek, bestSummon)
-        EQUIPMENT_STRENGTH_YIELD[key] = best
-        return best
-    }
-
-    // Points de renvoi de base moyens par PT, sur UNE cible alliée au centre de la zone.
-    // Mêmes simplifications que strengthYield : coût nominal, sans cooldown ni durée du renvoi.
-    // Le renvoi déjà présent sur le porteur n'entre pas ici : seul son équipement lançable compte.
-    static damageReturnYield(stat) {
-        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
-        if (key in EQUIPMENT_DAMAGE_RETURN_YIELD) return EQUIPMENT_DAMAGE_RETURN_YIELD[key]
-        var bestLeek = 0
-        var bestSummon = 0
-        for (var item in stat.INVENTORY) {
-            var info = ITEMINFO[item]
-            if (info == null || info.COST <= 0) continue
-            var leekReturn = 0
-            var summonReturn = 0
-            for (var eff in info.EFFECTS) {
-                if (eff[0] != EFFECT_DAMAGE_RETURN) continue
-                var value = (eff[1] + eff[2]) / 2
-                if (eff[5] & EFFECT_MODIFIER_ON_CASTER) {
-                    if (stat.IS_SUMMON) summonReturn += value
-                    else leekReturn += value
-                } else if (eff[4] & EFFECT_TARGET_ALLIES) {
-                    if (eff[4] & EFFECT_TARGET_NON_SUMMONS) leekReturn += value
-                    if (eff[4] & EFFECT_TARGET_SUMMONS) summonReturn += value
-                }
-            }
-            bestLeek = max(bestLeek, leekReturn / info.COST)
-            bestSummon = max(bestSummon, summonReturn / info.COST)
-        }
-        var best = new EquipmentYield(bestLeek, bestSummon)
-        EQUIPMENT_DAMAGE_RETURN_YIELD[key] = best
-        return best
-    }
-
+    // Dégâts physiques de base moyens par PT, sur UNE cible ennemie au centre de la zone.
+    // Châtiment (LIFE_DAMAGE), poison, nova et passifs ne dépendent pas directement de la
+    // force comme DAMAGE. Les dégâts sur soi sont exclus.
+    static strengthYield(stat) { return effectYield(stat, EFFECT_DAMAGE, EQUIPMENT_STRENGTH_YIELD, true) }
+    // Renvoi de base moyen par PT. Le renvoi déjà présent sur le porteur n'entre pas ici :
+    // seul son équipement lançable compte, sans durée du renvoi.
+    static damageReturnYield(stat) { return effectYield(stat, EFFECT_DAMAGE_RETURN, EQUIPMENT_DAMAGE_RETURN_YIELD, false) }
     // Soin de base moyen par PT (EFFECT_HEAL, instantané ou par tour), multiplié par la sagesse.
     // Le soin brut, indépendant de la sagesse, n'entre pas.
-    static healYield(stat) { return allyEffectYield(stat, EFFECT_HEAL, EQUIPMENT_HEAL_YIELD) }
+    static healYield(stat) { return effectYield(stat, EFFECT_HEAL, EQUIPMENT_HEAL_YIELD, false) }
     // Vitalité de base moyenne par PT (EFFECT_BOOST_MAX_LIFE), multipliée par la sagesse.
-    static boostMaxLifeYield(stat) { return allyEffectYield(stat, EFFECT_BOOST_MAX_LIFE, EQUIPMENT_BOOST_MAX_LIFE_YIELD) }
+    static boostMaxLifeYield(stat) { return effectYield(stat, EFFECT_BOOST_MAX_LIFE, EQUIPMENT_BOOST_MAX_LIFE_YIELD, false) }
     // Bouclier absolu de base moyen par PT, en PV, multiplié par la résistance.
-    static absoluteShieldYield(stat) { return allyEffectYield(stat, EFFECT_ABSOLUTE_SHIELD, EQUIPMENT_ABSOLUTE_SHIELD_YIELD) }
+    static absoluteShieldYield(stat) { return effectYield(stat, EFFECT_ABSOLUTE_SHIELD, EQUIPMENT_ABSOLUTE_SHIELD_YIELD, false) }
     // Bouclier relatif de base moyen par PT, en %, multiplié par la résistance.
-    static relativeShieldYield(stat) { return allyEffectYield(stat, EFFECT_RELATIVE_SHIELD, EQUIPMENT_RELATIVE_SHIELD_YIELD) }
+    static relativeShieldYield(stat) { return effectYield(stat, EFFECT_RELATIVE_SHIELD, EQUIPMENT_RELATIVE_SHIELD_YIELD, false) }
 
-    // Valeur de base moyenne par PT d'un type d'effet, sur UNE cible alliée au centre de la zone.
-    // Un effet sur le lanceur compte pour le porteur lui-même, selon son profil.
-    // Mêmes simplifications que strengthYield. Le cache est propre au type d'effet.
-    static allyEffectYield(stat, effectType, cache) {
+    // Valeur de base moyenne par PT d'un type d'effet, sur UNE cible au centre de la zone.
+    // Renvoie un EquipmentYield : meilleur item par type de cible, sans additionner les items.
+    // onEnemies : effet lancé sur un ennemi, ceux sur soi exclus. Sinon sur un allié, et un
+    // effet sur le lanceur compte pour le porteur lui-même, selon son profil.
+    // Ni stat, puissance, critique, ni multiplication de zone. Coût nominal : on ignore
+    // équipement de l'arme, cooldowns, limites d'usage et portée. Un cache par type d'effet.
+    static effectYield(stat, effectType, cache, onEnemies) {
+        // Une invocation simulée et une vraie peuvent partager un ID après un cast réel.
         var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
         if (key in cache) return cache[key]
         var bestLeek = 0
@@ -112,11 +57,13 @@ class Equipment {
             var summonValue = 0
             for (var eff in info.EFFECTS) {
                 if (eff[0] != effectType) continue
+                // getChipEffects/getWeaponEffects renvoient minimum et maximum.
                 var value = (eff[1] + eff[2]) / 2
                 if (eff[5] & EFFECT_MODIFIER_ON_CASTER) {
+                    if (onEnemies) continue
                     if (stat.IS_SUMMON) summonValue += value
                     else leekValue += value
-                } else if (eff[4] & EFFECT_TARGET_ALLIES) {
+                } else if (eff[4] & (onEnemies ? EFFECT_TARGET_ENEMIES : EFFECT_TARGET_ALLIES)) {
                     if (eff[4] & EFFECT_TARGET_NON_SUMMONS) leekValue += value
                     if (eff[4] & EFFECT_TARGET_SUMMONS) summonValue += value
                 }
