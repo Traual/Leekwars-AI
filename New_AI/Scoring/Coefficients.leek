@@ -140,22 +140,63 @@ class Coefficients {
         if (tp >= 8) return 0.8
         return 0.5
     }
-    // La puissance multiplie les dégâts et le poison : ses paliers suivent la force ou la magie
-    // qu'elle amplifie, la plus haute des deux parmi celles que l'équipement peut lancer.
+    // La puissance multiplie quatre familles d'effets, cumulables dans un même tour (arme de
+    // force et poison, par exemple) : une part par famille lançable, et la somme des parts.
     static power(stat) {
         if (!Equipment.canUsePower(stat)) return 0
-        var amplified = 0
-        if (Equipment.canUseStrength(stat)) amplified = stat.STRENGTH
-        var poison = Equipment.poisonYield(stat)
-        if ((poison.LEEKS != 0 || poison.SUMMONS != 0) && stat.MAGIC > amplified) amplified = stat.MAGIC
-        var coef = 0.2
-        if (amplified > 0) coef += 0.2
-        if (amplified >= 200) coef += 0.3
-        if (amplified >= 400) coef += 0.3
-        if (amplified >= 600) coef += 0.2
-        if (amplified >= 800) coef += 0.2
-        if (amplified >= 1000) coef += 0.1
+        var coef = powerStrengthPart(stat) + powerMagicPart(stat) + powerSciencePart(stat) + powerLifeDamagePart(stat)
         return coef * powerTpMultiplier(stat)
+    }
+    // Dégâts : paliers sur la force, si l'entité peut frapper.
+    static powerStrengthPart(stat) {
+        if (!Equipment.canUseStrength(stat)) return 0
+        var coef = 0.2
+        if (stat.STRENGTH > 0) coef += 0.2
+        if (stat.STRENGTH >= 200) coef += 0.3
+        if (stat.STRENGTH >= 400) coef += 0.3
+        if (stat.STRENGTH >= 600) coef += 0.2
+        if (stat.STRENGTH >= 800) coef += 0.2
+        if (stat.STRENGTH >= 1000) coef += 0.1
+        return coef
+    }
+    // Poison : paliers sur la magie, si l'entité peut empoisonner. Les entraves n'entrent pas.
+    static powerMagicPart(stat) {
+        var poison = Equipment.poisonYield(stat)
+        if (poison.LEEKS == 0 && poison.SUMMONS == 0) return 0
+        var coef = 0.2
+        if (stat.MAGIC > 0) coef += 0.2
+        if (stat.MAGIC >= 200) coef += 0.3
+        if (stat.MAGIC >= 400) coef += 0.3
+        if (stat.MAGIC >= 600) coef += 0.2
+        if (stat.MAGIC >= 800) coef += 0.2
+        if (stat.MAGIC >= 1000) coef += 0.1
+        return coef
+    }
+    // Dégâts nova : paliers sur la science, si l'entité peut lancer une nova.
+    static powerSciencePart(stat) {
+        var nova = Equipment.novaDamageYield(stat)
+        if (nova.LEEKS == 0 && nova.SUMMONS == 0) return 0
+        var coef = 0.2
+        if (stat.SCIENCE > 0) coef += 0.2
+        if (stat.SCIENCE >= 200) coef += 0.3
+        if (stat.SCIENCE >= 400) coef += 0.3
+        if (stat.SCIENCE >= 600) coef += 0.2
+        if (stat.SCIENCE >= 800) coef += 0.2
+        if (stat.SCIENCE >= 1000) coef += 0.1
+        return coef
+    }
+    // Châtiment : ses dégâts suivent la vie du lanceur, paliers sur la vie courante.
+    static powerLifeDamagePart(stat) {
+        var lifeDamage = Equipment.lifeDamageYield(stat)
+        if (lifeDamage.LEEKS == 0 && lifeDamage.SUMMONS == 0) return 0
+        var coef = 0.2
+        if (stat.LIFE > 0) coef += 0.2
+        if (stat.LIFE >= 1000) coef += 0.3
+        if (stat.LIFE >= 2000) coef += 0.3
+        if (stat.LIFE >= 3000) coef += 0.2
+        if (stat.LIFE >= 4000) coef += 0.2
+        if (stat.LIFE >= 5000) coef += 0.1
+        return coef
     }
     // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
     static powerTpMultiplier(stat) {
