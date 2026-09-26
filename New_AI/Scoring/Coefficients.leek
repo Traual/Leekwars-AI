@@ -19,7 +19,7 @@ class Coefficients {
         if (stat.STRENGTH >= 800) coef += 0.2
         if (stat.STRENGTH >= 1000) coef += 0.1
         // Multiplicateurs cumulés : dès 32 PT, 1 × 1.5 × 1.7 = 2.55.
-        var Tp_Multiplier
+        var Tp_Multiplier = 0.8
         if (stat.TOTAL_TP < 8) Tp_Multiplier = 0.5
         if (stat.TOTAL_TP >= 16) Tp_Multiplier = 1
         if (stat.TOTAL_TP >= 24) Tp_Multiplier = 1.5
@@ -41,7 +41,7 @@ class Coefficients {
         if (stat.AGILITY >= 800) coef += 0.2
         if (stat.AGILITY >= 1000) coef += 0.1
         // Même règle que la force, uniquement sur le renvoi : le critique dépend déjà des PT.
-        var Tp_Multiplier
+        var Tp_Multiplier = 0.8
         if (stat.TOTAL_TP < 8) Tp_Multiplier = 0.5
         if (stat.TOTAL_TP >= 16) Tp_Multiplier = 1
         if (stat.TOTAL_TP >= 24) Tp_Multiplier = 1.5
