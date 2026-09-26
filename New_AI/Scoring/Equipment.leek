@@ -16,6 +16,16 @@ global EQUIPMENT_SHACKLE_AGILITY_YIELD = [:]
 global EQUIPMENT_SHACKLE_WISDOM_YIELD = [:]
 global EQUIPMENT_SHACKLE_TP_YIELD = [:]
 global EQUIPMENT_SHACKLE_MP_YIELD = [:]
+global EQUIPMENT_BUFF_STRENGTH_YIELD = [:]
+global EQUIPMENT_BUFF_AGILITY_YIELD = [:]
+global EQUIPMENT_BUFF_WISDOM_YIELD = [:]
+global EQUIPMENT_BUFF_RESISTANCE_YIELD = [:]
+global EQUIPMENT_BUFF_TP_YIELD = [:]
+global EQUIPMENT_BUFF_MP_YIELD = [:]
+global EQUIPMENT_NOVA_VITALITY_YIELD = [:]
+global EQUIPMENT_AFTEREFFECT_YIELD = [:]
+global EQUIPMENT_NOVA_DAMAGE_YIELD = [:]
+global EQUIPMENT_CAN_USE_SCIENCE = [:]
 global EQUIPMENT_CAN_USE_STRENGTH = [:]
 global EQUIPMENT_CAN_USE_DAMAGE_RETURN = [:]
 global EQUIPMENT_CAN_USE_WISDOM = [:]
@@ -59,6 +69,18 @@ class Equipment {
     static shackleTpYield(stat) { return effectYield(stat, EFFECT_SHACKLE_TP, EQUIPMENT_SHACKLE_TP_YIELD, true) }
     static shackleMpYield(stat) { return effectYield(stat, EFFECT_SHACKLE_MP, EQUIPMENT_SHACKLE_MP_YIELD, true) }
 
+    // Effets multipliés par la science : les buffs et la vitalité nova sur un allié,
+    // le contrecoup et les dégâts nova sur un ennemi.
+    static buffStrengthYield(stat) { return effectYield(stat, EFFECT_BUFF_STRENGTH, EQUIPMENT_BUFF_STRENGTH_YIELD, false) }
+    static buffAgilityYield(stat) { return effectYield(stat, EFFECT_BUFF_AGILITY, EQUIPMENT_BUFF_AGILITY_YIELD, false) }
+    static buffWisdomYield(stat) { return effectYield(stat, EFFECT_BUFF_WISDOM, EQUIPMENT_BUFF_WISDOM_YIELD, false) }
+    static buffResistanceYield(stat) { return effectYield(stat, EFFECT_BUFF_RESISTANCE, EQUIPMENT_BUFF_RESISTANCE_YIELD, false) }
+    static buffTpYield(stat) { return effectYield(stat, EFFECT_BUFF_TP, EQUIPMENT_BUFF_TP_YIELD, false) }
+    static buffMpYield(stat) { return effectYield(stat, EFFECT_BUFF_MP, EQUIPMENT_BUFF_MP_YIELD, false) }
+    static novaVitalityYield(stat) { return effectYield(stat, EFFECT_NOVA_VITALITY, EQUIPMENT_NOVA_VITALITY_YIELD, false) }
+    static aftereffectYield(stat) { return effectYield(stat, EFFECT_AFTEREFFECT, EQUIPMENT_AFTEREFFECT_YIELD, true) }
+    static novaDamageYield(stat) { return effectYield(stat, EFFECT_NOVA_DAMAGE, EQUIPMENT_NOVA_DAMAGE_YIELD, true) }
+
     // Verdicts « l'équipement peut-il servir cette stat », mis en cache : le scoring les
     // interroge à chaque nœud, les rendements détaillés ne sont relus qu'au premier appel.
     // Vrai si l'équipement peut lancer une attaque physique, sur poireaux ou invocations.
@@ -100,6 +122,18 @@ class Equipment {
         var result = anyYield([poisonYield(stat), shackleStrengthYield(stat), shackleMagicYield(stat), shackleAgilityYield(stat),
                                      shackleWisdomYield(stat), shackleTpYield(stat), shackleMpYield(stat)])
         EQUIPMENT_CAN_USE_MAGIC[key] = result
+        return result
+    }
+
+    // Vrai si l'équipement peut lancer un buff, une vitalité nova, un contrecoup ou des dégâts
+    // nova, sur poireaux ou invocations.
+    static canUseScience(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_CAN_USE_SCIENCE) return EQUIPMENT_CAN_USE_SCIENCE[key]
+        var result = anyYield([buffStrengthYield(stat), buffAgilityYield(stat), buffWisdomYield(stat), buffResistanceYield(stat),
+                               buffTpYield(stat), buffMpYield(stat), novaVitalityYield(stat), aftereffectYield(stat),
+                               novaDamageYield(stat)])
+        EQUIPMENT_CAN_USE_SCIENCE[key] = result
         return result
     }
 

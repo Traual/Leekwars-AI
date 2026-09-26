@@ -16,7 +16,7 @@ class ScoringClass {
         score += BuffDuration.agilityValue(stat) * (Coefficients.agility(stat) - criticalCoef)
         score += BuffDuration.criticalAgilityValue(stat) * criticalCoef
         score += BuffDuration.resistanceValue(stat) * Coefficients.resistance(stat)
-        score += stat.SCIENCE               * Coefficients.science(stat)
+        score += BuffDuration.scienceValue(stat) * Coefficients.science(stat)
         score += BuffDuration.magicValue(stat) * Coefficients.magic(stat)
         score += stat.POWER                 * Coefficients.power(stat)
         score += stat.TOTAL_TP              * Coefficients.totalTP(stat)

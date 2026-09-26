@@ -64,6 +64,8 @@ class EntityStateClass extends EntityClass {
 	RESISTANCE_BUFF = 0
 	RESISTANCE_BUFF_WEIGHTED = 0
 	SCIENCE
+	SCIENCE_BUFF = 0
+	SCIENCE_BUFF_WEIGHTED = 0
 	MAGIC
 	MAGIC_BUFF = 0
 	MAGIC_BUFF_WEIGHTED = 0
@@ -248,6 +250,7 @@ class EntityStateClass extends EntityClass {
 					break
 				case EFFECT_RAW_BUFF_SCIENCE:
 					this.BASE_STATS[STAT_SCIENCE] -= eff[1]
+					BuffDuration.updateScience(this, eff[1], eff[3])
 					break
 
 					// --- RESISTANCE ---

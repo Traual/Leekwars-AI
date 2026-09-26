@@ -97,7 +97,27 @@ class Coefficients {
         if (tp >= 8) return 0.6
         return 0.2
     }
-    static science(stat)        { return 1 }
+    // Paliers sur la science courante, si l'équipement peut buffer, lancer une nova ou un contrecoup.
+    static science(stat) {
+        if (!Equipment.canUseScience(stat)) return 0
+        var coef = 0.2
+        if (stat.SCIENCE > 0) coef += 0.2
+        if (stat.SCIENCE >= 200) coef += 0.3
+        if (stat.SCIENCE >= 400) coef += 0.3
+        if (stat.SCIENCE >= 600) coef += 0.2
+        if (stat.SCIENCE >= 800) coef += 0.2
+        if (stat.SCIENCE >= 1000) coef += 0.1
+        return coef * scienceTpMultiplier(stat)
+    }
+    // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
+    static scienceTpMultiplier(stat) {
+        var tp = stat.TOTAL_TP
+        if (tp >= 32) return 1.7
+        if (tp >= 24) return 1.5
+        if (tp >= 16) return 1
+        if (tp >= 8) return 0.8
+        return 0.5
+    }
     // Paliers sur la magie courante, si l'équipement peut empoisonner ou entraver.
     // Une seule entrave suffit : buffer la magie d'un allié qui entrave la force vaut le coup.
     static magic(stat) {

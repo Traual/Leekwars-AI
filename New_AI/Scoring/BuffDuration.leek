@@ -93,6 +93,19 @@ class BuffDuration {
         return stat.MAGIC_BUFF_WEIGHTED * stat.MAGIC / stat.MAGIC_BUFF
     }
 
+    static updateScience(stat, value, turns) {
+        if (turns <= 0) return;
+        stat.SCIENCE_BUFF += value
+        stat.SCIENCE_BUFF_WEIGHTED += value * multiplier(turns, stat.ID == Me)
+        if (stat.SCIENCE_BUFF == 0) stat.SCIENCE_BUFF_WEIGHTED = 0
+    }
+
+    // Le moteur prend la science telle quelle, sans plancher : toute la science compte.
+    static scienceValue(stat) {
+        if (stat.SCIENCE_BUFF <= 0) return stat.SCIENCE
+        return stat.SCIENCE - stat.SCIENCE_BUFF + stat.SCIENCE_BUFF_WEIGHTED
+    }
+
     // Le moteur tire le critique avec agilité / 1000 : seuls les points entre 0 et 1000
     // augmentent cette probabilité. Le plafond ne concerne PAS le rendement du renvoi.
     // Isoler les points utiles avant la durée. Si plusieurs buffs se recouvrent, la part
