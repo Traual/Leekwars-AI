@@ -5,6 +5,7 @@ include("../includes.leek")
 // virtuels des invocations peuvent alors désigner d'autres inventaires.
 global EQUIPMENT_STRENGTH_YIELD = [:]
 global EQUIPMENT_DAMAGE_RETURN_YIELD = [:]
+global EQUIPMENT_HEAL_YIELD = [:]
 
 class EquipmentYield {
     LEEKS
@@ -80,6 +81,39 @@ class Equipment {
         }
         var best = new EquipmentYield(bestLeek, bestSummon)
         EQUIPMENT_DAMAGE_RETURN_YIELD[key] = best
+        return best
+    }
+
+    // PV rendus de base moyens par PT, sur UNE cible alliée au centre de la zone.
+    // Soin (instantané ou par tour) et vitalité : les deux effets qui dépendent de la sagesse.
+    // Le soin brut, indépendant de la sagesse, n'entre pas. Mêmes simplifications que strengthYield.
+    static healYield(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_HEAL_YIELD) return EQUIPMENT_HEAL_YIELD[key]
+        var bestLeek = 0
+        var bestSummon = 0
+        for (var item in stat.INVENTORY) {
+            var info = ITEMINFO[item]
+            if (info == null || info.COST <= 0) continue
+            var leekHeal = 0
+            var summonHeal = 0
+            for (var eff in info.EFFECTS) {
+                if (eff[0] != EFFECT_HEAL && eff[0] != EFFECT_BOOST_MAX_LIFE) continue
+                var value = (eff[1] + eff[2]) / 2
+                // Un effet sur le lanceur soigne le porteur lui-même, selon son profil.
+                if (eff[5] & EFFECT_MODIFIER_ON_CASTER) {
+                    if (stat.IS_SUMMON) summonHeal += value
+                    else leekHeal += value
+                } else if (eff[4] & EFFECT_TARGET_ALLIES) {
+                    if (eff[4] & EFFECT_TARGET_NON_SUMMONS) leekHeal += value
+                    if (eff[4] & EFFECT_TARGET_SUMMONS) summonHeal += value
+                }
+            }
+            bestLeek = max(bestLeek, leekHeal / info.COST)
+            bestSummon = max(bestSummon, summonHeal / info.COST)
+        }
+        var best = new EquipmentYield(bestLeek, bestSummon)
+        EQUIPMENT_HEAL_YIELD[key] = best
         return best
     }
 }
