@@ -23,8 +23,13 @@ class Play {
 		// rejouer celle d'un autre tour ni celle d'une autre entite (poireau et bulbes
 		// partagent la VM, donc les globals).
 		BFS_LAST_CHAIN = []
+		var showCoefficients = ScoringDebug.ENABLED
 		while (true) {
 			var State = StateClass.Virtualize()
+			if (showCoefficients) {
+				ScoringDebug.coefficients(State)
+				showCoefficients = false // Une fois par tour, pas à chaque action réelle.
+			}
 			// Date limite du tour, recalculee a chaque action reelle : le nombre de bulbes
 			// vivants change quand j'en invoque un ou qu'il meurt, et chacun cherchera apres
 			// moi dans ce meme compteur.

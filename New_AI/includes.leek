@@ -34,6 +34,7 @@ include("Scoring/StateConstants.leek")
 include("Scoring/BuffDuration.leek")
 include("Scoring/Coefficients.leek")
 include("Scoring/Scoring.leek")
+include("Scoring/Debug.leek")
 include("Scoring/Placement.leek")
 
 include("User/Node.leek")

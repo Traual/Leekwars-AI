@@ -1,0 +1,39 @@
+// Affichage manuel des coefficients au début du tour, avant la première recherche.
+include("../includes.leek")
+
+class ScoringDebug {
+    static ENABLED = true // false désactive les logs ET les pauses.
+
+    static coefficients(State) {
+        // Même contexte que le BFS : les coefficients d'équipement ont besoin des poids.
+        ROOT_SCORING_CONSTANTS = ScoringStateConstants.get(State, StateClass.getBaseHash(State))
+        for (var id: var stat in State) {
+            if (stat.LIFE <= 0) continue
+            debug("[COEFS] Tour " + getTurn() + " | " + stat.NAME + " (#" + id + ")"
+                + (id == Me ? " [moi]" : (stat.SIDE == State[Me].SIDE ? " [allié]" : " [adversaire]")))
+            // Coefficients bruts : la durée des buffs s'applique séparément dans le scoring.
+            debug([
+                "présence": Coefficients.presence(stat),
+                "vie": Coefficients.life(stat),
+                "vie max": Coefficients.totalLife(stat),
+                "force": Coefficients.strength(stat),
+                "sagesse": Coefficients.wisdom(stat),
+                "agilité (renvoi)": Coefficients.agility(stat),
+                "agilité (critique)": Coefficients.criticalAgility(stat),
+                "résistance": Coefficients.resistance(stat),
+                "science": Coefficients.science(stat),
+                "magie": Coefficients.magic(stat),
+                "puissance": Coefficients.power(stat),
+                "PT max": Coefficients.totalTP(stat),
+                "PM max": Coefficients.totalMP(stat),
+                "bouclier absolu": Coefficients.absoluteShield(stat),
+                "bouclier relatif": Coefficients.relativeShield(stat),
+                "renvoi": Coefficients.damageReturn(stat),
+                "poison": Coefficients.poison(stat),
+                "aftereffect": Coefficients.aftereffect(stat),
+                "soin continu": Coefficients.heal(stat)
+            ])
+            pause()
+        }
+    }
+}

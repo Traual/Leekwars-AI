@@ -12,13 +12,14 @@ Les modifications courantes du scoring se font sur **`main`**.
 
 ## Modifier le scoring
 
-Six fichiers :
+Sept fichiers :
 
 - [`Coefficients.leek`](New_AI/Scoring/Coefficients.leek) : une fonction simple par statistique.
 - [`Equipment.leek`](New_AI/Scoring/Equipment.leek) : utilitaires de rendement de l'équipement, mis en cache par entité et par tour.
 - [`StateConstants.leek`](New_AI/Scoring/StateConstants.leek) : proportions de cibles adverses/alliées en cache par `BaseHash`, et échelle du bonus critique.
 - [`BuffDuration.leek`](New_AI/Scoring/BuffDuration.leek) : multiplicateur de durée et agrégats des buffs de force et d'agilité.
 - [`Scoring.leek`](New_AI/Scoring/Scoring.leek) : somme des statistiques multipliées par leur coefficient, alliés moins adversaires.
+- [`Debug.leek`](New_AI/Scoring/Debug.leek) : coefficients de chaque vivant au début du tour, avec une pause par entité. `ScoringDebug.ENABLED = false` désactive l'affichage et les pauses ; les valeurs affichées sont les coefficients avant pondération par durée.
 - [`Placement.leek`](New_AI/Scoring/Placement.leek) : distances et exposition au danger, soustraites à la fin des suites d’actions.
 
 Une entité morte vaut zéro. Chaque vivant reçoit le même bonus de présence, sans score d’importance. Les coefficients sont des valeurs de départ à régler manuellement.
