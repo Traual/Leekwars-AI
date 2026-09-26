@@ -18,14 +18,16 @@ class Coefficients {
         if (stat.STRENGTH >= 600) coef += 0.2
         if (stat.STRENGTH >= 800) coef += 0.2
         if (stat.STRENGTH >= 1000) coef += 0.1
-        // Multiplicateurs cumulés : dès 32 PT, 1 × 1.5 × 1.7 = 2.55.
-        var Tp_Multiplier = 0.8
-        if (stat.TOTAL_TP < 8) Tp_Multiplier = 0.5
-        if (stat.TOTAL_TP >= 16) Tp_Multiplier = 1
-        if (stat.TOTAL_TP >= 24) Tp_Multiplier = 1.5
-        if (stat.TOTAL_TP >= 32) Tp_Multiplier = 1.7
-        coef *= Tp_Multiplier
-        return coef
+        return coef * strengthTpMultiplier(stat)
+    }
+    // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
+    static strengthTpMultiplier(stat) {
+        var tp = stat.TOTAL_TP
+        if (tp >= 32) return 1.7
+        if (tp >= 24) return 1.5
+        if (tp >= 16) return 1
+        if (tp >= 8) return 0.8
+        return 0.5
     }
     static wisdom(stat)         { return 1 }
     // Base critique pour tous, puis paliers sur l'agilité courante si on peut poser du renvoi.
@@ -40,14 +42,17 @@ class Coefficients {
         if (stat.AGILITY >= 600) coef += 0.2
         if (stat.AGILITY >= 800) coef += 0.2
         if (stat.AGILITY >= 1000) coef += 0.1
-        // Même règle que la force, uniquement sur le renvoi : le critique dépend déjà des PT.
-        var Tp_Multiplier = 0.8
-        if (stat.TOTAL_TP < 8) Tp_Multiplier = 0.5
-        if (stat.TOTAL_TP >= 16) Tp_Multiplier = 1
-        if (stat.TOTAL_TP >= 24) Tp_Multiplier = 1.5
-        if (stat.TOTAL_TP >= 32) Tp_Multiplier = 1.7
-        coef *= Tp_Multiplier
-        return criticalCoef + coef
+        // Multiplicateur uniquement sur le renvoi : le critique dépend déjà des PT.
+        return criticalCoef + coef * agilityTpMultiplier(stat)
+    }
+    // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
+    static agilityTpMultiplier(stat) {
+        var tp = stat.TOTAL_TP
+        if (tp >= 32) return 1.7
+        if (tp >= 24) return 1.5
+        if (tp >= 16) return 1
+        if (tp >= 8) return 0.8
+        return 0.5
     }
     // Réglage distinct du renvoi : TOTAL_TP / 100 par point d'agilité utile au critique, avant échelle.
     static criticalAgility(stat) { return stat.TOTAL_TP / 100 * ScoringStateConstants.criticalScale(stat) }
