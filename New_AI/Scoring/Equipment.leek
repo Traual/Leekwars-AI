@@ -28,6 +28,9 @@ global EQUIPMENT_NOVA_DAMAGE_YIELD = [:]
 global EQUIPMENT_CAN_USE_SCIENCE = [:]
 global EQUIPMENT_LIFE_DAMAGE_YIELD = [:]
 global EQUIPMENT_CAN_USE_POWER = [:]
+global EQUIPMENT_CAN_USE_POISON = [:]
+global EQUIPMENT_CAN_USE_NOVA_DAMAGE = [:]
+global EQUIPMENT_CAN_USE_LIFE_DAMAGE = [:]
 global EQUIPMENT_CAN_USE_STRENGTH = [:]
 global EQUIPMENT_CAN_USE_DAMAGE_RETURN = [:]
 global EQUIPMENT_CAN_USE_WISDOM = [:]
@@ -149,6 +152,30 @@ class Equipment {
         if (key in EQUIPMENT_CAN_USE_POWER) return EQUIPMENT_CAN_USE_POWER[key]
         var result = anyYield([strengthYield(stat), lifeDamageYield(stat), novaDamageYield(stat), poisonYield(stat)])
         EQUIPMENT_CAN_USE_POWER[key] = result
+        return result
+    }
+    // Vrai si l'équipement peut lancer un poison, sur poireaux ou invocations.
+    static canUsePoison(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_CAN_USE_POISON) return EQUIPMENT_CAN_USE_POISON[key]
+        var result = anyYield([poisonYield(stat)])
+        EQUIPMENT_CAN_USE_POISON[key] = result
+        return result
+    }
+    // Vrai si l'équipement peut lancer des dégâts nova, sur poireaux ou invocations.
+    static canUseNovaDamage(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_CAN_USE_NOVA_DAMAGE) return EQUIPMENT_CAN_USE_NOVA_DAMAGE[key]
+        var result = anyYield([novaDamageYield(stat)])
+        EQUIPMENT_CAN_USE_NOVA_DAMAGE[key] = result
+        return result
+    }
+    // Vrai si l'équipement peut lancer un châtiment, sur poireaux ou invocations.
+    static canUseLifeDamage(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_CAN_USE_LIFE_DAMAGE) return EQUIPMENT_CAN_USE_LIFE_DAMAGE[key]
+        var result = anyYield([lifeDamageYield(stat)])
+        EQUIPMENT_CAN_USE_LIFE_DAMAGE[key] = result
         return result
     }
 
