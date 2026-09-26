@@ -21,14 +21,18 @@ class Coefficients {
         return coef
     }
     static wisdom(stat)         { return 1 }
-    // Renvois futurs : 10 PT / 100, convertis en score avec la valeur d'un point de renvoi.
+    // Base critique pour tous, puis paliers sur l'agilité courante si on peut poser du renvoi.
     static agility(stat) {
+        var coef = criticalAgility(stat)
         var yields = Equipment.damageReturnYield(stat)
-        if (ROOT_SCORING_CONSTANTS == null) return 0
-        var weights = ROOT_SCORING_CONSTANTS.ALLIES_BY_SIDE[stat.SIDE]
-        if (weights == null) return 0
-        return (yields.LEEKS * weights.LEEKS + yields.SUMMONS * weights.SUMMONS)
-            * 0.1 * damageReturn(stat)
+        if (yields.LEEKS == 0 && yields.SUMMONS == 0) return coef
+        if (stat.AGILITY > 0) coef += 0.2
+        if (stat.AGILITY >= 200) coef += 0.3
+        if (stat.AGILITY >= 400) coef += 0.3
+        if (stat.AGILITY >= 600) coef += 0.2
+        if (stat.AGILITY >= 800) coef += 0.2
+        if (stat.AGILITY >= 1000) coef += 0.1
+        return coef
     }
     // Réglage distinct du renvoi : 0.05 par point d'agilité utile au critique, avant échelle.
     static criticalAgility(stat) { return 0.05 * ScoringStateConstants.criticalScale(stat) }

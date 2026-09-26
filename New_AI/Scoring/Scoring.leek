@@ -10,8 +10,11 @@ class ScoringClass {
         score += stat.TOTAL_LIFE            * Coefficients.totalLife(stat)
         score += BuffDuration.strengthValue(stat) * Coefficients.strength(stat)
         score += stat.WISDOM                * Coefficients.wisdom(stat)
-        score += BuffDuration.agilityValue(stat) * Coefficients.agility(stat)
-        score += BuffDuration.criticalAgilityValue(stat) * Coefficients.criticalAgility(stat)
+        // agility inclut déjà le critique : isoler sa base pour la compter une seule fois,
+        // sur les points entre 0 et 1000. Les paliers de renvoi gardent leur propre valeur.
+        var criticalCoef = Coefficients.criticalAgility(stat)
+        score += BuffDuration.agilityValue(stat) * (Coefficients.agility(stat) - criticalCoef)
+        score += BuffDuration.criticalAgilityValue(stat) * criticalCoef
         score += stat.RESISTANCE            * Coefficients.resistance(stat)
         score += stat.SCIENCE               * Coefficients.science(stat)
         score += stat.MAGIC                 * Coefficients.magic(stat)
