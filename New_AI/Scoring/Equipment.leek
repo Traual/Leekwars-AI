@@ -6,6 +6,7 @@ include("../includes.leek")
 global EQUIPMENT_STRENGTH_YIELD = [:]
 global EQUIPMENT_DAMAGE_RETURN_YIELD = [:]
 global EQUIPMENT_HEAL_YIELD = [:]
+global EQUIPMENT_SHIELD_YIELD = [:]
 
 class EquipmentYield {
     LEEKS
@@ -114,6 +115,40 @@ class Equipment {
         }
         var best = new EquipmentYield(bestLeek, bestSummon)
         EQUIPMENT_HEAL_YIELD[key] = best
+        return best
+    }
+
+    // Bouclier de base moyen par PT, sur UNE cible alliée au centre de la zone.
+    // Bouclier absolu et relatif : les deux effets qui dépendent de la résistance. Leurs unités
+    // diffèrent (PV contre %), la somme ne sert qu'à savoir si l'équipement peut protéger.
+    // Les boucliers bruts, indépendants de la résistance, n'entrent pas.
+    static shieldYield(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_SHIELD_YIELD) return EQUIPMENT_SHIELD_YIELD[key]
+        var bestLeek = 0
+        var bestSummon = 0
+        for (var item in stat.INVENTORY) {
+            var info = ITEMINFO[item]
+            if (info == null || info.COST <= 0) continue
+            var leekShield = 0
+            var summonShield = 0
+            for (var eff in info.EFFECTS) {
+                if (eff[0] != EFFECT_ABSOLUTE_SHIELD && eff[0] != EFFECT_RELATIVE_SHIELD) continue
+                var value = (eff[1] + eff[2]) / 2
+                // Un effet sur le lanceur protège le porteur lui-même, selon son profil.
+                if (eff[5] & EFFECT_MODIFIER_ON_CASTER) {
+                    if (stat.IS_SUMMON) summonShield += value
+                    else leekShield += value
+                } else if (eff[4] & EFFECT_TARGET_ALLIES) {
+                    if (eff[4] & EFFECT_TARGET_NON_SUMMONS) leekShield += value
+                    if (eff[4] & EFFECT_TARGET_SUMMONS) summonShield += value
+                }
+            }
+            bestLeek = max(bestLeek, leekShield / info.COST)
+            bestSummon = max(bestSummon, summonShield / info.COST)
+        }
+        var best = new EquipmentYield(bestLeek, bestSummon)
+        EQUIPMENT_SHIELD_YIELD[key] = best
         return best
     }
 }
