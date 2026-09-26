@@ -8,9 +8,7 @@ class Coefficients {
     static totalLife(stat)      { return 2 }
     // Paliers sur la force courante. Le rendement sert seulement à vérifier qu'on peut attaquer.
     static strength(stat) {
-        var yields = Equipment.strengthYield(stat)
-        // strengthYield renvoie deux rendements : zéro sur les deux = aucun dégât physique.
-        if (yields.LEEKS == 0 && yields.SUMMONS == 0) return 0
+        if (!Equipment.canUseStrength(stat)) return 0
         var coef = 0.2
         if (stat.STRENGTH > 0) coef += 0.2
         if (stat.STRENGTH >= 200) coef += 0.3
@@ -31,10 +29,7 @@ class Coefficients {
     }
     // Paliers sur la sagesse courante, si l'équipement peut soigner ou donner de la vitalité.
     static wisdom(stat) {
-        // Zéro en soin et en vitalité, sur poireaux et invocations = aucun soin possible.
-        var heal = Equipment.healYield(stat)
-        var boostMaxLife = Equipment.boostMaxLifeYield(stat)
-        if (heal.LEEKS == 0 && heal.SUMMONS == 0 && boostMaxLife.LEEKS == 0 && boostMaxLife.SUMMONS == 0) return 0
+        if (!Equipment.canUseWisdom(stat)) return 0
         var coef = 0.2
         if (stat.WISDOM > 0) coef += 0.2
         if (stat.WISDOM >= 200) coef += 0.3
@@ -57,8 +52,7 @@ class Coefficients {
     // Base critique pour tous, puis paliers sur l'agilité courante si on peut poser du renvoi.
     static agility(stat) {
         var criticalCoef = criticalAgility(stat)
-        var yields = Equipment.damageReturnYield(stat)
-        if (yields.LEEKS == 0 && yields.SUMMONS == 0) return criticalCoef
+        if (!Equipment.canUseDamageReturn(stat)) return criticalCoef
         var coef = 0
         if (stat.AGILITY > 0) coef += 0.2
         if (stat.AGILITY >= 200) coef += 0.3
@@ -83,10 +77,7 @@ class Coefficients {
     static criticalAgility(stat) { return stat.TOTAL_TP / 100 * ScoringStateConstants.criticalScale(stat) }
     // Paliers sur la résistance courante, si l'équipement peut poser un bouclier.
     static resistance(stat) {
-        // Zéro en bouclier absolu et relatif, sur poireaux et invocations = aucun bouclier possible.
-        var absoluteShield = Equipment.absoluteShieldYield(stat)
-        var relativeShield = Equipment.relativeShieldYield(stat)
-        if (absoluteShield.LEEKS == 0 && absoluteShield.SUMMONS == 0 && relativeShield.LEEKS == 0 && relativeShield.SUMMONS == 0) return 0
+        if (!Equipment.canUseResistance(stat)) return 0
         var coef = 0.2
         if (stat.RESISTANCE > 0) coef += 0.2
         if (stat.RESISTANCE >= 200) coef += 0.3

@@ -16,6 +16,10 @@ global EQUIPMENT_SHACKLE_AGILITY_YIELD = [:]
 global EQUIPMENT_SHACKLE_WISDOM_YIELD = [:]
 global EQUIPMENT_SHACKLE_TP_YIELD = [:]
 global EQUIPMENT_SHACKLE_MP_YIELD = [:]
+global EQUIPMENT_CAN_USE_STRENGTH = [:]
+global EQUIPMENT_CAN_USE_DAMAGE_RETURN = [:]
+global EQUIPMENT_CAN_USE_WISDOM = [:]
+global EQUIPMENT_CAN_USE_RESISTANCE = [:]
 global EQUIPMENT_CAN_USE_MAGIC = [:]
 
 class EquipmentYield {
@@ -55,18 +59,56 @@ class Equipment {
     static shackleTpYield(stat) { return effectYield(stat, EFFECT_SHACKLE_TP, EQUIPMENT_SHACKLE_TP_YIELD, true) }
     static shackleMpYield(stat) { return effectYield(stat, EFFECT_SHACKLE_MP, EQUIPMENT_SHACKLE_MP_YIELD, true) }
 
-    // Vrai si au moins un effet multiplié par la magie a un rendement, sur poireaux ou
-    // invocations. Mis en cache : le scoring l'interroge à chaque nœud, pas les sept rendements.
+    // Verdicts « l'équipement peut-il servir cette stat », mis en cache : le scoring les
+    // interroge à chaque nœud, les rendements détaillés ne sont relus qu'au premier appel.
+    // Vrai si l'équipement peut lancer une attaque physique, sur poireaux ou invocations.
+    static canUseStrength(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_CAN_USE_STRENGTH) return EQUIPMENT_CAN_USE_STRENGTH[key]
+        var result = anyYield([strengthYield(stat)])
+        EQUIPMENT_CAN_USE_STRENGTH[key] = result
+        return result
+    }
+    // Vrai si l'équipement peut lancer un renvoi, sur poireaux ou invocations.
+    static canUseDamageReturn(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_CAN_USE_DAMAGE_RETURN) return EQUIPMENT_CAN_USE_DAMAGE_RETURN[key]
+        var result = anyYield([damageReturnYield(stat)])
+        EQUIPMENT_CAN_USE_DAMAGE_RETURN[key] = result
+        return result
+    }
+    // Vrai si l'équipement peut lancer un soin ou de la vitalité, sur poireaux ou invocations.
+    static canUseWisdom(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_CAN_USE_WISDOM) return EQUIPMENT_CAN_USE_WISDOM[key]
+        var result = anyYield([healYield(stat), boostMaxLifeYield(stat)])
+        EQUIPMENT_CAN_USE_WISDOM[key] = result
+        return result
+    }
+    // Vrai si l'équipement peut lancer un bouclier absolu ou relatif, sur poireaux ou invocations.
+    static canUseResistance(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_CAN_USE_RESISTANCE) return EQUIPMENT_CAN_USE_RESISTANCE[key]
+        var result = anyYield([absoluteShieldYield(stat), relativeShieldYield(stat)])
+        EQUIPMENT_CAN_USE_RESISTANCE[key] = result
+        return result
+    }
+    // Vrai si l'équipement peut lancer un poison ou une entrave, sur poireaux ou invocations.
     static canUseMagic(stat) {
         var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
         if (key in EQUIPMENT_CAN_USE_MAGIC) return EQUIPMENT_CAN_USE_MAGIC[key]
-        var result = false
-        for (var yields in [poisonYield(stat), shackleStrengthYield(stat), shackleMagicYield(stat), shackleAgilityYield(stat),
-                            shackleWisdomYield(stat), shackleTpYield(stat), shackleMpYield(stat)]) {
-            if (yields.LEEKS != 0 || yields.SUMMONS != 0) { result = true; break }
-        }
+        var result = anyYield([poisonYield(stat), shackleStrengthYield(stat), shackleMagicYield(stat), shackleAgilityYield(stat),
+                                     shackleWisdomYield(stat), shackleTpYield(stat), shackleMpYield(stat)])
         EQUIPMENT_CAN_USE_MAGIC[key] = result
         return result
+    }
+
+    // Vrai si au moins un rendement est non nul, sur poireaux ou invocations.
+    static anyYield(yieldsList) {
+        for (var yields in yieldsList) {
+            if (yields.LEEKS != 0 || yields.SUMMONS != 0) return true
+        }
+        return false
     }
 
     // Valeur de base moyenne par PT d'un type d'effet, sur UNE cible au centre de la zone.
