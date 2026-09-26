@@ -114,10 +114,10 @@ class Coefficients {
         if (stat.SCIENCE >= 1000) coef += 0.1
         // La puissance multiplie les dégâts nova, pas les buffs : même cascade que la force.
         if (Equipment.canUseNovaDamage(stat)) {
-            if (stat.POWER >= 20) coef += 0.2
-            if (stat.POWER >= 50) coef += 0.3
-            if (stat.POWER >= 100) coef += 0.5
-            if (stat.POWER >= 200) coef += 1
+            if (stat.POWER >= 20) coef += 0.1
+            if (stat.POWER >= 50) coef += 0.2
+            if (stat.POWER >= 100) coef += 0.2
+            if (stat.POWER >= 200) coef += 0.4
         }
         return coef * scienceTpMultiplier(stat)
     }
@@ -143,10 +143,10 @@ class Coefficients {
         if (stat.MAGIC >= 1000) coef += 0.1
         // La puissance multiplie le poison, pas les entraves : même cascade que la force.
         if (Equipment.canUsePoison(stat)) {
-            if (stat.POWER >= 20) coef += 0.2
-            if (stat.POWER >= 50) coef += 0.3
-            if (stat.POWER >= 100) coef += 0.5
-            if (stat.POWER >= 200) coef += 1
+            if (stat.POWER >= 20) coef += 0.1
+            if (stat.POWER >= 50) coef += 0.2
+            if (stat.POWER >= 100) coef += 0.3
+            if (stat.POWER >= 200) coef += 0.6
         }
         return coef * magicTpMultiplier(stat)
     }
