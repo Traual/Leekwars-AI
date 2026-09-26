@@ -140,7 +140,32 @@ class Coefficients {
         if (tp >= 8) return 0.8
         return 0.5
     }
-    static power(stat)          { return 1 }
+    // La puissance multiplie les dégâts et le poison : ses paliers suivent la force ou la magie
+    // qu'elle amplifie, la plus haute des deux parmi celles que l'équipement peut lancer.
+    static power(stat) {
+        if (!Equipment.canUsePower(stat)) return 0
+        var amplified = 0
+        if (Equipment.canUseStrength(stat)) amplified = stat.STRENGTH
+        var poison = Equipment.poisonYield(stat)
+        if ((poison.LEEKS != 0 || poison.SUMMONS != 0) && stat.MAGIC > amplified) amplified = stat.MAGIC
+        var coef = 0.2
+        if (amplified > 0) coef += 0.2
+        if (amplified >= 200) coef += 0.3
+        if (amplified >= 400) coef += 0.3
+        if (amplified >= 600) coef += 0.2
+        if (amplified >= 800) coef += 0.2
+        if (amplified >= 1000) coef += 0.1
+        return coef * powerTpMultiplier(stat)
+    }
+    // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
+    static powerTpMultiplier(stat) {
+        var tp = stat.TOTAL_TP
+        if (tp >= 32) return 1.7
+        if (tp >= 24) return 1.5
+        if (tp >= 16) return 1
+        if (tp >= 8) return 0.8
+        return 0.5
+    }
     static totalTP(stat)        { return 30 }
     static totalMP(stat)        { return stat.STATIC || EntityStateClass.hasState(stat, STATE_ROOTED) ? 0 : 15 }
     static absoluteShield(stat) { return 1 }

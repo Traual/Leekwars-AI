@@ -26,6 +26,8 @@ global EQUIPMENT_NOVA_VITALITY_YIELD = [:]
 global EQUIPMENT_AFTEREFFECT_YIELD = [:]
 global EQUIPMENT_NOVA_DAMAGE_YIELD = [:]
 global EQUIPMENT_CAN_USE_SCIENCE = [:]
+global EQUIPMENT_LIFE_DAMAGE_YIELD = [:]
+global EQUIPMENT_CAN_USE_POWER = [:]
 global EQUIPMENT_CAN_USE_STRENGTH = [:]
 global EQUIPMENT_CAN_USE_DAMAGE_RETURN = [:]
 global EQUIPMENT_CAN_USE_WISDOM = [:]
@@ -81,6 +83,9 @@ class Equipment {
     static aftereffectYield(stat) { return effectYield(stat, EFFECT_AFTEREFFECT, EQUIPMENT_AFTEREFFECT_YIELD, true) }
     static novaDamageYield(stat) { return effectYield(stat, EFFECT_NOVA_DAMAGE, EQUIPMENT_NOVA_DAMAGE_YIELD, true) }
 
+    // Châtiment : dégâts proportionnels à la vie du lanceur, multipliés par la puissance.
+    static lifeDamageYield(stat) { return effectYield(stat, EFFECT_LIFE_DAMAGE, EQUIPMENT_LIFE_DAMAGE_YIELD, true) }
+
     // Verdicts « l'équipement peut-il servir cette stat », mis en cache : le scoring les
     // interroge à chaque nœud, les rendements détaillés ne sont relus qu'au premier appel.
     // Vrai si l'équipement peut lancer une attaque physique, sur poireaux ou invocations.
@@ -134,6 +139,16 @@ class Equipment {
                                buffTpYield(stat), buffMpYield(stat), novaVitalityYield(stat), aftereffectYield(stat),
                                novaDamageYield(stat)])
         EQUIPMENT_CAN_USE_SCIENCE[key] = result
+        return result
+    }
+
+    // Vrai si l'équipement peut lancer un effet multiplié par la puissance, sur poireaux ou
+    // invocations : dégâts, châtiment, dégâts nova ou poison.
+    static canUsePower(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_CAN_USE_POWER) return EQUIPMENT_CAN_USE_POWER[key]
+        var result = anyYield([strengthYield(stat), lifeDamageYield(stat), novaDamageYield(stat), poisonYield(stat)])
+        EQUIPMENT_CAN_USE_POWER[key] = result
         return result
     }
 
