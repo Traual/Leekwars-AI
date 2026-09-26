@@ -3,9 +3,9 @@
 include("../includes.leek")
 
 class Coefficients {
-    static presence(stat)       { return 100 }
+    static presence(stat)       { return 10000 }
     static life(stat)           { return 1 }
-    static totalLife(stat)      { return 0.5 }
+    static totalLife(stat)      { return 2 }
     // Paliers sur la force courante. Le rendement sert seulement à vérifier qu'on peut attaquer.
     static strength(stat) {
         var yields = Equipment.strengthYield(stat)
@@ -48,11 +48,12 @@ class Coefficients {
     // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
     static agilityTpMultiplier(stat) {
         var tp = stat.TOTAL_TP
-        if (tp >= 32) return 1.7
-        if (tp >= 24) return 1.5
-        if (tp >= 16) return 1
+        if (tp >= 28) return 1.3
+        if (tp >= 20) return 1.2
+        if (tp >= 12) return 1
         if (tp >= 8) return 0.8
-        return 0.5
+        if (tp >= 4) return 0.4
+        return 0.2
     }
     // Réglage distinct du renvoi : TOTAL_TP / 100 par point d'agilité utile au critique, avant échelle.
     static criticalAgility(stat) { return stat.TOTAL_TP / 100 * ScoringStateConstants.criticalScale(stat) }
