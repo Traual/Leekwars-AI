@@ -1,0 +1,82 @@
+// Importance d'un vivant sur la carte : caractéristiques utiles et équipement tactique.
+include("../includes.leek")
+
+// Même clé que les rendements d'équipement : ID et classe réelle/virtuelle.
+// Inventaire immuable pendant la recherche, cache vidé au début de chaque tour.
+global ENTITY_TACTICAL_IMPORTANCE_CACHE = [:]
+
+class EntityImportance {
+    // Remplace le bonus fixe de présence. Les autres contributions de ScoringClass
+    // restent en place : un buff peut donc aussi augmenter ce bonus d'importance.
+    // Ici, caractéristiques courantes brutes, sans pondération par durée.
+    static value(stat) {
+        if (stat.LIFE <= 0) return 0
+        return (statsImportance(stat) + tacticalImportance(stat)) * tpMultiplier(stat) * mpMultiplier(stat)
+    }
+
+    // Poids de départ à régler manuellement, indépendants de Coefficients.leek.
+    // Pas de vie, de bouclier posé, de renvoi posé, de poison ni de soin en cours.
+    // Sagesse/résistance décrivent la capacité à produire du soin/des protections.
+    static statsImportance(stat) {
+        var score = 0
+        if (Equipment.canUseStrength(stat))   score += max(0, stat.STRENGTH) * 1
+        if (Equipment.canUseWisdom(stat))     score += max(0, stat.WISDOM) * 1
+        if (Equipment.canUseResistance(stat)) score += max(0, stat.RESISTANCE) * 1
+        if (Equipment.canUseScience(stat))    score += max(0, stat.SCIENCE) * 1
+        if (Equipment.canUseMagic(stat))      score += max(0, stat.MAGIC) * 1
+        if (Equipment.canUsePower(stat))      score += max(0, stat.POWER) * 3
+
+        // Critique pour tous ; part renvoi seulement si l'équipement peut en poser.
+        score += min(1000, max(0, stat.AGILITY)) * 0.3
+        if (Equipment.canUseDamageReturn(stat)) score += max(0, stat.AGILITY) * 0.7
+        return score
+    }
+
+    // Capacités totales, jamais TP/MP restants : jouer ne fait pas perdre d'importance.
+    // Paliers non cumulés, réglables indépendamment des coefficients de buffs.
+    static tpMultiplier(stat) {
+        var tp = stat.TOTAL_TP
+        if (tp >= 32) return 1.7
+        if (tp >= 24) return 1.5
+        if (tp >= 16) return 1
+        if (tp >= 8) return 0.8
+        return 0.5
+    }
+
+    static mpMultiplier(stat) {
+        // Une entité immobile garde une importance : le facteur ne tombe pas à zéro.
+        var mp = stat.STATIC || EntityStateClass.hasState(stat, STATE_ROOTED) ? 0 : stat.TOTAL_MP
+        if (mp >= 8) return 1.2
+        if (mp >= 6) return 1.1
+        if (mp >= 4) return 1
+        if (mp >= 2) return 0.8
+        return 0.7
+    }
+
+    // Chaque puce possédée ajoute son poids, indépendamment du cooldown et de la portée.
+    // Tous les porteurs sont couverts, pas seulement le bulbe tacticien.
+    static tacticalImportance(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in ENTITY_TACTICAL_IMPORTANCE_CACHE) return ENTITY_TACTICAL_IMPORTANCE_CACHE[key]
+        var score = 0
+        for (var item in stat.INVENTORY) score += tacticalChipScore(item)
+        ENTITY_TACTICAL_IMPORTANCE_CACHE[key] = score
+        return score
+    }
+
+    // PLACEHOLDERS : 100 par puce, à régler séparément à la main.
+    static tacticalChipScore(item) {
+        switch (item) {
+            case CHIP_INVERSION:     return 100
+            case CHIP_TELEPORTATION:  return 100
+            case CHIP_LIBERATION:    return 100
+            case CHIP_MANUMISSION:   return 100
+            case CHIP_BOXING_GLOVE:  return 100
+            case CHIP_GRAPPLE:       return 100
+            case CHIP_JUMP:          return 100
+            case CHIP_REPOTTING:     return 100
+            case CHIP_HEMORRHAGE:    return 100
+            default:                 return 0
+        }
+    }
+}

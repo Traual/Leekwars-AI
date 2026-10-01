@@ -12,9 +12,10 @@ Les modifications courantes du scoring se font sur **`main`**.
 
 ## Modifier le scoring
 
-Sept fichiers :
+Huit fichiers :
 
 - [`Coefficients.leek`](New_AI/Scoring/Coefficients.leek) : une fonction simple par statistique.
+- [`Importance.leek`](New_AI/Scoring/Importance.leek) : bonus de présence selon les caractéristiques utiles, les puces tactiques et les multiplicateurs de PT/PM.
 - [`Equipment.leek`](New_AI/Scoring/Equipment.leek) : utilitaires de rendement de l'équipement, mis en cache par entité et par tour.
 - [`StateConstants.leek`](New_AI/Scoring/StateConstants.leek) : proportions de cibles adverses/alliées en cache par `BaseHash`, et échelle du bonus critique.
 - [`BuffDuration.leek`](New_AI/Scoring/BuffDuration.leek) : multiplicateur de durée et agrégats des buffs de force et d'agilité.
@@ -22,7 +23,13 @@ Sept fichiers :
 - [`Debug.leek`](New_AI/Scoring/Debug.leek) : coefficients de chaque vivant au début du tour, avec une pause après toute la liste. `ScoringDebug.ENABLED = false` désactive l'affichage et les pauses ; les valeurs affichées sont les coefficients avant pondération par durée.
 - [`Placement.leek`](New_AI/Scoring/Placement.leek) : distances et exposition au danger, soustraites à la fin des suites d’actions.
 
-Une entité morte vaut zéro. Chaque vivant reçoit le même bonus de présence, sans score d’importance. Les coefficients sont des valeurs de départ à régler manuellement.
+Une entité morte vaut zéro. Le bonus fixe de présence est remplacé par `EntityImportance.value(stat)` : **(caractéristiques utiles + tactique) × multiplicateur PT × multiplicateur PM**. Les poids et les paliers sont des valeurs de départ à régler manuellement dans `Importance.leek`.
+
+La partie caractéristiques utilise les valeurs courantes positives, filtrées par les verdicts `Equipment.canUse*` déjà en cache : poids 1 pour force, sagesse, résistance, science et magie, et 3 pour puissance. L'agilité ajoute 0,3 par point utile au critique (jusqu'à 1 000), puis 0,7 par point si l'équipement peut poser du renvoi. Vie, boucliers posés, renvoi posé et effets périodiques sont exclus de cette importance. Les autres contributions de `ScoringClass.entityValue` sont conservées : ce bonus s'y ajoute, et un buff ou une entrave peut aussi le faire varier. Sa partie caractéristiques n'est pas pondérée par la durée des buffs.
+
+La partie tactique additionne un **placeholder de 100 par puce** pour Inversion, Téléportation, Libération, Manumission, Gant de boxe, Grappin, Saut, Rempotage et Hémorragie. Chaque poids a sa propre ligne dans `tacticalChipScore`. Elle concerne tous les porteurs ; elle ignore cooldowns et portées. Sa somme est mise en cache par ID et classe réelle/virtuelle, puis invalidée à chaque tour. Les caractéristiques et les multiplicateurs restent calculés sur l'état courant, sans cache périmé après un buff.
+
+Les PT et PM multiplient toute cette importance et n'y ajoutent aucun terme fixe. Les paliers utilisent `TOTAL_TP` et `TOTAL_MP`, jamais les ressources restantes. Le facteur PT vaut 0,5 sous 8, 0,8 dès 8, 1 dès 16, 1,5 dès 24 et 1,7 dès 32. Le facteur PM vaut 0,7 sous 2, 0,8 dès 2, 1 dès 4, 1,1 dès 6 et 1,2 dès 8 ; une entité statique ou enracinée utilise le palier de 0 PM, sans perdre toute son importance. Le debug affiche les deux composantes et les deux multiplicateurs en plus de la présence finale.
 
 Le coefficient de force utilise des **paliers sur la force courante** : base de 0,2, puis +0,2 au-dessus de 0, +0,3 dès 200, +0,3 dès 400, +0,2 dès 600, +0,2 dès 800 et +0,1 dès 1 000. Les coefficients cumulés sont donc 0,2, 0,4, 0,7, 1, 1,2, 1,4 et 1,5. Si `Equipment.strengthYield` est nul sur poireaux et invocations, le coefficient vaut toujours zéro. Le rendement et son cache sont conservés, mais leur amplitude et les proportions de cibles ne pondèrent plus ce coefficient. Les dégâts effectivement simulés sont déjà comptés dans la vie.
 
