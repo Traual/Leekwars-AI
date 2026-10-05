@@ -249,8 +249,20 @@ class Coefficients {
         if (tp >= 8) return 0.8
         return 0.5
     }
-    static totalTP(stat)        { return 30 }
-    static totalMP(stat)        { return stat.STATIC || EntityStateClass.hasState(stat, STATE_ROOTED) ? 0 : 15 }
+    // Valeur directe d'un PT de capacité : 30 pour une importance de base de 3000.
+    // Les multiplicateurs des caractéristiques et le critique valorisent déjà une autre
+    // part du gain de PT. Ce poids direct reste indépendant et réglable séparément.
+    static totalTP(stat) {
+        return EntityImportance.value(stat) / 100
+    }
+
+    // Valeur directe d'un PM de capacité : 15 pour une importance de base de 3000.
+    // L'importance est déjà en cache. Distances et position restent dans le placement.
+    static totalMP(stat) {
+        if (stat.STATIC || EntityStateClass.hasState(stat, STATE_ROOTED)) return 0
+        return EntityImportance.value(stat) / 200
+    }
+
     static absoluteShield(stat) { return 1 }
     static relativeShield(stat) { return 10 }
     static damageReturn(stat)   { return 10 }
