@@ -27,7 +27,7 @@ class EntityImportance {
         if (Equipment.canUseResistance(stat)) score += max(0, bases[STAT_RESISTANCE]) * 1
         if (Equipment.canUseScience(stat))    score += max(0, bases[STAT_SCIENCE]) * 1
         if (Equipment.canUseMagic(stat))      score += max(0, bases[STAT_MAGIC]) * 1
-        if (Equipment.canUsePower(stat))      score += max(0, bases[STAT_POWER]) * 3
+        if (Equipment.canUsePower(stat))      score += max(0, bases[STAT_POWER]) * 5
 
         // Critique pour tous ; part renvoi seulement si l'équipement peut en poser.
         var agility = max(0, bases[STAT_AGILITY])
@@ -40,9 +40,9 @@ class EntityImportance {
     // Paliers non cumulés, réglables indépendamment des coefficients de buffs.
     static tpMultiplier(stat) {
         var tp = stat.BASE_STATS[STAT_TP]
-        if (tp >= 32) return 1.7
-        if (tp >= 24) return 1.5
-        if (tp >= 16) return 1
+        if (tp >= 32) return 1.9
+        if (tp >= 24) return 1.6
+        if (tp >= 16) return 1.2
         if (tp >= 8) return 0.8
         return 0.5
     }
@@ -51,11 +51,11 @@ class EntityImportance {
         // Une entité immobile garde une importance : le facteur ne tombe pas à zéro.
         // Ignorer l'enracinement courant : cet effet ne modifie pas la mobilité de base.
         var mp = stat.STATIC ? 0 : stat.BASE_STATS[STAT_MP]
-        if (mp >= 8) return 1.2
-        if (mp >= 6) return 1.1
-        if (mp >= 4) return 1
-        if (mp >= 2) return 0.8
-        return 0.7
+        if (mp >= 8) return 1.5
+        if (mp >= 6) return 1.4
+        if (mp >= 4) return 1.2
+        if (mp >= 2) return 0.9
+        return 0.6
     }
 
     // Chaque puce possédée ajoute son poids, indépendamment du cooldown et de la portée.
@@ -69,18 +69,18 @@ class EntityImportance {
         return score
     }
 
-    // PLACEHOLDERS : 100 par puce, à régler séparément à la main.
+    // TO UPDATE COMMENT
     static tacticalChipScore(item) {
         switch (item) {
-            case CHIP_INVERSION:     return 100
-            case CHIP_TELEPORTATION:  return 100
-            case CHIP_LIBERATION:    return 100
-            case CHIP_MANUMISSION:   return 100
-            case CHIP_BOXING_GLOVE:  return 100
-            case CHIP_GRAPPLE:       return 100
-            case CHIP_JUMP:          return 100
-            case CHIP_REPOTTING:     return 100
-            case CHIP_HEMORRHAGE:    return 100
+            case CHIP_INVERSION:     return 70
+            case CHIP_TELEPORTATION:  return 120
+            case CHIP_LIBERATION:    return 120
+            case CHIP_MANUMISSION:   return 50
+            case CHIP_BOXING_GLOVE:  return 10
+            case CHIP_GRAPPLE:       return 10
+            case CHIP_JUMP:          return 60
+            case CHIP_REPOTTING:     return 20
+            case CHIP_HEMORRHAGE:    return 60
             default:                 return 0
         }
     }
