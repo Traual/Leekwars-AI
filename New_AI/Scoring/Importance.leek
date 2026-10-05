@@ -16,23 +16,38 @@ class EntityImportance {
         return stat.IMPORTANCE_MEMO
     }
 
+    // Score d'une caractéristique de base, par tranches cumulées et sans saut aux seuils.
+    // Mélange 50 % linéaire + 50 % coût de capital normalisé (capital x2 pour que les
+    // premiers points valent 1). Coûts inspirés de Leek Wars : 0.5 / 1 / 2 / 3,
+    // soit ici des poids 1 / 1.5 / 2.5 / 3.5, réglables directement ci-dessous.
+    // Ce n'est pas le capital dépensé : nos bases incluent aussi les composants.
+    static statScore(value) {
+        if (value <= 0) return 0
+        var score = min(value, 200) * 1
+        if (value > 200) score += min(value - 200, 200) * 1.5
+        if (value > 400) score += min(value - 400, 200) * 2.5
+        if (value > 600) score += (value - 600) * 3.5
+        return score
+    }
+
     // Poids de départ à régler manuellement, indépendants de Coefficients.leek.
     // Pas de vie, de bouclier posé, de renvoi posé, de poison ni de soin en cours.
     // Sagesse/résistance décrivent la capacité à produire du soin/des protections.
     static statsImportance(stat) {
         var bases = stat.BASE_STATS
         var score = 0
-        if (Equipment.canUseStrength(stat))   score += max(0, bases[STAT_STRENGTH]) * 1
-        if (Equipment.canUseWisdom(stat))     score += max(0, bases[STAT_WISDOM]) * 1
-        if (Equipment.canUseResistance(stat)) score += max(0, bases[STAT_RESISTANCE]) * 1
-        if (Equipment.canUseScience(stat))    score += max(0, bases[STAT_SCIENCE]) * 1
-        if (Equipment.canUseMagic(stat))      score += max(0, bases[STAT_MAGIC]) * 1
+        if (Equipment.canUseStrength(stat))   score += statScore(bases[STAT_STRENGTH]) * 1
+        if (Equipment.canUseWisdom(stat))     score += statScore(bases[STAT_WISDOM]) * 1
+        if (Equipment.canUseResistance(stat)) score += statScore(bases[STAT_RESISTANCE]) * 1
+        if (Equipment.canUseScience(stat))    score += statScore(bases[STAT_SCIENCE]) * 1
+        if (Equipment.canUseMagic(stat))      score += statScore(bases[STAT_MAGIC]) * 1
+        // La puissance n'a pas ce barème de capital : conserver son poids linéaire.
         if (Equipment.canUsePower(stat))      score += max(0, bases[STAT_POWER]) * 5
 
         // Critique pour tous ; part renvoi seulement si l'équipement peut en poser.
         var agility = max(0, bases[STAT_AGILITY])
-        score += min(1000, agility) * 0.3
-        if (Equipment.canUseDamageReturn(stat)) score += agility * 0.7
+        score += statScore(min(1000, agility)) * 0.3
+        if (Equipment.canUseDamageReturn(stat)) score += statScore(agility) * 0.7
         return score
     }
 
