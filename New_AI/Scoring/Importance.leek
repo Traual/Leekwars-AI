@@ -69,7 +69,8 @@ class EntityImportance {
         return score
     }
 
-    // TO UPDATE COMMENT
+    // Poids tactique fixe par puce possédée, réglable à la main.
+    // Les poids se cumulent avant les multiplicateurs de PT/PM de base.
     static tacticalChipScore(item) {
         switch (item) {
             case CHIP_INVERSION:     return 70
