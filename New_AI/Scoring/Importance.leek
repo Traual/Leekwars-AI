@@ -6,36 +6,40 @@ include("../includes.leek")
 global ENTITY_TACTICAL_IMPORTANCE_CACHE = [:]
 
 class EntityImportance {
-    // Remplace le bonus fixe de présence. Les autres contributions de ScoringClass
-    // restent en place : un buff peut donc aussi augmenter ce bonus d'importance.
-    // Ici, caractéristiques courantes brutes, sans pondération par durée.
+    // Importance de BASE : buffs, entraves et états temporaires ne la modifient pas.
+    // Bases, inventaire et STATIC sont immuables pendant la recherche : le mémo scalaire
+    // reste valide au clone et à la résurrection. Un mort vaut toujours zéro.
     static value(stat) {
         if (stat.LIFE <= 0) return 0
-        return (statsImportance(stat) + tacticalImportance(stat)) * tpMultiplier(stat) * mpMultiplier(stat)
+        if (stat.IMPORTANCE_MEMO != null) return stat.IMPORTANCE_MEMO
+        stat.IMPORTANCE_MEMO = (statsImportance(stat) + tacticalImportance(stat)) * tpMultiplier(stat) * mpMultiplier(stat)
+        return stat.IMPORTANCE_MEMO
     }
 
     // Poids de départ à régler manuellement, indépendants de Coefficients.leek.
     // Pas de vie, de bouclier posé, de renvoi posé, de poison ni de soin en cours.
     // Sagesse/résistance décrivent la capacité à produire du soin/des protections.
     static statsImportance(stat) {
+        var bases = stat.BASE_STATS
         var score = 0
-        if (Equipment.canUseStrength(stat))   score += max(0, stat.STRENGTH) * 1
-        if (Equipment.canUseWisdom(stat))     score += max(0, stat.WISDOM) * 1
-        if (Equipment.canUseResistance(stat)) score += max(0, stat.RESISTANCE) * 1
-        if (Equipment.canUseScience(stat))    score += max(0, stat.SCIENCE) * 1
-        if (Equipment.canUseMagic(stat))      score += max(0, stat.MAGIC) * 1
-        if (Equipment.canUsePower(stat))      score += max(0, stat.POWER) * 3
+        if (Equipment.canUseStrength(stat))   score += max(0, bases[STAT_STRENGTH]) * 1
+        if (Equipment.canUseWisdom(stat))     score += max(0, bases[STAT_WISDOM]) * 1
+        if (Equipment.canUseResistance(stat)) score += max(0, bases[STAT_RESISTANCE]) * 1
+        if (Equipment.canUseScience(stat))    score += max(0, bases[STAT_SCIENCE]) * 1
+        if (Equipment.canUseMagic(stat))      score += max(0, bases[STAT_MAGIC]) * 1
+        if (Equipment.canUsePower(stat))      score += max(0, bases[STAT_POWER]) * 3
 
         // Critique pour tous ; part renvoi seulement si l'équipement peut en poser.
-        score += min(1000, max(0, stat.AGILITY)) * 0.3
-        if (Equipment.canUseDamageReturn(stat)) score += max(0, stat.AGILITY) * 0.7
+        var agility = max(0, bases[STAT_AGILITY])
+        score += min(1000, agility) * 0.3
+        if (Equipment.canUseDamageReturn(stat)) score += agility * 0.7
         return score
     }
 
-    // Capacités totales, jamais TP/MP restants : jouer ne fait pas perdre d'importance.
+    // PT/PM de BASE : ni les dépenses, ni les buffs/entraves ne changent l'importance.
     // Paliers non cumulés, réglables indépendamment des coefficients de buffs.
     static tpMultiplier(stat) {
-        var tp = stat.TOTAL_TP
+        var tp = stat.BASE_STATS[STAT_TP]
         if (tp >= 32) return 1.7
         if (tp >= 24) return 1.5
         if (tp >= 16) return 1
@@ -45,7 +49,8 @@ class EntityImportance {
 
     static mpMultiplier(stat) {
         // Une entité immobile garde une importance : le facteur ne tombe pas à zéro.
-        var mp = stat.STATIC || EntityStateClass.hasState(stat, STATE_ROOTED) ? 0 : stat.TOTAL_MP
+        // Ignorer l'enracinement courant : cet effet ne modifie pas la mobilité de base.
+        var mp = stat.STATIC ? 0 : stat.BASE_STATS[STAT_MP]
         if (mp >= 8) return 1.2
         if (mp >= 6) return 1.1
         if (mp >= 4) return 1

@@ -54,6 +54,7 @@ class BulbState {
 	AGILITY_BUFF = 0
 	AGILITY_BUFF_WEIGHTED = 0
 	CRITICAL_SCALE_MEMO = null
+	IMPORTANCE_MEMO = null
 	RESISTANCE
 	RESISTANCE_BUFF = 0
 	RESISTANCE_BUFF_WEIGHTED = 0
@@ -160,6 +161,7 @@ class BulbState {
 			STAT_RESISTANCE: this.RESISTANCE,
 			STAT_SCIENCE:    this.SCIENCE,
 			STAT_MAGIC:      this.MAGIC,
+			STAT_POWER:      this.POWER,
 			STAT_MP:         this.TOTAL_MP,
 			STAT_TP:         this.TOTAL_TP
 		]

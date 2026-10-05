@@ -47,7 +47,7 @@ class EntityStateClass extends EntityClass {
 	LIFE
 	TOTAL_LIFE
 	// Bases VRAIES (stat sans aucun effet), une seule map indexée par les constantes
-	// STAT_* du moteur au lieu de huit champs froids : lue uniquement par la Résurrection,
+	// STAT_* du moteur : utilisées par la résurrection et le scoring d'importance,
 	// IMMUABLE pendant toute la simulation -> clone(stat, 1) en partage la référence.
 	BASE_STATS
 	STRENGTH
@@ -60,6 +60,7 @@ class EntityStateClass extends EntityClass {
 	AGILITY_BUFF = 0
 	AGILITY_BUFF_WEIGHTED = 0
 	CRITICAL_SCALE_MEMO = null // dépend uniquement de BASE_STATS, immuable en branche
+	IMPORTANCE_MEMO = null // bases, inventaire et STATIC immuables, copié au clone
 	RESISTANCE
 	RESISTANCE_BUFF = 0
 	RESISTANCE_BUFF_WEIGHTED = 0
@@ -185,6 +186,7 @@ class EntityStateClass extends EntityClass {
 			STAT_RESISTANCE: this.RESISTANCE,
 			STAT_SCIENCE:    this.SCIENCE,
 			STAT_MAGIC:      this.MAGIC,
+			STAT_POWER:      this.POWER,
 			STAT_MP:         this.TOTAL_MP,
 			STAT_TP:         this.TOTAL_TP
 		]
@@ -251,6 +253,11 @@ class EntityStateClass extends EntityClass {
 				case EFFECT_RAW_BUFF_SCIENCE:
 					this.BASE_STATS[STAT_SCIENCE] -= eff[1]
 					BuffDuration.updateScience(this, eff[1], eff[3])
+					break
+				case EFFECT_RAW_BUFF_POWER:
+					// Inclut les gains permanents d'items et de BR : ce sont des effets,
+					// pas de la puissance de base. Colosse ne multiplie pas la puissance.
+					this.BASE_STATS[STAT_POWER] -= eff[1]
 					break
 
 					// --- RESISTANCE ---

@@ -4,6 +4,8 @@ include("../includes.leek")
 
 class ScoringClass {
     static entityValue(stat) {
+        // Le delta d'un kill retire toute la valeur AVANT la mort, buffs compris dans
+        // les termes ci-dessous. Aucun bonus « stats courantes - bases » à rajouter.
         if (stat.LIFE <= 0) return 0
         var score = Coefficients.presence(stat)
         score += stat.LIFE                  * Coefficients.life(stat)

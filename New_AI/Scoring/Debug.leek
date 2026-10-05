@@ -14,10 +14,10 @@ class ScoringDebug {
             // Coefficients bruts : la durée des buffs s'applique séparément dans le scoring.
             debug([
                 "présence": Coefficients.presence(stat),
-                "importance (caractéristiques)": EntityImportance.statsImportance(stat),
+                "importance (caractéristiques de base)": EntityImportance.statsImportance(stat),
                 "importance (tactique)": EntityImportance.tacticalImportance(stat),
-                "importance (multiplicateur PT)": EntityImportance.tpMultiplier(stat),
-                "importance (multiplicateur PM)": EntityImportance.mpMultiplier(stat),
+                "importance (multiplicateur PT de base)": EntityImportance.tpMultiplier(stat),
+                "importance (multiplicateur PM de base)": EntityImportance.mpMultiplier(stat),
                 "vie": Coefficients.life(stat),
                 "vie max": Coefficients.totalLife(stat),
                 "force": Coefficients.strength(stat),
