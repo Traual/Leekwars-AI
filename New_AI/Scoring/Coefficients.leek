@@ -4,8 +4,34 @@ include("../includes.leek")
 
 class Coefficients {
     static presence(stat)       { return EntityImportance.value(stat) }
-    static life(stat)           { return 1 }
-    static totalLife(stat)      { return 2 }
+
+    // Poids par TRANCHE de PV : seuls les points de cette tranche prennent ce poids.
+    // Cela garde un score continu et croissant, même quand on franchit un seuil.
+    static life(stat) {
+        var life = stat.LIFE
+        if (life <= 0) return 0
+        var weightedLife = min(life, 1000) * 2
+        if (life > 1000) weightedLife += min(life - 1000, 2000) * 1.75
+        if (life > 3000) weightedLife += min(life - 3000, 2000) * 1.5
+        if (life > 5000) weightedLife += min(life - 5000, 2000) * 1.25
+        if (life > 7000) weightedLife += (life - 7000) * 1
+        // Scoring multiplie ce coefficient moyen par LIFE, puis compare après - avant.
+        return EntityImportance.value(stat) / 3000 * (weightedLife / life)
+    }
+
+    // Même barème de départ, réglable séparément de life (poids et diviseur).
+    // Seule TOTAL_LIFE choisit les tranches : perdre des PV ne revalorise pas la jauge.
+    static totalLife(stat) {
+        var totalLife = stat.TOTAL_LIFE
+        if (totalLife <= 0) return 0
+        var weightedLife = min(totalLife, 1000) * 2
+        if (totalLife > 1000) weightedLife += min(totalLife - 1000, 2000) * 1.75
+        if (totalLife > 3000) weightedLife += min(totalLife - 3000, 2000) * 1.5
+        if (totalLife > 5000) weightedLife += min(totalLife - 5000, 2000) * 1.25
+        if (totalLife > 7000) weightedLife += (totalLife - 7000) * 1
+        return EntityImportance.value(stat) / 3000 * (weightedLife / totalLife)
+    }
+
     // Paliers sur la force courante. Le rendement sert seulement à vérifier qu'on peut attaquer.
     static strength(stat) {
         if (!Equipment.canUseStrength(stat)) return 0
