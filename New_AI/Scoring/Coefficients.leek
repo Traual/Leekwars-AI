@@ -216,23 +216,78 @@ class Coefficients {
         return 1
     }
 
-    // Stock de bouclier, hors du produit caractéristiques × PT × PM. Importance de
-    // BASE : perdre des PV ne revalorise pas le bouclier. Profil adverse figé en cache.
-    // Tranches cumulées : aucun score perdu en franchissant un seuil.
+    // Bonus ADDITIFS pour protéger les porteurs blessés, réglables séparément.
+    // Chaque tranche se remplit progressivement : pas de saut au passage d'un seuil.
+    // Repères absolu : 3000 PV -> 0 ; 2000 -> +0.1 ; 1000 -> +0.25 ; 0 -> +0.5.
+    static absoluteShieldLifeBonus(stat) {
+        var life = max(0, stat.LIFE)
+        var bonus = 0
+        if (life < 3000) bonus += min(3000 - life, 1000) / 1000 * 0.1
+        if (life < 2000) bonus += min(2000 - life, 1000) / 1000 * 0.15
+        if (life < 1000) bonus += (1000 - life) / 1000 * 0.25
+        return bonus
+    }
+
+    // Repères relatif : 3000 PV -> 0 ; 2000 -> +1 ; 1000 -> +2.5 ; 0 -> +5.
+    static relativeShieldLifeBonus(stat) {
+        var life = max(0, stat.LIFE)
+        var bonus = 0
+        if (life < 3000) bonus += min(3000 - life, 1000) / 1000 * 1
+        if (life < 2000) bonus += min(2000 - life, 1000) / 1000 * 1.5
+        if (life < 1000) bonus += (1000 - life) / 1000 * 2.5
+        return bonus
+    }
+
+    // Boucliers et renvoi hors du produit caractéristiques × PT × PM.
+    // Importance de BASE et profil adverse figé en cache. Tranches cumulées :
+    // aucun score perdu en franchissant un seuil, coefficient moyen rendu au scoring.
     static absoluteShield(stat) {
         var weight = EntityImportance.value(stat) / 3000 * ShieldProfile.forEntity(stat)
         var shield = stat.ABSOLUTE_SHIELD
-        // Vulnérabilité : valeur signée linéaire. À zéro, même coefficient sans division.
-        if (shield <= 0) return 2 * weight
+        // Le bonus d'urgence concerne une protection positive, pas une vulnérabilité.
+        if (shield < 0) return 2 * weight
+        var lifeBonus = absoluteShieldLifeBonus(stat)
+        if (shield == 0) return (2 + lifeBonus) * weight
         var value = min(shield, 100) * 2
         if (shield > 100) value += min(shield - 100, 200) * 1.5
         if (shield > 300) value += min(shield - 300, 300) * 1
         if (shield > 600) value += (shield - 600) * 0.5
+        // Bonus sur les 600 premiers points seulement : un gros stock ne doit pas
+        // rendre une perte de PV rentable en revalorisant toute la protection.
+        value += min(shield, 600) * lifeBonus
         // Le scoring multiplie déjà ce coefficient moyen par ABSOLUTE_SHIELD.
         return value / shield * weight
     }
-    static relativeShield(stat) { return 10 }
-    static damageReturn(stat)   { return 10 }
+
+    // Un point de relatif est un point de pourcentage, d'où une échelle distincte.
+    // Tranches : 0-30 -> 10 ; 30-60 -> 8 ; 60-100 -> 5. Au-delà de 100,
+    // aucun gain de protection valorisé ici ; les interactions restent au placement.
+    static relativeShield(stat) {
+        var weight = EntityImportance.value(stat) / 3000 * ShieldProfile.forEntity(stat)
+        var shield = stat.RELATIVE_SHIELD
+        if (shield < 0) return 10 * weight
+        var lifeBonus = relativeShieldLifeBonus(stat)
+        if (shield == 0) return (10 + lifeBonus) * weight
+        var useful = min(shield, 100)
+        var value = min(useful, 30) * 10
+        if (useful > 30) value += min(useful - 30, 30) * 8
+        if (useful > 60) value += (useful - 60) * 5
+        value += useful * lifeBonus
+        return value / shield * weight
+    }
+
+    // Renvoi : même profil adverse, sans bonus de vie ni décote par nos boucliers.
+    // Le moteur le calcule avant les protections. Aucun plafond à 100 % :
+    // tranches 0-50 -> 10 ; 50-100 -> 8 ; au-delà -> 5 par point supplémentaire.
+    static damageReturn(stat) {
+        var weight = EntityImportance.value(stat) / 3000 * ShieldProfile.forEntity(stat)
+        var damageReturn = stat.DAMAGE_RETURN
+        if (damageReturn <= 0) return 10 * weight
+        var value = min(damageReturn, 50) * 10
+        if (damageReturn > 50) value += min(damageReturn - 50, 50) * 8
+        if (damageReturn > 100) value += (damageReturn - 100) * 5
+        return value / damageReturn * weight
+    }
     static poison(stat)         { return EntityStateClass.hasState(stat, STATE_INVINCIBLE) ? 0 : -0.5 }
     static aftereffect(stat)    { return -0.75 }
     static heal(stat)           { return EntityStateClass.hasState(stat, STATE_UNHEALABLE) ? 0 : 0.5 }
