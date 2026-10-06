@@ -249,18 +249,21 @@ class Coefficients {
         if (tp >= 8) return 0.8
         return 0.5
     }
-    // Valeur directe d'un PT de capacité : 30 pour une importance de base de 3000.
-    // Les multiplicateurs des caractéristiques et le critique valorisent déjà une autre
-    // part du gain de PT. Ce poids direct reste indépendant et réglable séparément.
+    // Valeur directe d'un PT : caractéristiques de BASE utilisables + puces tactiques.
+    // Sans multiplicateur PT/PM d'importance. Diviseur réglable : potentiel 3000 -> 30/PT.
+    // Les paliers de PT des autres coefficients et le critique restent des gains indirects.
     static totalTP(stat) {
-        return EntityImportance.value(stat) / 100
+        return EntityImportance.potential(stat) / 100
     }
 
-    // Valeur directe d'un PM de capacité : 15 pour une importance de base de 3000.
-    // L'importance est déjà en cache. Distances et position restent dans le placement.
+    // Paliers d'importance de BASE, fixes pendant la recherche : un gain de PM ne
+    // change pas son propre coefficient. Distances et position restent dans le placement.
     static totalMP(stat) {
         if (stat.STATIC || EntityStateClass.hasState(stat, STATE_ROOTED)) return 0
-        return EntityImportance.value(stat) / 200
+        var importance = EntityImportance.value(stat)
+        if (importance >= 3000) return 15
+        if (importance >= 1000) return 10
+        return 5
     }
 
     // Part conservée de la perte de score des SIX entraves. Cooldown au prochain

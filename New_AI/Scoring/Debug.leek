@@ -16,6 +16,7 @@ class ScoringDebug {
                 "présence": Coefficients.presence(stat),
                 "importance (caractéristiques de base)": EntityImportance.statsImportance(stat),
                 "importance (tactique)": EntityImportance.tacticalImportance(stat),
+                "potentiel PT (caractéristiques + tactique)": EntityImportance.potential(stat),
                 "importance (multiplicateur PT de base)": EntityImportance.tpMultiplier(stat),
                 "importance (multiplicateur PM de base)": EntityImportance.mpMultiplier(stat),
                 "vie": Coefficients.life(stat),
