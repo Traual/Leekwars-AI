@@ -12,8 +12,10 @@ class TargetWeights {
 class ScoringStateConstants {
     TARGETS_BY_SIDE = [:]
     ALLIES_BY_SIDE = [:]
+    SHIELD_FACTOR_BY_SIDE = [:]
 
     constructor(State) {
+        this.SHIELD_FACTOR_BY_SIDE = ShieldProfile.factorsBySide(State)
         var totalLeeks = 0
         var totalSummons = 0
         // Compter d'abord les vivants de chaque camp dans les objets de résultat.
@@ -47,6 +49,8 @@ class ScoringStateConstants {
 
     // Appelé sur l'état réel à la racine : Me est vivant, camp/type fixes au tour.
     // BaseHash encode les autres vivants ; le cache est vidé au changement de joueur.
+    // Le profil de bouclier lit seulement inventaires et bases immuables, plus les vivants.
+    // Ni blessures, buffs, cooldowns ni dépenses : aucune clé de stats courantes à ajouter.
     // Résultat immuable une fois construit, partagé par toutes les branches de l'arbre.
     static get(State, BaseHash) {
         if (BaseHash in SCORING_STATE_CONSTANTS_CACHE) return SCORING_STATE_CONSTANTS_CACHE[BaseHash]

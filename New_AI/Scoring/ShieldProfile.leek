@@ -1,0 +1,75 @@
+// Profil offensif grossier pour orienter la pose de boucliers, sans simuler d'attaque.
+include("../includes.leek")
+
+class ShieldProfile {
+    BLOCKABLE = 0 // attaques de force ou Châtiment
+    BYPASS = 0    // poison, nova ou contrecoup
+
+    // Poids de profil, pas des dégâts : une arme seule ne fait pas un DPS.
+    // Barème de BASE commun force/magie/science, modifiable à la main.
+    static statWeight(value) {
+        if (value >= 800) return 1.5
+        if (value >= 400) return 1
+        if (value >= 200) return 0.5
+        if (value >= 100) return 0.25
+        return 0
+    }
+
+    static of(stat) {
+        var profile = new ShieldProfile()
+        var bases = stat.BASE_STATS
+        if (Equipment.canUseStrength(stat)) profile.BLOCKABLE = statWeight(bases[STAT_STRENGTH])
+        // Châtiment dépend de la vie, pas de la force. Poids fixe pour conserver un
+        // profil immuable : les blessures en branche ne changent pas le contexte.
+        if (Equipment.canUseLifeDamage(stat)) profile.BLOCKABLE = max(profile.BLOCKABLE, 1)
+        if (Equipment.canUsePoison(stat)) profile.BYPASS = statWeight(bases[STAT_MAGIC])
+        var aftereffect = Equipment.aftereffectYield(stat) // rendement déjà mis en cache
+        if (Equipment.canUseNovaDamage(stat) || aftereffect.LEEKS > 0 || aftereffect.SUMMONS > 0) {
+            profile.BYPASS = max(profile.BYPASS, statWeight(bases[STAT_SCIENCE]))
+        }
+        // Un hybride peut contribuer aux deux canaux. Dans chacun, garder sa meilleure
+        // famille : davantage d'armes/puces du même canal ne multiplie pas son poids.
+        return profile
+    }
+
+    // Réduction modérée : même un profil mal classé conserve un intérêt au bouclier.
+    // Sans attaque significative identifiée, garder également le petit facteur.
+    static factor(blockable, bypass) {
+        var total = blockable + bypass
+        if (total <= 0) return 0.25
+        var share = blockable / total
+        if (share >= 0.66) return 1
+        if (share >= 0.25) return 0.6
+        return 0.25
+    }
+
+    // Une passe sur les vivants à la racine, invocations incluses. Les purs soutiens
+    // ne gonflent pas le dénominateur. Tous les autres camps sont adverses, BR compris.
+    static factorsBySide(State) {
+        var ownProfiles = [:]
+        var total = new ShieldProfile()
+        for (var id: var stat in State) {
+            if (!(stat.SIDE in ownProfiles)) ownProfiles[stat.SIDE] = new ShieldProfile()
+            if (stat.LIFE <= 0) continue
+            var profile = of(stat)
+            var own = ownProfiles[stat.SIDE]
+            own.BLOCKABLE += profile.BLOCKABLE
+            own.BYPASS += profile.BYPASS
+            total.BLOCKABLE += profile.BLOCKABLE
+            total.BYPASS += profile.BYPASS
+        }
+        var factors = [:]
+        for (var side: var own in ownProfiles) {
+            factors[side] = factor(total.BLOCKABLE - own.BLOCKABLE, total.BYPASS - own.BYPASS)
+        }
+        return factors
+    }
+
+    // Lecture O(1) dans le contexte FIGÉ du BFS, jamais depuis l'état d'un nœud.
+    // Sans contexte (appel isolé d'un coefficient), prendre un facteur neutre.
+    static forEntity(stat) {
+        if (ROOT_SCORING_CONSTANTS == null) return 1
+        var factors = ROOT_SCORING_CONSTANTS.SHIELD_FACTOR_BY_SIDE
+        return stat.SIDE in factors ? factors[stat.SIDE] : 1
+    }
+}

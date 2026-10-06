@@ -30,6 +30,7 @@ include("Maps/Heal/Heal.leek")
 include("Maps/Delta/Delta.leek")
 
 include("Scoring/Equipment.leek")
+include("Scoring/ShieldProfile.leek")
 include("Scoring/StateConstants.leek")
 include("Scoring/BuffDuration.leek")
 include("Scoring/Importance.leek")

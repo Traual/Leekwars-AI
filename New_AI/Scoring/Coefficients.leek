@@ -216,7 +216,21 @@ class Coefficients {
         return 1
     }
 
-    static absoluteShield(stat) { return 1 }
+    // Stock de bouclier, hors du produit caractéristiques × PT × PM. Importance de
+    // BASE : perdre des PV ne revalorise pas le bouclier. Profil adverse figé en cache.
+    // Tranches cumulées : aucun score perdu en franchissant un seuil.
+    static absoluteShield(stat) {
+        var weight = EntityImportance.value(stat) / 3000 * ShieldProfile.forEntity(stat)
+        var shield = stat.ABSOLUTE_SHIELD
+        // Vulnérabilité : valeur signée linéaire. À zéro, même coefficient sans division.
+        if (shield <= 0) return 2 * weight
+        var value = min(shield, 100) * 2
+        if (shield > 100) value += min(shield - 100, 200) * 1.5
+        if (shield > 300) value += min(shield - 300, 300) * 1
+        if (shield > 600) value += (shield - 600) * 0.5
+        // Le scoring multiplie déjà ce coefficient moyen par ABSOLUTE_SHIELD.
+        return value / shield * weight
+    }
     static relativeShield(stat) { return 10 }
     static damageReturn(stat)   { return 10 }
     static poison(stat)         { return EntityStateClass.hasState(stat, STATE_INVINCIBLE) ? 0 : -0.5 }

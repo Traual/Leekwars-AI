@@ -38,6 +38,7 @@ class ScoringDebug {
                 "score caractéristiques et ressources (avant décote entraves)": potential * tpFactor * mpFactor,
                 "entraves (multiplicateur Manumission)": ShackleScoring.multiplier(stat),
                 "bouclier absolu": Coefficients.absoluteShield(stat),
+                "bouclier absolu (facteur adverse)": ShieldProfile.forEntity(stat),
                 "bouclier relatif": Coefficients.relativeShield(stat),
                 "renvoi": Coefficients.damageReturn(stat),
                 "poison": Coefficients.poison(stat),
