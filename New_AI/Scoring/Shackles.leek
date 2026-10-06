@@ -1,0 +1,65 @@
+// Décote des entraves selon la possibilité de les retirer avec Manumission.
+include("../includes.leek")
+
+class ShackleScoring {
+    // Mémo scalaire copié au clone, invalidé par StateClass.setCooldown.
+    // -1 = puce absente. Aucun appel moteur pendant le scoring.
+    static cooldown(stat) {
+        if (stat.MCD_MEMO != null) return stat.MCD_MEMO
+        var cd = StateClass.cooldownOf(stat, CHIP_MANUMISSION)
+        stat.MCD_MEMO = cd == null ? -1 : cd
+        return stat.MCD_MEMO
+    }
+
+    static multiplier(stat) {
+        var cd = cooldown(stat)
+        if (cd < 0) return 1
+        // La capacité APRÈS entrave doit permettre le cast. Les PT déjà dépensés ne
+        // choisissent pas ce poids : on estime le potentiel du porteur, pas son prochain coup.
+        if (stat.TOTAL_TP < ITEMINFO[CHIP_MANUMISSION].COST) return 1
+        // Les autres porteurs décrémentent leur cooldown avant leur prochain tour.
+        // Me a déjà passé cette étape. Ce poids reste une heuristique, pas un cast garanti.
+        if (stat.ID != Me) cd = max(0, cd - 1)
+        return Coefficients.shackleMultiplier(cd)
+    }
+
+    static hasShackles(stat) {
+        return stat.SHACKLE_STRENGTH > 0 || stat.SHACKLE_AGILITY > 0
+            || stat.SHACKLE_WISDOM > 0 || stat.SHACKLE_MAGIC > 0
+            || stat.SHACKLE_TP > 0 || stat.SHACKLE_MP > 0
+    }
+
+    // Le ledger reste la vérité de la simulation. Ces sommes servent uniquement au
+    // scoring : pas de parcours des lignes d'effet par nœud, pas de base-current qui
+    // confondrait un buff et une entrave simultanés. Appelé pour une pose persistante.
+    static record(stat, type, value) {
+        switch (type) {
+            case EFFECT_SHACKLE_STRENGTH: stat.SHACKLE_STRENGTH += value; break
+            case EFFECT_SHACKLE_AGILITY: stat.SHACKLE_AGILITY += value; break
+            case EFFECT_SHACKLE_WISDOM: stat.SHACKLE_WISDOM += value; break
+            case EFFECT_SHACKLE_MAGIC: stat.SHACKLE_MAGIC += value; break
+            case EFFECT_SHACKLE_TP: stat.SHACKLE_TP += value; break
+            case EFFECT_SHACKLE_MP: stat.SHACKLE_MP += value; break
+        }
+    }
+
+    static correction(stat, currentScore) {
+        if (!hasShackles(stat)) return 0
+        var factor = multiplier(stat)
+        if (factor == 1) return 0
+        // Copie de lecture, jamais transmise au BFS : retirer les seules entraves,
+        // conserver les buffs et leur durée. Aucun container partagé n'est modifié.
+        var free = clone(stat, 1)
+        free.STRENGTH += stat.SHACKLE_STRENGTH
+        free.AGILITY += stat.SHACKLE_AGILITY
+        free.WISDOM += stat.SHACKLE_WISDOM
+        free.MAGIC += stat.SHACKLE_MAGIC
+        free.TOTAL_TP += stat.SHACKLE_TP
+        free.TOTAL_MP += stat.SHACKLE_MP
+        // Les PT affectent aussi force, soins, renvoi, critique, etc. Reprendre la
+        // même fonction inclut ces pertes indirectes, sans multiplier vie/présence.
+        var withoutShackles = ScoringClass.characteristicsValue(free)
+        // Score final = sans entraves - factor * perte causée par les entraves.
+        return (withoutShackles - currentScore) * (1 - factor)
+    }
+}

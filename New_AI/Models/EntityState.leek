@@ -32,6 +32,7 @@ class EntityStateClass extends EntityClass {
 	// chaîne d'inventaire n'est donc remontée qu'après un vrai saut ou une vraie télépo.
 	JCD_MEMO
 	TCD_MEMO
+	MCD_MEMO = null // Manumission, même invalidation dans StateClass.setCooldown
 	// Un effet touchant l'un des dix inputs de capability est passé sur cette entité pendant
 	// l'action. Remis à faux par le clone de simulation, posé par le ledger d'effets
 	// (RecordCastedEffect / removeCastedEffect) : sans lui, diffMaskOf saute les dix
@@ -70,6 +71,14 @@ class EntityStateClass extends EntityClass {
 	MAGIC
 	MAGIC_BUFF = 0
 	MAGIC_BUFF_WEIGHTED = 0
+	// Sommes positives des entraves actives, pour le scoring seulement. Scalaires
+	// copiés au clone ; la simulation retire toujours les effets ligne par ligne.
+	SHACKLE_STRENGTH = 0
+	SHACKLE_AGILITY = 0
+	SHACKLE_WISDOM = 0
+	SHACKLE_MAGIC = 0
+	SHACKLE_TP = 0
+	SHACKLE_MP = 0
 	// Boucliers qui TOMBERONT pendant la fenêtre de danger, liste plate
 	// [lanceur, retrait absolu, retrait relatif] — null quand il n'y en a aucun, ce qui est
 	// le cas ultra-majoritaire. Jamais mutée en place : refreshShieldExpiry la REMPLACE, un
@@ -268,6 +277,7 @@ class EntityStateClass extends EntityClass {
 					break
 				case EFFECT_SHACKLE_TP:
 					this.BASE_STATS[STAT_TP] += eff[1]
+					this.SHACKLE_TP += eff[1]
 					break
 
 					// --- FLUX PÉRIODIQUES (même passe, six agrégats positifs) ---
@@ -278,26 +288,31 @@ class EntityStateClass extends EntityClass {
 					break
 				case EFFECT_SHACKLE_MP:
 					this.BASE_STATS[STAT_MP] += eff[1]
+					this.SHACKLE_MP += eff[1]
 					break
 
 					// --- TP ---
 				case EFFECT_SHACKLE_AGILITY:
 					this.BASE_STATS[STAT_AGILITY] += eff[1]
+					this.SHACKLE_AGILITY += eff[1]
 					break
 
 					// --- STRENGTH ---
 				case EFFECT_SHACKLE_STRENGTH:
 					this.BASE_STATS[STAT_STRENGTH] += eff[1]
+					this.SHACKLE_STRENGTH += eff[1]
 					break
 
 					// --- WISDOM ---
 				case EFFECT_SHACKLE_WISDOM:
 					this.BASE_STATS[STAT_WISDOM] += eff[1]
+					this.SHACKLE_WISDOM += eff[1]
 					break
 
 					// --- MAGIC ---
 				case EFFECT_SHACKLE_MAGIC:
 					this.BASE_STATS[STAT_MAGIC] += eff[1]
+					this.SHACKLE_MAGIC += eff[1]
 					break
 
 					// --- SCIENCE ---

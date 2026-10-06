@@ -27,6 +27,12 @@ class ResurrectionClass {
 		// états parents, mais le revived est un clone frais : l'assignation ne touche que lui).
 		// Plus d'effets fantômes pour un ReplacementChangeStats ultérieur.
 		revived.EFFECTS = []
+		revived.SHACKLE_STRENGTH = 0
+		revived.SHACKLE_AGILITY = 0
+		revived.SHACKLE_WISDOM = 0
+		revived.SHACKLE_MAGIC = 0
+		revived.SHACKLE_TP = 0
+		revived.SHACKLE_MP = 0
 		revived.STRENGTH_BUFF = 0
 		revived.STRENGTH_BUFF_WEIGHTED = 0
 		revived.AGILITY_BUFF = 0

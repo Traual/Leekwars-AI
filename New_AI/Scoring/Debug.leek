@@ -30,6 +30,7 @@ class ScoringDebug {
                 "puissance": Coefficients.power(stat),
                 "PT max": Coefficients.totalTP(stat),
                 "PM max": Coefficients.totalMP(stat),
+                "entraves (multiplicateur Manumission)": ShackleScoring.multiplier(stat),
                 "bouclier absolu": Coefficients.absoluteShield(stat),
                 "bouclier relatif": Coefficients.relativeShield(stat),
                 "renvoi": Coefficients.damageReturn(stat),

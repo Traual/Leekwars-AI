@@ -10,7 +10,21 @@ class ScoringClass {
         var score = Coefficients.presence(stat)
         score += stat.LIFE                  * Coefficients.life(stat)
         score += stat.TOTAL_LIFE            * Coefficients.totalLife(stat)
-        score += BuffDuration.strengthValue(stat) * Coefficients.strength(stat)
+        var characteristics = characteristicsValue(stat)
+        score += characteristics + ShackleScoring.correction(stat, characteristics)
+        score += stat.ABSOLUTE_SHIELD       * Coefficients.absoluteShield(stat)
+        score += stat.RELATIVE_SHIELD       * Coefficients.relativeShield(stat)
+        score += stat.DAMAGE_RETURN         * Coefficients.damageReturn(stat)
+        score += stat.POISON_OVER_TIME      * Coefficients.poison(stat)
+        score += stat.AFTEREFFECT_OVER_TIME * Coefficients.aftereffect(stat)
+        score += stat.HEAL_OVER_TIME        * Coefficients.heal(stat)
+        return max(0, score) // Un allié vivant ne devient pas plus rentable mort.
+    }
+
+    // Partie susceptible de changer avec une entrave, y compris les coefficients
+    // qui dépendent des PT. Partagée avec la copie sans entraves, sans récursion.
+    static characteristicsValue(stat) {
+        var score = BuffDuration.strengthValue(stat) * Coefficients.strength(stat)
         score += BuffDuration.wisdomValue(stat) * Coefficients.wisdom(stat)
         // agility inclut déjà le critique : isoler sa base pour la compter une seule fois,
         // sur les points entre 0 et 1000. Les paliers de renvoi gardent leur propre valeur.
@@ -23,13 +37,7 @@ class ScoringClass {
         score += stat.POWER                 * Coefficients.power(stat)
         score += stat.TOTAL_TP              * Coefficients.totalTP(stat)
         score += stat.TOTAL_MP              * Coefficients.totalMP(stat)
-        score += stat.ABSOLUTE_SHIELD       * Coefficients.absoluteShield(stat)
-        score += stat.RELATIVE_SHIELD       * Coefficients.relativeShield(stat)
-        score += stat.DAMAGE_RETURN         * Coefficients.damageReturn(stat)
-        score += stat.POISON_OVER_TIME      * Coefficients.poison(stat)
-        score += stat.AFTEREFFECT_OVER_TIME * Coefficients.aftereffect(stat)
-        score += stat.HEAL_OVER_TIME        * Coefficients.heal(stat)
-        return max(0, score) // Un allié vivant ne devient pas plus rentable mort.
+        return score
     }
 
     static stateValue(State, MySide, OpsLimit) {

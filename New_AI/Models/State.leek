@@ -206,9 +206,10 @@ class StateClass {
 
 	static setCooldown(stat, item, value) {
 		stat.COOLDOWNS[item] = value
-		// SEUL point de péremption des mémos de cooldown de déplacement.
+		// SEUL point de péremption des mémos de cooldown (déplacement et scoring).
 		if (item == CHIP_JUMP) stat.JCD_MEMO = null
 		else if (item == CHIP_TELEPORTATION) stat.TCD_MEMO = null
+		else if (item == CHIP_MANUMISSION) stat.MCD_MEMO = null
 	}
 
 	static setUses(stat, item, value) {

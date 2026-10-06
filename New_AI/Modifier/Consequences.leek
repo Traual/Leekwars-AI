@@ -830,9 +830,6 @@ class ConsequencesClass {
 			case EFFECT_RELATIVE_SHIELD:
 				StatsTarget.RELATIVE_SHIELD -= ValueOfEffect
 				break
-			// Shackles : la stat est restaurée, symétrique de l'application. Le retrait passe
-			// TOUJOURS par ligne du ledger (Libération, Manumission, remplacement, mort du
-			// caster) — aucun compteur agrégé à maintenir.
 			case EFFECT_BUFF_STRENGTH:
 			case EFFECT_RAW_BUFF_STRENGTH:
 				StatsTarget.STRENGTH -= ValueOfEffect
@@ -867,6 +864,7 @@ class ConsequencesClass {
 			case EFFECT_SHACKLE_TP:
 				StatsTarget.TP += ValueOfEffect
 				StatsTarget.TOTAL_TP += ValueOfEffect
+				StatsTarget.SHACKLE_TP -= ValueOfEffect
 				break
 			case EFFECT_ABSOLUTE_VULNERABILITY:
 				StatsTarget.ABSOLUTE_SHIELD += ValueOfEffect
@@ -874,9 +872,11 @@ class ConsequencesClass {
 			case EFFECT_SHACKLE_MP:
 				StatsTarget.MP += ValueOfEffect
 				StatsTarget.TOTAL_MP += ValueOfEffect
+				StatsTarget.SHACKLE_MP -= ValueOfEffect
 				break
 			case EFFECT_SHACKLE_AGILITY:
 				StatsTarget.AGILITY += ValueOfEffect
+				StatsTarget.SHACKLE_AGILITY -= ValueOfEffect
 				break
 			case EFFECT_AFTEREFFECT:
 				// DurationOfEffect = les ticks DATES de la ligne (index 8), la meme valeur que
@@ -897,12 +897,15 @@ class ConsequencesClass {
 				break
 			case EFFECT_SHACKLE_MAGIC:
 				StatsTarget.MAGIC += ValueOfEffect
+				StatsTarget.SHACKLE_MAGIC -= ValueOfEffect
 				break
 			case EFFECT_SHACKLE_STRENGTH:
 				StatsTarget.STRENGTH += ValueOfEffect
+				StatsTarget.SHACKLE_STRENGTH -= ValueOfEffect
 				break
 			case EFFECT_SHACKLE_WISDOM:
 				StatsTarget.WISDOM += ValueOfEffect
+				StatsTarget.SHACKLE_WISDOM -= ValueOfEffect
 				break
 		}
 	}
@@ -942,6 +945,7 @@ class ConsequencesClass {
 		if (EffectType in CAP_EFFECT_TYPES) TarStats.CAP_DIRTY = true
 		if (Duration == 0 || AppliedValue <= 0) return;
 		// Une fusion cumule la valeur mais conserve la durée : ajouter seulement le delta.
+		ShackleScoring.record(TarStats, EffectType, AppliedValue)
 		if (EffectType == EFFECT_BUFF_STRENGTH || EffectType == EFFECT_RAW_BUFF_STRENGTH) {
 			BuffDuration.updateStrength(TarStats, AppliedValue, Duration)
 		} else if (EffectType == EFFECT_BUFF_AGILITY || EffectType == EFFECT_RAW_BUFF_AGILITY) {
@@ -1431,8 +1435,8 @@ class ConsequencesClass {
 	 * Manumission/Rémission — Entity.removeShackles : retire TOUTES les lignes des six
 	 * familles de shackles. Déroulé PAR LIGNE via removeCastedEffect (stat restaurée), puis
 	 * ledger purgé : la mort ultérieure du casteur des shackles ne restaure plus une seconde
-	 * fois. L'ancienne restauration globale par compteurs a été REMPLACÉE par ce déroulé
-	 * (sinon double restauration) — d'où l'absence de tout compteur agrégé de shackles.
+	 * fois. Les sommes SHACKLE_* suivent ces retraits pour le scoring seulement : elles
+	 * ne restaurent JAMAIS les stats de simulation (sinon double restauration).
 	 */
 	static getEntityRemoveShacklesConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
 		var newEffects = []

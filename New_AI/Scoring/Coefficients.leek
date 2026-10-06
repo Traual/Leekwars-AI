@@ -263,6 +263,16 @@ class Coefficients {
         return EntityImportance.value(stat) / 200
     }
 
+    // Part conservée de la perte de score des SIX entraves. Cooldown au prochain
+    // tour du porteur (tour courant pour Me). Barème volontairement simple à régler.
+    // Sans Manumission, ou sans la capacité PT de la jouer, le multiplicateur vaut 1.
+    static shackleMultiplier(cooldown) {
+        if (cooldown <= 0) return 0.5
+        if (cooldown == 1) return 0.65
+        if (cooldown == 2) return 0.8
+        return 1
+    }
+
     static absoluteShield(stat) { return 1 }
     static relativeShield(stat) { return 10 }
     static damageReturn(stat)   { return 10 }

@@ -32,6 +32,7 @@ class BulbState {
 	ANTICD_MEMO // cooldown effectif d'Antidote, 99 sans le chip (DangerComboClass.antidoteCdOf)
 	JCD_MEMO    // cooldowns effectifs de Saut et de Télépo, -1 sans le chip (même contrat)
 	TCD_MEMO
+	MCD_MEMO = null
 	CAP_DIRTY   // un effet a touché une capability pendant l'action (même contrat qu'EntityState)
 	POISON
 	POISON_OVER_TIME
@@ -64,6 +65,13 @@ class BulbState {
 	MAGIC
 	MAGIC_BUFF = 0
 	MAGIC_BUFF_WEIGHTED = 0
+	// Même contrat de scoring que pour EntityState, aucune entrave à la naissance.
+	SHACKLE_STRENGTH = 0
+	SHACKLE_AGILITY = 0
+	SHACKLE_WISDOM = 0
+	SHACKLE_MAGIC = 0
+	SHACKLE_TP = 0
+	SHACKLE_MP = 0
 	MP
 	TOTAL_MP
 	TP
