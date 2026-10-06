@@ -1,0 +1,105 @@
+// Estimation légère des PV périodiques : agrégats existants, aucune boucle d'effets.
+include("../includes.leek")
+
+class PeriodicDamageValue {
+    POISON = 0
+    AFTEREFFECT = 0
+    POISON_LEFT
+    AFTEREFFECT_LEFT
+    LIFE_LEFT
+
+    constructor(life, poison, aftereffect) {
+        this.LIFE_LEFT = max(0, life)
+        this.POISON_LEFT = poison
+        this.AFTEREFFECT_LEFT = aftereffect
+    }
+
+    // Consommer les PV AVANT la décote d'avenir. Lorsqu'un tick dépasse les PV
+    // disponibles, poison et contrecoup se partagent ce budget au prorata.
+    take(poison, aftereffect, weight) {
+        if (this.LIFE_LEFT <= 0) return null
+        poison = min(poison, this.POISON_LEFT)
+        aftereffect = min(aftereffect, this.AFTEREFFECT_LEFT)
+        var total = poison + aftereffect
+        if (total <= 0) return null
+        var used = min(total, this.LIFE_LEFT)
+        var share = used / total
+        poison *= share
+        aftereffect *= share
+        this.POISON += poison * weight
+        this.AFTEREFFECT += aftereffect * weight
+        this.POISON_LEFT -= poison
+        this.AFTEREFFECT_LEFT -= aftereffect
+        this.LIFE_LEFT -= used
+    }
+}
+
+class PeriodicScoring {
+    // Réutiliser le mémo BRUT d'Antidote de DangerCombo, invalidé par setCooldown.
+    // Le poids dépend ensuite du cooldown au prochain tour, comme Manumission.
+    // 99 = absent ou impossible à payer ; aucune consultation moteur ici.
+    static antidoteCooldown(stat) {
+        var cd = DangerComboClass.antidoteCdOf(stat)
+        if (cd == 99 || stat.TOTAL_TP < ITEMINFO[CHIP_ANTIDOTE].COST) return 99
+        return stat.ID == Me ? cd : max(0, cd - 1)
+    }
+
+    // Cas d'un seul canal : tranches scalaires, sans seconde projection.
+    static weightedStock(stock, tick, life) {
+        stock = min(stock, max(0, life))
+        var value = min(stock, tick) * Coefficients.periodicTickWeight(1)
+        if (stock > tick) value += min(stock - tick, tick) * Coefficients.periodicTickWeight(2)
+        if (stock > 2 * tick) value += min(stock - 2 * tick, tick) * Coefficients.periodicTickWeight(3)
+        if (stock > 3 * tick) value += (stock - 3 * tick) * Coefficients.periodicTickWeight(4)
+        return value
+    }
+
+    // Quatre tranches fixes. Le dernier appel regroupe TOUS les PV restants au
+    // même poids ; le coût ne dépend ni de la durée ni du nombre de lignes.
+    static project(life, poison, aftereffect, poisonTick, aftereffectTick, cleansed, isMe) {
+        if (cleansed && isMe) poison = 0 // Me peut se nettoyer avant son prochain tick.
+        var value = new PeriodicDamageValue(life, poison, aftereffect)
+        value.take(poisonTick, aftereffectTick, Coefficients.periodicTickWeight(1))
+        if (cleansed) value.POISON_LEFT = 0 // Les autres encaissent leur premier tick.
+        value.take(poisonTick, aftereffectTick, Coefficients.periodicTickWeight(2))
+        value.take(poisonTick, aftereffectTick, Coefficients.periodicTickWeight(3))
+        value.take(value.POISON_LEFT, value.AFTEREFFECT_LEFT, Coefficients.periodicTickWeight(4))
+        return value
+    }
+
+    // POISON/AFTEREFFECT sont les prochains ticks ; *_OVER_TIME incluent déjà les
+    // durées. Pour des lignes de durées différentes, les ticks suivants sont une
+    // approximation : le stock restant est réparti par morceaux de la taille du tick.
+    static damageValues(stat) {
+        if (stat.POISON_OVER_TIME <= 0 && stat.AFTEREFFECT_OVER_TIME <= 0) return null
+        var poison = max(0, stat.POISON_OVER_TIME)
+        if (poison > 0 && EntityStateClass.hasState(stat, STATE_INVINCIBLE)) poison = 0
+        var aftereffect = max(0, stat.AFTEREFFECT_OVER_TIME)
+        if (poison + aftereffect <= 0 || stat.LIFE <= 0) return null
+        var poisonTick = min(poison, max(0, stat.POISON))
+        var aftereffectTick = min(aftereffect, max(0, stat.AFTEREFFECT))
+        if (poison <= 0) {
+            var value = new PeriodicDamageValue(0, 0, 0)
+            value.AFTEREFFECT = weightedStock(aftereffect, aftereffectTick, stat.LIFE)
+            return value
+        }
+        var factor = Coefficients.antidoteMultiplier(antidoteCooldown(stat))
+        if (aftereffect <= 0) {
+            var value = new PeriodicDamageValue(0, 0, 0)
+            var first = stat.ID == Me ? 0 : min(poisonTick, stat.LIFE) * Coefficients.periodicTickWeight(1)
+            value.POISON = first + (weightedStock(poison, poisonTick, stat.LIFE) - first) * factor
+            return value
+        }
+        var full = project(stat.LIFE, poison, aftereffect, poisonTick, aftereffectTick, false, stat.ID == Me)
+        if (factor == 1) return full
+
+        // Mélanger les cas « poison conservé » et « poison nettoyé ». Chacun partage
+        // son propre plafond de PV : un poison décoté ne prend pas artificiellement
+        // la place du contrecoup. Sans contrecoup, cela donne exactement les produits
+        // tick × avenir × Antidote convenus, premier tick des autres conservé.
+        var clean = project(stat.LIFE, poison, aftereffect, poisonTick, aftereffectTick, true, stat.ID == Me)
+        full.POISON = full.POISON * factor + clean.POISON * (1 - factor)
+        full.AFTEREFFECT = full.AFTEREFFECT * factor + clean.AFTEREFFECT * (1 - factor)
+        return full
+    }
+}

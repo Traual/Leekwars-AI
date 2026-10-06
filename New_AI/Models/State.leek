@@ -210,6 +210,7 @@ class StateClass {
 		if (item == CHIP_JUMP) stat.JCD_MEMO = null
 		else if (item == CHIP_TELEPORTATION) stat.TCD_MEMO = null
 		else if (item == CHIP_MANUMISSION) stat.MCD_MEMO = null
+		else if (item == CHIP_ANTIDOTE) stat.ANTICD_MEMO = null
 	}
 
 	static setUses(stat, item, value) {

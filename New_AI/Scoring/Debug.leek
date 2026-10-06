@@ -15,6 +15,9 @@ class ScoringDebug {
             var potential = ScoringClass.characteristicsPotential(stat)
             var tpFactor = Coefficients.tpMultiplier(stat)
             var mpFactor = Coefficients.mpMultiplier(stat)
+            var periodic = PeriodicScoring.damageValues(stat)
+            var poisonCoef = Coefficients.poison(stat, periodic)
+            var aftereffectCoef = Coefficients.aftereffect(stat, periodic)
             debug([
                 "présence": Coefficients.presence(stat),
                 "importance (caractéristiques de base)": EntityImportance.statsImportance(stat),
@@ -43,8 +46,12 @@ class ScoringDebug {
                 "bouclier relatif": Coefficients.relativeShield(stat),
                 "bouclier relatif (bonus PV brut)": Coefficients.relativeShieldLifeBonus(stat),
                 "renvoi": Coefficients.damageReturn(stat),
-                "poison": Coefficients.poison(stat),
-                "aftereffect": Coefficients.aftereffect(stat),
+                "poison": poisonCoef,
+                "poison (cooldown effectif Antidote)": PeriodicScoring.antidoteCooldown(stat),
+                "poison (facteur Antidote)": Coefficients.antidoteMultiplier(PeriodicScoring.antidoteCooldown(stat)),
+                "poison (score futur)": stat.POISON_OVER_TIME * poisonCoef,
+                "aftereffect": aftereffectCoef,
+                "aftereffect (score futur)": stat.AFTEREFFECT_OVER_TIME * aftereffectCoef,
                 "soin continu": Coefficients.heal(stat)
             ])
         }

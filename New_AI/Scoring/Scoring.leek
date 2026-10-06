@@ -15,8 +15,12 @@ class ScoringClass {
         score += stat.ABSOLUTE_SHIELD       * Coefficients.absoluteShield(stat)
         score += stat.RELATIVE_SHIELD       * Coefficients.relativeShield(stat)
         score += stat.DAMAGE_RETURN         * Coefficients.damageReturn(stat)
-        score += stat.POISON_OVER_TIME      * Coefficients.poison(stat)
-        score += stat.AFTEREFFECT_OVER_TIME * Coefficients.aftereffect(stat)
+        // Une seule projection pour partager les PV entre poison et contrecoup.
+        var periodic = PeriodicScoring.damageValues(stat)
+        if (periodic != null) {
+            score += stat.POISON_OVER_TIME      * Coefficients.poison(stat, periodic)
+            score += stat.AFTEREFFECT_OVER_TIME * Coefficients.aftereffect(stat, periodic)
+        }
         score += stat.HEAL_OVER_TIME        * Coefficients.heal(stat)
         return max(0, score) // Un allié vivant ne devient pas plus rentable mort.
     }

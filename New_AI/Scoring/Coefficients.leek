@@ -1,4 +1,4 @@
-// Réglages manuels. Utilitaires dans Equipment.leek et StateConstants.leek.
+// Réglages manuels. Utilitaires dans Equipment.leek, StateConstants.leek et PeriodicEffects.leek.
 // Coefficients bruts, sans PT/PM internes : leurs facteurs communs s'appliquent dans Scoring.
 // Chaque fonction reçoit l'état du porteur. Les poids de cibles sont figés par recherche.
 include("../includes.leek")
@@ -289,7 +289,45 @@ class Coefficients {
         if (damageReturn > 200) value += (damageReturn - 200) * 3
         return value / damageReturn * weight
     }
-    static poison(stat)         { return EntityStateClass.hasState(stat, STATE_INVINCIBLE) ? 0 : -0.5 }
-    static aftereffect(stat)    { return -0.75 }
-    static heal(stat)           { return EntityStateClass.hasState(stat, STATE_UNHEALABLE) ? 0 : 0.5 }
+    // Poids des ticks futurs, communs au poison et au contrecoup. Le quatrième
+    // poids s'applique aussi à tous les suivants, sans multiplication de durée en plus.
+    static periodicTickWeight(tick) {
+        switch (tick) {
+            case 1: return 1
+            case 2: return 0.8
+            case 3: return 0.6
+            default: return 0.4
+        }
+    }
+
+    // Cooldown effectif au prochain tour (courant pour Me), 99 si inutilisable.
+    static antidoteMultiplier(cooldown) {
+        if (cooldown <= 0) return 0.4
+        if (cooldown == 1) return 0.6
+        if (cooldown == 2) return 0.8
+        return 1
+    }
+
+    // Coefficients moyens : Scoring multiplie déjà par *_OVER_TIME. La projection
+    // commune est fournie une seule fois par entité ; les appels isolés restent valides.
+    static poison(stat, periodic = null) {
+        if (stat.POISON_OVER_TIME <= 0) return 0
+        if (periodic == null) periodic = PeriodicScoring.damageValues(stat)
+        if (periodic == null) return 0
+        return -EntityImportance.value(stat) / 3000 * periodic.POISON / stat.POISON_OVER_TIME
+    }
+
+    static aftereffect(stat, periodic = null) {
+        if (stat.AFTEREFFECT_OVER_TIME <= 0) return 0
+        if (periodic == null) periodic = PeriodicScoring.damageValues(stat)
+        if (periodic == null) return 0
+        return -EntityImportance.value(stat) / 3000 * periodic.AFTEREFFECT / stat.AFTEREFFECT_OVER_TIME
+    }
+
+    // Le soin continu reste simple : durée déjà incluse, sans plafond aux PV
+    // manquants actuels ni décote d'avenir. Les blessures futures peuvent l'utiliser.
+    static heal(stat) {
+        if (EntityStateClass.hasState(stat, STATE_UNHEALABLE)) return 0
+        return 0.5 * EntityImportance.value(stat) / 3000
+    }
 }
