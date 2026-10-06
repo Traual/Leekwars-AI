@@ -282,10 +282,11 @@ class Coefficients {
     static damageReturn(stat) {
         var weight = EntityImportance.value(stat) / 3000 * ShieldProfile.forEntity(stat)
         var damageReturn = stat.DAMAGE_RETURN
-        if (damageReturn <= 0) return 10 * weight
-        var value = min(damageReturn, 50) * 10
-        if (damageReturn > 50) value += min(damageReturn - 50, 50) * 8
-        if (damageReturn > 100) value += (damageReturn - 100) * 5
+        if (damageReturn <= 0) return 2 * weight
+        var value = min(damageReturn, 50) * 5
+        if (damageReturn > 50) value += (damageReturn - 50) * 10
+        if (damageReturn > 100) value += (damageReturn - 100) * 8
+        if (damageReturn > 200) value += (damageReturn - 200) * 3
         return value / damageReturn * weight
     }
     static poison(stat)         { return EntityStateClass.hasState(stat, STATE_INVINCIBLE) ? 0 : -0.5 }
