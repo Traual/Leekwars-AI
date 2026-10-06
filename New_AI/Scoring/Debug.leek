@@ -11,12 +11,15 @@ class ScoringDebug {
             if (stat.LIFE <= 0) continue
             debug("[COEFS] Tour " + getTurn() + " | " + stat.NAME + " (#" + id + ")"
                 + (id == Me ? " [moi]" : (stat.SIDE == State[Me].SIDE ? " [allié]" : " [adversaire]")))
-            // Coefficients bruts : la durée des buffs s'applique séparément dans le scoring.
+            // Coefficients bruts : durée et facteurs communs PT/PM appliqués séparément.
+            var potential = ScoringClass.characteristicsPotential(stat)
+            var tpFactor = Coefficients.tpMultiplier(stat)
+            var mpFactor = Coefficients.mpMultiplier(stat)
             debug([
                 "présence": Coefficients.presence(stat),
                 "importance (caractéristiques de base)": EntityImportance.statsImportance(stat),
                 "importance (tactique)": EntityImportance.tacticalImportance(stat),
-                "potentiel PT (caractéristiques + tactique)": EntityImportance.potential(stat),
+                "importance (potentiel de base)": EntityImportance.potential(stat),
                 "importance (multiplicateur PT de base)": EntityImportance.tpMultiplier(stat),
                 "importance (multiplicateur PM de base)": EntityImportance.mpMultiplier(stat),
                 "vie": Coefficients.life(stat),
@@ -29,8 +32,10 @@ class ScoringDebug {
                 "science": Coefficients.science(stat),
                 "magie": Coefficients.magic(stat),
                 "puissance": Coefficients.power(stat),
-                "PT max": Coefficients.totalTP(stat),
-                "PM max": Coefficients.totalMP(stat),
+                "potentiel courant (caractéristiques + tactique)": potential,
+                "facteur PT courant": tpFactor,
+                "facteur PM courant": mpFactor,
+                "score caractéristiques et ressources (avant décote entraves)": potential * tpFactor * mpFactor,
                 "entraves (multiplicateur Manumission)": ShackleScoring.multiplier(stat),
                 "bouclier absolu": Coefficients.absoluteShield(stat),
                 "bouclier relatif": Coefficients.relativeShield(stat),

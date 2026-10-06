@@ -17,8 +17,8 @@ class EntityImportance {
     }
 
     // Potentiel par équipement : caractéristiques de BASE utilisables + tactique.
-    // Sans multiplicateur PT/PM : sert à valoriser un PT sans privilégier un porteur
-    // simplement parce qu'il a déjà beaucoup de ressources. Partagé avec l'importance.
+    // Sans multiplicateur PT/PM : composante de l'importance de présence/vie.
+    // Le potentiel courant du terme couplé vit dans ScoringClass.characteristicsPotential.
     // Bases et inventaire immuables : le mémo reste valide sur les clones et au revive.
     static potential(stat) {
         if (stat.POTENTIAL_MEMO != null) return stat.POTENTIAL_MEMO

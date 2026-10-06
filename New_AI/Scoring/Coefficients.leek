@@ -1,4 +1,5 @@
 // Réglages manuels. Utilitaires dans Equipment.leek et StateConstants.leek.
+// Coefficients bruts, sans PT/PM internes : leurs facteurs communs s'appliquent dans Scoring.
 // Chaque fonction reçoit l'état du porteur. Les poids de cibles sont figés par recherche.
 include("../includes.leek")
 
@@ -47,16 +48,7 @@ class Coefficients {
         if (stat.POWER >= 50) coef += 0.3
         if (stat.POWER >= 100) coef += 0.5
         if (stat.POWER >= 200) coef += 1
-        return coef * strengthTpMultiplier(stat)
-    }
-    // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
-    static strengthTpMultiplier(stat) {
-        var tp = stat.TOTAL_TP
-        if (tp >= 32) return 1.7
-        if (tp >= 24) return 1.5
-        if (tp >= 16) return 1
-        if (tp >= 8) return 0.8
-        return 0.5
+        return coef
     }
     // Paliers sur la sagesse courante, si l'équipement peut soigner ou donner de la vitalité.
     static wisdom(stat) {
@@ -68,17 +60,7 @@ class Coefficients {
         if (stat.WISDOM >= 500) coef += 0.1
         if (stat.WISDOM >= 600) coef += 0.1
         if (stat.WISDOM >= 700) coef += 0.1
-        return coef * wisdomTpMultiplier(stat)
-    }
-    // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
-    static wisdomTpMultiplier(stat) {
-        var tp = stat.TOTAL_TP
-        if (tp >= 32) return 1.3
-        if (tp >= 24) return 1.2
-        if (tp >= 16) return 1.1
-        if (tp >= 12) return 0.9
-        if (tp >= 8) return 0.6
-        return 0.2
+        return coef
     }
     // Base critique pour tous, puis paliers sur l'agilité courante si on peut poser du renvoi.
     static agility(stat) {
@@ -91,21 +73,11 @@ class Coefficients {
         if (stat.AGILITY >= 600) coef += 0.2
         if (stat.AGILITY >= 800) coef += 0.2
         if (stat.AGILITY >= 1000) coef += 0.1
-        // Multiplicateur uniquement sur le renvoi : le critique dépend déjà des PT.
-        return criticalCoef + coef * agilityTpMultiplier(stat)
+        return criticalCoef + coef
     }
-    // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
-    static agilityTpMultiplier(stat) {
-        var tp = stat.TOTAL_TP
-        if (tp >= 28) return 1.3
-        if (tp >= 20) return 1.2
-        if (tp >= 12) return 1
-        if (tp >= 8) return 0.8
-        if (tp >= 4) return 0.4
-        return 0.2
-    }
-    // Réglage distinct du renvoi : TOTAL_TP / 100 par point d'agilité utile au critique, avant échelle.
-    static criticalAgility(stat) { return stat.TOTAL_TP / 100 * ScoringStateConstants.criticalScale(stat) }
+    // Échelle conservée, normalisée à 16 PT (facteur commun = 1). Les PT/PM sont
+    // appliqués ensuite UNE fois, comme pour le renvoi et les autres caractéristiques.
+    static criticalAgility(stat) { return 0.16 * ScoringStateConstants.criticalScale(stat) }
     // Paliers sur la résistance courante, si l'équipement peut poser un bouclier.
     static resistance(stat) {
         if (!Equipment.canUseResistance(stat)) return 0
@@ -116,17 +88,7 @@ class Coefficients {
         if (stat.RESISTANCE >= 500) coef += 0.1
         if (stat.RESISTANCE >= 600) coef += 0.1
         if (stat.RESISTANCE >= 700) coef += 0.1
-        return coef * resistanceTpMultiplier(stat)
-    }
-    // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
-    static resistanceTpMultiplier(stat) {
-        var tp = stat.TOTAL_TP
-        if (tp >= 32) return 1.3
-        if (tp >= 24) return 1.2
-        if (tp >= 16) return 1.1
-        if (tp >= 12) return 0.9
-        if (tp >= 8) return 0.6
-        return 0.2
+        return coef
     }
     // Paliers sur la science courante, si l'équipement peut buffer, lancer une nova ou un contrecoup.
     static science(stat) {
@@ -145,16 +107,7 @@ class Coefficients {
             if (stat.POWER >= 100) coef += 0.2
             if (stat.POWER >= 200) coef += 0.4
         }
-        return coef * scienceTpMultiplier(stat)
-    }
-    // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
-    static scienceTpMultiplier(stat) {
-        var tp = stat.TOTAL_TP
-        if (tp >= 32) return 1.7
-        if (tp >= 24) return 1.5
-        if (tp >= 16) return 1
-        if (tp >= 8) return 0.8
-        return 0.5
+        return coef
     }
     // Paliers sur la magie courante, si l'équipement peut empoisonner ou entraver.
     // Une seule entrave suffit : buffer la magie d'un allié qui entrave la force vaut le coup.
@@ -174,23 +127,13 @@ class Coefficients {
             if (stat.POWER >= 100) coef += 0.3
             if (stat.POWER >= 200) coef += 0.6
         }
-        return coef * magicTpMultiplier(stat)
-    }
-    // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
-    static magicTpMultiplier(stat) {
-        var tp = stat.TOTAL_TP
-        if (tp >= 32) return 1.7
-        if (tp >= 24) return 1.5
-        if (tp >= 16) return 1
-        if (tp >= 8) return 0.8
-        return 0.5
+        return coef
     }
     // La puissance multiplie quatre familles d'effets, cumulables dans un même tour (arme de
     // force et poison, par exemple) : une part par famille lançable, et la somme des parts.
     static power(stat) {
         if (!Equipment.canUsePower(stat)) return 0
-        var coef = powerStrengthPart(stat) + powerMagicPart(stat) + powerSciencePart(stat) + powerLifeDamagePart(stat)
-        return coef * powerTpMultiplier(stat)
+        return powerStrengthPart(stat) + powerMagicPart(stat) + powerSciencePart(stat) + powerLifeDamagePart(stat)
     }
     // Dégâts : paliers sur la force, si l'entité peut frapper.
     static powerStrengthPart(stat) {
@@ -240,30 +183,27 @@ class Coefficients {
         if (stat.LIFE >= 5000) coef += 0.1
         return coef
     }
-    // Multiplicateur par paliers de PT, non cumulé : le premier palier atteint l'emporte.
-    static powerTpMultiplier(stat) {
-        var tp = stat.TOTAL_TP
-        if (tp >= 32) return 1.7
-        if (tp >= 24) return 1.5
-        if (tp >= 16) return 1
-        if (tp >= 8) return 0.8
-        return 0.5
-    }
-    // Valeur directe d'un PT : caractéristiques de BASE utilisables + puces tactiques.
-    // Sans multiplicateur PT/PM d'importance. Diviseur réglable : potentiel 3000 -> 30/PT.
-    // Les paliers de PT des autres coefficients et le critique restent des gains indirects.
-    static totalTP(stat) {
-        return EntityImportance.potential(stat) / 100
+    // Facteur commun de capacité : TOTAL_TP inclut buffs/entraves, pas les dépenses.
+    // Tranches continues, rendement décroissant, aucune marche ni plafond dur.
+    // Repères : 0 PT -> 0 ; 16 -> 1 ; 32 -> 1.5 ; 48 -> 1.75.
+    static tpMultiplier(stat) {
+        var tp = max(0, stat.TOTAL_TP)
+        var factor = min(tp, 16) / 16
+        if (tp > 16) factor += min(tp - 16, 16) / 32
+        if (tp > 32) factor += (tp - 32) / 64
+        return factor
     }
 
-    // Paliers d'importance de BASE, fixes pendant la recherche : un gain de PM ne
-    // change pas son propre coefficient. Distances et position restent dans le placement.
-    static totalMP(stat) {
-        if (stat.STATIC || EntityStateClass.hasState(stat, STATE_ROOTED)) return 0
-        var importance = EntityImportance.value(stat)
-        if (importance >= 3000) return 15
-        if (importance >= 1000) return 10
-        return 5
+    // La mobilité augmente le potentiel sans annuler celui d'un porteur immobile.
+    // Repères : 0 PM -> 0.75 ; 5 -> 1 ; 10 -> 1.125 ; 15 -> 1.175.
+    // Un porteur statique/enraciné garde le facteur de 0 PM : le buffer en PM ne rapporte rien.
+    // TOTAL_MP, pas les PM restants ; la cellule réelle reste évaluée par le placement.
+    static mpMultiplier(stat) {
+        var mp = stat.STATIC || EntityStateClass.hasState(stat, STATE_ROOTED) ? 0 : max(0, stat.TOTAL_MP)
+        var factor = 0.75 + min(mp, 5) * 0.05
+        if (mp > 5) factor += min(mp - 5, 5) * 0.025
+        if (mp > 10) factor += (mp - 10) * 0.01
+        return factor
     }
 
     // Part conservée de la perte de score des SIX entraves. Cooldown au prochain

@@ -21,9 +21,17 @@ class ScoringClass {
         return max(0, score) // Un allié vivant ne devient pas plus rentable mort.
     }
 
-    // Partie susceptible de changer avec une entrave, y compris les coefficients
-    // qui dépendent des PT. Partagée avec la copie sans entraves, sans récursion.
+    // Une seule interaction caractéristiques × ressources : les deux ordres de buffs
+    // donnent le même score à état final identique. Aucun bonus PT/PM ajouté à côté.
+    // Partagée avec la copie sans entraves : Manumission décote aussi leurs synergies.
     static characteristicsValue(stat) {
+        return characteristicsPotential(stat) * Coefficients.tpMultiplier(stat) * Coefficients.mpMultiplier(stat)
+    }
+
+    // Potentiel COURANT, distinct de l'importance de BASE utilisée pour présence/vie.
+    // Les durées restent celles de BuffDuration ; les coefs ne contiennent plus de PT/PM.
+    // Inventaire et tactique déjà en cache. Ce total dépend des buffs : pas de mémo de base.
+    static characteristicsPotential(stat) {
         var score = BuffDuration.strengthValue(stat) * Coefficients.strength(stat)
         score += BuffDuration.wisdomValue(stat) * Coefficients.wisdom(stat)
         // agility inclut déjà le critique : isoler sa base pour la compter une seule fois,
@@ -35,9 +43,10 @@ class ScoringClass {
         score += BuffDuration.scienceValue(stat) * Coefficients.science(stat)
         score += BuffDuration.magicValue(stat) * Coefficients.magic(stat)
         score += stat.POWER                 * Coefficients.power(stat)
-        score += stat.TOTAL_TP              * Coefficients.totalTP(stat)
-        score += stat.TOTAL_MP              * Coefficients.totalMP(stat)
-        return score
+        score += EntityImportance.tacticalImportance(stat)
+        // Un potentiel négatif ferait préférer perdre des PT/PM. Les entraves peuvent
+        // neutraliser le potentiel, pas transformer les ressources en pénalité.
+        return max(0, score)
     }
 
     static stateValue(State, MySide, OpsLimit) {

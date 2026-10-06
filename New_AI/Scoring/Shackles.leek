@@ -56,8 +56,8 @@ class ShackleScoring {
         free.MAGIC += stat.SHACKLE_MAGIC
         free.TOTAL_TP += stat.SHACKLE_TP
         free.TOTAL_MP += stat.SHACKLE_MP
-        // Les PT affectent aussi force, soins, renvoi, critique, etc. Reprendre la
-        // même fonction inclut ces pertes indirectes, sans multiplier vie/présence.
+        // PT et PM multiplient le potentiel courant (force, soins, renvoi, critique,
+        // tactique). Reprendre ce terme commun inclut les synergies, sans toucher vie/présence.
         var withoutShackles = ScoringClass.characteristicsValue(free)
         // Score final = sans entraves - factor * perte causée par les entraves.
         return (withoutShackles - currentScore) * (1 - factor)
