@@ -1,12 +1,36 @@
 // Pénalité de fin de tour : distance + exposition. Plus petit = mieux.
-// Toutes les entités d'un même camp ont le même poids, invocations comprises.
+// La distance garde un poids égal par entité ; le danger utilise mon importance de base.
 include("../includes.leek")
 
 class Placement {
-    // Les trois fonctions à modifier pour le placement. Garder des coûts >= 0.
+    // Fonctions à modifier pour le placement. Garder des coûts >= 0.
     static allyDistance(distance)  { return 0.5 * abs(distance - 3) }
     static enemyDistance(distance) { return 0.2 * abs(distance - 5) }
-    static exposure(net)           { return 0.05 * max(0, net) }
+
+    // Les soins peuvent effacer 60 % de la pénalité brute, jamais sa totalité.
+    // Garder ce réglage entre 0 et 1 pour conserver une pénalité positive ou nulle.
+    static HEAL_ATTENUATION = 0.6
+
+    // Fraction de ma vie courante menacée, par tranches cumulées et continues.
+    // Les 10 premiers % sont gratuits ; poids 1 / 2 / 4 / 20 ensuite.
+    static dangerRisk(ratio) {
+        if (ratio <= 0.1) return 0
+        var score = min(ratio - 0.1, 0.3) * 1
+        if (ratio > 0.4) score += min(ratio - 0.4, 0.3) * 2
+        if (ratio > 0.7) score += min(ratio - 0.7, 0.3) * 4
+        if (ratio > 1) score += (ratio - 1) * 20
+        return score
+    }
+
+    static exposure(stat, raw, net) {
+        if (raw <= 0) return 0
+        var life = max(1, stat.LIFE)
+        var rawRisk = dangerRisk(raw / life)
+        var netRisk = dangerRisk(max(0, net) / life)
+        // Même entièrement soigné, je mobilise mes alliés et conserve 40 % du risque brut.
+        // Le net vient du déroulé existant : ordre des tours, cap de vie et mort avant soin.
+        return (rawRisk - HEAL_ATTENUATION * (rawRisk - netRisk)) * EntityImportance.value(stat)
+    }
 
     static spatial(State, BaseHash, cell) {
         var key = addValueToBinHash(BaseHash, cell)

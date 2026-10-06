@@ -163,8 +163,8 @@ class FinalCell {
         // épargne alors le balayage entier. Sa clé porte TOUT ce dont la pénalité dépend — le
         // terrain et ma mobilité (donc mes cellules accessibles), la graine de fuite (qui porte
         // déjà menace adverse, mes boucliers, mon antidote, ma vie et ma vie max, dont le masque
-        // d'immunités) et les soigneurs des deux camps. La pénalité ne lit rien d'autre : ni mes
-        // flux périodiques, ni mes caractéristiques, qui ne changent pas ce qu'un net me coûte.
+        // d'immunités) et les soigneurs des deux camps. L'importance de BASE qui pondère le
+        // danger est constante pendant la recherche ; mes buffs ne la modifient pas.
         var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp) ^ combinedHfp)
         if (memoKey in FINAL_PLACEMENT_CACHE) {
             BenchOps.Stop("FinalCell")
@@ -204,7 +204,8 @@ class FinalCell {
             if (spatial >= bestPenalty) continue
 
             var net = withDanger ? DeltaClass.netAtFleeCell(cell, seed, dangerCellSeed, MyState, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy, false) : 0
-            var penalty = spatial + Placement.exposure(net)
+            var raw = withDanger ? DeltaClass.rawAtFleeCell(dangerCellSeed ^ cell) : 0
+            var penalty = spatial + Placement.exposure(MyState, raw, net)
             if (penalty < bestPenalty) {
                 bestPenalty = penalty
                 bestCell = cell

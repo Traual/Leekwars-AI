@@ -179,6 +179,16 @@ class DeltaClass {
         return delta
     }
 
+    // À appeler après netAtFleeCell : la map de danger existe, même si le net était en cache.
+    // Une somme par clé de danger, réutilisée si seuls la vie ou les soigneurs changent.
+    static rawAtFleeCell(dangerKey) {
+        if (dangerKey in CELL_RAWDAMAGE_FOR_ME_CACHE) return CELL_RAWDAMAGE_FOR_ME_CACHE[dangerKey]
+        var raw = 0
+        for (var damage in CELL_DANGER_GET_CACHE[dangerKey]) raw += damage
+        CELL_RAWDAMAGE_FOR_ME_CACHE[dangerKey] = raw
+        return raw
+    }
+
     /*
      * Net d'une entité sur 1 round À `cell` : le danger continue de rouler (l'overkill
      * compte), le heal ne s'applique que vivante. Vitalité AVANT heal : le cap local monte
