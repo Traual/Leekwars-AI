@@ -278,14 +278,14 @@ class Coefficients {
 
     // Renvoi : même profil adverse, sans bonus de vie ni décote par nos boucliers.
     // Le moteur le calcule avant les protections. Aucun plafond à 100 % :
-    // tranches 0-50 -> 10 ; 50-100 -> 8 ; au-delà -> 5 par point supplémentaire.
+    // tranches 0-50 -> 5 ; 50-100 -> 10 ; 100-200 -> 8 ; au-delà -> 3.
     static damageReturn(stat) {
         var weight = EntityImportance.value(stat) / 3000 * ShieldProfile.forEntity(stat)
         var damageReturn = stat.DAMAGE_RETURN
         if (damageReturn <= 0) return 2 * weight
         var value = min(damageReturn, 50) * 5
-        if (damageReturn > 50) value += (damageReturn - 50) * 10
-        if (damageReturn > 100) value += (damageReturn - 100) * 8
+        if (damageReturn > 50) value += min(damageReturn - 50, 50) * 10
+        if (damageReturn > 100) value += min(damageReturn - 100, 100) * 8
         if (damageReturn > 200) value += (damageReturn - 200) * 3
         return value / damageReturn * weight
     }
