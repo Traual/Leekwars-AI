@@ -23,6 +23,7 @@ class Play {
 		// rejouer celle d'un autre tour ni celle d'une autre entite (poireau et bulbes
 		// partagent la VM, donc les globals).
 		BFS_LAST_CHAIN = []
+		BFS_LAST_CHAIN_DANGER_VALIDATED = false
 		var showCoefficients = ScoringDebug.ENABLED
 		while (true) {
 			var State = StateClass.Virtualize()
@@ -106,6 +107,7 @@ class Play {
 		// vidange, et s'arreter sous deux n'en jouait aucune quand il n'en restait qu'une.
 		var n = count(BFS_LAST_CHAIN)
 		if (n < 1) return;
+		if (!BFS_LAST_CHAIN_DANGER_VALIDATED) debugW("[VIDANGE] danger not taken into account: raw-score plan")
 		var limit = OPS_CAP - OPS_RESERVE_PLACEMENT - livingSummons * OPS_RESERVE_PER_BULB
 		for (var i = 0; i < n; i++) {
 			var opsBefore = getOperations()

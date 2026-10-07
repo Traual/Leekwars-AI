@@ -490,6 +490,10 @@ global OPS_MOVE_MARGIN = 25000
 // Chaine complete du meilleur candidat du dernier plan, racine comprise : quand le budget
 // ne finance plus un plan, ses actions suivantes se jouent telles quelles.
 global BFS_LAST_CHAIN = []
+
+// Vrai seulement si la suite retenue a une clôture terminale complète avec danger.
+// Copié par le choix du BFS et relu par la vidange ; reset par Play à chaque tour.
+global BFS_LAST_CHAIN_DANGER_VALIDATED = false
 // Ordre de tour de Me, relu une fois par Virtualize. Sert a dater les ticks restants des
 // flux periodiques : un effet tombe au tour de son LANCEUR mais tique a celui du PORTEUR,
 // donc le compte depend de qui des deux rejoue en premier vu de MON tour.

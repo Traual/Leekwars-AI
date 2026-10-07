@@ -107,6 +107,10 @@ Le **danger de placement** utilise la fraction des PV courants menacée : les 10
 
 Le soin atténue ce risque : **pénalité = importance × (0,4 × risque brut + 0,6 × risque net)**. `Placement.HEAL_ATTENUATION = 0.6` règle la part effaçable par les soins. Le danger brut est pris après les protections et avant les soins ; le net réutilise l'ordre de jeu, le plafond de vie et l'impossibilité de soigner un mort. Aucun soin ne donne de bonus autonome : même avec un net nul, 40 % du risque brut reste compté. Pour 3 000 PV et une importance de 3 000, 1 000 dégâts coûtent 700 sans soin, 340 avec 600 soins utilisables et 280 s'ils sont entièrement compensés. La somme brute est mise en cache par clé de danger, sans reconstruire la carte. Les distances conservent leur barème actuel.
 
+Le **choix terminal du BFS** conserve immédiatement toute première suite entièrement évaluée avec danger. Si le meilleur score brut ne peut pas être évalué, les autres candidats restent examinés tant que le budget le permet. Un candidat non évalué ne remplace jamais un plan validé. Sans aucune évaluation complète, le repli brut reste possible et affiche `[BFS] danger not taken into account: raw-score fallback` ; une vidange de cette suite rappelle `[VIDANGE] danger not taken into account: raw-score plan`. Cela signale une absence d'évaluation, pas un danger estimé nul. Ces règles ne garantissent pas l'absence de dégâts : les suites validées restent départagées par leur score après pénalité de placement.
+
+Au placement final, le vrai repli sans danger affiche `[placement] danger not taken into account: spatial cost only`. Un résultat complet déjà en cache reste utilisé et ne produit pas cet avertissement. Les budgets existants restent inchangés ; aucune estimation de danger par nœud n'est ajoutée.
+
 ## Documentation et outils
 
 Le dépôt séparé **[Leekwars-AI-tools](https://github.com/Traual/Leekwars-AI-tools)** conserve :

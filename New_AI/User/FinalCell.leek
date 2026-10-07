@@ -59,7 +59,6 @@ class FinalCell {
         // SPATIAL : une reponse degradee, mais complete sur toutes mes cellules accessibles.
         var budget = OPS_CAP - OPS_MOVE_MARGIN
         var withDanger = getOperations() + coldCost(State, combinedHfp) <= budget
-        if (!withDanger) debugW("[placement] danger non financable : cout spatial seul")
         var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, budget, withDanger)
         debug("Best final cell: " + res[0] + " (pénalité: " + res[1] + ", net: " + res[2] + ")")
         return res[0]
@@ -170,6 +169,9 @@ class FinalCell {
             BenchOps.Stop("FinalCell")
             return FINAL_PLACEMENT_CACHE[memoKey]
         }
+        // Un résultat complet en cache tient déjà compte du danger, même quand le budget
+        // n'en finance plus une reconstruction. Avertir uniquement pour le vrai repli.
+        if (!withDanger) debugW("[placement] danger not taken into account: spatial cost only")
 
         // Cellules accessibles avec mes MP restants.
         var possibleCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)

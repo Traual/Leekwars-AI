@@ -178,9 +178,8 @@ class ActionSuite {
 	 */
 	static pickTerminal(candidates, initialScore, nBases) {
 		BenchOps.Start("Terminal")
-		// Le meilleur score BRUT est le seul candidat qu'on soit CERTAIN d'évaluer : il ouvre
-		// forcément le parcours. Le trouver d'abord en un balayage donne donc la borne de
-		// coupure avant tout tri, pour le prix d'une comparaison par candidat.
+		// Le meilleur score BRUT ouvre le parcours. Sa première clôture peut donner une
+		// borne avant le tri ; si elle est impossible, d'autres candidats restent évaluables.
 		var seed = candidates[0]
 		var bestRaw = seed.SCORE
 		for (var c in candidates) {
@@ -202,28 +201,33 @@ class ActionSuite {
 		var bestFinal = 0
 		var seedClose = (getOperations() <= terminalDeadline && canCloseNow(seed, terminalLimit)) ? closeOf(seed, terminalLimit) : null
 
-		if (seedClose != null && count(seedClose) == 3) {
-			var bound = bestRaw - seedClose[1]
+		var seedValidated = seedClose != null && count(seedClose) == 3
+		if (seedValidated) {
+			// Conserver cette validation AVANT tout tri ou nouveau calcul : le budget peut
+			// manquer juste après, sans rendre ce plan déjà évalué moins valable.
+			best = seed
+			bestFinal = bestRaw - seedClose[1]
+		}
+
+		if (getOperations() <= terminalDeadline) {
 			// Un candidat dont le score BRUT n'atteint pas déjà cette borne ne peut plus gagner : son
 			// score final lui est inférieur ou égal. Les écarter AVANT le tri est ce qui compte —
 			// le parcours n'en ouvre qu'une poignée, et trier des milliers de nœuds pour cela coûtait
-			// plus cher que toutes les évaluations réunies. Le seuil est LARGE (>=) : la graine y
-			// reste même si sa pénalité est nulle, et la liste triée reste un sur-ensemble exact de
-			// ce que le parcours aurait ouvert.
+			// plus cher que toutes les évaluations réunies. Sans validation, aucune borne : on
+			// essaie les autres candidats tant que le budget le permet.
 			var live = []
 			for (var c in candidates) {
-				if (c.SCORE >= bound) push(live, c)
+				if (best == null || c.SCORE >= bestFinal) push(live, c)
 			}
 			var sorted = arraySort(live, function(a, b) { return b.SCORE - a.SCORE })
 			var n = count(sorted)
 			for (var i = 0; i < n; i++) {
+				// Même sans aucun plan clos, ne pas épuiser la réserve à tester des candidats.
+				if (getOperations() > terminalDeadline) break
 				var node = sorted[i]
+				if (seedValidated && node == seed) continue // déjà clos, aucune seconde facture
 				var raw = node.SCORE
 				if (best != null && raw <= bestFinal) {
-					break
-				}
-				// Budget épuisé : le meilleur candidat déjà clos l'emporte sur ceux qu'on n'ouvrira pas.
-				if (best != null && getOperations() > terminalDeadline) {
 					break
 				}
 				// Reconstruction à froid non finançable : ce candidat reste non clos, les
@@ -244,9 +248,12 @@ class ActionSuite {
 				}
 			}
 		}
-		// Aucun candidat n'a pu être clos : le meilleur score brut est joué tel quel. Le placement
-		// réel de fin de tour se décidera ensuite, avec son balayage qui sait se tronquer.
+		// Une validation avec danger prime toujours sur les scores bruts non vérifiés.
+		// La provenance suit la chaîne jusqu'à la vidange, sans recalculer le danger.
+		BFS_LAST_CHAIN_DANGER_VALIDATED = best != null
+		// Aucun candidat clos : ultime repli, annoncé explicitement.
 		if (best == null) {
+			debugW("[BFS] danger not taken into account: raw-score fallback")
 			best = seed
 			bestFinal = bestRaw
 		}
