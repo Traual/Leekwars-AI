@@ -37,7 +37,9 @@ class FinalCell {
      * @return id de cellule
      */
     static get(State, BaseHash) {
+        ROOT_SCORING_CONSTANTS = ScoringStateConstants.get(State, BaseHash)
         AllySupport.prepare(State)
+        EnemyOffense.prepare(State, BaseHash)
         var contextBySide = DeltaClass.buildContextBySide(State)
         var hfpBySide = HealClass.buildHfpBySide(State)
         var combinedHfp = 0
@@ -148,6 +150,7 @@ class FinalCell {
     static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, truncateAt, withDanger) {
         BenchOps.Start("FinalCell")
         if (ROOT_ALLY_SUPPORT == null) AllySupport.prepare(State)
+        if (ROOT_ENEMY_OFFENSE == null) EnemyOffense.prepare(State, BaseHash)
         var MyState = State[Me]
         var mySide = MyState.SIDE
 
@@ -168,7 +171,7 @@ class FinalCell {
         // danger est constante pendant la recherche ; mes buffs ne la modifient pas.
         // La préparation racine porte les cooldowns, PT/PM, équipement et utilité des buffs.
         // BaseHash seul n'encode pas ces inputs du soutien de placement.
-        var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp) ^ combinedHfp ^ ROOT_ALLY_SUPPORT.HASH)
+        var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp) ^ combinedHfp ^ ROOT_ALLY_SUPPORT.HASH ^ ROOT_ENEMY_OFFENSE.HASH)
         if (memoKey in FINAL_PLACEMENT_CACHE) {
             BenchOps.Stop("FinalCell")
             return FINAL_PLACEMENT_CACHE[memoKey]

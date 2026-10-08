@@ -63,11 +63,21 @@ class ScoringClass {
     }
 
     // Évite de relire tout le plateau : seules les entités clonées ont changé.
-    static getStateScoreFromParent(node, State, ParentScore, MySide) {
+    // beforeValues optionnel : simulations indépendantes depuis UNE même racine immuable.
+    // Le BFS ordinaire ne le passe pas ; un cache de racine ne doit pas suivre une chaîne.
+    static getStateScoreFromParent(node, State, ParentScore, MySide, beforeValues = null) {
         var score = ParentScore
         for (var id: var before in node.CLONED) {
             var after = State[id]
-            var delta = entityValue(after) - (before == null ? 0 : entityValue(before))
+            var oldValue = 0
+            if (before != null) {
+                if (beforeValues != null && id in beforeValues) oldValue = beforeValues[id]
+                else {
+                    oldValue = entityValue(before)
+                    if (beforeValues != null) beforeValues[id] = oldValue
+                }
+            }
+            var delta = entityValue(after) - oldValue
             score += (after.SIDE == MySide ? 1 : -1) * delta
         }
         return score

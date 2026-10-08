@@ -1,0 +1,201 @@
+// Occasion offensive au prochain tour : conséquences et score communs avec le BFS.
+// Une cible isolée supposée à portée ; aucun déplacement, aucune nouvelle recherche.
+include("../includes.leek")
+
+global ENEMY_OFFENSE_CACHE = [:]
+global ROOT_ENEMY_OFFENSE = null
+
+class EnemyOffenseProfile {
+    GAIN = 0
+    SCORE_BY_DISTANCE = []
+}
+
+class EnemyOffenseContext {
+    INPUT_HASH
+    HASH
+    COMPLETE = true
+    PROFILES = [:]
+}
+
+class EnemyOffense {
+    // Réglages manuels : perdre 10 % du potentiel par case hors portée, jusqu'à 100 %.
+    static RANGE_PENALTY_PER_CELL = 0.1
+    static OFFENSE_DISTANCE_WEIGHT = 1
+    // Préparation bornée à la racine ; aucune simulation dans le balayage des cellules.
+    static MAX_PREP_OPERATIONS = 200000
+    static CAST_MARGIN = 20000
+
+    static rangePenalty(distance, minRange, maxRange) {
+        var gap = 0
+        if (distance > maxRange) gap = distance - maxRange
+        if (distance < minRange) gap = minRange - distance
+        return min(1, gap * RANGE_PENALTY_PER_CELL)
+    }
+
+    static usesNextTurn(stat, info) {
+        var cd = StateClass.cooldownOf(stat, info.ID)
+        if (cd == null || cd > 1 || info.COST <= 0 || info.MAX_USES <= 0) return 0
+        var equipCost = info.IS_WEAPON && stat.WEAPON != info.ID ? 1 : 0
+        var uses = min(info.MAX_USES, floor(max(0, stat.TOTAL_TP - equipCost) / info.COST))
+        if (info.COOLDOWN > 0) uses = min(uses, 1)
+        return uses
+    }
+
+    // Une puce de buff avec contrecoup ne devient pas une attaque de placement.
+    // Les vrais effets adverses (entraves, débuffs, poison...) utilisent les filtres du BFS.
+    static offensiveFor(info, caster, target) {
+        for (var effect in info.EFFECTS) {
+            if ((effect[5] & EFFECT_MODIFIER_ON_CASTER) || effect[0] == EFFECT_AFTEREFFECT) continue
+            if (!ConsequencesClass.isHitable(effect, target, caster, false)) continue
+            var kind = effect[0] == EFFECT_ADD_STATE ? Target.StateTargetType[floor(effect[1])] : Target.TargetType[effect[0]]
+            if (kind == Target.ENEMY || kind == Target.ALL) return true
+        }
+        return false
+    }
+
+    // Même mutation isolée et même delta que les actions du BFS. Targets est volontairement
+    // UNE cible au centre, sans géométrie/AoE ni bonus de Saut. Les auto-buffs seuls sont exclus.
+    static singleCastGain(Workspace, item, enemy, enemyBefore, beforeValues = null) {
+        var changed = [:]
+        StateClass.beginActionOnWorkspace(Workspace, changed)
+        var caster = Workspace[Me]
+        var info = ITEMINFO[item]
+        caster.TP = max(0, caster.TOTAL_TP - info.COST - (info.IS_WEAPON && caster.WEAPON != item ? 1 : 0))
+        if (info.IS_WEAPON) caster.WEAPON = item
+        var previousCrit = CAST_IS_CRITICAL
+        ConsequencesClass.applyItemEffects(Workspace, item, caster.CELL, Workspace[enemy].CELL, Me, [enemy: 0], changed, null)
+        StateClass.setCooldown(Workspace[Me], item, info.COOLDOWN)
+        StateClass.setUses(Workspace[Me], item, 1) // prochain tour : les usages repartent de zéro.
+        var gain = 0
+        // Ne pas poursuivre un ennemi pour le seul gain d'un auto-buff/passif sur Me.
+        if (ScoringClass.entityValue(Workspace[enemy]) < enemyBefore) {
+            var scored = new NodeClass(null, Workspace, null)
+            scored.CLONED = changed
+            gain = max(0, ScoringClass.getStateScoreFromParent(scored, Workspace, 0, caster.SIDE, beforeValues))
+        }
+        StateClass.restoreWorkspace(Workspace, changed)
+        CAST_IS_CRITICAL = previousCrit
+        return gain
+    }
+
+    // Empreinte de la capture RÉELLE, calculée seulement à la racine. Les casts peuvent tuer,
+    // retirer des effets chez d'autres porteurs et activer des passifs : inclure tout l'état,
+    // les registres et les cooldowns, plutôt qu'une clé de seuls dégâts/positions.
+    static inputHash(State, BaseHash) {
+        var hash = mix64(BaseHash ^ Me)
+        for (var id: var stat in State) {
+            var part = mix64Memo(id + 1)
+            for (var value in [stat.LIFE, stat.TOTAL_LIFE, stat.STRENGTH, stat.WISDOM,
+                stat.AGILITY, stat.RESISTANCE, stat.SCIENCE, stat.MAGIC, stat.POWER,
+                stat.TOTAL_TP, stat.TOTAL_MP, stat.ABSOLUTE_SHIELD, stat.RELATIVE_SHIELD,
+                stat.DAMAGE_RETURN, stat.POISON, stat.POISON_OVER_TIME, stat.AFTEREFFECT,
+                stat.AFTEREFFECT_OVER_TIME, stat.HEAL, stat.HEAL_OVER_TIME, stat.STATES,
+                stat.CELL, stat.SIDE, stat.SUMMONER == null ? -1 : stat.SUMMONER,
+                stat.WEAPON == null ? -1 : stat.WEAPON, stat.STATIC ? 1 : 0,
+                stat.IS_SUMMON ? 1 : 0, stat instanceof BulbState ? 1 : 0,
+                stat.SPECIAL_WEAPON, stat.SHIELD_EXPIRY_HASH]) part = mix64(part ^ value)
+            part = mix64(part ^ mapSize(stat.BASE_STATS))
+            for (var type: var value in stat.BASE_STATS) part = mix64(mix64(part ^ type) ^ value)
+            part = mix64(part ^ count(stat.INVENTORY))
+            for (var item in stat.INVENTORY) {
+                var cd = StateClass.cooldownOf(stat, item)
+                part = mix64(mix64(part ^ item) ^ (cd == null ? -1 : cd))
+            }
+            part = mix64(part ^ count(stat.EFFECTS))
+            for (var effect in stat.EFFECTS) {
+                part = mix64(part ^ count(effect))
+                for (var index = 0; index < count(effect); index++) {
+                    var value = index == 4 ? (effect[index] ? 1 : 0) : effect[index]
+                    part = mix64(part ^ value)
+                }
+            }
+            if (stat.AWAKEN_MARKS != null) {
+                var marks = 0
+                for (var mark: var active in stat.AWAKEN_MARKS) if (active) marks ^= mix64Memo(mark)
+                part = mix64(part ^ marks)
+            }
+            hash = mix64(hash ^ part)
+        }
+        // Les comparaisons d'ordre gouvernent les ticks. Encoder l'ordre relatif exact,
+        // sans arrondir les créneaux fractionnaires des invocations/résurrections.
+        for (var id in StateClass.getSortedEntityByTurnOrder(State)) hash = mix64(hash ^ id)
+        return hash
+    }
+
+    static prepare(State, BaseHash) {
+        if (RANGE_PENALTY_PER_CELL <= 0 || OFFENSE_DISTANCE_WEIGHT <= 0) {
+            var disabled = new EnemyOffenseContext()
+            disabled.HASH = 0
+            ROOT_ENEMY_OFFENSE = disabled
+            return disabled
+        }
+        var limit = getOperations() + MAX_PREP_OPERATIONS
+        if (OPS_CAP != null) limit = min(limit, OPS_CAP - OPS_RESERVE_PLACEMENT)
+        var key = inputHash(State, BaseHash)
+        if (key in ENEMY_OFFENSE_CACHE) {
+            ROOT_ENEMY_OFFENSE = ENEMY_OFFENSE_CACHE[key]
+            return ROOT_ENEMY_OFFENSE
+        }
+        // Réutiliser aussi le dernier profil borné si la capture n'a pas changé.
+        if (ROOT_ENEMY_OFFENSE != null && ROOT_ENEMY_OFFENSE.INPUT_HASH == key) return ROOT_ENEMY_OFFENSE
+        var context = new EnemyOffenseContext()
+        context.INPUT_HASH = key
+        var caster = State[Me]
+        var playable = []
+        for (var item in caster.INVENTORY) {
+            var info = ITEMINFO[item]
+            if (info != null && usesNextTurn(caster, info) > 0) push(playable, item)
+        }
+        var Workspace = clone(State, 1)
+        var beforeValues = [:] // même parent restauré après chacun des casts.
+        var evaluated = 0
+        for (var id: var target in State) {
+            if (target.SIDE == caster.SIDE || target.LIFE <= 0) continue
+            var profile = new EnemyOffenseProfile()
+            var before = ScoringClass.entityValue(target)
+            beforeValues[id] = before
+            for (var item in playable) {
+                var info = ITEMINFO[item]
+                if (!offensiveFor(info, caster, target)) continue
+                if (getOperations() + CAST_MARGIN >= limit) {
+                    context.COMPLETE = false
+                    break
+                }
+                var gain = singleCastGain(Workspace, item, id, before, beforeValues) * usesNextTurn(caster, info)
+                evaluated++
+                if (gain <= 0) continue
+                profile.GAIN = max(profile.GAIN, gain)
+                // Au-delà de ces distances, tous les gains valent zéro. Tables denses,
+                // préparées ici : jamais de boucle sur l'inventaire pendant le placement.
+                var reach = info.MAXRANGE + (RANGE_PENALTY_PER_CELL > 0 ? ceil(1 / RANGE_PENALTY_PER_CELL) : 0)
+                for (var distance = 0; distance <= reach; distance++) {
+                    if (distance >= count(profile.SCORE_BY_DISTANCE)) push(profile.SCORE_BY_DISTANCE, 0)
+                    var accessible = gain * (1 - rangePenalty(distance, info.MINRANGE, info.MAXRANGE))
+                    profile.SCORE_BY_DISTANCE[distance] = max(profile.SCORE_BY_DISTANCE[distance], accessible)
+                }
+            }
+            if (profile.GAIN > 0) context.PROFILES[id] = profile
+            if (!context.COMPLETE) break
+        }
+        context.HASH = mix64(key ^ evaluated) // sépare une préparation partielle d'une complète.
+        if (context.COMPLETE) ENEMY_OFFENSE_CACHE[key] = context
+        else debugW("[placement] offensive potential truncated: operation budget")
+        ROOT_ENEMY_OFFENSE = context
+        return context
+    }
+
+    static costAt(State, cell, context) {
+        if (RANGE_PENALTY_PER_CELL <= 0 || OFFENSE_DISTANCE_WEIGHT <= 0) return 0
+        var reference = 0
+        var accessible = 0
+        for (var id: var profile in context.PROFILES) {
+            if (!(id in State) || State[id].LIFE <= 0) continue
+            // Les morts sortent des DEUX maxima : tuer une cible ne coûte pas son potentiel futur.
+            reference = max(reference, profile.GAIN)
+            var distance = CellClass.getDist(cell, State[id].CELL)
+            if (distance < count(profile.SCORE_BY_DISTANCE)) accessible = max(accessible, profile.SCORE_BY_DISTANCE[distance])
+        }
+        // Pas de somme des items/ennemis : le même budget de PT ne finance pas plusieurs tours.
+        return max(0, reference - accessible) * OFFENSE_DISTANCE_WEIGHT
+    }
+}

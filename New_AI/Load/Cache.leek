@@ -46,6 +46,8 @@ function ReloadCacheNewTurn() {
     ROOT_SCORING_CONSTANTS = null
     ALLY_SUPPORT_PROFILE_CACHE = [:]
     ROOT_ALLY_SUPPORT = null
+    ENEMY_OFFENSE_CACHE = [:]
+    ROOT_ENEMY_OFFENSE = null
     MAP_CELL_ITEM_AOE_CACHE = [: ]
     DANGER_ITEM_AOE_HASH_CACHE = [: ]
     DANGER_TEAM_PLAN_CACHE = [: ]

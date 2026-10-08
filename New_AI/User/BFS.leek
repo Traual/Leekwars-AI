@@ -71,6 +71,7 @@ class ActionSuite {
 		// Reste constant dans l'arbre : seules les entités modifiées sont rescorrées.
 		ROOT_SCORING_CONSTANTS = ScoringStateConstants.get(State, BaseHash)
 		AllySupport.prepare(State)
+		EnemyOffense.prepare(State, BaseHash)
 		// Les quatre couches de mobilite servent a la recherche ET au deplacement de fin de tour.
 		// Construites ici, elles sont chaudes quand le tour s'arrete ; sinon le placement puis le
 		// deplacement les paient a froid avec la seule marge de deplacement, et le moteur coupe.
