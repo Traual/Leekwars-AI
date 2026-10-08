@@ -39,6 +39,7 @@ include("Scoring/Shackles.leek")
 include("Scoring/PeriodicEffects.leek")
 include("Scoring/Scoring.leek")
 include("Scoring/Debug.leek")
+include("Scoring/AllySupport.leek")
 include("Scoring/Placement.leek")
 
 include("User/Node.leek")

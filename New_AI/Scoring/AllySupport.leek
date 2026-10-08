@@ -1,0 +1,231 @@
+// Soutien de placement : profil grossier, préparé une fois par racine réelle.
+// Aucun soin ici : la heal map le compte déjà. Pas de carte de déplacement supplémentaire.
+include("../includes.leek")
+
+global ALLY_SUPPORT_PROFILE_CACHE = [:]
+global ROOT_ALLY_SUPPORT = null
+
+class AllySupportProfile {
+    KEY
+    POTENTIAL = 0
+    SCORE_BY_DISTANCE = []
+}
+
+class AllySupportContext {
+    HASH = 0
+    POTENTIAL = 0
+    PROFILES = [:]
+}
+
+class AllySupport {
+    // Réglages de portée : sur place / marche / Saut / Téléportation.
+    static DIRECT_WEIGHT = 1
+    static WALK_WEIGHT = 0.6
+    static JUMP_WEIGHT = 0.4
+    static TELEPORT_WEIGHT = 0.3
+
+    // Potentiel des buffs SCIENTIFIQUES et des boucliers, depuis les stats de BASE.
+    // Une famille ne s'additionne qu'une fois, même avec plusieurs puces similaires.
+    static sciencePotential(science) {
+        var score = 20
+        if (science >= 200) score += 20
+        if (science >= 400) score += 20
+        if (science >= 600) score += 10
+        return score
+    }
+
+    static shieldPotential(resistance) {
+        var score = 20
+        if (resistance >= 200) score += 20
+        if (resistance >= 400) score += 20
+        if (resistance >= 600) score += 10
+        return score
+    }
+
+    // Potentiel RAW fixe : ni science ni résistance du lanceur.
+    static rawBuffPotential(type) {
+        switch (type) {
+            case EFFECT_RAW_BUFF_STRENGTH: return 20
+            case EFFECT_RAW_BUFF_AGILITY: return 15
+            case EFFECT_RAW_BUFF_WISDOM: return 20
+            case EFFECT_RAW_BUFF_RESISTANCE: return 20
+            case EFFECT_RAW_BUFF_MAGIC: return 20
+            case EFFECT_RAW_BUFF_SCIENCE: return 20
+            case EFFECT_RAW_BUFF_POWER: return 30
+            case EFFECT_RAW_BUFF_TP: return 30
+            case EFFECT_RAW_BUFF_MP: return 15
+        }
+        return 0
+    }
+
+    // Bits d'utilité pour Me : figés pendant la recherche, pas de dépendance aux buffs.
+    // AGI conserve son intérêt critique ; PT toujours utiles, PM seulement si mobile.
+    static receiverMask(stat) {
+        var mask = 2 | 128
+        if (Equipment.canUseStrength(stat)) mask |= 1
+        if (Equipment.canUseWisdom(stat)) mask |= 4
+        if (Equipment.canUseResistance(stat)) mask |= 8
+        if (Equipment.canUseMagic(stat)) mask |= 16
+        if (Equipment.canUseScience(stat)) mask |= 32
+        if (Equipment.canUsePower(stat)) mask |= 64
+        if (!stat.STATIC && !EntityStateClass.hasState(stat, STATE_STATIC)) mask |= 256
+        if (stat.IS_SUMMON) mask |= 512
+        return mask
+    }
+
+    static usefulBuff(type, mask) {
+        switch (type) {
+            case EFFECT_BUFF_STRENGTH:
+            case EFFECT_RAW_BUFF_STRENGTH: return (mask & 1) != 0
+            case EFFECT_BUFF_AGILITY:
+            case EFFECT_RAW_BUFF_AGILITY: return (mask & 2) != 0
+            case EFFECT_BUFF_WISDOM:
+            case EFFECT_RAW_BUFF_WISDOM: return (mask & 4) != 0
+            case EFFECT_BUFF_RESISTANCE:
+            case EFFECT_RAW_BUFF_RESISTANCE: return (mask & 8) != 0
+            case EFFECT_RAW_BUFF_MAGIC: return (mask & 16) != 0
+            case EFFECT_RAW_BUFF_SCIENCE: return (mask & 32) != 0
+            case EFFECT_RAW_BUFF_POWER: return (mask & 64) != 0
+            case EFFECT_BUFF_TP:
+            case EFFECT_RAW_BUFF_TP: return (mask & 128) != 0
+            case EFFECT_BUFF_MP:
+            case EFFECT_RAW_BUFF_MP: return (mask & 256) != 0
+        }
+        return false
+    }
+
+    static readyNextTurn(stat, item) {
+        var cd = StateClass.cooldownOf(stat, item)
+        return cd != null && cd <= 1
+    }
+
+    // Distance géométrique uniquement : murs, LoS, portées minimales et formes de lancer
+    // restent une approximation. Le coût et la portée proviennent du MÊME item.
+    static distanceWeight(distance, range, mp, jump, tele) {
+        if (distance <= range) return DIRECT_WEIGHT
+        if (distance <= range + mp) return WALK_WEIGHT
+        var weight = 0
+        if (jump && distance <= range + mp + ITEMINFO[CHIP_JUMP].MAXRANGE) weight = JUMP_WEIGHT
+        if (tele && distance <= range + mp + ITEMINFO[CHIP_TELEPORTATION].MAXRANGE) weight = max(weight, TELEPORT_WEIGHT)
+        return weight
+    }
+
+    static profileOf(stat, receiver) {
+        var mobile = !stat.STATIC && !EntityStateClass.hasState(stat, STATE_STATIC)
+        var mp = mobile ? max(0, stat.TOTAL_MP) : 0
+        var tp = max(0, stat.TOTAL_TP) // PT rechargés au prochain tour, pas les PT restants.
+        var jump = mobile && readyNextTurn(stat, CHIP_JUMP)
+        var tele = mobile && readyNextTurn(stat, CHIP_TELEPORTATION)
+        var readyItems = []
+        var readyHash = 0
+        for (var item in stat.INVENTORY) {
+            if (!readyNextTurn(stat, item)) continue
+            push(readyItems, item)
+            readyHash ^= mix64Memo(item + 1)
+        }
+        // Les cooldowns ne sont PAS dans BaseHash. Tout input du profil sale cette clé.
+        // Inventaire fixe au tour ; la classe virtuelle évite le partage d'un ID réel/simulé.
+        var key = mix64(readyHash ^ mix64Memo(stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)))
+        key = mix64(key ^ receiver)
+        key = mix64(key ^ tp)
+        key = mix64(key ^ mp)
+        key = mix64(key ^ stat.BASE_STATS[STAT_SCIENCE])
+        key = mix64(key ^ stat.BASE_STATS[STAT_RESISTANCE])
+        key = mix64(key ^ (stat.WEAPON == null ? -1 : stat.WEAPON))
+        key = mix64(key ^ ((jump ? 1 : 0) | (tele ? 2 : 0)))
+        if (key in ALLY_SUPPORT_PROFILE_CACHE) return ALLY_SUPPORT_PROFILE_CACHE[key]
+
+        var profile = new AllySupportProfile()
+        profile.KEY = key
+        var science = sciencePotential(stat.BASE_STATS[STAT_SCIENCE])
+        var shield = shieldPotential(stat.BASE_STATS[STAT_RESISTANCE])
+        var targetType = (receiver & 512) != 0 ? EFFECT_TARGET_SUMMONS : EFFECT_TARGET_NON_SUMMONS
+        var scienceByDistance = []
+        var rawByDistance = []
+        var shieldByDistance = []
+        var bestScience = 0
+        var bestRaw = 0
+        var bestShield = 0
+        for (var item in readyItems) {
+            var info = ITEMINFO[item]
+            if (info == null || info.COST <= 0 || info.MAX_USES <= 0) continue
+            var cost = info.COST + (info.IS_WEAPON && stat.WEAPON != item ? 1 : 0)
+            if (tp < cost) continue
+            var itemScience = 0
+            var itemRaw = 0
+            var itemShield = 0
+            for (var effect in info.EFFECTS) {
+                if (effect[5] & EFFECT_MODIFIER_ON_CASTER) continue
+                if (!(effect[4] & EFFECT_TARGET_ALLIES) || !(effect[4] & targetType)) continue
+                if (effect[1] <= 0 && effect[2] <= 0) continue
+                var type = effect[0]
+                if (usefulBuff(type, receiver)) {
+                    var raw = rawBuffPotential(type)
+                    if (raw > 0) itemRaw += raw
+                    else itemScience = science
+                } else if (type == EFFECT_ABSOLUTE_SHIELD || type == EFFECT_RELATIVE_SHIELD) {
+                    itemShield = max(itemShield, shield)
+                } else if (type == EFFECT_RAW_ABSOLUTE_SHIELD || type == EFFECT_RAW_RELATIVE_SHIELD) {
+                    itemShield = max(itemShield, 20)
+                }
+            }
+            if (itemScience + itemRaw + itemShield <= 0) continue
+            bestScience = max(bestScience, itemScience)
+            bestRaw = max(bestRaw, itemRaw)
+            bestShield = max(bestShield, itemShield)
+            var itemJump = jump && tp >= cost + JUMP_COST
+            var itemTele = tele && tp >= cost + TELE_COST
+            var reach = info.MAXRANGE + mp
+            if (itemJump) reach = max(reach, info.MAXRANGE + mp + ITEMINFO[CHIP_JUMP].MAXRANGE)
+            if (itemTele) reach = max(reach, info.MAXRANGE + mp + ITEMINFO[CHIP_TELEPORTATION].MAXRANGE)
+            for (var distance = 0; distance <= reach; distance++) {
+                // Remplir sans trou : les trois tableaux ont toujours la même longueur.
+                if (distance >= count(scienceByDistance)) {
+                    push(scienceByDistance, 0)
+                    push(rawByDistance, 0)
+                    push(shieldByDistance, 0)
+                }
+                var weight = distanceWeight(distance, info.MAXRANGE, mp, itemJump, itemTele)
+                scienceByDistance[distance] = max(scienceByDistance[distance], itemScience * weight)
+                rawByDistance[distance] = max(rawByDistance[distance], itemRaw * weight)
+                shieldByDistance[distance] = max(shieldByDistance[distance], itemShield * weight)
+            }
+        }
+        profile.POTENTIAL = bestScience + bestRaw + bestShield
+        for (var distance = 0; distance < count(scienceByDistance); distance++) {
+            push(profile.SCORE_BY_DISTANCE, scienceByDistance[distance] + rawByDistance[distance] + shieldByDistance[distance])
+        }
+        ALLY_SUPPORT_PROFILE_CACHE[key] = profile
+        return profile
+    }
+
+    // Nouvelle racine réelle : actualiser disponibilités et mobilité. Les profils restent
+    // immuables dans ses branches. Les nouvelles invocations entrent au prochain replan.
+    static prepare(State) {
+        var context = new AllySupportContext()
+        var receiver = receiverMask(State[Me])
+        context.HASH = mix64Memo(receiver + 1)
+        for (var id: var stat in State) {
+            if (id == Me || stat.SIDE != State[Me].SIDE || stat.LIFE <= 0) continue
+            var profile = profileOf(stat, receiver)
+            if (profile.POTENTIAL <= 0) continue
+            context.PROFILES[id] = profile
+            context.POTENTIAL += profile.POTENTIAL
+            context.HASH ^= mix64(profile.KEY)
+        }
+        ROOT_ALLY_SUPPORT = context
+        return context
+    }
+
+    static costAt(State, cell, context) {
+        var accessible = 0
+        for (var id: var profile in context.PROFILES) {
+            if (!(id in State) || State[id].LIFE <= 0) continue
+            var distance = CellClass.getDist(cell, State[id].CELL)
+            if (distance < count(profile.SCORE_BY_DISTANCE)) accessible += profile.SCORE_BY_DISTANCE[distance]
+        }
+        // Référence figée : tuer un soutien ne fait pas disparaître son coût en branche.
+        // Coût >= 0, nécessaire à la coupure terminale finalScore <= rawScore.
+        return max(0, context.POTENTIAL - accessible)
+    }
+}

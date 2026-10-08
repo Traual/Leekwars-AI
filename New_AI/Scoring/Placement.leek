@@ -1,10 +1,9 @@
-// Pénalité de fin de tour : distance + exposition. Plus petit = mieux.
-// La distance garde un poids égal par entité ; le danger utilise mon importance de base.
+// Pénalité de fin de tour : soutien accessible + distance ennemie + exposition.
+// Plus petit = mieux. Le danger utilise mon importance de base.
 include("../includes.leek")
 
 class Placement {
     // Fonctions à modifier pour le placement. Garder des coûts >= 0.
-    static allyDistance(distance)  { return 0.5 * abs(distance - 3) }
     static enemyDistance(distance) { return 0.2 * abs(distance - 5) }
 
     // Les soins peuvent effacer 60 % de la pénalité brute, jamais sa totalité.
@@ -33,14 +32,16 @@ class Placement {
     }
 
     static spatial(State, BaseHash, cell) {
-        var key = addValueToBinHash(BaseHash, cell)
+        if (ROOT_ALLY_SUPPORT == null) AllySupport.prepare(State)
+        var support = ROOT_ALLY_SUPPORT
+        var key = addValueToBinHash(mix64(BaseHash ^ support.HASH), cell)
         if (key in PLACEMENT_COST_CACHE) return PLACEMENT_COST_CACHE[key]
-        var cost = 0
+        var cost = AllySupport.costAt(State, cell, support)
         var mySide = State[Me].SIDE
         for (var id: var s in State) {
-            if (id == Me || s.LIFE <= 0) continue
+            if (id == Me || s.LIFE <= 0 || s.SIDE == mySide) continue
             var distance = CellClass.getDist(cell, s.CELL)
-            cost += s.SIDE == mySide ? allyDistance(distance) : enemyDistance(distance)
+            cost += enemyDistance(distance)
         }
         PLACEMENT_COST_CACHE[key] = cost
         return cost

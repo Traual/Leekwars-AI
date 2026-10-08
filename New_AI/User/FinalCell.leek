@@ -37,6 +37,7 @@ class FinalCell {
      * @return id de cellule
      */
     static get(State, BaseHash) {
+        AllySupport.prepare(State)
         var contextBySide = DeltaClass.buildContextBySide(State)
         var hfpBySide = HealClass.buildHfpBySide(State)
         var combinedHfp = 0
@@ -146,6 +147,7 @@ class FinalCell {
      */
     static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, truncateAt, withDanger) {
         BenchOps.Start("FinalCell")
+        if (ROOT_ALLY_SUPPORT == null) AllySupport.prepare(State)
         var MyState = State[Me]
         var mySide = MyState.SIDE
 
@@ -164,7 +166,9 @@ class FinalCell {
         // déjà menace adverse, mes boucliers, mon antidote, ma vie et ma vie max, dont le masque
         // d'immunités) et les soigneurs des deux camps. L'importance de BASE qui pondère le
         // danger est constante pendant la recherche ; mes buffs ne la modifient pas.
-        var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp) ^ combinedHfp)
+        // La préparation racine porte les cooldowns, PT/PM, équipement et utilité des buffs.
+        // BaseHash seul n'encode pas ces inputs du soutien de placement.
+        var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp) ^ combinedHfp ^ ROOT_ALLY_SUPPORT.HASH)
         if (memoKey in FINAL_PLACEMENT_CACHE) {
             BenchOps.Stop("FinalCell")
             return FINAL_PLACEMENT_CACHE[memoKey]
