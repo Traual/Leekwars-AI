@@ -18,6 +18,7 @@ class ScoringDebug {
             var periodic = PeriodicScoring.damageValues(stat)
             var poisonCoef = Coefficients.poison(stat, periodic)
             var aftereffectCoef = Coefficients.aftereffect(stat, periodic)
+            var pressure = ROOT_SCORING_CONSTANTS.COOLDOWN_PRESSURE_BY_SIDE[stat.SIDE]
             debug([
                 "présence": Coefficients.presence(stat),
                 "importance (caractéristiques de base)": EntityImportance.statsImportance(stat),
@@ -52,7 +53,11 @@ class ScoringDebug {
                 "poison (score futur)": stat.POISON_OVER_TIME * poisonCoef,
                 "aftereffect": aftereffectCoef,
                 "aftereffect (score futur)": stat.AFTEREFFECT_OVER_TIME * aftereffectCoef,
-                "soin continu": Coefficients.heal(stat)
+                "soin continu": Coefficients.heal(stat),
+                "cooldowns (pression poison adverse)": pressure.POISON,
+                "cooldowns (pression entraves adverse)": pressure.SHACKLES,
+                "cooldowns (prix Antidote)": CooldownScoring.costOf(CHIP_ANTIDOTE, stat.SIDE),
+                "cooldowns (prix Manumission)": CooldownScoring.costOf(CHIP_MANUMISSION, stat.SIDE)
             ])
         }
         pause()

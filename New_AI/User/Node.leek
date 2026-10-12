@@ -16,7 +16,9 @@ class NodeClass {
 	STATE_PATCH       // [id -> EntityState APRÈS l'action] : les seules entités que l'action a modifiées
 	                  // (les ids de CLONED), seule représentation persistante du nœud
 	PARENT            // nœud d'origine (null pour une action de base)
-	SCORE             // score absolu de l'état du nœud (rempli par le BFS)
+	SCORE             // score de l'état moins les frais cumulés du plan (rempli par le BFS)
+	COOLDOWN_COST = 0 // frais de CETTE action ; les précédents sont déjà dans Parent.SCORE
+	ITEM_HAS_BENEFIT = true // filtre ciblé des Régénérations nulles après déplacement
 	BASE_HASH         // BaseHash de l'état du nœud
 	CONTEXT_BY_SIDE   // par side : hash de l'équipe adverse (clé des caches danger)
 	HFP_BY_SIDE       // par side : fingerprint des healers (clé de la heal map)
@@ -120,18 +122,22 @@ class NodeClass {
 		var meStat = ThisActionStats[Me]
 		var moveStartCell = meStat.CELL
 		var moveStartMp = meStat.MP
+		var cooldownCost = 0
 		meStat.CELL = From
 		if (From in MyWalkCells.WALK) {
 			meStat.MP -= MyWalkCells.WALK[From]
 		} else if (From in MyWalkCells.JUMP) {
+			cooldownCost += CooldownScoring.costOf(CHIP_JUMP, meStat.SIDE)
 			meStat.MP -= MyWalkCells.JUMP[From]
 			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
 			applyJumpCast(meStat, meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)
 		} else if (From in MyWalkCells.TELEPORTATION) {
+			cooldownCost += CooldownScoring.costOf(CHIP_TELEPORTATION, meStat.SIDE)
 			meStat.MP -= MyWalkCells.TELEPORTATION[From]
 			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
 			applyTeleportCast(meStat, meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)
 		} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
+			cooldownCost += CooldownScoring.costOf(CHIP_JUMP, meStat.SIDE) + CooldownScoring.costOf(CHIP_TELEPORTATION, meStat.SIDE)
 			meStat.MP -= MyWalkCells.TELEPORTATION_AND_JUMP[From]
 			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
 			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
@@ -154,6 +160,8 @@ class NodeClass {
 		}
 		meStat.TP -= Cost
 		if (Info.IS_WEAPON) meStat.WEAPON = Item
+		var itemHasBenefit = CooldownScoring.regenerationCanHelp(ThisActionStats, Item, From, To, BaseHash)
+		if (meStat.LIFE > 0) cooldownCost += CooldownScoring.costOf(Item, meStat.SIDE)
 		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash, clonedIds, Act.RESURRECT_ID)
 		// Relu une fois après les conséquences, qui ont pu remplacer l'objet de Me.
 		meStat = ThisActionStats[Me]
@@ -169,6 +177,8 @@ class NodeClass {
 		var meWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(meStat)
 		// END_STATS reste NULL : le nœud ne portera que son patch (matérialisation paresseuse).
 		var result = new NodeClass(Act, null, Parent)
+		result.COOLDOWN_COST = cooldownCost
+		result.ITEM_HAS_BENEFIT = itemHasBenefit
 		result.STATE_PARENT = StateParent
 
 		// Patch incrémental des trois hashs, piloté par le SEUL clonedIds : old ^ new pour une

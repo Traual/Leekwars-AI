@@ -75,6 +75,7 @@ class EnemyOffense {
         if (ScoringClass.entityValue(Workspace[enemy]) < enemyBefore) {
             var scored = new NodeClass(null, Workspace, null)
             scored.CLONED = changed
+            scored.COOLDOWN_COST = CooldownScoring.costOf(item, caster.SIDE)
             gain = max(0, ScoringClass.getStateScoreFromParent(scored, Workspace, 0, caster.SIDE, beforeValues))
         }
         StateClass.restoreWorkspace(Workspace, changed)

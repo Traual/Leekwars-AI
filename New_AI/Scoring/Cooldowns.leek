@@ -1,0 +1,98 @@
+// Prix de consommation des puces : frais par cast, cumulés dans le plan du BFS.
+// Aucun stock de dette dans les entités ; une nouvelle racine repart sans frais passés.
+include("../includes.leek")
+
+class CleansePressure {
+    POISON = 0
+    SHACKLES = 0
+}
+
+class CooldownScoring {
+    static REGENERATION_COST = 300
+    static ELEVATION_COST = 150
+    static RESURRECTION_COST = 200
+    static ANTIDOTE_COST = 50
+    static MANUMISSION_COST = 30
+    static POISON_PRESSURE_THRESHOLD = 1
+    static SHACKLE_PRESSURE_THRESHOLD = 1
+
+    // Magie de BASE et inventaire immuables au tour : cache de ScoringStateConstants.
+    // Le barème est partagé avec le profil adverse : 0.25 / 0.5 / 1 / 1.5 dès 100/200/400/800.
+    static pressuresBySide(State) {
+        var ownBySide = [:]
+        var total = new CleansePressure()
+        for (var id: var stat in State) {
+            if (!(stat.SIDE in ownBySide)) ownBySide[stat.SIDE] = new CleansePressure()
+            if (stat.LIFE <= 0) continue
+            var weight = ShieldProfile.statWeight(stat.BASE_STATS[STAT_MAGIC])
+            if (weight <= 0) continue
+            var own = ownBySide[stat.SIDE]
+            if (Equipment.canUsePoison(stat)) {
+                own.POISON += weight
+                total.POISON += weight
+            }
+            // Un empoisonneur seul ne qualifie pas comme entraveur.
+            if (Equipment.canUseShackles(stat)) {
+                own.SHACKLES += weight
+                total.SHACKLES += weight
+            }
+        }
+        var result = [:]
+        for (var side: var own in ownBySide) {
+            var enemies = new CleansePressure()
+            enemies.POISON = total.POISON - own.POISON
+            enemies.SHACKLES = total.SHACKLES - own.SHACKLES
+            result[side] = enemies
+        }
+        return result
+    }
+
+    // Lecture O(1), contexte figé avant la recherche. Aucun scan par nœud.
+    static costOf(item, side) {
+        if (ITEMINFO[item].COOLDOWN <= 0) return 0
+        switch (item) {
+            case CHIP_REGENERATION: return max(0, REGENERATION_COST)
+            case CHIP_ELEVATION: return max(0, ELEVATION_COST)
+            case CHIP_RESURRECTION: return max(0, RESURRECTION_COST)
+            case CHIP_ANTIDOTE:
+            case CHIP_MANUMISSION:
+                if (ROOT_SCORING_CONSTANTS == null) return 0
+                var profiles = ROOT_SCORING_CONSTANTS.COOLDOWN_PRESSURE_BY_SIDE
+                if (!(side in profiles)) return 0
+                var pressure = profiles[side]
+                if (item == CHIP_ANTIDOTE) return pressure.POISON >= POISON_PRESSURE_THRESHOLD ? max(0, ANTIDOTE_COST) : 0
+                return pressure.SHACKLES >= SHACKLE_PRESSURE_THRESHOLD ? max(0, MANUMISSION_COST) : 0
+        }
+        return 0
+    }
+
+    // Filtre ciblé après le déplacement : le buff du Saut ne doit pas qualifier un soin nul.
+    // Le passif de soin d'un cast critique reste un effet propre utile de Régénération.
+    static regenerationCanHelp(State, item, from, to, BaseHash) {
+        if (item != CHIP_REGENERATION) return true
+        var caster = State[Me]
+        if (caster.LIFE <= 0) return false
+        var critical = caster.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT
+        if (critical && (caster.SPECIAL_WEAPON & SPW_UNSTABLE_DESTROYER)
+            && caster.LIFE < caster.TOTAL_LIFE && !EntityStateClass.hasState(caster, STATE_UNHEALABLE)
+            && PASSIVE_INFO[WEAPON_UNSTABLE_DESTROYER][EFFECT_CRITICAL_TO_HEAL][1] > 0) return true
+        var info = ITEMINFO[item]
+        // Si le catalogue lui ajoute d'autres effets, ne pas les déclarer nuls ici.
+        for (var effect in info.EFFECTS) if (effect[0] != EFFECT_HEAL || effect[3] != 0) return true
+        var targets = ConsequencesClass.ConsequenceTargets(item, from, to, State, Me, BaseHash)
+        for (var effect in info.EFFECTS) {
+            var real = ConsequencesClass.RealConsequenceTargets(targets, effect, State, caster, Me, item)
+            var multiplier = (effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) ? mapSize(real) : 1
+            if (critical) multiplier *= CRITICAL_FACTOR
+            if (effect[5] & EFFECT_MODIFIER_ON_CASTER) real = [Me: 0]
+            var base = effect[1] * multiplier * max(0, 1 + caster.WISDOM / 100)
+            for (var id: var distance in real) {
+                var target = State[id]
+                if (target.LIFE > 0 && target.LIFE < target.TOTAL_LIFE
+                    && !EntityStateClass.hasState(target, STATE_UNHEALABLE)
+                    && round(base * AOE_FALLOFF[distance]) > 0) return true
+            }
+        }
+        return false
+    }
+}

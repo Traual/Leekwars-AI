@@ -482,10 +482,10 @@ class ActionSuite {
 			}
 		}
 
-		// Seconde passe, sur les SEULES actions de dégâts que la borne du tri vient d'écarter.
-		// Leur priorité stockée a été calculée dans un autre état ; un débuff joué depuis a pu
-		// retirer les boucliers qui les annulaient, et la liste, mémorisée sous une clé que ce
-		// débuff ne change pas, les laisserait invisibles pour tout le reste du déroulé.
+		// Seconde passe sur les différées : dégâts annulés par les boucliers, ou puces dont
+		// le gain ne payait pas encore le prix de cooldown. Un débuff, une blessure ou un buff
+		// joué depuis peut les rendre utiles sans changer BaseHash : les réexaminer dans
+		// l'état courant, au lieu de les rendre invisibles pour le reste du déroulé.
 		// Ces actions sont resimulées sous budget, sans borne dépendante des formules du score.
 		for (var entry in Reachable) {
 			// SEULES les différées : celles que le filtre epsilon aurait jetées et qui ne sont
@@ -550,9 +550,9 @@ class ActionSuite {
 	 * priorité décroissante ; node avec PARENT=null mais STATE_PARENT = ParentStateNode (la
 	 * chaîne d'états est posée ici et jamais réassignée, contrairement à PARENT que le déroulé
 	 * reconstruit).
-	 * INVARIANT : toute entrée renvoyée a delta > BFS_DELTA_EPSILON — jouable (basePairs)
-	 * n'implique donc pas retenu ; les sub-epsilon sont injouables partout en aval
-	 * (plancher, chemin frais, borne du tri), les dropper ici libère leur nœud immédiatement.
+	 * Les entrées positives sont des candidats ; les différées ne le sont pas, mais restent
+	 * réexaminables après changement des stats. Hors dégâts ou puces payant un cooldown,
+	 * les sub-epsilon sont supprimées immédiatement.
 	 * Le seuil porte sur le Δscore, pas sur la priorité : c'est la question « cette action
 	 * apporte-t-elle quoi que ce soit ? », indépendante de ce qu'elle coûte.
 	 */
@@ -578,14 +578,12 @@ class ActionSuite {
 			StateClass.restoreWorkspace(Workspace, node.CLONED)
 			node.CLONED = null
 			var delta = nodeScore - ReferenceScore
-			// Une action de dégâts que les boucliers annulent AUJOURD'HUI peut valoir beaucoup
-			// une fois ces boucliers retirés par un débuff joué plus tôt dans la même suite.
-			// La jeter ici la rendrait introuvable pour tout le reste du déroulé, puisque la
-			// liste est mémorisée sous une clé que le débuff ne change pas. On la garde donc,
-			// marquée DIFFÉRÉE : elle n'est pas déroulée comme racine, seulement réexaminée
-			// comme successeur, en la simulant dans l'état du moment.
+			// Conserver les dégâts annulés et les puces sous leur prix de cooldown : retirer
+			// des boucliers, créer des PV manquants ou buffer le lanceur peut rendre leur
+			// prochain cast rentable, même sous le même BaseHash. Une différée est seulement
+			// réexaminée comme successeur ; elle n'est jamais jouée pour son gain initial nul.
 			var deferred = delta <= BFS_DELTA_EPSILON
-			if (deferred && !ITEMINFO[Item].IS_BOUNDABLE_DAMAGE) continue
+			if (deferred && !ITEMINFO[Item].IS_BOUNDABLE_DAMAGE && CooldownScoring.costOf(Item, MySide) <= 0) continue
 			// pair[1] est le coût TP COMPLET de cette action dans CET état (item + swap d'arme
 			// + saut/télépo), déjà résolu par getBaseActions pour son filtre de jouabilité.
 			push(Entries, [act, priorityOf(delta, pair[1]), node, nodeScore, act.From, Item, deferred])

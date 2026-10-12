@@ -1,5 +1,6 @@
 // Score d'un état = valeur des alliés - valeur des adversaires.
-// Score d'une action = score après - score avant. Le placement est évalué à la fin.
+// Score d'une action = score après - score avant - prix des cooldowns consommés.
+// Les prix s'accumulent dans le plan ; le placement est évalué à la fin.
 include("../includes.leek")
 
 class ScoringClass {
@@ -66,6 +67,8 @@ class ScoringClass {
     // beforeValues optionnel : simulations indépendantes depuis UNE même racine immuable.
     // Le BFS ordinaire ne le passe pas ; un cache de racine ne doit pas suivre une chaîne.
     static getStateScoreFromParent(node, State, ParentScore, MySide, beforeValues = null) {
+        // Ce candidat ne sera pas retenu : le seul gain proviendrait du déplacement.
+        if (!node.ITEM_HAS_BENEFIT) return ParentScore - node.COOLDOWN_COST
         var score = ParentScore
         for (var id: var before in node.CLONED) {
             var after = State[id]
@@ -80,7 +83,8 @@ class ScoringClass {
             var delta = entityValue(after) - oldValue
             score += (after.SIDE == MySide ? 1 : -1) * delta
         }
-        return score
+        // ParentScore contient déjà les frais des casts précédents : payer celui-ci UNE fois.
+        return score - node.COOLDOWN_COST
     }
 
     static getResurrectionScore(entity, State) {

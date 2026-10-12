@@ -13,9 +13,11 @@ class ScoringStateConstants {
     TARGETS_BY_SIDE = [:]
     ALLIES_BY_SIDE = [:]
     SHIELD_FACTOR_BY_SIDE = [:]
+    COOLDOWN_PRESSURE_BY_SIDE = [:]
 
     constructor(State) {
         this.SHIELD_FACTOR_BY_SIDE = ShieldProfile.factorsBySide(State)
+        this.COOLDOWN_PRESSURE_BY_SIDE = CooldownScoring.pressuresBySide(State)
         var totalLeeks = 0
         var totalSummons = 0
         // Compter d'abord les vivants de chaque camp dans les objets de résultat.

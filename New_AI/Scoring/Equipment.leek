@@ -29,6 +29,7 @@ global EQUIPMENT_CAN_USE_SCIENCE = [:]
 global EQUIPMENT_LIFE_DAMAGE_YIELD = [:]
 global EQUIPMENT_CAN_USE_POWER = [:]
 global EQUIPMENT_CAN_USE_POISON = [:]
+global EQUIPMENT_CAN_USE_SHACKLES = [:]
 global EQUIPMENT_CAN_USE_NOVA_DAMAGE = [:]
 global EQUIPMENT_CAN_USE_LIFE_DAMAGE = [:]
 global EQUIPMENT_CAN_USE_STRENGTH = [:]
@@ -160,6 +161,15 @@ class Equipment {
         if (key in EQUIPMENT_CAN_USE_POISON) return EQUIPMENT_CAN_USE_POISON[key]
         var result = anyYield([poisonYield(stat)])
         EQUIPMENT_CAN_USE_POISON[key] = result
+        return result
+    }
+    // Les SIX entraves, sans assimiler un pur empoisonneur à un entraveur.
+    static canUseShackles(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in EQUIPMENT_CAN_USE_SHACKLES) return EQUIPMENT_CAN_USE_SHACKLES[key]
+        var result = anyYield([shackleStrengthYield(stat), shackleMagicYield(stat), shackleAgilityYield(stat),
+            shackleWisdomYield(stat), shackleTpYield(stat), shackleMpYield(stat)])
+        EQUIPMENT_CAN_USE_SHACKLES[key] = result
         return result
     }
     // Vrai si l'équipement peut lancer des dégâts nova, sur poireaux ou invocations.
