@@ -20,6 +20,7 @@ class BulbState {
 	COOLDOWNS
 	USES
 	ITEM_STATE_PARENT   // null = racine (même contrat qu'EntityState) — un bulbe n'est jamais patché
+	AVAILABILITY_MEMO
 	SIDE
 	SPECIAL_WEAPON
 	EFFECTS

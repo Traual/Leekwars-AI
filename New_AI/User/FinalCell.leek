@@ -61,7 +61,7 @@ class FinalCell {
         // le moteur tuait le tour dedans. Sous cette marge, le balayage garde son seul cout
         // SPATIAL : une reponse degradee, mais complete sur toutes mes cellules accessibles.
         var budget = OPS_CAP - OPS_MOVE_MARGIN
-        var withDanger = getOperations() + coldCost(State, combinedHfp) <= budget
+        var withDanger = getOperations() + coldCost(State, combinedHfp, hfpBySide[State[Me].SIDE]) <= budget
         var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, budget, withDanger)
         debug("Best final cell: " + res[0] + " (pénalité: " + res[1] + ", net: " + res[2] + ")")
         return res[0]
@@ -78,14 +78,17 @@ class FinalCell {
      * @param contextBySide [side -> hash de l'équipe adverse]
      * @param combinedHfp fold XOR des empreintes de soigneurs
      */
-    static prewarm(State, BaseHash, contextBySide, combinedHfp) {
+    static prewarm(State, BaseHash, contextBySide, combinedHfp, sideHfp = null) {
         var avant = getOperations()
         // Premiere carte de soin du tour ou simple reconstruction : deux regimes de cout, donc
         // deux marges. Les caches de soin sont vides au debut de chaque tour.
-        var premiereDuTour = mapIsEmpty(HEAL_MAP_CACHE)
-        HealClass.getHealMapByFp(State, combinedHfp)
-        var apresSoin = getOperations()
         var mySide = State[Me].SIDE
+        if (sideHfp == null) sideHfp = HealClass.sideFingerprint(State, mySide)
+        var premiereDuTour = mapIsEmpty(HEAL_SIDE_MAP_CACHE)
+        // Le net de Me ne lit que ses alliés. Les projections d'autres cibles
+        // conservent l'API complète, dans un cache distinct.
+        HealClass.getHealMapByFp(State, sideHfp, mySide)
+        var apresSoin = getOperations()
         var plan = DangerPlanClass.getTeamPlan(State, BaseHash, contextBySide[mySide], mySide)
         DangerPlanClass.coverageSequenceFor(plan, Me)
         DangerPlanClass.netSequenceFor(plan, Me)
@@ -111,17 +114,29 @@ class FinalCell {
      * @param combinedHfp fold XOR des empreintes de soigneurs
      * @return le cout a prevoir, 0 si tout est deja construit
      */
-    static coldCost(State, combinedHfp) {
+    static coldCost(State, combinedHfp, sideHfp = null) {
         var cout = 0
-        if (!(combinedHfp in HEAL_MAP_CACHE)) cout = mapIsEmpty(HEAL_MAP_CACHE) ? OPS_COLD_HEAL : OPS_REBUILD_HEAL
         var mySide = State[Me].SIDE
+        if (sideHfp == null) sideHfp = HealClass.sideFingerprint(State, mySide)
+        var healKey = addValueToBinHash(sideHfp, mySide)
+        if (!(healKey in HEAL_SIDE_MAP_CACHE)) {
+            // Une couverture vide est gratuite : ne pas refuser le danger à un
+            // poireau sans soigneur parce qu'un ancien plafond réservait 3 M.
+            for (var e: var stat in State) {
+                if (e == Me || stat.LIFE <= 0 || stat.SIDE != mySide || !HealClass.hasHealItem(stat)) continue
+                if (HealClass.geometriesReady(stat)) continue
+                cout = mapIsEmpty(HEAL_SIDE_MAP_CACHE) ? OPS_COLD_HEAL : OPS_REBUILD_HEAL
+                break
+            }
+        }
         for (var e: var stat in State) {
             if (e == Me || stat.LIFE <= 0 || stat.SIDE == mySide) continue
-            if (count(EntityDangerClass.getItemsList(stat)) == 0) continue
-            if (!(DangerPlanClass.mapCellItemAoeKeyOf(stat) in MAP_CELL_ITEM_AOE_CACHE)) return cout + OPS_COLD_PLAN
+            var items = EntityDangerClass.getItemsList(stat)
+            if (count(items) == 0) continue
             for (var t = 0; t < 4; t++) {
                 if (!WalkCellsClass.dangerTierAvailable(stat, t)) continue
-                if (!(DangerPlanClass.mapCellItemAoeKeyForLayer(stat, t) in MAP_CELL_ITEM_AOE_CACHE)) return cout + OPS_COLD_PLAN
+                var key = DangerPlanClass.mapCellItemAoeKeyForLayer(stat, t)
+                if (!(key in MAP_CELL_ITEM_AOE_CACHE) && !ItemCoverageClass.geometriesReady(items, key & DangerPlanClass.MOVEMENT_KEY_MASK)) return cout + OPS_COLD_PLAN
             }
         }
         return cout
@@ -184,7 +199,7 @@ class FinalCell {
         var possibleCells = WalkCellsClass.getMaxLayer(State, Me, BaseHash)
         // Sans danger, la carte de soin n'a aucun lecteur — et c'est justement une des deux
         // constructions que le budget ne finançait pas.
-        var healMap = withDanger ? HealClass.getHealMapByFp(State, combinedHfp) : null
+        var healMap = withDanger ? HealClass.getHealMapByFp(State, hfpBySide[mySide], mySide) : null
 
         var bestCell    = MyState.CELL
         var bestPenalty = MAX_VALUE

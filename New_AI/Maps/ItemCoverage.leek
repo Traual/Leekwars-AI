@@ -8,6 +8,17 @@ include("../includes.leek")
 
 class ItemCoverageClass {
 
+	// Lecture seule des mêmes clés que geometryOfItem. Un nouvel assemblage
+	// de caster peut être froid alors que toutes ses géométries sont déjà payées.
+	static geometriesReady(items, movementKey) {
+		for (var item in items) {
+			var info = ITEMINFO[item]
+			if (!(((movementKey << 25) | info.LAUNCH_GEOMETRY_KEY) in ITEM_LAUNCH_GEOMETRY_CACHE)) return false
+			if (info.AREA_MAX > 0 && !(((movementKey << 30) | info.FULL_GEOMETRY_KEY) in ITEM_FULL_GEOMETRY_CACHE)) return false
+		}
+		return true
+	}
+
 	/* Hash de contenu d'une map [item -> dist] : chaîne NON LINÉAIRE, entrée (item 9 bits |
 	 * dist 4 bits). Dépendant de l'ordre d'itération : deux maps de même contenu construites
 	 * dans des ordres différents FRAGMENTENT seulement, elles ne collisionnent jamais.

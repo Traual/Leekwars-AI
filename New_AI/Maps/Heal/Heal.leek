@@ -35,6 +35,21 @@ global HEAL_PROFILE_ALLY_SUMMON = 2
 
 class HealClass {
 
+    static sideFingerprint(State, side) {
+        var fp = 0
+        for (var id: var stat in State) if (stat.SIDE == side) fp ^= healerContributionOf(stat, id)
+        return fp
+    }
+
+    static geometriesReady(stat) {
+        var movement = (stat.CELL << 10) | WalkCellsClass.dangerMpOf(stat)
+        for (var tier = 0; tier < 4; tier++) {
+            if (!WalkCellsClass.dangerTierAvailable(stat, tier)) continue
+            if (!(((stat.ID << 22) | (tier << 20) | movement) in HEAL_CELL_ITEM_AOE_CACHE)) return false
+        }
+        return true
+    }
+
     /*
      * Contribution d'un healer au fingerprint de son side (fold XOR, indépendant de l'ordre).
      * SOURCE UNIQUE : les folds par side salent NETDAMAGE_CACHE, le fold combiné est la clé de
@@ -82,13 +97,16 @@ class HealClass {
      * Hit sauf si un healer a changé sur la branche ; au miss, la liste des casters est
      * reconstruite en un scan.
      */
-    static getHealMapByFp(State, fp) {
-        if (fp in HEAL_MAP_CACHE) return HEAL_MAP_CACHE[fp]
+    static getHealMapByFp(State, fp, side = null) {
+        var cache = side == null ? HEAL_MAP_CACHE : HEAL_SIDE_MAP_CACHE
+        var key = side == null ? fp : addValueToBinHash(fp, side)
+        if (key in cache) return cache[key]
         var casters = []
         for (var e: var stat in State) {
+            if (side != null && stat.SIDE != side) continue
             if (healerContributionOf(stat, e) != 0) push(casters, e)
         }
-        return getHealMapPrecomputed(State, fp, casters)
+        return getHealMapPrecomputed(State, key, casters, cache)
     }
 
     /*
@@ -116,14 +134,15 @@ class HealClass {
      * Renvoyée PAR RÉFÉRENCE — read-only en aval. Hit hors fenêtre BenchOps
      * (le bucket "Heal" ne profile que les miss).
      */
-    static getHealMapPrecomputed(State, fp, casters) {
-        if (fp in HEAL_MAP_CACHE) return HEAL_MAP_CACHE[fp]
+    static getHealMapPrecomputed(State, fp, casters, cache = null) {
+        if (cache == null) cache = HEAL_MAP_CACHE
+        if (fp in cache) return cache[fp]
         BenchOps.Start("Heal")
         var _final = [: ]
         for (var caster in casters) {
             _final[caster] = getCasterCoverage(State[caster])
         }
-        HEAL_MAP_CACHE[fp] = _final
+        cache[fp] = _final
         BenchOps.Stop("Heal")
         return _final
     }

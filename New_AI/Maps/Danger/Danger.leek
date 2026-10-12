@@ -111,9 +111,6 @@ class DangerClass {
 		var hash = 0
 		for (var idx in CovSeq) {
 			// CONTRAT : CovSeq ne retient que les casters à map offensive non nulle.
-			var offMap = maps[idx]
-			// Caster incapable d'atteindre cette cellule : aucun triplet, aucun combo.
-			if (!(Cell in offMap)) continue
 			// Une variante par PALIER qui atteint la cellule, dédoublonnée par le hash de
 			// CONTENU de sa panoplie : les paliers sont emboîtés, donc plusieurs rendent souvent
 			// la même. Le balayage monte en prix, la première retenue est donc la moins chère,
@@ -134,8 +131,8 @@ class DangerClass {
 			for (var t = 0; t < 4; t++) {
 				var mt = tm[t]
 				if (mt == null) continue
-				if (!(Cell in mt)) continue
-				var im = mt[Cell]
+				var im = ItemCoverageClass.itemAoeAt(mt, Cell)
+				if (im == null) continue
 				var h = DangerPlanClass.itemAoeHashOf(tk[t], Cell, im)
 				var crt = tc[t]
 				// Dédoublonnage sur la panoplie ET la classe de critique : deux paliers de même
@@ -157,6 +154,7 @@ class DangerClass {
 					push(alts, [im, h, ttp[t], crt, tp[t], t])
 				}
 			}
+			if (vMap == null) continue // aucune couche n'atteint cette cellule
 			var contentHash = vHash
 			push(covIdx, idx)
 			push(covMap, vMap)

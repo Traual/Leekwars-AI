@@ -76,9 +76,82 @@ class ScoredActionClass {
  * réutilisés sont toujours simulés depuis leur parent avant d'entrer dans l'arbre. */
 class ActionSearchCacheClass {
 	ESTIMATES
+	ORDERED_GROUPS
 	NEW_SCORES = 0
 	REUSED_SCORES = 0
+	ORDER_HITS = 0
+	ESTIMATE_VERSION = 0
+	VALIDATED_NODE
+	VALIDATED_FINAL
 	constructor() {
 		this.ESTIMATES = [:]
+		this.ORDERED_GROUPS = [:]
+	}
+}
+
+// Par plateau et item : ajouter seulement les origines encore jamais calculées.
+class ActionOriginCatalogClass {
+	GROUPS
+	BY_SIGNATURE
+	COVERED_CELLS
+	COVERED_DOMAINS
+	constructor() {
+		this.GROUPS = []
+		this.BY_SIGNATURE = [:]
+		this.COVERED_CELLS = [:]
+		this.COVERED_DOMAINS = [:]
+	}
+}
+
+class ActionAvailabilityClass {
+	TP
+	WEAPON
+	COSTS
+	USES
+	constructor(tp, weapon) {
+		this.TP = tp
+		this.WEAPON = weapon
+		this.COSTS = [:]
+		this.USES = [:]
+	}
+}
+
+class ActionOriginChoiceClass {
+	FROM
+	TO
+	EXTRA_TP
+	constructor(from, to, extra) {
+		this.FROM = from
+		this.TO = to
+		this.EXTRA_TP = extra
+	}
+}
+
+// Le tri partage seulement des clés et des priorités, jamais un nœud ou un From.
+class ActionPriorityClass {
+	KEY
+	GAIN
+	PRIORITY
+	constructor(key, gain, priority) {
+		this.KEY = key
+		this.GAIN = gain
+		this.PRIORITY = priority
+	}
+}
+
+class ActionSearchFrameClass {
+	GROUPS
+	FRESH
+	PLAYABLES
+	COSTS
+	USES
+	ORDER
+	BEST_FRESH
+	constructor() {
+		this.GROUPS = [:]
+		this.FRESH = [:]
+		this.PLAYABLES = [:]
+		this.COSTS = [:]
+		this.USES = [:]
 	}
 }

@@ -4,11 +4,13 @@
  * 1. EXPANSION, sur les scores BRUTS (aucun danger positionnel de Me) :
  *  - Profondeur 1 : chaque action jouable est clonée + appliquée + scorée, puis triée
  *    par PRIORITÉ décroissante (BFS_SCORE_PER_ACTION_COST : rendement par TP, ou Δscore).
- *  - Chaque action de base est déroulée récursivement (unroll) : on descend l'action suivante
- *    de plus haute priorité, avec une coupure gloutonne selon la priorité mémorisée.
+ *  - Une petite première vague répartit l'expansion entre des items distincts ; les
+ *    autres débuts sont ensuite déroulés récursivement (unroll) s'il reste du budget.
+ *    Chaque branche suit la plus haute priorité, avec une coupure gloutonne mémorisée.
  *  - Les gains de groupes sont partagés par signature de cibles dans cet appel.
- *    La géométrie reste liée au board ET à la mobilité du nœud ; les actions locales
- *    suivent sa cellule actuelle. Les gains cachés sont des estimations, pas des bornes.
+ *    Le catalogue géométrique est lié au board et à l'item ; son domaine grandit avec
+ *    la mobilité du nœud. Les actions locales suivent sa cellule actuelle.
+ *    Les gains cachés sont des estimations, pas des bornes.
  *  - Un nœud "ne rien jouer" (score initial) sert de plancher.
  *
  * 2. RECLASSEMENT TERMINAL : tout nœud visité est une suite où l'on PEUT s'arrêter. Chacun
@@ -57,12 +59,29 @@ global TERMINAL_EVAL_MARGIN = 100000
 // pris en compte, mais par la chaine elle-meme, qui s'arrete quand les TP manquent.
 global BFS_SCORE_PER_ACTION_COST = false
 
+// Explorer plusieurs débuts en parallèle avant de consacrer le reste aux autres.
+// Chaque branche reste gloutonne ; la largeur règle seulement le partage du budget.
+global BFS_BEAM_WIDTH = 4
+global BFS_BEAM_OPS_PER_BRANCH = 1500000
+global BFS_DECISION_BUDGET_RATIO = 0.2
+global BFS_DECISION_MIN_EXPANSION = 250000
+
 class ActionSuite {
 
 	/*
 	 * Renvoie la meilleure action à jouer dans l'état donné (null = ne rien jouer).
 	 */
 	static getBestAction(State) {
+		// Le plafond de tour appartient à Play. Une décision utilise seulement
+		// une part de ce qui reste après sa préparation, pour pouvoir replanifier
+		// après un vrai cast (critique, morts et effets réels compris).
+		var turnDeadline = OPS_DEADLINE
+		var action = searchBestAction(State)
+		OPS_DEADLINE = turnDeadline
+		return action
+	}
+
+	static searchBestAction(State) {
 		BenchOps.Start("BFS")
 		var MyStats = State[Me]
 		var MySide = MyStats.SIDE
@@ -84,19 +103,12 @@ class ActionSuite {
 		// findBestNextNode), aucune action de base n'existe — rien à chercher. Le tour se termine
 		// donc ici, et le placement suit : on lui prépare ses structures avant de rendre la main.
 		if (MyStats.TP < MINIMUM_COST_ITEM) {
-			prewarmIfAffordable(State, BaseHash, RootContext, rootCombinedHfp)
+			prewarmIfAffordable(State, BaseHash, RootContext, rootCombinedHfp, RootHfp[MySide])
 			BenchOps.Stop("BFS")
 			return null
 		}
 		var RootResurrectId = resurrectIdOf(State)
-		var basePairs = getBaseActions(State, BaseHash, RootResurrectId, MyWalkCells)
-		// basePairs = les actions réellement JOUABLES. Vide -> rien à scorer, même fin de tour.
-		if (count(basePairs) == 0) {
-			prewarmIfAffordable(State, BaseHash, RootContext, rootCombinedHfp)
-			BenchOps.Stop("BFS")
-			return null
-		}
-		prewarmIfAffordable(State, BaseHash, RootContext, rootCombinedHfp)
+		prewarmIfAffordable(State, BaseHash, RootContext, rootCombinedHfp, RootHfp[MySide])
 		// Empreinte de mobilité de Me à la racine : construite UNE fois par getBestAction
 		// effectif, portée par noPlay et héritée par ses enfants. Elle sert aux caches de
 		// géométrie et de placement — aucune valeur de scoring n'en dépend.
@@ -104,7 +116,8 @@ class ActionSuite {
 		// La racine s'interrompt entre deux entités quand elle entame la part stricte du placement
 		// final : le moteur qui la coupait emportait aussi le placement. Sans racine, aucune
 		// décision : le placement prend la main.
-		var initialScore = ScoringClass.stateValue(State, MySide, OPS_CAP - OPS_RESERVE_PLACEMENT)
+		var rootValues = [:]
+		var initialScore = ScoringClass.stateValue(State, MySide, OPS_CAP - OPS_RESERVE_PLACEMENT, rootValues)
 		if (initialScore == null) {
 			BenchOps.Stop("BFS")
 			return null
@@ -117,6 +130,7 @@ class ActionSuite {
 		// noPlay = plancher "ne rien jouer" ET racine de la chaîne d'états.
 		var noPlay = new NodeClass(null, State, null)
 		noPlay.SCORE = initialScore
+		noPlay.SCORE_VALUES = rootValues
 		noPlay.BASE_HASH = BaseHash
 		noPlay.ME_WALK_FINGERPRINT = RootWalkFingerprint
 		// Métadonnées que le reclassement terminal lit sur TOUT candidat, plancher compris.
@@ -127,9 +141,27 @@ class ActionSuite {
 		noPlay.STATE_PARENT = null
 		noPlay.STATE_PATCH = [: ]
 
-		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, MyWalkCells, basePairs, SearchCache)
+		// Les actions locales sont peu coûteuses à préparer : les scorer AVANT la
+		// géométrie offensive. Une extension froide ne peut plus effacer leurs nœuds.
+		var localPairs = getBaseActions(State, BaseHash, RootResurrectId, MyWalkCells, true)
+		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, MyWalkCells, localPairs, SearchCache)
+		validateEarly(rootEntries, noPlay, SearchCache)
+		if (getOperations() <= OPS_DEADLINE) {
+			var otherPairs = getBaseActions(State, BaseHash, RootResurrectId, MyWalkCells, false, true)
+			var known = [:]
+			for (var entry in rootEntries) known[estimateKeyOf(entry.PLAYABLE)] = true
+			var freshPairs = []
+			for (var pair in otherPairs) if (!(estimateKeyOf(pair) in known)) push(freshPairs, pair)
+			pushAll(rootEntries, enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, MyWalkCells, freshPairs, SearchCache))
+			rootEntries = arraySort(rootEntries, function(a, b) { return b.PRIORITY - a.PRIORITY })
+		}
 		BFS_CHAIN_STEPS = 0
 		debugC("--- " + count(rootEntries) + " base actions ---", COLOR_BLUE)
+		var expansionStart = getOperations()
+		var remaining = max(0, OPS_DEADLINE - expansionStart)
+		var allowance = max(BFS_DECISION_MIN_EXPANSION, floor(remaining * BFS_DECISION_BUDGET_RATIO))
+		OPS_DEADLINE = min(OPS_DEADLINE, expansionStart + allowance)
+		debug("[BFS] expansion budget: " + min(remaining, allowance) + " operations (" + remaining + " remaining this turn)")
 
 		// Déroulé de chaque action de base. TOUT nœud visité est une suite où l'on peut
 		// s'arrêter : le plancher, chaque action racine retenue, et chaque nœud intermédiaire
@@ -142,12 +174,92 @@ class ActionSuite {
 			var baseNode = entry.NODE
 			baseNode.SCORE = entry.SCORE
 			push(candidates, baseNode)
-			unroll(baseNode, SearchCache, MySide, candidates)
+		}
+		var selected = [:]
+		var seenItems = [:]
+		var frontier = []
+		var beamWidth = min(BFS_BEAM_WIDTH, max(1, floor((OPS_DEADLINE - getOperations()) / BFS_BEAM_OPS_PER_BRANCH)))
+		// La première vague privilégie des items distincts, pour ne pas dépenser
+		// tout le budget sur huit variantes géométriques d'un même buff de zone.
+		for (var i: var entry in rootEntries) {
+			if (count(frontier) >= beamWidth) break
+			var item = entry.PLAYABLE.ACTION.Item
+			if (entry.DEFERRED || item in seenItems) continue
+			seenItems[item] = true
+			selected[i] = true
+			push(frontier, entry.NODE)
+		}
+		for (var i: var entry in rootEntries) {
+			if (count(frontier) >= beamWidth) break
+			if (entry.DEFERRED || i in selected) continue
+			selected[i] = true
+			push(frontier, entry.NODE)
+		}
+		while (count(frontier) > 0 && getOperations() <= OPS_DEADLINE) {
+			var nextWave = []
+			for (var parent in frontier) {
+				if (getOperations() > OPS_DEADLINE) break
+				var next = findBestNextNode(parent, SearchCache, MySide)
+				if (next == null) validateChain(parent, SearchCache)
+				else {
+					push(candidates, next)
+					BFS_CHAIN_STEPS++
+					push(nextWave, next)
+				}
+			}
+			frontier = nextWave
+		}
+		for (var i: var entry in rootEntries) {
+			if (getOperations() > OPS_DEADLINE) break
+			if (entry.DEFERRED || i in selected) continue
+			var leaf = unroll(entry.NODE, SearchCache, MySide, candidates)
+			validateChain(leaf, SearchCache)
 		}
 		BenchOps.Stop("BFS")
-		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " reused")
+		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " reused, " + SearchCache.ORDER_HITS + " cached orders")
 
-		return pickTerminal(candidates, initialScore, count(rootEntries))
+		return pickTerminal(candidates, initialScore, count(rootEntries), SearchCache)
+	}
+
+	/* Garder UNE suite entièrement validée pendant que le budget est encore
+	 * disponible. Même si la géométrie ou l'expansion consomme ensuite le reste,
+	 * pickTerminal ne revient pas au brut ni au seul plan « ne rien jouer ».
+	 * Aucun budget supplémentaire : mêmes limites et même évaluation terminale. */
+	static validateEarly(entries, noPlay, SearchCache) {
+		var limit = OPS_DEADLINE + OPS_RESERVE_TURN - OPS_RESERVE_PLACEMENT
+		var deadline = limit - TERMINAL_EVAL_MARGIN
+		for (var entry in entries) {
+			if (getOperations() > deadline) break
+			if (entry.DEFERRED || !canCloseNow(entry.NODE, limit)) continue
+			var close = closeOf(entry.NODE, limit)
+			if (count(close) != 3) break
+			SearchCache.VALIDATED_NODE = entry.NODE
+			SearchCache.VALIDATED_FINAL = entry.SCORE - close[1]
+			return;
+		}
+		if (getOperations() <= deadline && canCloseNow(noPlay, limit)) {
+			var close = closeOf(noPlay, limit)
+			if (count(close) == 3) {
+				SearchCache.VALIDATED_NODE = noPlay
+				SearchCache.VALIDATED_FINAL = noPlay.SCORE - close[1]
+			}
+		}
+	}
+
+	// Clore une chaîne prometteuse pendant qu'il reste du budget, avant d'ouvrir
+	// la suivante. Un plan déjà payé reste disponible si les branches froides
+	// suivantes épuisent la recherche. Les nœuds intermédiaires restent candidats.
+	static validateChain(node, SearchCache) {
+		if (SearchCache.VALIDATED_NODE != null && node.SCORE <= SearchCache.VALIDATED_FINAL) return;
+		var limit = OPS_DEADLINE
+		if (getOperations() + TERMINAL_EVAL_MARGIN > limit || !canCloseNow(node, limit)) return;
+		var close = closeOf(node, limit)
+		if (count(close) != 3) return;
+		var value = node.SCORE - close[1]
+		if (SearchCache.VALIDATED_NODE == null || value > SearchCache.VALIDATED_FINAL) {
+			SearchCache.VALIDATED_NODE = node
+			SearchCache.VALIDATED_FINAL = value
+		}
 	}
 
 	/*
@@ -157,9 +269,9 @@ class ActionSuite {
 	 * le moteur couperait le tour dedans. En dessous, on s'abstient : le placement se rabattra sur
 	 * son coût spatial plutôt que de se faire couper.
 	 */
-	static prewarmIfAffordable(State, BaseHash, contextBySide, combinedHfp) {
-		if (getOperations() + FinalCell.coldCost(State, combinedHfp) <= OPS_CAP - OPS_RESERVE_PLACEMENT) {
-			FinalCell.prewarm(State, BaseHash, contextBySide, combinedHfp)
+	static prewarmIfAffordable(State, BaseHash, contextBySide, combinedHfp, sideHfp = null) {
+		if (getOperations() + FinalCell.coldCost(State, combinedHfp, sideHfp) <= OPS_CAP - OPS_RESERVE_PLACEMENT) {
+			FinalCell.prewarm(State, BaseHash, contextBySide, combinedHfp, sideHfp)
 		}
 	}
 
@@ -170,12 +282,12 @@ class ActionSuite {
 	 * COUPURE EXACTE, sans epsilon : la pénalité est >= 0 par construction, donc
 	 * finalScore <= rawScore. Les candidats étant parcourus par score BRUT décroissant, dès
 	 * qu'un score brut ne bat plus le meilleur score final, aucun de ceux qui restent ne le
-	 * pourra non plus. Une égalité parfaite de scores finaux garde le premier trouvé, donc le
-	 * meilleur score brut — le départage historique.
+	 * pourra non plus. Une égalité parfaite de scores finaux garde le premier plan validé
+	 * rencontré, y compris celui qui a été conservé avant l'expansion.
 	 *
 	 * @return l'action du premier ancêtre du meilleur candidat, null si le plancher gagne
 	 */
-	static pickTerminal(candidates, initialScore, nBases) {
+	static pickTerminal(candidates, initialScore, nBases, SearchCache = null) {
 		BenchOps.Start("Terminal")
 		// Le meilleur score BRUT ouvre le parcours. Sa première clôture peut donner une
 		// borne avant le tri ; si elle est impossible, d'autres candidats restent évaluables.
@@ -196,16 +308,16 @@ class ActionSuite {
 		// son balayage se tronque : elle rend alors un majorant de sa pénalité, et le budget est épuisé.
 		var terminalLimit = OPS_DEADLINE + OPS_RESERVE_TURN - OPS_RESERVE_PLACEMENT
 		var terminalDeadline = terminalLimit - TERMINAL_EVAL_MARGIN
-		var best = null
-		var bestFinal = 0
+		var best = SearchCache == null ? null : SearchCache.VALIDATED_NODE
+		var bestFinal = best == null ? 0 : SearchCache.VALIDATED_FINAL
 		var seedClose = (getOperations() <= terminalDeadline && canCloseNow(seed, terminalLimit)) ? closeOf(seed, terminalLimit) : null
 
 		var seedValidated = seedClose != null && count(seedClose) == 3
 		if (seedValidated) {
 			// Conserver cette validation AVANT tout tri ou nouveau calcul : le budget peut
 			// manquer juste après, sans rendre ce plan déjà évalué moins valable.
-			best = seed
-			bestFinal = bestRaw - seedClose[1]
+			var seedFinal = bestRaw - seedClose[1]
+			if (best == null || seedFinal > bestFinal) { best = seed; bestFinal = seedFinal }
 		}
 
 		if (getOperations() <= terminalDeadline) {
@@ -312,7 +424,8 @@ class ActionSuite {
 	static canCloseNow(node, truncateAt) {
 		// Au large, rien à vérifier : même le pire des constructions tient.
 		if (getOperations() + OPS_COLD_HEAL + OPS_COLD_PLAN <= truncateAt) return true
-		return getOperations() + FinalCell.coldCost(StateClass.materializeNodeState(node), combinedHfpOf(node)) <= truncateAt
+		var State = StateClass.materializeNodeState(node)
+		return getOperations() + FinalCell.coldCost(State, combinedHfpOf(node), node.HFP_BY_SIDE[State[Me].SIDE]) <= truncateAt
 	}
 
 	/*
@@ -320,63 +433,58 @@ class ActionSuite {
 	 * qu'il y en a une, en collectant chaque nœud traversé comme candidat terminal.
 	 */
 	static unroll(node, SearchCache, MySide, candidates) {
-		if (getOperations() > OPS_DEADLINE) return;
+		if (getOperations() > OPS_DEADLINE) return node
 		var next = findBestNextNode(node, SearchCache, MySide)
-		if (next == null) return;
+		if (next == null) return node
 		push(candidates, next)
 		BFS_CHAIN_STEPS++
-		unroll(next, SearchCache, MySide, candidates)
+		return unroll(next, SearchCache, MySide, candidates)
 	}
 
-	/* La géométrie et les actions LOCALES sont résolues pour le parent courant.
-	 * Le cache ne porte que des gains de groupes, jamais d'anciennes origines ou
-	 * des nœuds appliqués dans un autre état. Les hits sont des priorités estimées,
-	 * pas des bornes : la coupure gloutonne reste une approximation assumée. */
+	/* Les priorités sont triées sans résoudre toutes les origines. Les hits
+	 * partagent un ordre de CLÉS, jamais les actions concrètes d'un autre parent. */
 	static findBestNextNode(Parent, SearchCache, MySide) {
 		var State = StateClass.materializeNodeState(Parent)
-		if (State[Me].LIFE <= 0 || State[Me].TP < MINIMUM_COST_ITEM) return null
+		var mine = State[Me]
+		if (mine.LIFE <= 0 || mine.TP < MINIMUM_COST_ITEM) return null
 		var BaseHash = Parent.BASE_HASH
 		var walk = WalkCellsClass.getAllLayers(State, Me, BaseHash)
-		var pairs = getBaseActions(State, BaseHash, resurrectIdOf(State), walk)
-		var entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide,
-			Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk, pairs, SearchCache, true)
-		var best = null
-		var bestPriority = 0
-		// Les misses ont déjà été simulés pendant le tri. Les garder même si cette
-		// préparation vient d'atteindre la limite ; aucun nouveau cast n'est simulé ici.
-		for (var entry in entries) {
-			if (entry.NODE != null && !entry.DEFERRED && entry.PRIORITY > bestPriority) {
-				best = entry.NODE
-				bestPriority = entry.PRIORITY
-			}
-		}
+		var resurrect = resurrectIdOf(State)
+		var frame = prepareGroups(State, BaseHash, Parent, MySide, walk, resurrect, SearchCache)
+		var fresh = frame.BEST_FRESH
+		var best = fresh == null ? null : fresh.NODE
+		var bestPriority = fresh == null ? 0 : fresh.PRIORITY
 		var Workspace = null
-		for (var entry in entries) {
+		for (var hint in frame.ORDER) {
 			if (getOperations() > OPS_DEADLINE) break
-			// Même heuristique que l'ancien classement caché. Une estimation ancienne
-			// n'est PAS un majorant du gain après un buff ou une nouvelle protection.
-			if (bestPriority >= entry.PRIORITY) break
-			var actual = entry
-			if (entry.NODE == null) {
+			// Coupure gloutonne APPROXIMATIVE : un ancien gain n'est pas un majorant.
+			if (bestPriority >= hint.PRIORITY) break
+			var actual = frame.FRESH[hint.KEY]
+			if (actual == null) {
+				var playable = framePlayable(frame, hint.KEY, mine, walk, resurrect, BaseHash, Parent.ME_WALK_FINGERPRINT)
+				if (playable == null) continue
 				if (Workspace == null) Workspace = clone(State, 1)
-				actual = simulatePlayable(entry.PLAYABLE, Workspace, BaseHash, Parent.SCORE,
+				actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
 					MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk)
+				rememberEstimate(SearchCache, hint.KEY, actual.GAIN)
 			}
 			if (!actual.DEFERRED && actual.PRIORITY > bestPriority) {
 				bestPriority = actual.PRIORITY
 				best = actual.NODE
 			}
 		}
-		// Dégâts annulés ou puces sous leur prix de cooldown : un précédent cast peut
-		// les rendre utiles. Aucune coupure sur leur estimation nulle/négative.
-		for (var entry in entries) {
+		// Les dégâts annulés et les puces sous leur prix peuvent redevenir utiles.
+		for (var hint in frame.ORDER) {
 			if (getOperations() > OPS_DEADLINE) break
-			if (!entry.DEFERRED || entry.NODE != null) continue
-			var item = entry.PLAYABLE.ACTION.Item
+			if (hint.GAIN > BFS_DELTA_EPSILON || hint.KEY in frame.FRESH) continue
+			var item = frame.GROUPS[hint.KEY].Item
 			if (!ITEMINFO[item].IS_BOUNDABLE_DAMAGE && CooldownScoring.costOf(item, MySide) <= 0) continue
+			var playable = framePlayable(frame, hint.KEY, mine, walk, resurrect, BaseHash, Parent.ME_WALK_FINGERPRINT)
+			if (playable == null) continue
 			if (Workspace == null) Workspace = clone(State, 1)
-			var actual = simulatePlayable(entry.PLAYABLE, Workspace, BaseHash, Parent.SCORE,
+			var actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
 				MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk)
+			rememberEstimate(SearchCache, hint.KEY, actual.GAIN)
 			if (!actual.DEFERRED && actual.PRIORITY > bestPriority) {
 				bestPriority = actual.PRIORITY
 				best = actual.NODE
@@ -386,6 +494,84 @@ class ActionSuite {
 		return best
 	}
 
+	/* Réunir les groupes actuels, apprendre seulement les priorités inconnues,
+	 * puis reprendre un tri déjà fait pour ce même ensemble. Les coûts/usages
+	 * restent propres au parent. Par gain brut, aucune origine des hits n'est
+	 * cherchée ici ; par rendement, le coût actuel entre aussi dans la clé du tri. */
+	static prepareGroups(State, BaseHash, Parent, MySide, Walk, resurrect, SearchCache) {
+		var mine = State[Me]
+		var frame = new ActionSearchFrameClass()
+		var availability = ActionsClass.availabilityOf(mine)
+		frame.COSTS = availability.COSTS
+		frame.USES = availability.USES
+		var groups = ActionsClass.getEveryActionsInAState(State, Walk, mine.CELL, BaseHash)
+		for (var group in groups) {
+			if (group.Item == CHIP_RESURRECTION && resurrect == null) continue
+			if (baseCostOf(mine, group.Item, frame.COSTS, frame.USES) < 0) continue
+			var key = groupEstimateKey(group, resurrect)
+			if (!(key in frame.GROUPS) || group.IS_LOCAL) frame.GROUPS[key] = group
+		}
+		var keys = []
+		var fingerprint = 0
+		var Workspace = null
+		for (var key: var group in frame.GROUPS) {
+			if (getOperations() > OPS_DEADLINE) break
+			if (!(key in SearchCache.ESTIMATES)) {
+				var playable = framePlayable(frame, key, mine, Walk, resurrect, BaseHash, Parent.ME_WALK_FINGERPRINT)
+				if (playable == null) continue
+				if (Workspace == null) Workspace = clone(State, 1)
+				var actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
+					MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, Walk)
+				frame.FRESH[key] = actual
+				SearchCache.ESTIMATES[key] = actual.GAIN
+				SearchCache.NEW_SCORES++
+				if (!actual.DEFERRED && (frame.BEST_FRESH == null || actual.PRIORITY > frame.BEST_FRESH.PRIORITY)) frame.BEST_FRESH = actual
+			} else {
+				SearchCache.REUSED_SCORES++
+			}
+			if (BFS_SCORE_PER_ACTION_COST) {
+				var playable = framePlayable(frame, key, mine, Walk, resurrect, BaseHash, Parent.ME_WALK_FINGERPRINT)
+				if (playable == null) continue
+				fingerprint ^= mix64(addValueToBinHash(key, playable.COST))
+			} else {
+				fingerprint ^= mix64(key)
+			}
+			push(keys, key)
+		}
+		var orderKey = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ fingerprint, (count(keys) << 1) | (BFS_SCORE_PER_ACTION_COST ? 1 : 0)), SearchCache.ESTIMATE_VERSION)
+		var order = SearchCache.ORDERED_GROUPS[orderKey]
+		if (order == null) {
+			order = []
+			for (var key in keys) {
+				var gain = SearchCache.ESTIMATES[key]
+				var priority = BFS_SCORE_PER_ACTION_COST ? priorityOf(gain, frame.PLAYABLES[key].COST) : gain
+				push(order, new ActionPriorityClass(key, gain, priority))
+			}
+			order = arraySort(order, function(a, b) { return b.PRIORITY - a.PRIORITY })
+			SearchCache.ORDERED_GROUPS[orderKey] = order
+		} else {
+			SearchCache.ORDER_HITS++
+		}
+		frame.ORDER = order
+		return frame
+	}
+
+	// Une revalidation apprend le gain courant. Ne pas garder un tri qui date
+	// d'avant ce changement ; les estimations restent des indications gloutonnes.
+	static rememberEstimate(SearchCache, key, gain) {
+		if (SearchCache.ESTIMATES[key] == gain) return;
+		SearchCache.ESTIMATES[key] = gain
+		SearchCache.ESTIMATE_VERSION++
+	}
+
+	static framePlayable(frame, key, mine, Walk, resurrect, BaseHash, WalkFingerprint) {
+		if (key in frame.PLAYABLES) return frame.PLAYABLES[key]
+		var group = frame.GROUPS[key]
+		var playable = resolveGroup(group, mine, Walk, frame.COSTS[group.Item], frame.USES[group.Item], resurrect, BaseHash, WalkFingerprint)
+		frame.PLAYABLES[key] = playable
+		return playable
+	}
+
 	/* Un seul workspace restauré entre candidats. Le score inclut TOUJOURS la
 	 * couche de déplacement actuelle, ses buffs/passifs et le prix du cooldown. */
 	static simulatePlayable(playable, Workspace, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk) {
@@ -393,7 +579,10 @@ class ActionSuite {
 		var item = act.Item
 		var node = NodeClass.ActionToNodeInTree(act, Workspace, act.From, Walk, playable.COST,
 			ITEMINFO[item], item, act.To, BaseHash, null, StateParent, Context, Hfp, playable.USES)
-		var score = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, MySide)
+		// Tous les candidats de ce parent relisent les mêmes valeurs d'avant action.
+		// Le mémo appartient au nœud immuable, jamais à un autre état ou une autre recherche.
+		if (StateParent.SCORE_VALUES == null) StateParent.SCORE_VALUES = [:]
+		var score = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, MySide, StateParent.SCORE_VALUES)
 		StateClass.restoreWorkspace(Workspace, node.CLONED)
 		node.CLONED = null
 		node.SCORE = score
@@ -428,8 +617,12 @@ class ActionSuite {
 	}
 
 	static estimateKeyOf(playable) {
-		var key = playable.GROUP.SIGNATURE
-		if (playable.ACTION.Item == CHIP_RESURRECTION) key = addValueToBinHash(key, playable.ACTION.RESURRECT_ID + 1)
+		return groupEstimateKey(playable.GROUP, playable.ACTION.RESURRECT_ID)
+	}
+
+	static groupEstimateKey(group, resurrect) {
+		var key = group.SIGNATURE
+		if (group.Item == CHIP_RESURRECTION) key = addValueToBinHash(key, resurrect + 1)
 		return key
 	}
 
@@ -446,31 +639,20 @@ class ActionSuite {
 
 	/* Filtrage DYNAMIQUE : disponibilité, équipement et TP ne sont jamais figés
 	 * dans la géométrie. Les doublons locaux/zone sont retirés AVANT le scoring. */
-	static getBaseActions(State, BaseHash, ResurrectId, Walk) {
+	static getBaseActions(State, BaseHash, ResurrectId, Walk, localOnly = false, othersOnly = false) {
 		var result = []
 		var slots = [:]
 		var mine = State[Me]
-		var groups = ActionsClass.getEveryActionsInAState(State, Walk, mine.CELL, BaseHash)
-		var baseCosts = [:]
-		var usesByItem = [:]
+		var groups = ActionsClass.getEveryActionsInAState(State, Walk, mine.CELL, BaseHash, localOnly, othersOnly)
+		var walkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(mine)
+		var availability = ActionsClass.availabilityOf(mine)
+		var baseCosts = availability.COSTS
+		var usesByItem = availability.USES
 		for (var group in groups) {
 			var item = group.Item
-			var info = ITEMINFO[item]
-			var cost = baseCosts[item]
-			if (cost == null) {
-				cost = -1
-				if (StateClass.cooldownOf(mine, item) <= 0) {
-					var uses = StateClass.usesOf(mine, item)
-					if (uses < info.MAX_USES) {
-						usesByItem[item] = uses
-						cost = info.COST + ((info.IS_WEAPON && mine.WEAPON != item) ? 1 : 0)
-						if (cost > mine.TP) cost = -1
-					}
-				}
-				baseCosts[item] = cost
-			}
+			var cost = baseCostOf(mine, item, baseCosts, usesByItem)
 			if (cost < 0 || (item == CHIP_RESURRECTION && ResurrectId == null)) continue
-			var playable = resolveGroup(group, mine, Walk, cost, usesByItem[item], ResurrectId)
+			var playable = resolveGroup(group, mine, Walk, cost, usesByItem[item], ResurrectId, BaseHash, walkFingerprint)
 			if (playable == null) continue
 			var slot = slots[group.SIGNATURE]
 			if (slot == null) {
@@ -484,10 +666,27 @@ class ActionSuite {
 		return result
 	}
 
+	static baseCostOf(mine, item, costs, usesByItem) {
+		var cost = costs[item]
+		if (cost != null) return cost
+		cost = -1
+		var info = ITEMINFO[item]
+		if (StateClass.cooldownOf(mine, item) <= 0) {
+			var uses = StateClass.usesOf(mine, item)
+			if (uses < info.MAX_USES) {
+				usesByItem[item] = uses
+				cost = info.COST + ((info.IS_WEAPON && mine.WEAPON != item) ? 1 : 0)
+				if (cost > mine.TP) cost = -1
+			}
+		}
+		costs[item] = cost
+		return cost
+	}
+
 	/* Pas de copie de la map d'origines. Le cas courant (je peux déjà lancer ici)
 	 * se résout par une seule appartenance ; sinon on cherche le déplacement le
 	 * moins cher qui laisse ASSEZ de TP pour le cast, équipement compris. */
-	static resolveGroup(group, mine, Walk, baseCost, uses, ResurrectId) {
+	static resolveGroup(group, mine, Walk, baseCost, uses, ResurrectId, BaseHash = null, WalkFingerprint = null) {
 		var from = null
 		var to = null
 		var cost = baseCost
@@ -499,20 +698,37 @@ class ActionSuite {
 			from = mine.CELL
 			to = group.ORIGINS[from]
 		} else {
-			var bestRank = MAX_VALUE
-			for (var origin: var aim in group.ORIGINS) {
-				var extra = 0
-				var rank
-				if (origin in Walk.WALK) rank = Walk.WALK[origin]
-				else if (origin in Walk.JUMP) { extra = JUMP_COST; rank = Walk.JUMP[origin] + 100 }
-				else if (origin in Walk.TELEPORTATION) { extra = TELE_COST; rank = Walk.TELEPORTATION[origin] + 1000 }
-				else if (origin in Walk.TELEPORTATION_AND_JUMP) { extra = JUMP_TELE_COST; rank = Walk.TELEPORTATION_AND_JUMP[origin] + 10000 }
-				else continue
-				if (baseCost + extra > mine.TP || rank >= bestRank) continue
-				bestRank = rank
-				from = origin
-				to = aim
-				cost = baseCost + extra
+			var choices = null
+			if (BaseHash != null && WalkFingerprint != null) {
+				var budget = mine.TP - baseCost
+				var mask = (budget >= JUMP_COST ? 1 : 0) | (budget >= TELE_COST ? 2 : 0) | (budget >= JUMP_TELE_COST ? 4 : 0)
+				var domain = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ BaseHash, WalkFingerprint), mask)
+				choices = ACTION_ORIGIN_CHOICE_CACHE[domain]
+				if (choices == null) { choices = [:]; ACTION_ORIGIN_CHOICE_CACHE[domain] = choices }
+			}
+			if (choices != null && group.SIGNATURE in choices) {
+				var choice = choices[group.SIGNATURE]
+				if (choice == null) return null
+				from = choice.FROM
+				to = choice.TO
+				cost = baseCost + choice.EXTRA_TP
+			} else {
+				var bestRank = MAX_VALUE
+				for (var origin: var aim in group.ORIGINS) {
+					var extra = 0
+					var rank
+					if (origin in Walk.WALK) rank = Walk.WALK[origin]
+					else if (origin in Walk.JUMP) { extra = JUMP_COST; rank = Walk.JUMP[origin] + 100 }
+					else if (origin in Walk.TELEPORTATION) { extra = TELE_COST; rank = Walk.TELEPORTATION[origin] + 1000 }
+					else if (origin in Walk.TELEPORTATION_AND_JUMP) { extra = JUMP_TELE_COST; rank = Walk.TELEPORTATION_AND_JUMP[origin] + 10000 }
+					else continue
+					if (baseCost + extra > mine.TP || rank >= bestRank) continue
+					bestRank = rank
+					from = origin
+					to = aim
+					cost = baseCost + extra
+				}
+				if (choices != null) choices[group.SIGNATURE] = from == null ? null : new ActionOriginChoiceClass(from, to, cost - baseCost)
 			}
 		}
 		if (from == null) return null

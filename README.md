@@ -117,7 +117,7 @@ La meilleure possibilité compte dans chacune des trois familles (buff scientifi
 
 Les profils sont mis en cache et figés à chaque racine réelle. Le balayage ne relit pas les inventaires : une lecture par distance et allié suffit. Le coût vaut le potentiel de référence moins le soutien accessible, toujours positif ou nul ; tuer un soutien en branche ne réduit pas la référence. Nouvelles invocations, buffs de mobilité et disponibilités sont actualisés au replan réel suivant. Les clés du coût spatial et de `FinalCell` portent ce contexte, car `BaseHash` seul n'encode pas les cooldowns et les PT/PM. Le potentiel offensif ci-dessous remplace le barème fixe de distance ennemie.
 
-La **distance aux ennemis** utilise `Scoring/EnemyOffense.leek` et remplace la préférence fixe pour cinq cases. À la racine réelle, chaque item disponible au prochain tour est simulé sur un ennemi isolé supposé à portée, avec les conséquences communes et le delta de score du BFS. Le gain utilise donc les protections, les PV, le poison/Antidote, les entraves, les passifs et les cascades de mort déjà implémentés. Les auto-buffs seuls et leur contrecoup ne créent pas de potentiel offensif. Les valeurs d'avant-cast sont réutilisées dans un cache réservé à ces simulations indépendantes ; le BFS ordinaire garde son calcul inchangé.
+La **distance aux ennemis** utilise `Scoring/EnemyOffense.leek` et remplace la préférence fixe pour cinq cases. À la racine réelle, chaque item disponible au prochain tour est simulé sur un ennemi isolé supposé à portée, avec les conséquences communes et le delta de score du BFS. Le gain utilise donc les protections, les PV, le poison/Antidote, les entraves, les passifs et les cascades de mort déjà implémentés. Les auto-buffs seuls et leur contrecoup ne créent pas de potentiel offensif. Les valeurs d'avant-cast sont réutilisées dans un cache réservé à ces simulations indépendantes ; le BFS conserve ses propres mémos par parent simulé, avec les mêmes formules.
 
 Le gain d'un cast est multiplié par `min(MAX_USES, floor((TOTAL_TP − équipement) / COST))`. Le changement d'arme coûte un PT une seule fois ; une puce qui déclenche un cooldown est limitée à un lancer, et un cooldown courant supérieur à un exclut l'item du prochain tour. Les PT restants et les usages déjà dépensés ce tour ne servent pas à cette estimation. Multiplier le premier gain reste une approximation : aucune chaîne de lancers répétés n'est simulée, notamment après un kill ou pour un effet non cumulable.
 
@@ -149,7 +149,7 @@ sur des cellules différentes.
 Le BFS préfère l'origine actuelle lorsqu'elle existe dans un groupe ; sinon il choisit
 une origine accessible avec le même ordre de coût qu'avant, en gardant assez de PT pour
 le cast et l'équipement. Les cooldowns, usages et coûts sont relus dans chaque branche.
-La géométrie porte le plateau et la mobilité courante : un gain de PM ou l'accès au Saut
+Le domaine consulté suit la mobilité courante : un gain de PM ou l'accès au Saut
 peut créer de nouvelles origines, sans se limiter aux cellules de la racine.
 
 Les gains mémorisés par signature survivent aux changements de `BaseHash` dans une
@@ -159,12 +159,82 @@ il n'y a pas de cache additif par cible. Les gains réutilisés sont des **estim
 classement**, pas des majorants : chaque candidat examiné est simulé et rescorré dans
 son parent réel, avec les buffs/passifs du déplacement. Le classement et sa coupure
 gloutonne restent approximatifs après une modification de stats. Le debug `[BFS] group
-scores: … computed, … reused` rend cette réutilisation visible.
+scores: … computed, … reused, … cached orders` rend cette réutilisation visible.
+
+La géométrie est conservée **par plateau et item**, avec les origines déjà calculées.
+Un déplacement ou un changement de PM complète uniquement les nouvelles cellules ;
+les domaines déjà couverts ne sont pas reconstruits. La disponibilité d'un item reste
+vérifiée dans l'état courant, sans figer les cooldowns ou le budget dans ce catalogue.
+Une seule visée légale par origine et groupe est conservée ; les zones équivalentes et
+les rayons de laser déjà traités évitent aussi leurs vérifications de LoS redondantes.
+Les actions ponctuelles et les zones ordinaires sont produites directement, sans
+construire une map intermédiaire pour chaque couple origine/visée. Pour une zone,
+l'empreinte des autres entités est calculée une fois par centre, puis celle du lanceur
+est ajoutée à sa distance propre depuis chaque origine.
+
+Dans les successeurs, le tri réutilise des **clés et des priorités**, jamais des nœuds ni
+des actions concrètes d'une ancienne branche. En mode gain brut, le choix d'origine
+n'est effectué que pour les nouveaux groupes à scorer et les candidats examinés.
+Son cache porte le plateau, la mobilité et les seuils de PT restant **après** le coût du
+cast/équipement : un ancien échec faute de PT ne bloque pas une origine devenue payable.
+Le mode rendement ajoute aussi les coûts courants à la clé du tri.
+
+Les coûts et usages disponibles sont mémorisés sur l'entité simulée. Le mémo est
+invalidé au clone et aux écritures de cooldown/usages ; un changement de PT ou d'arme
+le remplace également. Il filtre les items avant leur géométrie. Chaque nœud conserve
+aussi les valeurs exactes des entités déjà scorées : ses candidats réutilisent les
+valeurs d'avant-cast et calculent celles d'après-cast avec les mêmes formules.
+
+À la racine, les actions locales sont scorées avant la génération offensive. Une première
+suite entièrement évaluée avec danger est conservée avant l'expansion, dans les limites
+existantes, lorsque son coût est finançable. Une préparation ou une expansion qui épuise
+ensuite le budget ne peut pas effacer ce plan validé. Les nouveaux catalogues d'origines et leurs choix sont vidés
+au changement de tour/acteur ; les ordres de priorité et gains restent locaux à la recherche.
+
+L'expansion partage son budget entre **au plus quatre débuts**, en privilégiant des
+items distincts. La largeur diminue lorsque le budget disponible ne finance pas
+1 500 000 opérations par branche. Chaque branche avance ensuite de manière gloutonne.
+Tous les nœuds intermédiaires restent des candidats où arrêter le tour ; les chaînes
+prometteuses sont évaluées avec danger avant d'ouvrir les suivantes lorsque le budget
+le permet.
+
+Une décision consacre **20 % du budget restant après sa préparation** à l'expansion
+(`BFS_DECISION_BUDGET_RATIO`, minimum 250 000 opérations, borné par le plafond restant).
+Le plafond du tour est restauré à la sortie : le reste permet de replanifier après les
+effets réels du premier cast, au lieu de dépenser presque tout sur une longue suite
+projetée puis de la vider sans nouvelle recherche. Ce quota ne réduit pas le budget
+global du tour et ne change pas les cœurs des builds.
 
 Après une action réelle, l'arbre et ces estimations sont abandonnés ; la recherche suivante
 repart de la capture moteur. Les caches géométriques restent utilisables sous leurs clés.
 Le danger demeure évalué à la clôture des plans, et le meilleur plan déjà validé reste
-prioritaire sur un score brut non évalué. Les budgets et les coefficients sont inchangés.
+prioritaire sur un score brut non évalué. Les coefficients sont inchangés. La réserve
+stricte de placement passe de 100 000 à 300 000 opérations : l'ancienne marge ne couvrait
+plus toujours la capture et les profils de fin de tour lors de longs combats avec
+invocations. La réserve globale de tour reste à 500 000 ; la vidange et les clôtures
+terminales disposent donc de moins de cette marge, plutôt que de tuer le placement réel.
+
+La couverture offensive de danger assemble maintenant les items **à la demande pour
+chaque cellule consultée**, en partageant leurs géométries. Le placement de Me ne
+construit que la carte de soin de son camp, dans un cache séparé ; les projections
+d'autres cibles gardent l'API complète. Ce sont des économies de calcul, sans nouvelle
+approximation de danger ou de soin. Les replis sans danger restent possibles si aucun
+plan validé n'a pu être financé, et gardent leurs avertissements explicites.
+
+Comparatif du 12 octobre 2026 contre l'ancien arbre `adbf60d`, à scoring identique,
+avec les cœurs réels et les deux orientations par bloc :
+
+| Lot de confirmation | Combats | Victoires | Nuls | Défaites | Score |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Compositions identiques | 64 | 19 | 36 | 9 | 57,8 % |
+| Compositions différentes | 64 | 31 | 10 | 23 | 56,3 % |
+| Ensemble | 128 | 50 | 46 | 32 | 57,0 % |
+
+Le score compte un nul pour une demi-victoire. Aucun tour avorté ni erreur moteur
+n'a été observé pour cette version, invocations comprises. Ces lots ne prouvent pas
+une domination sur tous les builds ou formats. Les budgets de 20 % et 35 % donnent
+le même score moyen dans les deux comparatifs communs de 32 combats chacun ; le
+réglage court conserve davantage d'opérations pour les décisions suivantes.
 
 Le dépôt séparé **[Leekwars-AI-tools](https://github.com/Traual/Leekwars-AI-tools)** conserve :
 

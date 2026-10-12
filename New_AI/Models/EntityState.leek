@@ -18,6 +18,7 @@ class EntityStateClass extends EntityClass {
 	// sur un clone simulé de Me, pointe l'état précédent et les maps ne portent que les
 	// patches locaux (résolution par StateClass.cooldownOf/usesOf, chaîne immuable).
 	ITEM_STATE_PARENT
+	AVAILABILITY_MEMO // coût/usages par item pour les PT et l'arme courants de CET objet
 	EFFECTS
 	// Memos de champs dérivés (scoring), calculés paresseusement. COPIÉS au clone puis
 	// VALIDÉS après l'action (StateClass.diffMaskOf, appelé par Node sur chaque

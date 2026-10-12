@@ -68,7 +68,10 @@ function ReloadCacheNewTurn() {
     HEAL_ENTITY_INVENTORY = [: ]
     NETDAMAGE_CACHE = [: ]
     HEAL_MAP_CACHE = [: ]
+    HEAL_SIDE_MAP_CACHE = [:]
     ENTITY_ACTIONS_CACHE = [: ]
+    ACTION_ORIGIN_CHOICE_CACHE = [:]
+    LOCAL_ACTION_GROUP_CACHE = [:]
     ACTIONS_ON_ME_CACHE = [: ]
     ACTIONS_SUMMON_CACHE = [: ]
     ACTIONS_ON_VOID_CACHE = [: ]
@@ -371,7 +374,9 @@ global TELE_JUMP_CACHE_NOENT = [: ]
 
 // ACTIONS
 
-global ENTITY_ACTIONS_CACHE = [: ]   // actions sur les autres entités
+global ENTITY_ACTIONS_CACHE = [: ]   // catalogues d'origines par plateau et item
+global ACTION_ORIGIN_CHOICE_CACHE = [:] // choix d'origine par mobilité et budget de déplacement
+global LOCAL_ACTION_GROUP_CACHE = [:] // empreinte des actions locales par plateau/cellule/item
 global ACTIONS_ON_ME_CACHE = [: ]    // actions sur moi (même cellule ou AoE)
 global ACTIONS_SUMMON_CACHE = [: ]   // actions d'invocation (bulbes, résurrection)
 global ACTIONS_ON_VOID_CACHE = [: ]  // actions dans le vide à effet positif (glaive...)
@@ -412,6 +417,7 @@ global NETDAMAGE_CACHE = [: ]
 // COMBINÉ des fingerprints de healers. Renvoyée PAR RÉFÉRENCE (read-only en aval). Le split
 // par side du même fold sale NETDAMAGE_CACHE — porté sur les nœuds (HFP_BY_SIDE). Reset au tour.
 global HEAL_MAP_CACHE = [: ]
+global HEAL_SIDE_MAP_CACHE = [:] // couverture d'un seul camp, pour le placement de Me
 
 // ============================================================================
 // WalkCells : BFS bitmap par couples de lignes (voir Maps/WalkCells.leek)
@@ -483,9 +489,12 @@ global OPS_RESERVE_TURN = 500000
 // et se placer, pas de quoi replanifier.
 global OPS_RESERVE_PER_BULB = 1000000
 // Part STRICTE du placement final, celle que la vidange de chaine n'a pas le droit d'entamer.
-// Mesuree sur les memes 49 tours : maximum 82 861 operations, on en garde 100 000.
+// Le maximum historique de 82 861 ne couvrait pas les profils offensifs et leurs
+// empreintes sur de longs combats avec invocations. Les combats comparatifs du
+// 2026-10-12 épuisent 100 k dans EnemyOffense.prepare/Delta au placement réel.
+// Garder 300 k pour la capture, les profils, le balayage borné et le déplacement.
 // L'ecart avec OPS_RESERVE_TURN est ce qui finance la vidange, sans agrandir la reserve.
-global OPS_RESERVE_PLACEMENT = 100000
+global OPS_RESERVE_PLACEMENT = 300000
 // Cout d'une action REELLE (deplacement puis lancer), le plus cher observe dans ce combat.
 // Mesure de depart sur 77 executions a 4 et 8 coeurs : mediane 3 682, p90 7 521, maximum
 // 16 194 ; on part au-dessus du pire cas vu, et chaque execution releve la valeur si besoin.

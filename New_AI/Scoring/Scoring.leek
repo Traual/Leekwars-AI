@@ -54,21 +54,24 @@ class ScoringClass {
         return max(0, score)
     }
 
-    static stateValue(State, MySide, OpsLimit) {
+    static stateValue(State, MySide, OpsLimit, values = null) {
         var score = 0
         for (var id: var stat in State) {
             if (getOperations() > OpsLimit) return null
-            score += (stat.SIDE == MySide ? 1 : -1) * entityValue(stat)
+            var value = entityValue(stat)
+            if (values != null) values[id] = value
+            score += (stat.SIDE == MySide ? 1 : -1) * value
         }
         return score
     }
 
     // Évite de relire tout le plateau : seules les entités clonées ont changé.
-    // beforeValues optionnel : simulations indépendantes depuis UNE même racine immuable.
-    // Le BFS ordinaire ne le passe pas ; un cache de racine ne doit pas suivre une chaîne.
+    // beforeValues optionnel : valeurs du parent immuable de CES candidats.
+    // Le BFS passe le mémo de chaque nœud ; les sondes indépendantes celui de leur racine.
     static getStateScoreFromParent(node, State, ParentScore, MySide, beforeValues = null) {
         // Ce candidat ne sera pas retenu : le seul gain proviendrait du déplacement.
         if (!node.ITEM_HAS_BENEFIT) return ParentScore - node.COOLDOWN_COST
+        node.SCORE_VALUES = [:]
         var score = ParentScore
         for (var id: var before in node.CLONED) {
             var after = State[id]
@@ -80,7 +83,9 @@ class ScoringClass {
                     if (beforeValues != null) beforeValues[id] = oldValue
                 }
             }
-            var delta = entityValue(after) - oldValue
+            var newValue = entityValue(after)
+            node.SCORE_VALUES[id] = newValue
+            var delta = newValue - oldValue
             score += (after.SIDE == MySide ? 1 : -1) * delta
         }
         // ParentScore contient déjà les frais des casts précédents : payer celui-ci UNE fois.

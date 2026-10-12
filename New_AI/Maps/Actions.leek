@@ -32,21 +32,32 @@ class ActionsClass {
 	/* Les actions locales sont recréées depuis MyCell à CHAQUE nœud. Leur origine
 	 * ne vient jamais d'une liste scorée dans une ancienne position. Les groupes sur
 	 * les autres conservent toutes les origines du domaine de mobilité courant. */
-	static getEveryActionsInAState(State, WalkCells, MyCell, BaseHash) {
+	static getEveryActionsInAState(State, WalkCells, MyCell, BaseHash, localOnly = false, othersOnly = false) {
 		BenchOps.Start("Actions")
 		var _final = []
 		var LeekCells = StateClass.getEntityCellsMap(State)
 		var local = []
-		pushAll(local, getEveryActionsOnMe(MyCell, MY_INVENTORY_ON_ME, State, BaseHash))
-		pushAll(local, getEveryActionsInVoid(MyCell, MY_INVENTORY_ON_VOID, State, LeekCells, BaseHash))
-		pushAll(local, getEverySummonActions(MyCell, MY_INVENTORY_SUMMON, State, LeekCells, BaseHash))
-		for (var action in local) {
-			var targets = ConsequencesClass.ConsequenceTargets(action.Item, action.From, action.To, State, Me, BaseHash)
-			var targetHash = hashTargets(targets, action.Item, State)
-			push(_final, new ActionGroupClass(action.Item, action.From, action.To,
-				groupSignature(action.Item, targetHash, action.From, action.To), targetHash, true))
+		if (!othersOnly) {
+			pushAll(local, getEveryActionsOnMe(MyCell, MY_INVENTORY_ON_ME, State, BaseHash))
+			pushAll(local, getEveryActionsInVoid(MyCell, MY_INVENTORY_ON_VOID, State, LeekCells, BaseHash))
+			pushAll(local, getEverySummonActions(MyCell, MY_INVENTORY_SUMMON, State, LeekCells, BaseHash))
 		}
-		pushAll(_final, getEveryActionsOnEveryOne(MyCell, MY_INVENTORY_ON_EVERYONE, State, WalkCells, BaseHash, LeekCells))
+		var localKey = addValueToBinHash(OFFSET_BASIS ^ BaseHash, MyCell)
+		for (var action in local) {
+			// Une même action locale peut aussi venir du chemin « vide ». La visée
+			// entre donc dans la clé, sans figer sa disponibilité dans le cache.
+			var key = addValueToBinHash(localKey, (action.Item << 10) | action.To)
+			var group = LOCAL_ACTION_GROUP_CACHE[key]
+			if (group == null) {
+				var targets = ConsequencesClass.ConsequenceTargets(action.Item, action.From, action.To, State, Me, BaseHash)
+				var targetHash = hashTargets(targets, action.Item, State)
+				group = new ActionGroupClass(action.Item, action.From, action.To,
+					groupSignature(action.Item, targetHash, action.From, action.To), targetHash, true)
+				LOCAL_ACTION_GROUP_CACHE[key] = group
+			}
+			push(_final, group)
+		}
+		if (!localOnly) pushAll(_final, getEveryActionsOnEveryOne(MyCell, MY_INVENTORY_ON_EVERYONE, State, WalkCells, BaseHash, LeekCells))
 		BenchOps.Stop("Actions")
 		return _final
 	}
@@ -115,16 +126,33 @@ class ActionsClass {
 	}
 
 	static getEveryActionsOnMe(MyCell, Inventory, State, BaseHash) {
-		var key = addValueToBinHash(OFFSET_BASIS ^ BaseHash, MyCell)
-		if (key in ACTIONS_ON_ME_CACHE) return ACTIONS_ON_ME_CACHE[key]
+		var prefix = addValueToBinHash(OFFSET_BASIS ^ BaseHash, MyCell)
 		var _final = []
 		for (var item in Inventory) {
 			var Infos = ITEMINFO[item]
-			var Act = getActionOnMe(MyCell, Infos.LAUNCHTYPE, Infos.MINRANGE, Infos.MAXRANGE, item, Infos.NEEDLOS, State, BaseHash)
+			if (!canUseItem(State[Me], item, Infos)) continue
+			var key = addValueToBinHash(prefix, item)
+			if (!(key in ACTIONS_ON_ME_CACHE)) ACTIONS_ON_ME_CACHE[key] = getActionOnMe(MyCell, Infos.LAUNCHTYPE, Infos.MINRANGE, Infos.MAXRANGE, item, Infos.NEEDLOS, State, BaseHash)
+			var Act = ACTIONS_ON_ME_CACHE[key]
 			if (Act) push(_final, Act)
 		}
-		ACTIONS_ON_ME_CACHE[key] = _final
 		return _final
+	}
+
+	// Filtrer AVANT toute géométrie, en dehors de ses clés : un item redevient
+	// immédiatement visible après un gain de PT ou un retrait de cooldown.
+	static canUseItem(stat, item, info) {
+		var memo = availabilityOf(stat)
+		return ActionSuite.baseCostOf(stat, item, memo.COSTS, memo.USES) >= 0
+	}
+
+	static availabilityOf(stat) {
+		var memo = stat.AVAILABILITY_MEMO
+		if (memo == null || memo.TP != stat.TP || memo.WEAPON != stat.WEAPON) {
+			memo = new ActionAvailabilityClass(stat.TP, stat.WEAPON)
+			stat.AVAILABILITY_MEMO = memo
+		}
+		return memo
 	}
 
 	/* La meilleure façon de me cibler moi-même avec l'item (cellule d'AoE la plus proche si minrange > 0). */
@@ -181,13 +209,14 @@ class ActionsClass {
 		var sterile = EntityStateClass.hasState(State[Me], STATE_STERILE)
 		var TmpHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), MyCell)
 		if (sterile) TmpHash = TmpHash ^ STERILE_KEY_SALT
-		if (TmpHash in ACTIONS_SUMMON_CACHE) return ACTIONS_SUMMON_CACHE[TmpHash]
 		// Summons vivants du camp, comptés UNE fois par build (bulbes virtuels de la branche
 		// inclus — ils sont dans State). Sain sous le cache : le compte est une fonction du
 		// set des vivants, que BaseHash pinne (summon/mort en branche -> nouvelle clé).
 		var livingSummons = StateClass.countLivingSummons(State, State[Me].SIDE)
 		var _final = []
 		for (var item in Inventory) {
+			var Infos = ITEMINFO[item]
+			if (!canUseItem(State[Me], item, Infos)) continue
 			// Bulbe : une place libre suffit. Résurrection : action GÉOMÉTRIQUE pure, TOUJOURS
 			// générée — le filtre "existe-t-il un candidat ?" vit dans le BFS (resurrectIdOf) :
 			// ce cache est partagé par BaseHash, qui n'encode PAS un summon virtuel MORT
@@ -195,12 +224,12 @@ class ActionsClass {
 			// servirait des listes fausses.
 			var castable = (item == CHIP_RESURRECTION) || (!sterile && livingSummons < SUMMON_LIMIT)
 			if (castable) {
-				var Infos = ITEMINFO[item]
-				var Act = getSummonAction(Infos.LAUNCHTYPE, MyCell, Infos.MINRANGE, Infos.MAXRANGE, LeekCells, item, State, BaseHash)
+				var key = addValueToBinHash(TmpHash, item)
+				if (!(key in ACTIONS_SUMMON_CACHE)) ACTIONS_SUMMON_CACHE[key] = getSummonAction(Infos.LAUNCHTYPE, MyCell, Infos.MINRANGE, Infos.MAXRANGE, LeekCells, item, State, BaseHash)
+				var Act = ACTIONS_SUMMON_CACHE[key]
 				if (Act) push(_final, Act)
 			}
 		}
-		ACTIONS_SUMMON_CACHE[TmpHash] = _final
 		return _final
 	}
 
@@ -312,44 +341,63 @@ class ActionsClass {
 		return _final
 	}
 
-	/* Actions offensives/soutien sur les autres entités, dédoublonnées par hash de cibles. */
+	/* Un catalogue par (plateau, item), indépendant de ma position/mes MP.
+	 * Son domaine grandit seulement quand de NOUVELLES origines deviennent accessibles.
+	 * Un auto-buff ou un déplacement dans le domaine connu ne reconstruit pas les zones.
+	 * Les disponibilités sont filtrées ici sans être mémorisées dans la géométrie. */
 	static getEveryActionsOnEveryOne(MyCell, Inventory, State, WalkCells, BaseHash, LeekCells) {
-		// Identité EXACTE du domaine de tir : l'empreinte de mobilité porte la cellule, les MP et
-		// surtout l'accessibilité des couches saut/téléportation, qui dépend des TP et des
-		// cooldowns. (BaseHash, MP, cellule) ne suffit PAS — deux nœuds identiques sur ces trois
-		// champs mais aux TP différents n'ont pas les mêmes cellules de tir, donc pas la même
-		// liste d'actions.
-		var WalkSetKey = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(State[Me])
-		// mp CLAMPÉ : une entrave le rend négatif, et un négatif étend son signe sur les bits
-		// hauts — il écrase alors le champ cellule (même défaut que les clés de marche,
-		// mesuré ici deux fois par combat). Le clamp est exact : un mp <= 0 ne donne accès
-		// qu'à la cellule courante, comme mp = 0.
-		var combined = (max(0, State[Me].MP) << 20) | MyCell
-		var Hash = addValueToBinHash(addValueToBinHash((OFFSET_BASIS ^ BaseHash), combined), WalkSetKey)
-		if (Hash in ENTITY_ACTIONS_CACHE) return ENTITY_ACTIONS_CACHE[Hash]
-		var SortedWalkCells = WalkCellsClass.LoadSortedWalkCells(WalkCells)
-		// Set de mes cellules de tir, construit une fois pour tous les items : les maps d'AoE
-		// ne sont bâties que pour ces cellules-là, seules lues par la boucle ci-dessous.
-		var WalkSet = [: ]
-		for (var wc in SortedWalkCells) WalkSet[wc] = true
-
-		var _final = []
+		var mine = State[Me]
+		var domain = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(mine)
+		var sorted = null
+		var result = []
 		for (var item in Inventory) {
-			var Infos = ITEMINFO[item]
-			if (Infos.AREA == AREA_FIRST_INLINE) { //Special case where i don't want to hit caster but a cell
-				pushAll(_final, getFirstInlineActions(State, Infos, item, SortedWalkCells, BaseHash))
-			} else { //Normal case
-				pushAll(_final, getActionsOnEveryone(State, item, BaseHash, SortedWalkCells, LeekCells, WalkSet))
+			if (getOperations() > OPS_DEADLINE) break // arrêter entre deux extensions, jamais cacher un domaine partiel
+			var info = ITEMINFO[item]
+			if (!canUseItem(mine, item, info)) continue
+			var key = addValueToBinHash(OFFSET_BASIS ^ BaseHash, item)
+			var catalog = ENTITY_ACTIONS_CACHE[key]
+			if (catalog == null) {
+				catalog = new ActionOriginCatalogClass()
+				ENTITY_ACTIONS_CACHE[key] = catalog
 			}
+			if (!(domain in catalog.COVERED_DOMAINS)) {
+				var missing = [:]
+				for (var cell: var _mp in WalkCells.MAX) {
+					if (!(cell in catalog.COVERED_CELLS)) missing[cell] = true
+				}
+				if (!mapIsEmpty(missing)) {
+					if (sorted == null) sorted = WalkCellsClass.LoadSortedWalkCells(WalkCells)
+					var cells = []
+					for (var cell in sorted) if (cell in missing) push(cells, cell)
+					var additions = info.AREA == AREA_FIRST_INLINE
+						? getFirstInlineActions(State, info, item, cells, BaseHash)
+						: getActionsOnEveryone(State, item, BaseHash, cells, LeekCells, missing)
+					for (var group in additions) {
+						var known = catalog.BY_SIGNATURE[group.SIGNATURE]
+						if (known == null) {
+							catalog.BY_SIGNATURE[group.SIGNATURE] = group
+							push(catalog.GROUPS, group)
+						} else {
+							for (var from: var to in group.ORIGINS) known.addOrigin(from, to)
+						}
+					}
+					// Même une origine sans visée légale a été calculée : ne pas la retenter.
+					for (var cell: var _covered in missing) catalog.COVERED_CELLS[cell] = true
+				}
+				catalog.COVERED_DOMAINS[domain] = true
+			}
+			pushAll(result, catalog.GROUPS)
 		}
-		ENTITY_ACTIONS_CACHE[Hash] = _final
-		return _final
+		return result
 	}
 
 	/* Un groupe par signature d'effets, avec ses origines. La LoS du cast est
 	 * vérifiée pour chaque origine ; la simulation n'est faite qu'après regroupement.
 	 * Un laser utilise TOUTES ses cibles réelles, pas seulement son endpoint. */
 	static getActionsOnEveryone(State, Item, BaseHash, SortedWalkCells, LeekCells, WalkSet) {
+		if (ITEMINFO[Item].AREA == AREA_POINT) return getPointActions(State, Item, BaseHash, SortedWalkCells)
+		var areaInfo = ITEMINFO[Item]
+		if (areaInfo.AREA_MAX > 0 && areaInfo.AREA != AREA_LASER_LINE && areaInfo.AREA != AREA_ALLIES && areaInfo.AREA != AREA_ENEMIES) return getAreaActions(State, Item, BaseHash, SortedWalkCells)
 		var HashedMapAoe = LoadHashedMapAoe(State, Item, BaseHash, SortedWalkCells, WalkSet)
 		var groups = [:]
 		var _final = []
@@ -358,10 +406,28 @@ class ActionsClass {
 		var needLos = Infos.NEEDLOS
 		var losPrefix = CellClass.losKeyPrefix(BaseHash)
 		var laserDone = isLaser ? [:] : null
+		var rayDone = isLaser && !Infos.ORIGIN_SENSITIVE ? [:] : null
+		var campArea = Infos.AREA == AREA_ALLIES || Infos.AREA == AREA_ENEMIES
+		var campHash = campArea ? hashTargets(ConsequencesClass.ConsequenceTargets(Item, State[Me].CELL, State[Me].CELL, State, Me, BaseHash), Item, State) : null
 
 		for (var from in SortedWalkCells) {
 			if (!(from in HashedMapAoe)) continue
 			for (var to: var targetHash in HashedMapAoe[from]) {
+				if (campArea) targetHash = campHash
+				var known = null
+				if (!isLaser && !Infos.ORIGIN_SENSITIVE) {
+					known = groups[targetHash]
+					// Une origine a besoin d'UNE visée légale par groupe, pas de toutes
+					// les visées équivalentes de cette zone. Éviter leurs LoS aussi.
+					if (known != null && from in known.ORIGINS) continue
+				}
+				var ray = null
+				if (rayDone != null) {
+					var dx = CELL_X[to] > CELL_X[from] ? 1 : (CELL_X[to] < CELL_X[from] ? -1 : 0)
+					var dy = CELL_Y[to] > CELL_Y[from] ? 1 : (CELL_Y[to] < CELL_Y[from] ? -1 : 0)
+					ray = (from << 4) | ((dx + 1) * 3 + dy + 1)
+					if (ray in rayDone) continue
+				}
 				var actualTo = to
 				if (needLos && !CellClass.getLosWithPrefix(from, to, State, BaseHash, losPrefix)) {
 					if (!isLaser || !CellClass.getLos(from, to)) continue
@@ -375,13 +441,94 @@ class ActionsClass {
 					if (shot in laserDone) continue
 					laserDone[shot] = true
 					targetHash = hashTargets(ConsequencesClass.ConsequenceTargets(Item, from, actualTo, State, Me, BaseHash), Item, State)
-				} else if (Infos.AREA == AREA_ALLIES || Infos.AREA == AREA_ENEMIES) {
-					targetHash = hashTargets(ConsequencesClass.ConsequenceTargets(Item, from, actualTo, State, Me, BaseHash), Item, State)
+					if (rayDone != null) rayDone[ray] = true // seulement après un cast LÉGAL
+					if (!Infos.ORIGIN_SENSITIVE) known = groups[targetHash]
 				}
-				appendGroup(_final, groups, Item, from, actualTo, targetHash)
+				if (Infos.ORIGIN_SENSITIVE) {
+					appendGroup(_final, groups, Item, from, actualTo, targetHash)
+				} else if (known == null) {
+					known = new ActionGroupClass(Item, from, actualTo, groupSignature(Item, targetHash, from, actualTo), targetHash)
+					groups[targetHash] = known
+					push(_final, known)
+				} else {
+					known.addOrigin(from, actualTo)
+				}
 			}
 		}
 		return _final
+	}
+
+	/* Une cible ponctuelle n'a pas besoin d'une map de maps (from -> to -> hash).
+	 * L'intersection portée/origines donne directement le groupe de cette cible.
+	 * Les items qui déplacent gardent une signature distincte pour chaque origine. */
+	static getPointActions(State, item, BaseHash, origins) {
+		var info = ITEMINFO[item]
+		var launch = info.NEEDLOS ? LaunchWithLos[info.LAUNCHTYPE] : LaunchWithoutLos[info.LAUNCHTYPE]
+		var caster = State[Me]
+		var prefix = CellClass.losKeyPrefix(BaseHash)
+		var result = []
+		var groups = [:]
+		for (var id: var target in State) {
+			if (id == Me || target.LIFE <= 0 || !Target.Targetable(item, target, caster)) continue
+			var reachable = launch(target.CELL, info.MINRANGE, info.MAXRANGE)
+			var targetHash = affectsSignature(item, target, caster) ? targetContribution(id, 0) : 0
+			for (var from in origins) {
+				if (!(from in reachable)) continue
+				if (info.NEEDLOS && !CellClass.getLosWithPrefix(from, target.CELL, State, BaseHash, prefix)) continue
+				appendGroup(result, groups, item, from, target.CELL, targetHash)
+			}
+		}
+		return result
+	}
+
+	/* Une zone centrée sur To touche les mêmes AUTRES entités depuis toutes
+	 * ses origines. Calculer ce fold une fois par centre, puis ajouter seulement
+	 * Me à sa distance depuis From. Ne pas construire from -> to -> hash.
+	 * Les formes traitées ici sont symétriques, comme LoadMapFromAoeForAnEntity. */
+	static getAreaActions(State, item, BaseHash, origins) {
+		var info = ITEMINFO[item]
+		var caster = State[Me]
+		var centers = [:]
+		var affected = [:]
+		for (var id: var target in State) {
+			if (id == Me || target.LIFE <= 0) continue
+			if (Target.Targetable(item, target, caster)) centers += AoeDistItem(item, target.CELL)
+			if (affectsSignature(item, target, caster)) affected[id] = target.CELL
+		}
+		var includeMe = affectsSignature(item, caster, caster)
+		var selfHashes = [:]
+		var launch = info.NEEDLOS ? LaunchWithLos[info.LAUNCHTYPE] : LaunchWithoutLos[info.LAUNCHTYPE]
+		var losPrefix = CellClass.losKeyPrefix(BaseHash)
+		var groups = [:]
+		var result = []
+		for (var to: var _distance in centers) {
+			var area = AoeDistItem(item, to)
+			var otherHash = 0
+			for (var id: var cell in affected) {
+				var dist = area[cell]
+				if (dist != null) otherHash ^= targetContribution(id, dist)
+			}
+			var reachable = launch(to, info.MINRANGE, info.MAXRANGE)
+			for (var from in origins) {
+				if (!(from in reachable)) continue
+				var hash = otherHash
+				var selfDistance = includeMe ? area[from] : null
+				if (selfDistance != null) {
+					if (!(selfDistance in selfHashes)) selfHashes[selfDistance] = targetContribution(Me, selfDistance)
+					hash ^= selfHashes[selfDistance]
+				}
+				var known = info.ORIGIN_SENSITIVE ? null : groups[hash]
+				if (known != null && from in known.ORIGINS) continue
+				if (info.NEEDLOS && !CellClass.getLosWithPrefix(from, to, State, BaseHash, losPrefix)) continue
+				if (info.ORIGIN_SENSITIVE) appendGroup(result, groups, item, from, to, hash)
+				else if (known == null) {
+					known = new ActionGroupClass(item, from, to, groupSignature(item, hash, from, to), hash)
+					groups[hash] = known
+					push(result, known)
+				} else known.addOrigin(from, to)
+			}
+		}
+		return result
 	}
 
 	/*
@@ -619,14 +766,15 @@ class ActionsClass {
 
 	static getEveryActionsInVoid(MyCell, Inventory, State, LeekCells, BaseHash) {
 		var TmpHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), MyCell)
-		if (TmpHash in ACTIONS_ON_VOID_CACHE) return ACTIONS_ON_VOID_CACHE[TmpHash]
 		var _final = []
 		for (var item in Inventory) {
 			var Infos = ITEMINFO[item]
-			var Act = getActionInVoid(MyCell, Infos.LAUNCHTYPE, Infos.MINRANGE, Infos.MAXRANGE, LeekCells, item, State, BaseHash)
+			if (!canUseItem(State[Me], item, Infos)) continue
+			var key = addValueToBinHash(TmpHash, item)
+			if (!(key in ACTIONS_ON_VOID_CACHE)) ACTIONS_ON_VOID_CACHE[key] = getActionInVoid(MyCell, Infos.LAUNCHTYPE, Infos.MINRANGE, Infos.MAXRANGE, LeekCells, item, State, BaseHash)
+			var Act = ACTIONS_ON_VOID_CACHE[key]
 			if (Act) push(_final, Act)
 		}
-		ACTIONS_ON_VOID_CACHE[TmpHash] = _final
 		return _final
 	}
 

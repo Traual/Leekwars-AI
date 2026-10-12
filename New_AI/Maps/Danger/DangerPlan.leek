@@ -33,12 +33,13 @@ class DangerPlanClass {
 		return (EntityStats.ID << 22) | (layer << 20) | (EntityStats.CELL << 10) | WalkCellsClass.dangerMpOf(EntityStats)
 	}
 
-	/* [cellule -> [item -> plus petite distance d'AoE]] : ce que le caster peut atteindre.
+	/* Couverture paresseuse : les géométries d'items sont partagées, mais la
+	 * panoplie d'une cellule n'est assemblée que lorsqu'un placement la lit.
 	 * TmpHash est la clé DÉJÀ calculée par l'appelant, jamais reconstruite ici. */
 	static getMapCellItemAoe(EntityStats, EntityWalkCells, TmpHash) {
 		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
 		// Les 22 bits bas sont exactement movementKey, clé des géométries persistantes.
-		var _final = ItemCoverageClass.buildMapCellItemAoe(EntityDangerClass.getItemsList(EntityStats), EntityWalkCells, TmpHash & MOVEMENT_KEY_MASK)
+		var _final = ItemCoverageClass.buildLazyCellItemAoe(EntityDangerClass.getItemsList(EntityStats), EntityWalkCells, TmpHash & MOVEMENT_KEY_MASK)
 		MAP_CELL_ITEM_AOE_CACHE[TmpHash] = _final
 		return _final
 	}
@@ -350,7 +351,7 @@ class DangerTeamPlanClass {
 	                // un caster du camp de la cible y est encodé -id-1 (voir netSequenceFor)
 	SAME_SIDE       // [i] = ce caster est-il du camp visé par le plan ?
 	ACTIVE          // [i] = ce caster peut-il changer un net de ce camp ?
-	OFFENSIVE_MAPS  // [i] = [cellule -> ItemAoeMap] du caster, ou null s'il ne menace pas
+	OFFENSIVE_MAPS  // [i] = LazyCoverageClass du caster, ou null s'il ne menace pas
 	MAP_KEYS        // [i] = clé de cette map (préfixe des hashs de contenu), ou null
 	TIER_MAPS       // [i] = [couverture du palier 0..3], null aux paliers que ce caster ne
 	                // peut pas jouer. Le palier 0 (marche) est toujours présent.
