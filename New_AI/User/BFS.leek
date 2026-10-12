@@ -581,8 +581,14 @@ class ActionSuite {
 			ITEMINFO[item], item, act.To, BaseHash, null, StateParent, Context, Hfp, playable.USES)
 		// Tous les candidats de ce parent relisent les mêmes valeurs d'avant action.
 		// Le mémo appartient au nœud immuable, jamais à un autre état ou une autre recherche.
-		if (StateParent.SCORE_VALUES == null) StateParent.SCORE_VALUES = [:]
-		var score = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, MySide, StateParent.SCORE_VALUES)
+		// Tester la variable locale évite que l'analyseur réduise le type du champ
+		// à null au moment de lui affecter la map (avertissement dans l'éditeur).
+		var parentValues = StateParent.SCORE_VALUES
+		if (parentValues == null) {
+			parentValues = [:]
+			StateParent.SCORE_VALUES = parentValues
+		}
+		var score = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, MySide, parentValues)
 		StateClass.restoreWorkspace(Workspace, node.CLONED)
 		node.CLONED = null
 		node.SCORE = score
