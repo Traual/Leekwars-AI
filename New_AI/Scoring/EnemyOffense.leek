@@ -7,6 +7,7 @@ global ROOT_ENEMY_OFFENSE = null
 
 class EnemyOffenseProfile {
     GAIN = 0
+    MAX_RANGE = 0
     SCORE_BY_DISTANCE = []
 }
 
@@ -21,6 +22,9 @@ class EnemyOffense {
     // Réglages manuels : perdre 10 % du potentiel par case hors portée, jusqu'à 100 %.
     static RANGE_PENALTY_PER_CELL = 0.1
     static OFFENSE_DISTANCE_WEIGHT = 1
+    // Une fois tous les gains décotés à zéro, garder une petite pente pour se rapprocher.
+    // Coût par case au-delà de la plus longue portée utile + la fenêtre de décote.
+    static FAR_DISTANCE_WEIGHT = 0.2
     // Préparation bornée à la racine ; aucune simulation dans le balayage des cellules.
     static MAX_PREP_OPERATIONS = 200000
     static CAST_MARGIN = 20000
@@ -165,7 +169,9 @@ class EnemyOffense {
                 evaluated++
                 if (gain <= 0) continue
                 profile.GAIN = max(profile.GAIN, gain)
-                // Au-delà de ces distances, tous les gains valent zéro. Tables denses,
+                profile.MAX_RANGE = max(profile.MAX_RANGE, info.MAXRANGE)
+                // Au-delà de ces distances, tous les gains valent zéro ; la petite pente
+                // lointaine reste calculée à part. Tables denses,
                 // préparées ici : jamais de boucle sur l'inventaire pendant le placement.
                 var reach = info.MAXRANGE + (RANGE_PENALTY_PER_CELL > 0 ? ceil(1 / RANGE_PENALTY_PER_CELL) : 0)
                 for (var distance = 0; distance <= reach; distance++) {
@@ -188,14 +194,18 @@ class EnemyOffense {
         if (RANGE_PENALTY_PER_CELL <= 0 || OFFENSE_DISTANCE_WEIGHT <= 0) return 0
         var reference = 0
         var accessible = 0
+        var nearestExcess = MAX_VALUE
+        var freeGap = ceil(1 / RANGE_PENALTY_PER_CELL)
         for (var id: var profile in context.PROFILES) {
             if (!(id in State) || State[id].LIFE <= 0) continue
             // Les morts sortent des DEUX maxima : tuer une cible ne coûte pas son potentiel futur.
             reference = max(reference, profile.GAIN)
             var distance = CellClass.getDist(cell, State[id].CELL)
+            nearestExcess = min(nearestExcess, max(0, distance - profile.MAX_RANGE - freeGap))
             if (distance < count(profile.SCORE_BY_DISTANCE)) accessible = max(accessible, profile.SCORE_BY_DISTANCE[distance])
         }
         // Pas de somme des items/ennemis : le même budget de PT ne finance pas plusieurs tours.
-        return max(0, reference - accessible) * OFFENSE_DISTANCE_WEIGHT
+        var farCost = nearestExcess == MAX_VALUE ? 0 : nearestExcess * max(0, FAR_DISTANCE_WEIGHT)
+        return max(0, reference - accessible) * OFFENSE_DISTANCE_WEIGHT + farCost
     }
 }
