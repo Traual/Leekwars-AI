@@ -566,6 +566,12 @@ casts de déplacement et les chemins spéciaux d'invocation/résurrection.
 - [ ] **Lock au placement final** : valoriser ou pénaliser les situations de tacle
   créées par la cellule finale. Ce terme n'existe pas encore dans `Placement` ;
   définir des paliers simples et éviter de compter deux fois un danger déjà projeté.
+- [ ] **Prudence selon les cooldowns de nettoyage** : dans le scoring de placement,
+  craindre davantage le danger d'un adversaire qui joue poison quand mon Antidote
+  est à cooldown 4 que lorsqu'il est disponible (cooldown 0). Appliquer le même
+  principe aux entraves selon mon cooldown de Manumission et la menace adverse
+  correspondante. Tenir compte de ce que la projection de poison intègre déjà,
+  pour éviter de refacturer la même vulnérabilité.
 - [ ] **Entités statiques** : revoir leur importance pour les termes de vie/vie max
   et la valeur de leurs buffs selon ce qu'elles peuvent réellement faire. Reprendre
   le cas de la tourelle buffée en PM et en force. Le facteur courant de PM ignore
