@@ -12,7 +12,7 @@ class NodeClass {
 	                  // null sur un candidat neuf, matérialisé (STATE_PARENT + STATE_PATCH)
 	                  // seulement si le nœud est réellement développé — StateClass.materializeNodeState
 	STATE_PARENT      // nœud portant l'état d'AVANT cette action — chaîne IMMUABLE, indépendante de
-	                  // PARENT (réassigné par le déroulé et les entrées du ScoredCache) ; null = racine
+	                  // PARENT (réassigné par le déroulé) ; null = racine
 	STATE_PATCH       // [id -> EntityState APRÈS l'action] : les seules entités que l'action a modifiées
 	                  // (les ids de CLONED), seule représentation persistante du nœud
 	PARENT            // nœud d'origine (null pour une action de base)
@@ -31,7 +31,7 @@ class NodeClass {
 	                  // du parent quand la map est partagée, recalculé sinon
 	ME_WALK_FINGERPRINT // empreinte de mobilité de Me pour l'état du nœud
 	                  // (HashWalkCellsWithItemsWithoutBaseHash). Sale la clé du filtre de
-	                  // cellules de tir du ScoredCache — aucun terme de scoring n'en dépend.
+	                  // géométrie et de placement — aucun terme de scoring n'en dépend.
 	constructor(Act, StatsAfterAction, Parent) {
 		this.ACTION = Act
 		this.END_STATS = StatsAfterAction
@@ -173,7 +173,7 @@ class NodeClass {
 		StateClass.setUses(meStat, Item, ItemUses + 1)
 		// Empreinte de mobilité de Me : calculée UNE fois, après TOUTES ses écritures
 		// (cellule, MP, TP, conséquences, cooldowns d'item et de déplacement). Elle sale le
-		// filtre de cellules de tir du ScoredCache (BFS.findBestNextNode).
+		// domaine d'origines du nœud et les caches de placement.
 		var meWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(meStat)
 		// END_STATS reste NULL : le nœud ne portera que son patch (matérialisation paresseuse).
 		var result = new NodeClass(Act, null, Parent)

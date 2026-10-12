@@ -29,17 +29,79 @@ class ActionsClass {
 		CHIP_PROTOTAXITE: true
 	]
 
-	/* Toutes les actions jouables de l'état : sur moi + dans le vide + summons + sur les autres. */
+	/* Les actions locales sont recréées depuis MyCell à CHAQUE nœud. Leur origine
+	 * ne vient jamais d'une liste scorée dans une ancienne position. Les groupes sur
+	 * les autres conservent toutes les origines du domaine de mobilité courant. */
 	static getEveryActionsInAState(State, WalkCells, MyCell, BaseHash) {
 		BenchOps.Start("Actions")
 		var _final = []
 		var LeekCells = StateClass.getEntityCellsMap(State)
-		pushAll(_final, getEveryActionsOnMe(MyCell, MY_INVENTORY_ON_ME, State, BaseHash))
-		pushAll(_final, getEveryActionsInVoid(MyCell, MY_INVENTORY_ON_VOID, State, LeekCells, BaseHash))
-		pushAll(_final, getEverySummonActions(MyCell, MY_INVENTORY_SUMMON, State, LeekCells, BaseHash))
-		pushAll(_final, getEveryActionsOnEveryOne(State[Me].CELL, MY_INVENTORY_ON_EVERYONE, State, WalkCells, BaseHash, LeekCells))
+		var local = []
+		pushAll(local, getEveryActionsOnMe(MyCell, MY_INVENTORY_ON_ME, State, BaseHash))
+		pushAll(local, getEveryActionsInVoid(MyCell, MY_INVENTORY_ON_VOID, State, LeekCells, BaseHash))
+		pushAll(local, getEverySummonActions(MyCell, MY_INVENTORY_SUMMON, State, LeekCells, BaseHash))
+		for (var action in local) {
+			var targets = ConsequencesClass.ConsequenceTargets(action.Item, action.From, action.To, State, Me, BaseHash)
+			var targetHash = hashTargets(targets, action.Item, State)
+			push(_final, new ActionGroupClass(action.Item, action.From, action.To,
+				groupSignature(action.Item, targetHash, action.From, action.To), targetHash, true))
+		}
+		pushAll(_final, getEveryActionsOnEveryOne(MyCell, MY_INVENTORY_ON_EVERYONE, State, WalkCells, BaseHash, LeekCells))
 		BenchOps.Stop("Actions")
 		return _final
+	}
+
+	// XOR de contributions non linéaires : même ensemble de (id, distance), même hash,
+	// indépendamment de l'ordre d'insertion (local, zone, laser, invocation virtuelle).
+	static targetContribution(id, distance) {
+		return mix64(((id + 1) << MAX_AOE_DIST_BINARY) | distance)
+	}
+
+	static hashTargets(targets, item = null, State = null) {
+		var hash = 0
+		for (var id: var distance in targets) {
+			if (item != null && !affectsSignature(item, State[id], State[Me])) continue
+			hash ^= targetContribution(id, distance)
+		}
+		return hash
+	}
+
+	// Garder aussi les effets néfastes collatéraux, que Target ne propose pas de viser.
+	// Un effet ON_CASTER sans multiplicateur ne dépend pas des cibles de la zone.
+	static affectsSignature(item, target, caster) {
+		var key = ((target.ID == caster.ID ? 1 : 0) << 36)
+			| ((target.IS_SUMMON ? 1 : 0) << 34) | ((target.LIFE > 0 ? 1 : 0) << 33)
+			| ((target.SIDE == caster.SIDE ? 1 : 0) << 32) | item
+		if (key in ACTION_EFFECT_TARGET_CACHE) return ACTION_EFFECT_TARGET_CACHE[key]
+		for (var effect in ITEMINFO[item].EFFECTS) {
+			if ((effect[5] & EFFECT_MODIFIER_ON_CASTER) && !(effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS)) continue
+			if (ConsequencesClass.isHitable(effect, target, caster, target.ID == caster.ID)) {
+				ACTION_EFFECT_TARGET_CACHE[key] = true
+				return true
+			}
+		}
+		ACTION_EFFECT_TARGET_CACHE[key] = false
+		return false
+	}
+
+	static groupSignature(item, targetHash, from, to) {
+		var hash = addValueToBinHash(OFFSET_BASIS ^ targetHash, item)
+		// Poussée, inversion, répulsion... la même cible peut aboutir ailleurs. Ne jamais
+		// fusionner ces géométries sous le seul hash des cibles.
+		if (ITEMINFO[item].ORIGIN_SENSITIVE) hash = addValueToBinHash(hash, (from << 10) | to)
+		return hash
+	}
+
+	static appendGroup(result, groups, item, from, to, targetHash) {
+		var signature = groupSignature(item, targetHash, from, to)
+		var group = groups[signature]
+		if (group == null) {
+			group = new ActionGroupClass(item, from, to, signature, targetHash)
+			groups[signature] = group
+			push(result, group)
+		} else {
+			group.addOrigin(from, to)
+		}
 	}
 
 	static getInventoryOnMe(Inventory, EntityState) {
@@ -53,14 +115,15 @@ class ActionsClass {
 	}
 
 	static getEveryActionsOnMe(MyCell, Inventory, State, BaseHash) {
-		if (MyCell in ACTIONS_ON_ME_CACHE) return ACTIONS_ON_ME_CACHE[MyCell]
+		var key = addValueToBinHash(OFFSET_BASIS ^ BaseHash, MyCell)
+		if (key in ACTIONS_ON_ME_CACHE) return ACTIONS_ON_ME_CACHE[key]
 		var _final = []
 		for (var item in Inventory) {
 			var Infos = ITEMINFO[item]
 			var Act = getActionOnMe(MyCell, Infos.LAUNCHTYPE, Infos.MINRANGE, Infos.MAXRANGE, item, Infos.NEEDLOS, State, BaseHash)
 			if (Act) push(_final, Act)
 		}
-		ACTIONS_ON_ME_CACHE[MyCell] = _final
+		ACTIONS_ON_ME_CACHE[key] = _final
 		return _final
 	}
 
@@ -283,72 +346,39 @@ class ActionsClass {
 		return _final
 	}
 
-	/* Pour un item : une action par ensemble de cibles DISTINCT (DoneHashs dédoublonne les
-	 * (from, to) qui touchent exactement les mêmes entités aux mêmes distances), en partant
-	 * des cellules les moins chères en déplacement.
-	 * LASERS (AREA_LASER_LINE) : la ZONE traverse les entités, seule la LoS du CAST s'arrête
-	 * à To — quand la LoS dynamique d'un candidat est bloquée par une entité (LoS statique
-	 * vraie), on vise la PREMIÈRE entité bloquante (endpoint valide) : le laser continue
-	 * derrière et Consequences touche toute la ligne. Fallback payé UNIQUEMENT sur les
-	 * candidats laser réellement bloqués par une entité. */
+	/* Un groupe par signature d'effets, avec ses origines. La LoS du cast est
+	 * vérifiée pour chaque origine ; la simulation n'est faite qu'après regroupement.
+	 * Un laser utilise TOUTES ses cibles réelles, pas seulement son endpoint. */
 	static getActionsOnEveryone(State, Item, BaseHash, SortedWalkCells, LeekCells, WalkSet) {
-
 		var HashedMapAoe = LoadHashedMapAoe(State, Item, BaseHash, SortedWalkCells, WalkSet)
-		var DoneHashs = [: ]
+		var groups = [:]
 		var _final = []
-		var ItemInfos = ITEMINFO[Item]
-		var isLaser = ItemInfos.AREA == AREA_LASER_LINE
-		// Un item SANS ligne de vue requise se lance a travers les murs ET a travers les corps :
-		// la geometrie amont le sait deja (LoadHashedMapAoe choisit LaunchWithoutLos), mais la
-		// verification dynamique ci-dessous s'appliquait quand meme et lui reprenait tout ce que
-		// la geometrie venait de lui accorder. Concerne arsenic (38 builds du top 50), spark et
-		// repotting. Ne pas la payer est aussi plus rapide : c'est une LoS de moins par candidat.
-		var needLos = ItemInfos.NEEDLOS
-		var MinRange = ItemInfos.MINRANGE
-		// Toutes les LoS de cette boucle partagent le même BaseHash : la rotation de leur clé
-		// est hissée ici et chaque lookup ne paie plus qu'un XOR.
+		var Infos = ITEMINFO[Item]
+		var isLaser = Infos.AREA == AREA_LASER_LINE
+		var needLos = Infos.NEEDLOS
 		var losPrefix = CellClass.losKeyPrefix(BaseHash)
-		var laserDone = isLaser ? [: ] : null   // dédup exact (from << 10) | to — alloué lasers seulement
+		var laserDone = isLaser ? [:] : null
 
 		for (var from in SortedWalkCells) {
-			if (from in HashedMapAoe) {
-				for (var to: var toHash in HashedMapAoe[from]) {
-					if (toHash in DoneHashs) continue
-					if (!needLos || CellClass.getLosWithPrefix(from, to, State, BaseHash, losPrefix)) {
-						if (isLaser) {
-							// Dédup dans les DEUX ordres : un fallback ANTÉRIEUR a pu déjà viser
-							// cette cellule (B-Laser : le bloqueur est lui-même un candidat).
-							// Le toHash est marqué même si l'action exacte existait déjà.
-							var directKey = (from << 10) | to
-							if (!(directKey in laserDone)) {
-								laserDone[directKey] = true
-								push(_final, new ActionClass(Item, from, to))
-							}
-						} else {
-							push(_final, new ActionClass(Item, from, to))
-						}
-						DoneHashs[toHash] = true
-						continue
-					}
-					if (!isLaser) continue
-					// LoS statique fausse = obstacle de CARTE : aucune visée possible.
-					if (!CellClass.getLos(from, to)) continue
-					// Première entité vivante STRICTEMENT entre from et to (l'endpoint exclu).
+			if (!(from in HashedMapAoe)) continue
+			for (var to: var targetHash in HashedMapAoe[from]) {
+				var actualTo = to
+				if (needLos && !CellClass.getLosWithPrefix(from, to, State, BaseHash, losPrefix)) {
+					if (!isLaser || !CellClass.getLos(from, to)) continue
 					var blockers = CellClass.getFirstInlineAoe(from, to, 1, CellClass.getDist(from, to) - 1, LeekCells)
-					var actualTo = null
+					actualTo = null
 					for (var c: var _b in blockers) { actualTo = c; break }
-					if (actualTo == null) continue   // garde : LoS divergentes sans bloqueur trouvé
-					// Bloqueur avant MIN_RANGE : sa cellule est invisible ET il bloque toute
-					// cellule légale derrière -> aucune visée.
-					if (CellClass.getDist(from, actualTo) < MinRange) continue
-					var actualKey = (from << 10) | actualTo
-					if (!(actualKey in laserDone)) {
-						laserDone[actualKey] = true
-						push(_final, new ActionClass(Item, from, actualTo))
-					}
-					// Le hash de cibles est traité, comme l'aurait fait la première action valide.
-					DoneHashs[toHash] = true
+					if (actualTo == null || CellClass.getDist(from, actualTo) < Infos.MINRANGE) continue
 				}
+				if (isLaser) {
+					var shot = (from << 10) | actualTo
+					if (shot in laserDone) continue
+					laserDone[shot] = true
+					targetHash = hashTargets(ConsequencesClass.ConsequenceTargets(Item, from, actualTo, State, Me, BaseHash), Item, State)
+				} else if (Infos.AREA == AREA_ALLIES || Infos.AREA == AREA_ENEMIES) {
+					targetHash = hashTargets(ConsequencesClass.ConsequenceTargets(Item, from, actualTo, State, Me, BaseHash), Item, State)
+				}
+				appendGroup(_final, groups, Item, from, actualTo, targetHash)
 			}
 		}
 		return _final
@@ -363,40 +393,24 @@ class ActionsClass {
 	 */
 	static getFirstInlineActions(State, Infos, Item, SortedWalkCells, BaseHash) {
 		var _final = []
-		var LaunchType = Infos.LAUNCHTYPE
-		var MinRange = Infos.MINRANGE
-		var MaxRange = Infos.MAXRANGE
-		var OccupiedCellsArray = WalkCellsClass.LoadIgnoreCells(State, Me, BaseHash)
+		var groups = [:]
+		var occupied = WalkCellsClass.LoadIgnoreCells(State, Me, BaseHash)
 		var attract = isAttract(Infos)
-		var launch = LaunchWithLos[LaunchType]   // résolue une fois, pas une par entité
-
+		var launch = LaunchWithLos[Infos.LAUNCHTYPE]
+		var losPrefix = CellClass.losKeyPrefix(BaseHash)
 		for (var e: var stat in State) {
-			// Morts exclus AVANT toute géométrie : cellule null dans l'état réel, ou ancienne
-			// cellule conservée dans un State simulé.
 			if (e == Me || stat.LIFE <= 0) continue
-			var EntityCell = stat.CELL
-			var HittableCellsAreaEntity = launch(EntityCell, MinRange, MaxRange)
-			var from = getClosestSortedWalkCellsToHit(HittableCellsAreaEntity, SortedWalkCells)
-			if (from != null && CellClass.getLosWithBaseHash(from, EntityCell, State, BaseHash)) {
-				var To = attract ? getClosestCellToAttract(from, EntityCell, MinRange, MaxRange, OccupiedCellsArray)
-				                 : getFarthestCellToPush(from, EntityCell, MinRange, MaxRange, OccupiedCellsArray)
-				// Glissement nul (cible au contact pour attract, adossée à un obstacle pour
-				// push) : le moteur accepte quand même le cast et applique les autres effets
-				// de l'item — la boucle d'Attack.applyOnCell ne coupe pas quand la cellule de
-				// glissement est celle de l'entité. Viser la cellule de la cible est légal :
-				// verifyLoS rend true dès que la cellule bloquée est l'ARRIVÉE, et le segment
-				// qui y mène vient d'être validé juste au-dessus.
-				if (To == null) To = EntityCell
-				push(_final, new ActionClass(Item, from, To))
+			var hittable = launch(stat.CELL, Infos.MINRANGE, Infos.MAXRANGE)
+			for (var from in SortedWalkCells) {
+				if (!(from in hittable) || !CellClass.getLosWithPrefix(from, stat.CELL, State, BaseHash, losPrefix)) continue
+				var to = attract ? getClosestCellToAttract(from, stat.CELL, Infos.MINRANGE, Infos.MAXRANGE, occupied)
+				                 : getFarthestCellToPush(from, stat.CELL, Infos.MINRANGE, Infos.MAXRANGE, occupied)
+				if (to == null) to = stat.CELL // glissement nul : les autres effets restent jouables
+				var targets = ConsequencesClass.ConsequenceTargets(Item, from, to, State, Me, BaseHash)
+				appendGroup(_final, groups, Item, from, to, hashTargets(targets, Item, State))
 			}
 		}
 		return _final
-	}
-
-	static getClosestSortedWalkCellsToHit(HittableCellsAreaEntity, SortedWalkCells) {
-		for (var c in SortedWalkCells) {
-			if (c in HittableCellsAreaEntity) return c
-		}
 	}
 
 	static getFarthestCellToPush(from, EntityCell, MinRange, MaxRange, ArrayCellsOccupied) {
@@ -476,13 +490,13 @@ class ActionsClass {
 			var FromMap = LoadMapFromAoeForAnEntity(Item, EntityState.CELL, Infos, LaunchFct)
 			// L'entité est déjà décalée à sa place dans le hash : le fold est appelé une fois par
 			// cellule de tir, il n'a pas à refaire le même décalage à chacune.
-			var packed = entity << MAX_AOE_DIST_BINARY
+			var packed = affectsSignature(Item, EntityState, CastState) ? (entity + 1) << MAX_AOE_DIST_BINARY : 0
 			if (pointArea) {
 				// Une seule cible, de distance nulle : « packed | 0 » vaut packed, et l'empreinte
 				// d'une cellule de tir NEUVE ne dépend que de l'entité — calculée une fois ici au
 				// lieu d'une fois par cellule.
 				var eCell = EntityState.CELL
-				var freshHash = (OFFSET_BASIS ^ packed) * MIX_A
+				var freshHash = packed == 0 ? 0 : mix64(packed)
 				if (nWalk < mapSize(FromMap)) {
 					for (var from in SortedWalkCells) {
 						if (from in FromMap) foldAoePoint(_final, from, eCell, freshHash, packed)
@@ -505,15 +519,29 @@ class ActionsClass {
 				}
 			}
 		}
+		if (!pointArea) {
+			for (var id: var stat in State) {
+				if (id == Me || stat.LIFE <= 0 || Target.Targetable(Item, stat, CastState)
+					|| !affectsSignature(Item, stat, CastState)) continue
+				var collateral = LoadMapFromAoeForAnEntity(Item, stat.CELL, Infos, LaunchFct)
+				for (var from: var toHashes in _final) {
+					if (!(from in collateral)) continue
+					var distances = collateral[from]
+					for (var to: var _h in toHashes) {
+						if (to in distances) toHashes[to] ^= targetContribution(id, distances[to])
+					}
+				}
+			}
+		}
 		// M'ajoute au hash si je suis dans l'AoE depuis from (même packing entité-haut/dist-bas).
-		// Même rangement : deux lectures de champ d'abord, la ciblabilité ensuite. La plupart
-		// des items n'ont aucune zone et sortent sur le premier test.
-		if (Infos.AREA_MAX > 0 && Infos.MINRANGE <= Infos.AREA_MAX && Target.Targetable(Item, CastState, CastState)) {
+		// Les items sans effet applicable sur Me ne découpent pas artificiellement les
+		// groupes selon ma distance à la zone (grenade qui exclut son lanceur, etc.).
+		if (Infos.AREA_MAX > 0 && Infos.MINRANGE <= Infos.AREA_MAX && affectsSignature(Item, CastState, CastState)) {
 			for (var from: var MapToHash in _final) {
 				var MapAoeCellsOfFrom = CellClass.getAreaDist(area, from)
 				for (var to: var TmpHash in MapToHash) {
 					if (to in MapAoeCellsOfFrom) {
-						MapToHash[to] = (MapToHash[to] ^ ((Me << MAX_AOE_DIST_BINARY) | MapAoeCellsOfFrom[to])) * MIX_A
+						MapToHash[to] = MapToHash[to] ^ targetContribution(Me, MapAoeCellsOfFrom[to])
 					}
 				}
 			}
@@ -521,26 +549,13 @@ class ActionsClass {
 		return _final
 	}
 
-	/*
-	 * Absorbe une entité dans les hashs de cibles d'une cellule de tir.
-	 * Packing : l'ENTITÉ dans les bits hauts, la DISTANCE dans le slot 3 bits (dist <= 6 y
-	 * tient, pas les ids — inverser ferait collisionner des ensembles de cibles distincts dans
-	 * DoneHashs). La CHAÎNE est non linéaire : ce hash résume un ENSEMBLE de cibles de taille
-	 * variable, et DoneHashs s'en sert pour écarter une action déjà vue — une collision ferait
-	 * disparaître une action distincte de la recherche. Chaîne à MULTIPLICATION (contrat des
-	 * clés, famille 3b), sans finaliseur : le hash n'est comparé qu'entier. Chaque pas reste une
-	 * bijection, exactement comme un pas mix64 — c'est ce qui porte l'injectivité, pas l'avalanche.
-	 */
-	/*
-	 * Variante du fold pour une zone PONCTUELLE : une seule cible, sa distance nulle. Le
-	 * déroulé à un tour supprime la boucle, la lecture de la map de cibles et le « ou » avec
-	 * une distance toujours nulle. Mêmes valeurs, même ordre d'insertion.
-	 */
+	/* Contributions non linéaires, composables par XOR : la géométrie d'une
+	 * ancienne cible garde sa contribution quand une invocation s'ajoute à la zone. */
 	static foldAoePoint(_final, from, to, freshHash, packed) {
 		if (from in _final) {
 			var Tmp = _final[from]
 			if (to in Tmp) {
-				Tmp[to] = (Tmp[to] ^ packed) * MIX_A
+				Tmp[to] = Tmp[to] ^ (packed == 0 ? 0 : mix64(packed))
 			} else {
 				Tmp[to] = freshHash
 			}
@@ -556,9 +571,9 @@ class ActionsClass {
 			var Tmp = _final[from]
 			for (var to: var TmpHash in MapToHash) {
 				if (to in Tmp) {
-					Tmp[to] = (Tmp[to] ^ (packed | TmpHash)) * MIX_A
+					Tmp[to] = Tmp[to] ^ (packed == 0 ? 0 : mix64(packed | TmpHash))
 				} else {
-					Tmp[to] = (OFFSET_BASIS ^ (packed | TmpHash)) * MIX_A
+					Tmp[to] = packed == 0 ? 0 : mix64(packed | TmpHash)
 				}
 			}
 		} else {
@@ -567,7 +582,7 @@ class ActionsClass {
 			// avant d'être posée, pour n'être traversée qu'une fois.
 			var Tmp = [: ]
 			for (var to: var TmpHash in MapToHash) {
-				Tmp[to] = (OFFSET_BASIS ^ (packed | TmpHash)) * MIX_A
+				Tmp[to] = packed == 0 ? 0 : mix64(packed | TmpHash)
 			}
 			_final[from] = Tmp
 		}

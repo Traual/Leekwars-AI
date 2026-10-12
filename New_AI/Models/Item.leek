@@ -27,6 +27,7 @@ class ItemClass {
 	STACKABLE
 	IS_BOUNDABLE_DAMAGE                // tous ses effets sont des degats directs sur ennemi : majorable sans simuler
 	IS_VULNERABILITY
+	ORIGIN_SENSITIVE                  // déplacement de cible/caster : mêmes cibles != mêmes effets
 	SELF_TP_RAW                        // TP BRUTS qu'un auto-buff de TP plat pose, 0 sinon
 	SELF_TP_COST                       // ce que le caster doit avancer pour les obtenir
 	LAUNCH_GEOMETRY_KEY
@@ -80,6 +81,7 @@ class ItemClass {
 			// Item dont TOUS les effets sont des dégâts directs sur ennemi, sans multiplicateur par
 			// nombre de cibles. Le BFS les conserve même si leur premier score est nul.
 			this.IS_VULNERABILITY = false
+			this.ORIGIN_SENSITIVE = false
 			var selfTpRaw = 0
 			this.IS_HEAL_ITEM = false
 			this.IS_DANGER_ITEM = false
@@ -91,6 +93,9 @@ class ItemClass {
 			this.DANGER_VULNE_EFFECTS_ENEMY_SUMMON = null
 			for (var eff in this.EFFECTS) {
 				var t = eff[0]
+				if (t == EFFECT_PUSH || t == EFFECT_ATTRACT || t == EFFECT_REPEL
+					|| t == EFFECT_INVERT || t == EFFECT_TELEPORT
+					|| t == EFFECT_SUMMON || t == EFFECT_RESURRECT) this.ORIGIN_SENSITIVE = true
 				var mask = eff[4]
 				var onCaster = eff[5] & EFFECT_MODIFIER_ON_CASTER
 				// Qualification "item menaçant" : volontairement GÉNÉRALE — aucun filtre de

@@ -135,6 +135,37 @@ Un filtre ciblé empêche **Saut + Régénération sans soin** de se qualifier u
 
 ## Documentation et outils
 
+La **recherche d'actions** regroupe les couples de lancement `From → To` par item,
+cibles réellement concernées et distances dans la zone. Chaque groupe conserve ses
+origines, puis est scoré après dédoublonnage. Les actions personnelles, les invocations
+et les casts dans le vide sont recréés depuis la cellule du nœud : après un tir depuis
+X, un auto-buff part de X, même si la recherche avait commencé en Y. Ils n'allouent pas
+une map couvrant toutes les cellules accessibles. Les zones visant aussi un allié
+gardent leurs origines et leurs différentes distances d'effet ; les lasers utilisent
+toute leur ligne, pas seulement leur cellule de visée. Les effets de déplacement
+conservent une signature géométrique distincte, car les mêmes cibles peuvent finir
+sur des cellules différentes.
+
+Le BFS préfère l'origine actuelle lorsqu'elle existe dans un groupe ; sinon il choisit
+une origine accessible avec le même ordre de coût qu'avant, en gardant assez de PT pour
+le cast et l'équipement. Les cooldowns, usages et coûts sont relus dans chaque branche.
+La géométrie porte le plateau et la mobilité courante : un gain de PM ou l'accès au Saut
+peut créer de nouvelles origines, sans se limiter aux cellules de la racine.
+
+Les gains mémorisés par signature survivent aux changements de `BaseHash` dans une
+recherche : seuls les nouveaux groupes sont simulés pour construire leur priorité.
+Une zone qui gagne une cible a une nouvelle signature et est encore simulée en entier ;
+il n'y a pas de cache additif par cible. Les gains réutilisés sont des **estimations de
+classement**, pas des majorants : chaque candidat examiné est simulé et rescorré dans
+son parent réel, avec les buffs/passifs du déplacement. Le classement et sa coupure
+gloutonne restent approximatifs après une modification de stats. Le debug `[BFS] group
+scores: … computed, … reused` rend cette réutilisation visible.
+
+Après une action réelle, l'arbre et ces estimations sont abandonnés ; la recherche suivante
+repart de la capture moteur. Les caches géométriques restent utilisables sous leurs clés.
+Le danger demeure évalué à la clôture des plans, et le meilleur plan déjà validé reste
+prioritaire sur un score brut non évalué. Les budgets et les coefficients sont inchangés.
+
 Le dépôt séparé **[Leekwars-AI-tools](https://github.com/Traual/Leekwars-AI-tools)** conserve :
 
 - le [guide du scoring](https://github.com/Traual/Leekwars-AI-tools/blob/main/docs/scoring-manuel.md) ;

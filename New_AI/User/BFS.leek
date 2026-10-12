@@ -5,10 +5,10 @@
  *  - Profondeur 1 : chaque action jouable est clonée + appliquée + scorée, puis triée
  *    par PRIORITÉ décroissante (BFS_SCORE_PER_ACTION_COST : rendement par TP, ou Δscore).
  *  - Chaque action de base est déroulée récursivement (unroll) : on descend l'action suivante
- *    de plus haute priorité, avec early-exit quand la borne du tri ne peut plus la battre.
- *  - Les listes triées sont CACHÉES par BaseHash sur tout l'appel : un step qui reste sur
- *    le même BaseHash (self-buff) réutilise la liste, un step qui le change (move, summon,
- *    Inversion...) énumère à neuf pour ce nouveau board.
+ *    de plus haute priorité, avec une coupure gloutonne selon la priorité mémorisée.
+ *  - Les gains de groupes sont partagés par signature de cibles dans cet appel.
+ *    La géométrie reste liée au board ET à la mobilité du nœud ; les actions locales
+ *    suivent sa cellule actuelle. Les gains cachés sont des estimations, pas des bornes.
  *  - Un nœud "ne rien jouer" (score initial) sert de plancher.
  *
  * 2. RECLASSEMENT TERMINAL : tout nœud visité est une suite où l'on PEUT s'arrêter. Chacun
@@ -98,8 +98,8 @@ class ActionSuite {
 		}
 		prewarmIfAffordable(State, BaseHash, RootContext, rootCombinedHfp)
 		// Empreinte de mobilité de Me à la racine : construite UNE fois par getBestAction
-		// effectif, portée par noPlay et héritée par ses enfants. Elle sale le filtre de
-		// cellules de tir du ScoredCache — aucune valeur de scoring n'en dépend.
+		// effectif, portée par noPlay et héritée par ses enfants. Elle sert aux caches de
+		// géométrie et de placement — aucune valeur de scoring n'en dépend.
 		var RootWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MyStats)
 		// La racine s'interrompt entre deux entités quand elle entame la part stricte du placement
 		// final : le moteur qui la coupait emportait aussi le placement. Sans racine, aucune
@@ -110,12 +110,9 @@ class ActionSuite {
 			return null
 		}
 
-		// Cache par appel : scoredKeyOf(BaseHash, candidat résu) -> liste triée
-		// [act, delta, node, nodeScore, cellule de tir, item].
-		var ScoredCache = [:]
-		// Même liste, restreinte aux entrées dont la cellule de tir m'est ATTEIGNABLE. Clé
-		// salée par l'empreinte de mobilité, qui fixe exactement ce set avec le terrain.
-		var ReachableCache = [:]
+		// Gains de groupes partagés entre boards, mais seulement dans CETTE recherche.
+		// Une invocation ne force pas à rescorer les groupes dont la signature ne bouge pas.
+		var SearchCache = new ActionSearchCacheClass()
 
 		// noPlay = plancher "ne rien jouer" ET racine de la chaîne d'états.
 		var noPlay = new NodeClass(null, State, null)
@@ -130,8 +127,7 @@ class ActionSuite {
 		noPlay.STATE_PARENT = null
 		noPlay.STATE_PATCH = [: ]
 
-		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, MyWalkCells, basePairs)
-		ScoredCache[scoredKeyOf(BaseHash, RootResurrectId)] = rootEntries
+		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, MyWalkCells, basePairs, SearchCache)
 		BFS_CHAIN_STEPS = 0
 		debugC("--- " + count(rootEntries) + " base actions ---", COLOR_BLUE)
 
@@ -142,13 +138,14 @@ class ActionSuite {
 
 		for (var entry in rootEntries) {
 			// Une différée ne vaut rien dans CET état : ni candidat terminal, ni tête de chaîne.
-			if (entry[6]) continue
-			var baseNode = entry[2]
-			baseNode.SCORE = entry[3]
+			if (entry.DEFERRED) continue
+			var baseNode = entry.NODE
+			baseNode.SCORE = entry.SCORE
 			push(candidates, baseNode)
-			unroll(baseNode, ScoredCache, ReachableCache, MySide, candidates)
+			unroll(baseNode, SearchCache, MySide, candidates)
 		}
 		BenchOps.Stop("BFS")
+		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " reused")
 
 		return pickTerminal(candidates, initialScore, count(rootEntries))
 	}
@@ -322,276 +319,118 @@ class ActionSuite {
 	 * Déroulé glouton récursif d'une branche : descend la meilleure action suivante tant
 	 * qu'il y en a une, en collectant chaque nœud traversé comme candidat terminal.
 	 */
-	static unroll(node, ScoredCache, ReachableCache, MySide, candidates) {
-		// Tout noeud deja visite est une suite ou l'on peut s'arreter : couper ici rend
-		// simplement une chaine plus courte, jamais un resultat invalide.
+	static unroll(node, SearchCache, MySide, candidates) {
 		if (getOperations() > OPS_DEADLINE) return;
-		var next = findBestNextNode(node, ScoredCache, ReachableCache, MySide)
+		var next = findBestNextNode(node, SearchCache, MySide)
 		if (next == null) return;
 		push(candidates, next)
 		BFS_CHAIN_STEPS++
-		unroll(next, ScoredCache, ReachableCache, MySide, candidates)
+		unroll(next, SearchCache, MySide, candidates)
 	}
 
-	/*
-	 * Depuis un nœud parent, trouve le meilleur nœud suivant — celui de plus haute PRIORITÉ
-	 * (rendement par TP, ou Δscore absolu selon BFS_SCORE_PER_ACTION_COST).
-	 * Liste triée via ScoredCache (clé BaseHash). Deux chemins :
-	 *  - FRAIS (miss) : la liste vient d'être énumérée et scorée pour CET état exact, avec le
-	 *    coût de CET état -> la première entrée EST le meilleur suivant, aucune re-simulation.
-	 *  - RÉUTILISÉ (hit, même BaseHash atteint depuis un AUTRE état) : re-filtre
-	 *    (cooldown/uses/coût) et re-score chaque candidat dans les stats réelles du parent.
-	 *    Sa priorité est recalculée avec le coût COURANT, jamais reprise de la liste — celle-ci
-	 *    a été produite sous une autre arme, une autre couche de mouvement, d'autres TP.
-	 *    Le break sur la priorité STOCKÉE garde exactement le statut de l'ancien break sur le
-	 *    delta stocké : une borne du tri, valable tant que la liste décrit cet état.
-	 */
-	static findBestNextNode(Parent, ScoredCache, ReachableCache, MySide) {
-		// Le nœud est réellement développé : c'est ICI (et seulement ici) que son état complet
-		// est reconstruit depuis sa chaîne de patches, puis caché.
+	/* La géométrie et les actions LOCALES sont résolues pour le parent courant.
+	 * Le cache ne porte que des gains de groupes, jamais d'anciennes origines ou
+	 * des nœuds appliqués dans un autre état. Les hits sont des priorités estimées,
+	 * pas des bornes : la coupure gloutonne reste une approximation assumée. */
+	static findBestNextNode(Parent, SearchCache, MySide) {
 		var State = StateClass.materializeNodeState(Parent)
-		var MyStats = State[Me]
-		var MyTp = MyStats.TP
-		if (MyTp < MINIMUM_COST_ITEM) return null
-
+		if (State[Me].LIFE <= 0 || State[Me].TP < MINIMUM_COST_ITEM) return null
 		var BaseHash = Parent.BASE_HASH
-		// Candidat résu de CET état, calculé une fois AVANT la consultation du cache : la clé
-		// locale le porte, un hit garantit donc des entrées au même RESURRECT_ID.
-		var ResurrectId = resurrectIdOf(State)
-		var CacheKey = scoredKeyOf(BaseHash, ResurrectId)
-
-		var Entries
-		if (CacheKey in ScoredCache) {
-			Entries = ScoredCache[CacheKey]
-		} else {
-			// Miss : WalkCells + jouables produits UNE seule fois pour ce nouvel état, puis scorés.
-			var FreshWalk = WalkCellsClass.getAllLayers(State, Me, BaseHash)
-			var freshPairs = getBaseActions(State, BaseHash, ResurrectId, FreshWalk)
-			Entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, FreshWalk, freshPairs)
-			ScoredCache[CacheKey] = Entries
-
-			// Chemin frais : toutes les entrées sont positives et triées pour cet état.
-			if (count(Entries) == 0) return null
-			var top = Entries[0]
-			if (top[6]) return null   // la meilleure est différée : rien ne vaut mieux que s'arrêter
-			var fresh = top[2]
-			fresh.PARENT = Parent   // créé avec PARENT=null dans enumerateAndSort
-			fresh.SCORE = top[3]
-			return fresh
-		}
-
-		var MyWalkCells = WalkCellsClass.getAllLayers(State, Me, BaseHash)
-		var MyOnlyWalk = MyWalkCells.WALK
-		var MyMax = MyWalkCells.MAX
-
-		// Le filtre de cellule de tir écartait trois entrées sur quatre et ne dépend que de
-		// MyMax, donc de (empreinte de mobilité, terrain). On le paie une fois par couple, pas
-		// une fois par nœud : mesuré 8,3 réutilisations par couple.
-		// Une MULTIPLICATION sépare les deux moitiés (contrat des clés, famille 3b) : CacheKey
-		// finit par l'id du ressuscité, que la rotation de addValueToBinHash poserait sur les
-		// trois bits de capacité saut/téléportation portés par l'empreinte de mobilité. La clé
-		// ne dépendrait alors du couple que par son XOR, et servirait une liste filtrée sur
-		// d'autres cellules accessibles, tirée d'un autre ensemble d'actions.
-		var ReachableKey = (CacheKey * MIX_A) ^ Parent.ME_WALK_FINGERPRINT
-		var Reachable
-		if (ReachableKey in ReachableCache) {
-			Reachable = ReachableCache[ReachableKey]
-		} else {
-			Reachable = []
-			for (var e in Entries) {
-				if (e[4] in MyMax) push(Reachable, e)
+		var walk = WalkCellsClass.getAllLayers(State, Me, BaseHash)
+		var pairs = getBaseActions(State, BaseHash, resurrectIdOf(State), walk)
+		var entries = enumerateAndSort(State, BaseHash, Parent.SCORE, MySide,
+			Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk, pairs, SearchCache, true)
+		var best = null
+		var bestPriority = 0
+		// Les misses ont déjà été simulés pendant le tri. Les garder même si cette
+		// préparation vient d'atteindre la limite ; aucun nouveau cast n'est simulé ici.
+		for (var entry in entries) {
+			if (entry.NODE != null && !entry.DEFERRED && entry.PRIORITY > bestPriority) {
+				best = entry.NODE
+				bestPriority = entry.PRIORITY
 			}
-			ReachableCache[ReachableKey] = Reachable
 		}
-		var MyWeapon = MyStats.WEAPON
-		var ParentScore = Parent.SCORE
-		var JumpCost = JUMP_COST
-		var TeleCost = TELE_COST
-
-		var BestPriority = 0
-		var BestNode = null
-		// Workspace créé au PREMIER candidat réellement simulé (les filtres ci-dessous en
-		// écartent souvent tous), puis réutilisé et restauré entre chaque candidat.
 		var Workspace = null
-		// Coût de base par item, NÉGATIF quand l'item est injouable ou déjà hors budget :
-		// cooldownOf et usesOf remontent la chaîne ITEM_STATE_PARENT alors que MyStats est
-		// invariant sur toute la boucle, et le même item revient une fois par cellule de tir.
-		// Le verdict et le coût dans la MÊME entrée : une seule lecture de map par entrée
-		// examinée, et ITEMINFO n'est relu que pour les entrées réellement simulées.
-		var baseCosts = [: ]
-		// Compte d'usages du même item, résolu en même temps que son coût et pour le même
-		// prix : le nœud n'a plus à remonter la chaîne d'inventaire pour l'incrémenter.
-		var baseUses = [: ]
-
-		for (var entry in Reachable) {
-			if (BestPriority >= entry[1]) break   // borne du tri : plus rien à battre
-
-			// Cellule et item sont PORTÉS PAR L'ENTRÉE : rien ici ne déréférence l'action, elle
-			// n'est lue que pour les entrées réellement simulées.
-			// L'item d'abord, la cellule seulement après le verdict de coût : sur les entrées
-			// examinées, neuf sur dix sont écartées par un item injouable, et leur cellule de
-			// tir n'aura jamais servi.
-			var item = entry[5]
-
-			var cost = baseCosts[item]
-			if (cost == null) {
-				var Infos = ITEMINFO[item]
-				// Même ordre de court-circuit qu'avant : le cooldown d'abord, les usages ensuite,
-				// et le compte n'est résolu qu'une fois.
-				if (StateClass.cooldownOf(MyStats, item) > 0) {
-					cost = -1
-				} else {
-					var itemUsed = StateClass.usesOf(MyStats, item)
-					if (itemUsed >= Infos.MAX_USES) {
-						cost = -1
-					} else {
-						baseUses[item] = itemUsed
-						cost = (Infos.IS_WEAPON && MyWeapon != item) ? Infos.COST + 1 : Infos.COST
-						// Le supplément de couche ne fait qu'AJOUTER : un coût de base déjà hors budget
-						// le restera pour toutes ses cellules de tir, autant le marquer injouable.
-						if (cost > MyTp) cost = -1
-					}
-				}
-				baseCosts[item] = cost
-			}
-			if (cost < 0) continue
-			// La cellule de tir est déjà garantie atteignable par la liste filtrée.
-			var from = entry[4]
-			if (!(from in MyOnlyWalk)) {
-				if (from in MyWalkCells.JUMP)                          cost += JumpCost
-				else if (from in MyWalkCells.TELEPORTATION)            cost += TeleCost
-				else if (from in MyWalkCells.TELEPORTATION_AND_JUMP)   cost += JumpCost + TeleCost
-			}
-			if (cost > MyTp) continue
-
+		for (var entry in entries) {
 			if (getOperations() > OPS_DEADLINE) break
-			if (Workspace == null) Workspace = clone(State, 1)
-			var act = entry[0]
-			var candidate = NodeClass.ActionToNodeInTree(act, Workspace, from, MyWalkCells, cost, ITEMINFO[item], item, act.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, baseUses[item])
-			var candidateScore = ScoringClass.getStateScoreFromParent(candidate, Workspace, ParentScore, MySide)
-			StateClass.restoreWorkspace(Workspace, candidate.CLONED)
-			candidate.CLONED = null
-			// Rendement sur le coût COURANT, celui que ce candidat paie vraiment dans cet état
-			// parent : arme équipée, couche de mouvement empruntée, TP restants.
-			var priority = priorityOf(candidateScore - ParentScore, cost)
-
-			if (priority > BestPriority) {
-				BestPriority = priority
-				BestNode = candidate
-				BestNode.SCORE = candidateScore
+			// Même heuristique que l'ancien classement caché. Une estimation ancienne
+			// n'est PAS un majorant du gain après un buff ou une nouvelle protection.
+			if (bestPriority >= entry.PRIORITY) break
+			var actual = entry
+			if (entry.NODE == null) {
+				if (Workspace == null) Workspace = clone(State, 1)
+				actual = simulatePlayable(entry.PLAYABLE, Workspace, BaseHash, Parent.SCORE,
+					MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk)
+			}
+			if (!actual.DEFERRED && actual.PRIORITY > bestPriority) {
+				bestPriority = actual.PRIORITY
+				best = actual.NODE
 			}
 		}
-
-		// Seconde passe sur les différées : dégâts annulés par les boucliers, ou puces dont
-		// le gain ne payait pas encore le prix de cooldown. Un débuff, une blessure ou un buff
-		// joué depuis peut les rendre utiles sans changer BaseHash : les réexaminer dans
-		// l'état courant, au lieu de les rendre invisibles pour le reste du déroulé.
-		// Ces actions sont resimulées sous budget, sans borne dépendante des formules du score.
-		for (var entry in Reachable) {
-			// SEULES les différées : celles que le filtre epsilon aurait jetées et qui ne sont
-			// donc dans la liste que pour ce rattrapage. Étendre cette passe à toutes les
-			// actions de dégâts sous la coupure coûte 64 % de simulations en plus pour 0,8 %
-			// de décisions changées — mesuré, et c'est ce qui rendait le lot perdant.
-			if (!entry[6]) continue
-			// Déjà examinée par la boucle ci-dessus. Le cas où elle ne l'aurait PAS été — la
-			// première passe cassée sur OPS_DEADLINE avant de l'atteindre — ne peut pas se
-			// produire ici : une entrée DIFFÉRÉE a un delta sous epsilon, donc une priorité
-			// stockée quasi nulle, qui ne dépasse jamais BestPriority. Mesuré sur le banc :
-			// 9 cassures sur la deadline, ZÉRO déclenchement de ce garde.
-			if (entry[1] > BestPriority) continue
-			var item2 = entry[5]
-			var cost2 = baseCosts[item2]
-			if (cost2 == null) {
-				var Infos2 = ITEMINFO[item2]
-				if (StateClass.cooldownOf(MyStats, item2) > 0) {
-					cost2 = -1
-				} else {
-					var used2 = StateClass.usesOf(MyStats, item2)
-					if (used2 >= Infos2.MAX_USES) {
-						cost2 = -1
-					} else {
-						baseUses[item2] = used2
-						cost2 = (Infos2.IS_WEAPON && MyWeapon != item2) ? Infos2.COST + 1 : Infos2.COST
-						if (cost2 > MyTp) cost2 = -1
-					}
-				}
-				baseCosts[item2] = cost2
-			}
-			if (cost2 < 0) continue
-			var from2 = entry[4]
-			if (!(from2 in MyOnlyWalk)) {
-				if (from2 in MyWalkCells.JUMP)                          cost2 += JumpCost
-				else if (from2 in MyWalkCells.TELEPORTATION)            cost2 += TeleCost
-				else if (from2 in MyWalkCells.TELEPORTATION_AND_JUMP)   cost2 += JumpCost + TeleCost
-			}
-			if (cost2 > MyTp) continue
-			var act2 = entry[0]
+		// Dégâts annulés ou puces sous leur prix de cooldown : un précédent cast peut
+		// les rendre utiles. Aucune coupure sur leur estimation nulle/négative.
+		for (var entry in entries) {
 			if (getOperations() > OPS_DEADLINE) break
+			if (!entry.DEFERRED || entry.NODE != null) continue
+			var item = entry.PLAYABLE.ACTION.Item
+			if (!ITEMINFO[item].IS_BOUNDABLE_DAMAGE && CooldownScoring.costOf(item, MySide) <= 0) continue
 			if (Workspace == null) Workspace = clone(State, 1)
-			var cand2 = NodeClass.ActionToNodeInTree(act2, Workspace, from2, MyWalkCells, cost2, ITEMINFO[item2], item2, act2.To, BaseHash, Parent, Parent, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, baseUses[item2])
-			var score2 = ScoringClass.getStateScoreFromParent(cand2, Workspace, ParentScore, MySide)
-			StateClass.restoreWorkspace(Workspace, cand2.CLONED)
-			cand2.CLONED = null
-			var prio2 = priorityOf(score2 - ParentScore, cost2)
-			if (prio2 > BestPriority) {
-				BestPriority = prio2
-				BestNode = cand2
-				BestNode.SCORE = score2
+			var actual = simulatePlayable(entry.PLAYABLE, Workspace, BaseHash, Parent.SCORE,
+				MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk)
+			if (!actual.DEFERRED && actual.PRIORITY > bestPriority) {
+				bestPriority = actual.PRIORITY
+				best = actual.NODE
 			}
 		}
-
-		return BestNode
+		if (best != null) best.PARENT = Parent
+		return best
 	}
 
-	/*
-	 * Applique + score chaque action JOUABLE reçue (basePairs = sortie de getBaseActions,
-	 * produite une seule fois par l'appelant avec MyWalkCells), trie par delta décroissant.
-	 * Renvoie des entrées [act, priorité, node, nodeScore, cellule de tir, item], triées par
-	 * priorité décroissante ; node avec PARENT=null mais STATE_PARENT = ParentStateNode (la
-	 * chaîne d'états est posée ici et jamais réassignée, contrairement à PARENT que le déroulé
-	 * reconstruit).
-	 * Les entrées positives sont des candidats ; les différées ne le sont pas, mais restent
-	 * réexaminables après changement des stats. Hors dégâts ou puces payant un cooldown,
-	 * les sub-epsilon sont supprimées immédiatement.
-	 * Le seuil porte sur le Δscore, pas sur la priorité : c'est la question « cette action
-	 * apporte-t-elle quoi que ce soit ? », indépendante de ce qu'elle coûte.
-	 */
-	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, ParentContext, ParentHfp, ParentStateNode, MyWalkCells, basePairs) {
-		var Entries = []
-		// UN seul workspace pour toute la liste : chaque candidat le mute, se score dessus,
-		// puis le rend EXACTEMENT à l'état parent — plus de copie de map par candidat. Créé
-		// au premier candidat (une liste vide n'en paie aucun).
-		// INVARIANT : State doit être l'état matérialisé de ParentStateNode, sinon les enfants
-		// reconstruiraient un état faux.
+	/* Un seul workspace restauré entre candidats. Le score inclut TOUJOURS la
+	 * couche de déplacement actuelle, ses buffs/passifs et le prix du cooldown. */
+	static simulatePlayable(playable, Workspace, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk) {
+		var act = playable.ACTION
+		var item = act.Item
+		var node = NodeClass.ActionToNodeInTree(act, Workspace, act.From, Walk, playable.COST,
+			ITEMINFO[item], item, act.To, BaseHash, null, StateParent, Context, Hfp, playable.USES)
+		var score = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, MySide)
+		StateClass.restoreWorkspace(Workspace, node.CLONED)
+		node.CLONED = null
+		node.SCORE = score
+		var gain = score - ReferenceScore
+		return new ScoredActionClass(playable, gain, priorityOf(gain, playable.COST), node, score)
+	}
+
+	/* Scoring APRÈS dédoublonnage. La racine calcule ses vrais nœuds. En branche,
+	 * seuls les nouveaux groupes sont scorés pour construire le tri ; les autres
+	 * reprennent leur estimation, puis sont resimulés s'ils sont examinés. */
+	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk, pairs, SearchCache = null, reuseEstimates = false) {
+		if (SearchCache == null) SearchCache = new ActionSearchCacheClass()
+		var entries = []
 		var Workspace = null
-		for (var pair in basePairs) {
-			// Les racines deja scorees restent des candidats valides : s'arreter ici revient a
-			// n'avoir enumere qu'une partie de l'eventail.
+		for (var playable in pairs) {
 			if (getOperations() > OPS_DEADLINE) break
-			var act = pair[0]
-			var Item = act.Item
-			if (Workspace == null) Workspace = clone(State, 1)
-			var node = NodeClass.ActionToNodeInTree(act, Workspace, act.From, MyWalkCells, pair[1], ITEMINFO[Item], Item, act.To, BaseHash, null, ParentStateNode, ParentContext, ParentHfp, pair[2])
-			var nodeScore = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, MySide)
-			// Scoring fait : le workspace redevient le State parent pour le candidat suivant,
-			// et CLONED est libéré (STATE_PATCH porte désormais les entités modifiées).
-			StateClass.restoreWorkspace(Workspace, node.CLONED)
-			node.CLONED = null
-			var delta = nodeScore - ReferenceScore
-			// Conserver les dégâts annulés et les puces sous leur prix de cooldown : retirer
-			// des boucliers, créer des PV manquants ou buffer le lanceur peut rendre leur
-			// prochain cast rentable, même sous le même BaseHash. Une différée est seulement
-			// réexaminée comme successeur ; elle n'est jamais jouée pour son gain initial nul.
-			var deferred = delta <= BFS_DELTA_EPSILON
-			if (deferred && !ITEMINFO[Item].IS_BOUNDABLE_DAMAGE && CooldownScoring.costOf(Item, MySide) <= 0) continue
-			// pair[1] est le coût TP COMPLET de cette action dans CET état (item + swap d'arme
-			// + saut/télépo), déjà résolu par getBaseActions pour son filtre de jouabilité.
-			push(Entries, [act, priorityOf(delta, pair[1]), node, nodeScore, act.From, Item, deferred])
+			var key = estimateKeyOf(playable)
+			var entry
+			if (reuseEstimates && key in SearchCache.ESTIMATES) {
+				var gain = SearchCache.ESTIMATES[key]
+				entry = new ScoredActionClass(playable, gain, priorityOf(gain, playable.COST), null, null)
+				SearchCache.REUSED_SCORES++
+			} else {
+				if (Workspace == null) Workspace = clone(State, 1)
+				entry = simulatePlayable(playable, Workspace, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk)
+				SearchCache.ESTIMATES[key] = entry.GAIN
+				SearchCache.NEW_SCORES++
+			}
+			push(entries, entry)
 		}
-		// arraySort RENVOIE le tableau trié (doc LS) : il faut capturer le retour.
-		return arraySort(Entries, function(a, b) {
-			return b[1] - a[1]
-		})
+		return arraySort(entries, function(a, b) { return b.PRIORITY - a.PRIORITY })
+	}
+
+	static estimateKeyOf(playable) {
+		var key = playable.GROUP.SIGNATURE
+		if (playable.ACTION.Item == CHIP_RESURRECTION) key = addValueToBinHash(key, playable.ACTION.RESURRECT_ID + 1)
+		return key
 	}
 
 	/*
@@ -605,47 +444,81 @@ class ActionSuite {
 		return delta / max(1, cost)
 	}
 
-	/*
-	 * Liste toute action jouable depuis l'état courant, en paires [act, coût TP] — le coût
-	 * (item + swap d'arme + jump/télépo) sert au filtre et est transmis tel quel aux nœuds.
-	 * Filtre : cooldown, MAX_USES, coût vs TP restants.
-	 */
-	static getBaseActions(State, BaseHash, ResurrectId, MyWalkCells) {
-		var _final = []
-		var MyStats = State[Me]
-		var Acts = ActionsClass.getEveryActionsInAState(State, MyWalkCells, MyStats.CELL, BaseHash)
-
-		for (var Action in Acts) {
-			var Item = Action.Item
-			if (StateClass.cooldownOf(MyStats, Item) > 0) continue
-			// Le compte d'usages est résolu ici pour le filtre : il voyage ensuite jusqu'au nœud,
-			// qui n'a plus à remonter la chaîne d'inventaire pour l'incrémenter.
-			var ItemUses = StateClass.usesOf(MyStats, Item)
-			if (ItemUses >= ITEMINFO[Item].MAX_USES) continue
-			// Résurrection : l'action cachée est géométrique (RESURRECT_ID null, objet partagé
-			// entre states de même BaseHash). Sans candidat -> exclue ; sinon un objet NEUF
-			// porte l'id choisi pour cette évaluation (l'objet caché n'est jamais muté).
-			if (Item == CHIP_RESURRECTION) {
-				if (ResurrectId == null) continue
-				var resAct = new ActionClass(Item, Action.From, Action.To)
-				resAct.RESURRECT_ID = ResurrectId
-				Action = resAct
+	/* Filtrage DYNAMIQUE : disponibilité, équipement et TP ne sont jamais figés
+	 * dans la géométrie. Les doublons locaux/zone sont retirés AVANT le scoring. */
+	static getBaseActions(State, BaseHash, ResurrectId, Walk) {
+		var result = []
+		var slots = [:]
+		var mine = State[Me]
+		var groups = ActionsClass.getEveryActionsInAState(State, Walk, mine.CELL, BaseHash)
+		var baseCosts = [:]
+		var usesByItem = [:]
+		for (var group in groups) {
+			var item = group.Item
+			var info = ITEMINFO[item]
+			var cost = baseCosts[item]
+			if (cost == null) {
+				cost = -1
+				if (StateClass.cooldownOf(mine, item) <= 0) {
+					var uses = StateClass.usesOf(mine, item)
+					if (uses < info.MAX_USES) {
+						usesByItem[item] = uses
+						cost = info.COST + ((info.IS_WEAPON && mine.WEAPON != item) ? 1 : 0)
+						if (cost > mine.TP) cost = -1
+					}
+				}
+				baseCosts[item] = cost
 			}
-
-			var From = Action.From
-			var Info = ITEMINFO[Item]
-			var Cost = (Info.IS_WEAPON && MyStats.WEAPON != Item) ? Info.COST + 1 : Info.COST
-
-			if (!(From in MyWalkCells.WALK)) {
-				if (From in MyWalkCells.JUMP) Cost += JUMP_COST
-				else if (From in MyWalkCells.TELEPORTATION) Cost += TELE_COST
-				else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) Cost += JUMP_TELE_COST
-				else continue
+			if (cost < 0 || (item == CHIP_RESURRECTION && ResurrectId == null)) continue
+			var playable = resolveGroup(group, mine, Walk, cost, usesByItem[item], ResurrectId)
+			if (playable == null) continue
+			var slot = slots[group.SIGNATURE]
+			if (slot == null) {
+				slots[group.SIGNATURE] = count(result)
+				push(result, playable)
+			} else {
+				var old = result[slot]
+				if (playable.ACTION.From == mine.CELL || playable.COST < old.COST) result[slot] = playable
 			}
-
-			if (Cost <= MyStats.TP) push(_final, [Action, Cost, ItemUses])
 		}
-		return _final
+		return result
+	}
+
+	/* Pas de copie de la map d'origines. Le cas courant (je peux déjà lancer ici)
+	 * se résout par une seule appartenance ; sinon on cherche le déplacement le
+	 * moins cher qui laisse ASSEZ de TP pour le cast, équipement compris. */
+	static resolveGroup(group, mine, Walk, baseCost, uses, ResurrectId) {
+		var from = null
+		var to = null
+		var cost = baseCost
+		if (group.IS_LOCAL) {
+			if (group.From != mine.CELL) return null // invariant : génération locale du nœud
+			from = mine.CELL
+			to = group.To
+		} else if (mine.CELL in group.ORIGINS) {
+			from = mine.CELL
+			to = group.ORIGINS[from]
+		} else {
+			var bestRank = MAX_VALUE
+			for (var origin: var aim in group.ORIGINS) {
+				var extra = 0
+				var rank
+				if (origin in Walk.WALK) rank = Walk.WALK[origin]
+				else if (origin in Walk.JUMP) { extra = JUMP_COST; rank = Walk.JUMP[origin] + 100 }
+				else if (origin in Walk.TELEPORTATION) { extra = TELE_COST; rank = Walk.TELEPORTATION[origin] + 1000 }
+				else if (origin in Walk.TELEPORTATION_AND_JUMP) { extra = JUMP_TELE_COST; rank = Walk.TELEPORTATION_AND_JUMP[origin] + 10000 }
+				else continue
+				if (baseCost + extra > mine.TP || rank >= bestRank) continue
+				bestRank = rank
+				from = origin
+				to = aim
+				cost = baseCost + extra
+			}
+		}
+		if (from == null) return null
+		var action = new ActionClass(group.Item, from, to)
+		if (group.Item == CHIP_RESURRECTION) action.RESURRECT_ID = ResurrectId
+		return new PlayableActionClass(action, group, cost, uses)
 	}
 
 	/*
@@ -666,12 +539,4 @@ class ActionSuite {
 		return ResurrectionClass.ScoringWichId(State).ID
 	}
 
-	/*
-	 * Clé locale du ScoredCache : BaseHash salé par le candidat de résurrection. Un summon
-	 * virtuel MORT ne change pas BaseHash (contributions LIFE-gated) alors qu'il change la
-	 * liste d'actions — sans ce sel, deux states partageraient une liste scorée fausse.
-	 */
-	static scoredKeyOf(BaseHash, ResurrectId) {
-		return addValueToBinHash(BaseHash, ResurrectId == null ? 0 : ResurrectId + 1)
-	}
 }

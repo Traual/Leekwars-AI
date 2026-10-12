@@ -18,3 +18,67 @@ class ActionClass {
 		this.To = toCell
 	}
 }
+
+/* Géométrie partagée, jamais mutée par le BFS. Une seule visée représentative par
+ * origine suffit quand les cibles ET leurs distances sont identiques. Les actions
+ * locales n'allouent pas de map : elles sont recréées depuis la cellule du nœud. */
+class ActionGroupClass extends ActionClass {
+	SIGNATURE
+	TARGET_HASH
+	ORIGINS
+	IS_LOCAL
+	constructor(item, from, to, signature, targetHash, local = false) {
+		super(item, from, to)
+		this.SIGNATURE = signature
+		this.TARGET_HASH = targetHash
+		this.IS_LOCAL = local
+		this.ORIGINS = local ? null : [from: to]
+	}
+
+	addOrigin(from, to) {
+		if (!(from in this.ORIGINS)) this.ORIGINS[from] = to
+	}
+}
+
+// Possibilité concrète pour UN état : origine choisie, coût et usages courants.
+class PlayableActionClass {
+	ACTION
+	GROUP
+	COST
+	USES
+	constructor(action, group, cost, uses) {
+		this.ACTION = action
+		this.GROUP = group
+		this.COST = cost
+		this.USES = uses
+	}
+}
+
+class ScoredActionClass {
+	PLAYABLE
+	GAIN
+	PRIORITY
+	NODE
+	SCORE
+	DEFERRED
+	constructor(playable, gain, priority, node, score) {
+		this.PLAYABLE = playable
+		this.GAIN = gain
+		this.PRIORITY = priority
+		this.NODE = node
+		this.SCORE = score
+		this.DEFERRED = gain <= BFS_DELTA_EPSILON
+	}
+}
+
+/* Durée de vie : UNE recherche, puis abandon après l'action réelle. Les gains
+ * mémorisés ordonnent les candidats ; ils ne sont PAS des majorants. Les candidats
+ * réutilisés sont toujours simulés depuis leur parent avant d'entrer dans l'arbre. */
+class ActionSearchCacheClass {
+	ESTIMATES
+	NEW_SCORES = 0
+	REUSED_SCORES = 0
+	constructor() {
+		this.ESTIMATES = [:]
+	}
+}
