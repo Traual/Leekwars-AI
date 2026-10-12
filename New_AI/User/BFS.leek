@@ -449,8 +449,8 @@ class ActionSuite {
 		if (mine.LIFE <= 0 || mine.TP < MINIMUM_COST_ITEM) return null
 		var BaseHash = Parent.BASE_HASH
 		var walk = WalkCellsClass.getAllLayers(State, Me, BaseHash, Parent.ME_WALK_FINGERPRINT)
-		var resurrect = resurrectIdOf(State)
-		var frame = prepareGroups(State, BaseHash, Parent, MySide, walk, resurrect, SearchCache)
+		var resurrectionTargetId = resurrectIdOf(State)
+		var frame = prepareGroups(State, BaseHash, Parent, MySide, walk, resurrectionTargetId, SearchCache)
 		var fresh = frame.BEST_FRESH
 		var best = fresh == null ? null : fresh.NODE
 		var bestPriority = fresh == null ? 0 : fresh.PRIORITY
@@ -461,7 +461,7 @@ class ActionSuite {
 			if (bestPriority >= hint.PRIORITY) break
 			var actual = frame.FRESH[hint.KEY]
 			if (actual == null) {
-				var playable = framePlayable(frame, hint.KEY, mine, walk, resurrect, BaseHash, Parent.ME_WALK_FINGERPRINT)
+				var playable = framePlayable(frame, hint.KEY, mine, walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
 				if (playable == null) continue
 				if (Workspace == null) Workspace = clone(State, 1)
 				actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
@@ -479,7 +479,7 @@ class ActionSuite {
 			if (hint.GAIN > BFS_DELTA_EPSILON || hint.KEY in frame.FRESH) continue
 			var item = frame.GROUPS[hint.KEY].Item
 			if (!ITEMINFO[item].IS_BOUNDABLE_DAMAGE && CooldownScoring.costOf(item, MySide) <= 0) continue
-			var playable = framePlayable(frame, hint.KEY, mine, walk, resurrect, BaseHash, Parent.ME_WALK_FINGERPRINT)
+			var playable = framePlayable(frame, hint.KEY, mine, walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
 			if (playable == null) continue
 			if (Workspace == null) Workspace = clone(State, 1)
 			var actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
@@ -498,7 +498,7 @@ class ActionSuite {
 	 * puis reprendre un tri déjà fait pour ce même ensemble. Les coûts/usages
 	 * restent propres au parent. Par gain brut, aucune origine des hits n'est
 	 * cherchée ici ; par rendement, le coût actuel entre aussi dans la clé du tri. */
-	static prepareGroups(State, BaseHash, Parent, MySide, Walk, resurrect, SearchCache) {
+	static prepareGroups(State, BaseHash, Parent, MySide, Walk, resurrectionTargetId, SearchCache) {
 		var mine = State[Me]
 		var frame = new ActionSearchFrameClass()
 		var availability = ActionsClass.availabilityOf(mine)
@@ -511,14 +511,14 @@ class ActionSuite {
 		// Cellule/PM/capacités, items disponibles, payload de résurrection et
 		// stérilité déterminent cette liste. Stats, dégâts et gains restent courants.
 		var setKey = ((BaseHash * MIX_A) ^ Parent.ME_WALK_FINGERPRINT) * MIX_A
-		setKey = ((setKey ^ availableMask) * MIX_A) ^ ((resurrect == null ? 0 : resurrect + 1) << 1) ^ (EntityStateClass.hasState(mine, STATE_STERILE) ? 1 : 0)
+		setKey = ((setKey ^ availableMask) * MIX_A) ^ ((resurrectionTargetId == null ? 0 : resurrectionTargetId + 1) << 1) ^ (EntityStateClass.hasState(mine, STATE_STERILE) ? 1 : 0)
 		var set = SearchCache.GROUP_SETS[setKey]
 		if (set == null) {
 			var groups = ActionsClass.getEveryActionsInAState(State, Walk, mine.CELL, BaseHash)
 			for (var group in groups) {
-				if (group.Item == CHIP_RESURRECTION && resurrect == null) continue
+				if (group.Item == CHIP_RESURRECTION && resurrectionTargetId == null) continue
 				if (baseCostOf(mine, group.Item, frame.COSTS, frame.USES) < 0) continue
-				var key = groupEstimateKey(group, resurrect)
+				var key = groupEstimateKey(group, resurrectionTargetId)
 				if (!(key in frame.GROUPS) || group.IS_LOCAL) frame.GROUPS[key] = group
 			}
 			set = new ActionGroupSetClass(frame.GROUPS)
@@ -534,7 +534,7 @@ class ActionSuite {
 		for (var key in set.KEYS) {
 			if (getOperations() > OPS_DEADLINE) { incomplete = true; break }
 			if (!(key in SearchCache.ESTIMATES)) {
-				var playable = framePlayable(frame, key, mine, Walk, resurrect, BaseHash, Parent.ME_WALK_FINGERPRINT)
+				var playable = framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
 				if (playable == null) { incomplete = true; continue }
 				if (Workspace == null) Workspace = clone(State, 1)
 				var actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
@@ -547,7 +547,7 @@ class ActionSuite {
 				SearchCache.REUSED_SCORES++
 			}
 			if (BFS_SCORE_PER_ACTION_COST) {
-				var playable = framePlayable(frame, key, mine, Walk, resurrect, BaseHash, Parent.ME_WALK_FINGERPRINT)
+				var playable = framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
 				if (playable == null) continue
 				fingerprint ^= mix64(addValueToBinHash(key, playable.COST))
 			}
@@ -583,10 +583,10 @@ class ActionSuite {
 		SearchCache.ESTIMATE_VERSION++
 	}
 
-	static framePlayable(frame, key, mine, Walk, resurrect, BaseHash, WalkFingerprint) {
+	static framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, WalkFingerprint) {
 		if (key in frame.PLAYABLES) return frame.PLAYABLES[key]
 		var group = frame.GROUPS[key]
-		var playable = resolveGroup(group, mine, Walk, frame.COSTS[group.Item], frame.USES[group.Item], resurrect, BaseHash, WalkFingerprint)
+		var playable = resolveGroup(group, mine, Walk, frame.COSTS[group.Item], frame.USES[group.Item], resurrectionTargetId, BaseHash, WalkFingerprint)
 		frame.PLAYABLES[key] = playable
 		return playable
 	}
@@ -661,9 +661,9 @@ class ActionSuite {
 		return groupEstimateKey(playable.GROUP, playable.ACTION.RESURRECT_ID)
 	}
 
-	static groupEstimateKey(group, resurrect) {
+	static groupEstimateKey(group, resurrectionTargetId) {
 		var key = group.SIGNATURE
-		if (group.Item == CHIP_RESURRECTION) key = addValueToBinHash(key, resurrect + 1)
+		if (group.Item == CHIP_RESURRECTION) key = addValueToBinHash(key, resurrectionTargetId + 1)
 		return key
 	}
 

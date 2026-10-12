@@ -168,7 +168,7 @@ class DangerComboClass {
 	static comboOfCaster(ItemAoeMap, ContentHash, CasterSeed, CasterPack, CritFactor, CasterStats, TargetStats, curAbs, curRel, AntidoteCd, TargetFixed, TpCost) {
 		// CONTRAT : la map d'items n'est jamais vide — elle vient d'une couverture, et
 		// buildMapCellItemAoe ne crée l'entrée d'une cellule qu'en y écrivant un item.
-		var isSummon = TargetStats.IS_SUMMON
+		var targetIsSummon = TargetStats.IS_SUMMON
 		var pairKey = dangerPairKey(CasterSeed, CasterPack, targetPairPackWith(curAbs, curRel, TargetFixed))
 		// Le surcoût de franchissement entre dans la clé : le même caster, sur deux cellules
 		// couvertes par les mêmes items, ne joue pas le même combo selon qu'il doit sauter
@@ -198,7 +198,7 @@ class DangerComboClass {
 		// Les vulnés jouées d'abord peuvent améliorer le combat : on retient la meilleure tant
 		// qu'elle bat STRICTEMENT le total courant. Aucun candidat REJETÉ n'alloue quoi que ce
 		// soit — ni tableau de shields, ni structure de résultat, ni clone de l'overlay.
-		var vulneEffs = isSummon ? 1 : 0   // sélection de vue résolue une fois hors boucle
+		var vulneEffs = targetIsSummon ? 1 : 0   // sélection de vue résolue une fois hors boucle
 		var targetAlive = TargetStats.LIFE > 0
 		// Facteurs de conservation des debuffs RETENUS, dans l'ordre : les echeances de bouclier
 		// doivent les subir comme les lignes qu'elles retirent. Reste null dans l'immense

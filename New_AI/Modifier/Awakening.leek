@@ -123,7 +123,7 @@ class AwakeningClass {
 	}
 
 	/* Marqueur rebindé (jamais muté en place) sur le clone de Me de la branche. */
-	static mark(State, plantId, triggerId, clonedIds) {
+	static recordTrigger(State, plantId, triggerId, clonedIds) {
 		var meStat = StateClass.ensureCloned(State, Me, clonedIds)
 		var fresh = (meStat.AWAKEN_MARKS == null) ? [: ] : clone(meStat.AWAKEN_MARKS, 1)
 		fresh[plantId * 65536 + triggerId] = true
@@ -186,8 +186,8 @@ class AwakeningClass {
 	 */
 	static onSummoned(State, summonId, clonedIds) {
 		if (mapIsEmpty(PLANT_ZONE_BY_ID) || AWAKENING_DEPTH > 0) return;
-		var summon = State[summonId]
-		onStep(State, summonId, null, summon.CELL, clonedIds)
+		var summonedStats = State[summonId]
+		onStep(State, summonId, null, summonedStats.CELL, clonedIds)
 		if (!(summonId in PLANT_ZONE_BY_ID) || State[summonId].LIFE <= 0) return;
 		var zone = PLANT_ZONE_BY_ID[summonId]
 		var plantCell = State[summonId].CELL
@@ -215,7 +215,7 @@ class AwakeningClass {
 	 */
 	static awake(State, plantId, triggerId, clonedIds) {
 		if (isMarked(State, plantId, triggerId)) return;
-		mark(State, plantId, triggerId, clonedIds)
+		recordTrigger(State, plantId, triggerId, clonedIds)
 		var plant = StateClass.ensureCloned(State, plantId, clonedIds)
 		var cds = [: ]
 		for (var chip: var cd in plant.COOLDOWNS) cds[chip] = (cd > 0) ? cd - 1 : 0

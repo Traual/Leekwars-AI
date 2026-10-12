@@ -116,7 +116,7 @@ class EnemyOffense {
             }
             if (stat.AWAKEN_MARKS != null) {
                 var marks = 0
-                for (var mark: var active in stat.AWAKEN_MARKS) if (active) marks ^= mix64Memo(mark)
+                for (var awakeningKey: var active in stat.AWAKEN_MARKS) if (active) marks ^= mix64Memo(awakeningKey)
                 part = mix64(part ^ marks)
             }
             hash = mix64(hash ^ part)
