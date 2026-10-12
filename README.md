@@ -236,6 +236,20 @@ une domination sur tous les builds ou formats. Les budgets de 20 % et 35 % donne
 le même score moyen dans les deux comparatifs communs de 32 combats chacun ; le
 réglage court conserve davantage d'opérations pour les décisions suivantes.
 
+Une seconde passe de caches réutilise les ensembles de groupes dans une recherche,
+les quatre couches de déplacement de Me et la carte des occupants. Les actions
+ponctuelles sans ligne de vue partagent leur domaine complet de portée ; la résolution
+filtre toujours les origines par les déplacements réellement disponibles. Les valeurs
+d'entités intactes sont reprises dans les ancêtres déjà scorés. Le placement calcule
+son préfixe spatial et l'importance une fois par balayage, puis réutilise les expositions
+identiques. Ces caches conservent les formules et la revalidation des actions.
+
+Sur une sonde fixe, cette passe réduit de 8,4 % le coût de génération des actions et
+de 6,3 % celui de préparation des successeurs au budget de 12 millions d'opérations.
+Elle visite 8 plutôt que 7 steps au petit budget, et 52 dans les deux versions au grand
+budget. Ce sont des mesures locales, sans garantie de davantage de steps sur tout combat.
+Le comparatif de 128 combats ci-dessus précède cette seconde passe.
+
 Le dépôt séparé **[Leekwars-AI-tools](https://github.com/Traual/Leekwars-AI-tools)** conserve :
 
 - le [guide du scoring](https://github.com/Traual/Leekwars-AI-tools/blob/main/docs/scoring-manuel.md) ;

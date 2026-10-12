@@ -288,8 +288,14 @@ class WalkCellsClass {
 	 * Les quatre layers + .MAX dans un LayersClass. Pour les appelants qui doivent savoir
 	 * de quelle layer vient chaque cellule (coût d'action du BFS, cooldowns du nœud, MoveTo).
 	 */
-	static getAllLayers(state, entity, base_hash) {
+	static getAllLayers(state, entity, base_hash, meFingerprint = null) {
 		var stats = state[entity]
+		var layerKey = null
+		if (entity == Me) {
+			if (meFingerprint == null) meFingerprint = HashWalkCellsWithItemsWithoutBaseHash(stats)
+			layerKey = addValueToBinHash(OFFSET_BASIS ^ base_hash, meFingerprint)
+			if (layerKey in LEEK_LAYERS_CACHE) return LEEK_LAYERS_CACHE[layerKey]
+		}
 		var cJ = canJump(stats)
 		var cT = canTele(stats)
 		var cTJ = cJ && cT && stats.TP >= JUMP_TELE_COST
@@ -299,7 +305,9 @@ class WalkCellsClass {
 		var tele = cT  ? getTele(state, entity, base_hash, stats, hashWalk) : [:]
 		var tpj  = cTJ ? getTPJ(state, entity, base_hash, stats, hashWalk)  : [:]
 		var max  = cTJ ? tpj : (cT ? tele : (cJ ? jump : walk))
-		return new LayersClass(walk, jump, tele, tpj, max)
+		var layers = new LayersClass(walk, jump, tele, tpj, max)
+		if (layerKey != null) LEEK_LAYERS_CACHE[layerKey] = layers
+		return layers
 	}
 
 	// ============================================================================

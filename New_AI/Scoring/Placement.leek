@@ -18,14 +18,15 @@ class Placement {
         return score
     }
 
-    static exposure(stat, raw, net) {
+    static exposure(stat, raw, net, importance = null) {
         if (raw <= 0) return 0
         var life = max(1, stat.LIFE)
         var rawRisk = dangerRisk(raw / life)
         var netRisk = dangerRisk(max(0, net) / life)
         // Même entièrement soigné, je mobilise mes alliés et conserve 40 % du risque brut.
         // Le net vient du déroulé existant : ordre des tours, cap de vie et mort avant soin.
-        return (rawRisk - HEAL_ATTENUATION * (rawRisk - netRisk)) * EntityImportance.value(stat)
+        if (importance == null) importance = EntityImportance.value(stat)
+        return (rawRisk - HEAL_ATTENUATION * (rawRisk - netRisk)) * importance
     }
 
     static spatial(State, BaseHash, cell) {
@@ -33,7 +34,12 @@ class Placement {
         if (ROOT_ENEMY_OFFENSE == null) EnemyOffense.prepare(State, BaseHash)
         var support = ROOT_ALLY_SUPPORT
         var offense = ROOT_ENEMY_OFFENSE
-        var key = addValueToBinHash(mix64(BaseHash ^ support.HASH ^ offense.HASH), cell)
+        return spatialWithSeed(State, cell, mix64(BaseHash ^ support.HASH ^ offense.HASH), support, offense)
+    }
+
+    // Le préfixe ne dépend pas de la cellule : le placement le calcule une fois par balayage.
+    static spatialWithSeed(State, cell, seed, support, offense) {
+        var key = addValueToBinHash(seed, cell)
         if (key in PLACEMENT_COST_CACHE) return PLACEMENT_COST_CACHE[key]
         var cost = AllySupport.costAt(State, cell, support) + EnemyOffense.costAt(State, cell, offense)
         PLACEMENT_COST_CACHE[key] = cost

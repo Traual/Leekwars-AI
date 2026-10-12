@@ -448,7 +448,7 @@ class ActionSuite {
 		var mine = State[Me]
 		if (mine.LIFE <= 0 || mine.TP < MINIMUM_COST_ITEM) return null
 		var BaseHash = Parent.BASE_HASH
-		var walk = WalkCellsClass.getAllLayers(State, Me, BaseHash)
+		var walk = WalkCellsClass.getAllLayers(State, Me, BaseHash, Parent.ME_WALK_FINGERPRINT)
 		var resurrect = resurrectIdOf(State)
 		var frame = prepareGroups(State, BaseHash, Parent, MySide, walk, resurrect, SearchCache)
 		var fresh = frame.BEST_FRESH
@@ -504,21 +504,38 @@ class ActionSuite {
 		var availability = ActionsClass.availabilityOf(mine)
 		frame.COSTS = availability.COSTS
 		frame.USES = availability.USES
-		var groups = ActionsClass.getEveryActionsInAState(State, Walk, mine.CELL, BaseHash)
-		for (var group in groups) {
-			if (group.Item == CHIP_RESURRECTION && resurrect == null) continue
-			if (baseCostOf(mine, group.Item, frame.COSTS, frame.USES) < 0) continue
-			var key = groupEstimateKey(group, resurrect)
-			if (!(key in frame.GROUPS) || group.IS_LOCAL) frame.GROUPS[key] = group
+		var availableMask = 0
+		for (var i: var item in mine.INVENTORY) {
+			if (baseCostOf(mine, item, frame.COSTS, frame.USES) >= 0) availableMask ^= mix64Memo(i + 1)
+		}
+		// Cellule/PM/capacités, items disponibles, payload de résurrection et
+		// stérilité déterminent cette liste. Stats, dégâts et gains restent courants.
+		var setKey = ((BaseHash * MIX_A) ^ Parent.ME_WALK_FINGERPRINT) * MIX_A
+		setKey = ((setKey ^ availableMask) * MIX_A) ^ ((resurrect == null ? 0 : resurrect + 1) << 1) ^ (EntityStateClass.hasState(mine, STATE_STERILE) ? 1 : 0)
+		var set = SearchCache.GROUP_SETS[setKey]
+		if (set == null) {
+			var groups = ActionsClass.getEveryActionsInAState(State, Walk, mine.CELL, BaseHash)
+			for (var group in groups) {
+				if (group.Item == CHIP_RESURRECTION && resurrect == null) continue
+				if (baseCostOf(mine, group.Item, frame.COSTS, frame.USES) < 0) continue
+				var key = groupEstimateKey(group, resurrect)
+				if (!(key in frame.GROUPS) || group.IS_LOCAL) frame.GROUPS[key] = group
+			}
+			set = new ActionGroupSetClass(frame.GROUPS)
+			if (getOperations() <= OPS_DEADLINE) SearchCache.GROUP_SETS[setKey] = set // jamais une préparation tronquée
+		} else {
+			frame.GROUPS = set.GROUPS
+			SearchCache.SET_HITS++
 		}
 		var keys = []
 		var fingerprint = 0
+		var incomplete = false
 		var Workspace = null
-		for (var key: var group in frame.GROUPS) {
-			if (getOperations() > OPS_DEADLINE) break
+		for (var key in set.KEYS) {
+			if (getOperations() > OPS_DEADLINE) { incomplete = true; break }
 			if (!(key in SearchCache.ESTIMATES)) {
 				var playable = framePlayable(frame, key, mine, Walk, resurrect, BaseHash, Parent.ME_WALK_FINGERPRINT)
-				if (playable == null) continue
+				if (playable == null) { incomplete = true; continue }
 				if (Workspace == null) Workspace = clone(State, 1)
 				var actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
 					MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, Walk)
@@ -533,10 +550,12 @@ class ActionSuite {
 				var playable = framePlayable(frame, key, mine, Walk, resurrect, BaseHash, Parent.ME_WALK_FINGERPRINT)
 				if (playable == null) continue
 				fingerprint ^= mix64(addValueToBinHash(key, playable.COST))
-			} else {
-				fingerprint ^= mix64(key)
 			}
 			push(keys, key)
+		}
+		if (!BFS_SCORE_PER_ACTION_COST) {
+			if (!incomplete) fingerprint = set.FINGERPRINT
+			else for (var key in keys) fingerprint ^= mix64(key)
 		}
 		var orderKey = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ fingerprint, (count(keys) << 1) | (BFS_SCORE_PER_ACTION_COST ? 1 : 0)), SearchCache.ESTIMATE_VERSION)
 		var order = SearchCache.ORDERED_GROUPS[orderKey]
@@ -587,6 +606,22 @@ class ActionSuite {
 		if (parentValues == null) {
 			parentValues = [:]
 			StateParent.SCORE_VALUES = parentValues
+		}
+		// Un parent ne stocke d'abord que les entités modifiées par son action.
+		// Une entité intacte garde la valeur du plus proche ancêtre qui l'a scorée :
+		// remonter les petits patches évite de recalculer cette même valeur complète.
+		if (StateParent.STATE_PARENT != null) for (var id: var before in node.CLONED) {
+			if (id == Me) continue // sa valeur existe déjà sur tout parent scoré
+			if (before == null || id in parentValues) continue
+			var ancestor = StateParent.STATE_PARENT
+			while (ancestor != null) {
+				var values = ancestor.SCORE_VALUES
+				if (values != null && id in values) {
+					parentValues[id] = values[id]
+					break
+				}
+				ancestor = ancestor.STATE_PARENT
+			}
 		}
 		var score = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, MySide, parentValues)
 		StateClass.restoreWorkspace(Workspace, node.CLONED)

@@ -182,11 +182,11 @@ class FinalCell {
         // épargne alors le balayage entier. Sa clé porte TOUT ce dont la pénalité dépend — le
         // terrain et ma mobilité (donc mes cellules accessibles), la graine de fuite (qui porte
         // déjà menace adverse, mes boucliers, mon antidote, ma vie et ma vie max, dont le masque
-        // d'immunités) et les soigneurs des deux camps. L'importance de BASE qui pondère le
+        // d'immunités) et les soigneurs de mon camp. L'importance de BASE qui pondère le
         // danger est constante pendant la recherche ; mes buffs ne la modifient pas.
         // La préparation racine porte les cooldowns, PT/PM, équipement et utilité des buffs.
         // BaseHash seul n'encode pas ces inputs du soutien de placement.
-        var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp) ^ combinedHfp ^ ROOT_ALLY_SUPPORT.HASH ^ ROOT_ENEMY_OFFENSE.HASH)
+        var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp) ^ ROOT_ALLY_SUPPORT.HASH ^ ROOT_ENEMY_OFFENSE.HASH)
         if (memoKey in FINAL_PLACEMENT_CACHE) {
             BenchOps.Stop("FinalCell")
             return FINAL_PLACEMENT_CACHE[memoKey]
@@ -204,6 +204,13 @@ class FinalCell {
         var bestCell    = MyState.CELL
         var bestPenalty = MAX_VALUE
         var bestNet     = 0
+        var support = ROOT_ALLY_SUPPORT
+        var offense = ROOT_ENEMY_OFFENSE
+        var spatialSeed = mix64(BaseHash ^ support.HASH ^ offense.HASH)
+        var importance = EntityImportance.value(MyState)
+        var previousRaw = null
+        var previousNet = null
+        var previousExposure = 0
 
         // Objets communs à tout le balayage (plan, buckets, deux séquences), matérialisés au
         // PREMIER vrai miss et pas avant : une cellule déjà en cache n'en construit aucun.
@@ -224,12 +231,17 @@ class FinalCell {
             // danger ne peut que s'y ajouter. Une cellule dont le seul spatial dépasse déjà le
             // meilleur total ne peut pas gagner — coupure EXACTE, et elle épargne le net,
             // de loin le calcul le plus cher des deux.
-            var spatial = Placement.spatial(State, BaseHash, cell)
+            var spatial = Placement.spatialWithSeed(State, cell, spatialSeed, support, offense)
             if (spatial >= bestPenalty) continue
 
             var net = withDanger ? DeltaClass.netAtFleeCell(cell, seed, dangerCellSeed, MyState, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy, false) : 0
             var raw = withDanger ? DeltaClass.rawAtFleeCell(dangerCellSeed ^ cell) : 0
-            var penalty = spatial + Placement.exposure(MyState, raw, net)
+            if (raw != previousRaw || net != previousNet) {
+                previousExposure = Placement.exposure(MyState, raw, net, importance)
+                previousRaw = raw
+                previousNet = net
+            }
+            var penalty = spatial + previousExposure
             if (penalty < bestPenalty) {
                 bestPenalty = penalty
                 bestCell = cell

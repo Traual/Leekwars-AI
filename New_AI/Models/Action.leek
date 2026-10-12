@@ -77,15 +77,18 @@ class ScoredActionClass {
 class ActionSearchCacheClass {
 	ESTIMATES
 	ORDERED_GROUPS
+	GROUP_SETS
 	NEW_SCORES = 0
 	REUSED_SCORES = 0
 	ORDER_HITS = 0
+	SET_HITS = 0
 	ESTIMATE_VERSION = 0
 	VALIDATED_NODE
 	VALIDATED_FINAL
 	constructor() {
 		this.ESTIMATES = [:]
 		this.ORDERED_GROUPS = [:]
+		this.GROUP_SETS = [:]
 	}
 }
 
@@ -153,5 +156,22 @@ class ActionSearchFrameClass {
 		this.PLAYABLES = [:]
 		this.COSTS = [:]
 		this.USES = [:]
+	}
+}
+
+// Ensemble géométrique immuable pour un plateau, une mobilité et les items disponibles.
+// Les origines et coûts concrets restent résolus dans le parent courant.
+class ActionGroupSetClass {
+	GROUPS
+	KEYS
+	FINGERPRINT
+	constructor(groups) {
+		this.GROUPS = groups
+		this.KEYS = []
+		this.FINGERPRINT = 0
+		for (var key: var _group in groups) {
+			push(this.KEYS, key)
+			this.FINGERPRINT ^= mix64(key)
+		}
 	}
 }

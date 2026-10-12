@@ -35,7 +35,7 @@ class ActionsClass {
 	static getEveryActionsInAState(State, WalkCells, MyCell, BaseHash, localOnly = false, othersOnly = false) {
 		BenchOps.Start("Actions")
 		var _final = []
-		var LeekCells = StateClass.getEntityCellsMap(State)
+		var LeekCells = StateClass.getEntityCellsMap(State, BaseHash)
 		var local = []
 		if (!othersOnly) {
 			pushAll(local, getEveryActionsOnMe(MyCell, MY_INVENTORY_ON_ME, State, BaseHash))
@@ -378,6 +378,7 @@ class ActionsClass {
 							catalog.BY_SIGNATURE[group.SIGNATURE] = group
 							push(catalog.GROUPS, group)
 						} else {
+							if (known == group) continue // groupe ponctuel complet déjà partagé
 							for (var from: var to in group.ORIGINS) known.addOrigin(from, to)
 						}
 					}
@@ -472,6 +473,25 @@ class ActionsClass {
 			if (id == Me || target.LIFE <= 0 || !Target.Targetable(item, target, caster)) continue
 			var reachable = launch(target.CELL, info.MINRANGE, info.MAXRANGE)
 			var targetHash = affectsSignature(item, target, caster) ? targetContribution(id, 0) : 0
+			// Sans LoS et sans déplacement de cible, le domaine de portée ne dépend
+			// d'aucun autre occupant du plateau. Le partager même après une invocation.
+			// Un groupe à cible réelle unique n'est jamais fusionné avec un autre To.
+			if (!info.NEEDLOS && !info.ORIGIN_SENSITIVE && targetHash != 0) {
+				var active = false
+				for (var from in origins) if (from in reachable) { active = true; break }
+				if (!active) continue
+				var signature = groupSignature(item, targetHash, 0, target.CELL)
+				var key = addValueToBinHash(signature, target.CELL)
+				var complete = POINT_ACTION_GROUP_CACHE[key]
+				if (complete == null) {
+					complete = new ActionGroupClass(item, 0, target.CELL, signature, targetHash)
+					complete.ORIGINS = [:]
+					for (var from: var _distance in reachable) complete.ORIGINS[from] = target.CELL
+					POINT_ACTION_GROUP_CACHE[key] = complete
+				}
+				push(result, complete)
+				continue
+			}
 			for (var from in origins) {
 				if (!(from in reachable)) continue
 				if (info.NEEDLOS && !CellClass.getLosWithPrefix(from, target.CELL, State, BaseHash, prefix)) continue

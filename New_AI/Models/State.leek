@@ -85,11 +85,13 @@ class StateClass {
 	}
 
 	/* [cellule -> true] des vivants hors Me (obstacles dynamiques). */
-	static getEntityCellsMap(State) {
+	static getEntityCellsMap(State, BaseHash = null) {
+		if (BaseHash != null && BaseHash in ENTITY_CELLS_MAP_CACHE) return ENTITY_CELLS_MAP_CACHE[BaseHash]
 		var _final = [: ]
 		for (var e: var stat in State) {
 			if (e != Me && stat.LIFE > 0) _final[stat.CELL] = true
 		}
+		if (BaseHash != null) ENTITY_CELLS_MAP_CACHE[BaseHash] = _final
 		return _final
 	}
 
