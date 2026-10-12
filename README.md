@@ -592,6 +592,10 @@ casts de déplacement et les chemins spéciaux d'invocation/résurrection.
   les évaluations répétées, conserver les plans validés et rendre le repli brut plus
   rare. Mesurer la nouvelle version à scoring/builds constants ; aucune nouvelle
   comparaison avec l'ancien arbre et son quota n'est requise pour ce chantier.
+- [ ] **Arbre à la Nytope** : réexaminer la recherche de combos depuis une cellule
+  de lancement commune, maintenant que les groupes conservent de nombreuses origines
+  `From`. Évaluer la réutilisation de ces listes et l'intérêt de cette approche comme
+  alternative ou repli, sans décider pour l'instant de remplacer l'arbre actuel.
 
 Les TODO ci-dessus ne sont pas implémentés par cette mise à jour documentaire.
 Les autres approximations ci-dessous décrivent l'état actuel ; elles ne constituent
