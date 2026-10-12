@@ -10,9 +10,145 @@ Le point d’entrée est [`New_AI/Main.leek`](New_AI/Main.leek). Importer le dos
 
 Les modifications courantes du scoring se font sur **`main`**.
 
+Ce document décrit le code de `main` au **13 octobre 2026**. Les valeurs indiquées
+sont les réglages actuels, pas des paramètres validés pour tous les builds.
+
+## Sommaire
+
+- [Déroulement d'un tour](#déroulement-dun-tour)
+- [Organisation du code](#organisation-du-code)
+- [État virtuel et simulation](#état-virtuel-et-simulation)
+- [Modifier le scoring](#modifier-le-scoring)
+- [Projection du danger et des soins](#projection-du-danger-et-des-soins)
+- [Placement final](#placement-final)
+- [Coût des cooldowns](#coût-des-cooldowns)
+- [Recherche de suites d'actions](#recherche-de-suites-dactions)
+- [Budget d'opérations](#budget-dopérations)
+- [Caches et invalidation](#caches-et-invalidation)
+- [Diagnostics](#diagnostics)
+- [TODO](#todo)
+- [Limites actuelles](#limites-actuelles)
+- [Mesures historiques](#mesures-historiques)
+- [Documentation et outils](#documentation-et-outils)
+
+## Déroulement d'un tour
+
+```mermaid
+flowchart TD
+    A[Initialisation du joueur et des caches de tour] --> B[Capture de l'état réel]
+    B --> C[Préparation des profils et des déplacements]
+    C --> D[Génération et scoring des actions groupées]
+    D --> E[Construction de suites simulées]
+    E --> F[Classement avec placement et danger terminaux]
+    F --> G{Une action retenue ?}
+    G -->|Oui| H[Déplacement puis première action réelle]
+    H --> B
+    G -->|Non| I[Capture réelle et placement final]
+```
+
+1. `Main.leek` charge le catalogue et la géométrie au premier tour, puis appelle
+   `ReloadCacheNewTurn` **avant** `Preload.InitStateClass`. Cette dernière fixe `Me`,
+   l'inventaire, les catégories d'actions et le coût minimal d'un item disponible.
+2. `Play` capture le combat avec `StateClass.Virtualize`. Les caractéristiques,
+   cellules, effets et ressources réels deviennent les entrées de la décision.
+   Le debug des coefficients s'affiche une fois au début du tour s'il est activé.
+3. Le plafond de recherche réserve des opérations au placement et aux bulbes du
+   propriétaire qui doivent encore jouer. Le plafond moteur vaut `getCores() × 1 000 000`.
+4. `ActionSuite` prépare le contexte de scoring, le soutien allié, le potentiel
+   offensif de placement et les quatre couches de déplacement de Me. Il calcule
+   le score initial, génère les actions, puis développe des suites.
+5. Les candidats terminaux sont comparés après soustraction de leur meilleure
+   pénalité de placement. Un plan déjà complètement évalué avec danger est conservé.
+6. `Play` exécute seulement la **première** action : rejoindre `From`, équiper
+   éventuellement l'arme, puis lancer vers `To`. Invocation et résurrection ont
+   leurs appels moteur propres ; l'ID à ressusciter est celui choisi en simulation.
+7. Une action jouée entraîne une nouvelle capture et une nouvelle recherche.
+   Une première erreur d'exécution replanifie ; une deuxième erreur identique,
+   à cellule/ressources/arme identiques, arrête les actions et passe au placement.
+8. Si le budget ne finance plus de recherche, `drainChain` tente la suite du dernier
+   plan dans la marge autorisée, sans construire un nouvel arbre. Chaque déplacement
+   et lancer peut échouer ; la vidange s'arrête alors. Elle n'est pas une revalidation
+   complète de la suite contre les conséquences réelles des casts précédents.
+9. À la sortie, `Play` capture une dernière fois le combat, appelle `FinalCell.get`
+   et tente le déplacement final. Un échec est journalisé, sans nouvelle boucle.
+
+Les **bulbes** invoqués avec `Bulb.AI` utilisent la même boucle de jeu. Ils partagent
+la VM, les globals et le compteur d'opérations de leur invocateur : chacun réinitialise
+les caches de tour avant de devenir `Me`. Les **plantes** utilisent `PlantPolicy`,
+une politique courte lors des réveils ; elle ne relance pas `Play` et ne remplace
+pas les globals du joueur dont l'action est interrompue.
+
+## Organisation du code
+
+| Ensemble | Fichiers principaux | Rôle |
+| --- | --- | --- |
+| Entrée | `Main.leek`, `includes.leek` | Chargement et lancement du tour. |
+| Initialisation | `Load/Preload.leek`, `Constants.leek`, `Cache.leek`, `Binary_To_Cells.leek` | Catalogue moteur, constantes, tables de cellules/bitmaps, hashes et durée de vie des caches. |
+| Entités et état | `Models/Entity.leek`, `EntityState.leek`, `State.leek` | Identité/inventaire, état courant, import des effets, clones et patches. |
+| Géométrie et items | `Models/Item.leek`, `Cell.leek`, `Target.leek` | Métadonnées et vues d'effets, distances/zones/LoS, masques et catégories de cibles. |
+| Actions | `Models/Action.leek`, `Maps/Actions.leek` | Actions concrètes, groupes d'origines, disponibilités et catalogues. |
+| Déplacements | `Maps/WalkCells.leek` | Marche, Saut, Téléportation, combinaison, reconstruction et exécution du trajet. |
+| Conséquences | `Modifier/Consequences.leek` | Effets des casts, protections, dégâts, passifs, registre d'effets et cascades de mort. |
+| Invocations | `Modifier/BulbState.leek`, `Resurrection.leek`, `Awakening.leek` | Entités virtuelles, résurrection, politique des plantes et simulation des réveils. |
+| Projection | `Maps/ItemCoverage.leek`, `Danger/*`, `Heal/Heal.leek`, `Delta/Delta.leek` | Couvertures, combos adverses, soin projeté et dégâts nets séquencés. |
+| Valeur et placement | `Scoring/*` | Valeur d'état, coefficients manuels, frais de cooldown et pénalités de position. |
+| Décision et exécution | `User/Node.leek`, `BFS.leek`, `FinalCell.leek`, `Play.leek`, `BulbAI.leek` | Simulation d'un nœud, recherche, clôture du plan et appels moteur réels. |
+| Mesures | `Utils/Benchmark.leek` | Profilage facultatif des opérations par catégorie. |
+
+## État virtuel et simulation
+
+### Capture et registre d'effets
+
+Un état est une map **`ID → EntityStateClass`**, comprenant les entités rendues par
+le moteur, y compris les morts disponibles pour la résurrection. `EntityClass` porte
+l'identité, le camp, l'inventaire et les propriétés d'entité ; `EntityStateClass`
+ajoute les caractéristiques courantes, PV, ressources, arme, cooldowns, usages,
+ordre de jeu et masque d'états.
+
+Les **stats de base** sont séparées des valeurs modifiées par les effets. Le registre
+`EFFECTS` conserve les lignes du moteur et leur datation. Il alimente les agrégats de
+poison/contrecoup/soin continu, les sommes d'entraves et les sommes de buffs pondérées
+par durée. L'expiration des boucliers a son propre profil daté : des stocks totaux
+identiques peuvent protéger différemment pendant la fenêtre projetée.
+
+### Construction d'un nœud
+
+Pour chaque candidat, `NodeClass.ActionToNodeInTree` :
+
+1. Ouvre un workspace partagé avec les autres candidats du même parent et clone Me.
+2. Simule le trajet vers `From` : dépenses de PM/PT, cooldowns de mobilité et effets
+   propres de Saut/Téléportation. Le buff d'agilité du Saut peut donc affecter le cast
+   suivant ; la vitalité de Téléportation est appliquée avant ce cast.
+3. Rejoue les réveils de plantes lorsque le déplacement simulé l'exige.
+4. Dépense le coût total, équipe l'arme si nécessaire et applique les effets de l'item
+   dans leur ordre, en clonant les autres entités à leur première mutation.
+5. Met à jour cooldown/usages, captures des entités modifiées et empreintes de caches.
+6. Calcule le delta de score sur ces seules entités, puis restaure le workspace.
+
+Le nœud conserve un **patch**, pas une copie profonde de tout le combat.
+`STATE_PARENT` est la chaîne d'états immuable ; `PARENT` sert à reconstruire la suite
+d'actions retenue. `END_STATS` est matérialisé à la demande lorsque le nœud est développé
+ou évalué au placement. Pour Me, cooldowns et usages utilisent aussi des patches reliés
+à l'état précédent ; leurs setters invalident les mémos concernés.
+
+Les conséquences couvrent notamment dégâts directs, poison, dégâts de vie/nova,
+soins/vitalité, buffs, entraves, protections/vulnérabilités, renvoi, états, débuffs,
+déplacements, invocations et résurrection. Les passifs implémentés, retraits d'effets
+et cascades de mort passent par le même workspace. Les invocations virtuelles utilisent
+des stats d'invocation et des IDs déterministes par type, distincts des IDs réels.
+La résurrection choisit le mort allié ayant la meilleure valeur après simulation du relevé ;
+elle transmet cet ID jusqu'au vrai cast et respecte la place requise pour relever un summon.
+
+Cette simulation est **déterministe** : les casts de notre recherche utilisent la valeur
+basse des effets et un critique binaire à partir de 950 agilité. Elle ne reproduit pas
+les jets aléatoires d'un futur combat. La projection adverse utilise une convention
+plus pessimiste, détaillée dans la section danger.
+
 ## Modifier le scoring
 
-Onze fichiers :
+### Fichiers de réglage
+
+Quatorze fichiers :
 
 - [`Coefficients.leek`](New_AI/Scoring/Coefficients.leek) : coefficients bruts par statistique et deux multiplicateurs communs PT/PM.
 - [`Importance.leek`](New_AI/Scoring/Importance.leek) : bonus de présence selon les caractéristiques utiles, les puces tactiques et les multiplicateurs de PT/PM.
@@ -25,6 +161,29 @@ Onze fichiers :
 - [`PeriodicEffects.leek`](New_AI/Scoring/PeriodicEffects.leek) : avenir du poison/contrecoup, plafond de PV commun et décote Antidote du porteur, sans parcours des lignes d'effets.
 - [`Debug.leek`](New_AI/Scoring/Debug.leek) : coefficients de chaque vivant au début du tour, avec une pause après toute la liste. `ScoringDebug.ENABLED = false` désactive l'affichage et les pauses ; coefficients bruts avant durée/PT/PM, potentiel courant, facteurs communs et leur produit sont affichés séparément.
 - [`Placement.leek`](New_AI/Scoring/Placement.leek) : distances et exposition au danger, soustraites à la fin des suites d’actions.
+- [`AllySupport.leek`](New_AI/Scoring/AllySupport.leek) : potentiel de buffs/boucliers alliés et coût de l'éloignement.
+- [`EnemyOffense.leek`](New_AI/Scoring/EnemyOffense.leek) : potentiel offensif obtenu avec les conséquences et le scoring communs, puis décote hors portée.
+- [`Cooldowns.leek`](New_AI/Scoring/Cooldowns.leek) : prix des cooldowns consommés et filtre de Régénération sans soin.
+
+### Calcul du score
+
+```text
+Valeur(entité vivante) = max(0,
+    importance de base + vie pondérée + vie maximale pondérée
+    + potentiel courant × facteur PT × facteur PM + correction des entraves
+    + boucliers + renvoi posé + flux périodiques)
+
+Score(état) = somme des valeurs alliées − somme des valeurs adverses
+Score(nœud) = Score(état simulé) − frais de cooldown cumulés dans le plan
+Score terminal = Score(nœud) − meilleure pénalité de placement accessible
+```
+
+Une action est évaluée par différence avant/après. La racine score toutes les entités ;
+les successeurs ne recalculent que celles clonées par l'action et réutilisent les valeurs
+exactes du parent ou d'un ancêtre intact. Le danger projeté n'est pas un terme de
+`entityValue` : la sécurité de Me est arbitrée à la clôture, dans `FinalCell`.
+
+### Présence, vie et ressources
 
 Une entité morte vaut zéro. Le bonus fixe de présence est remplacé par `EntityImportance.value(stat)` : **(caractéristiques utiles + tactique) × multiplicateur PT × multiplicateur PM**. Les poids et les paliers sont des valeurs de départ à régler manuellement dans `Importance.leek`.
 
@@ -50,6 +209,8 @@ Les autres contributions de `ScoringClass.entityValue` restent basées sur l'ét
 La partie tactique additionne les **poids fixes des puces possédées** : Inversion 70, Téléportation 120, Libération 120, Manumission 50, Gant de boxe 10, Grappin 10, Saut 60, Rempotage 20 et Hémorragie 60. Chaque poids se règle séparément dans `tacticalChipScore`, avant application des multiplicateurs de PT/PM. Elle concerne tous les porteurs ; elle ignore cooldowns et portées. Sa somme est mise en cache par ID et classe réelle/virtuelle, puis invalidée à chaque tour. L'importance complète est mémorisée dans un scalaire `IMPORTANCE_MEMO` de l'état, copié avec ses clones : bases, inventaire et caractère statique ne changent pas pendant la simulation. Une nouvelle capture réelle ou une nouvelle invocation virtuelle repart avec un mémo vide.
 
 Les PT et PM multiplient toute cette importance et n'y ajoutent aucun terme fixe. Les paliers utilisent `BASE_STATS[STAT_TP]` et `BASE_STATS[STAT_MP]`, sans buffs/entraves ni dépenses. Le facteur PT vaut 0,5 sous 8, 0,8 dès 8, 1,2 dès 16, 1,6 dès 24 et 1,9 dès 32. Le facteur PM vaut 0,6 sous 2, 0,9 dès 2, 1,2 dès 4, 1,4 dès 6 et 1,5 dès 8 ; une entité statique utilise le palier de 0 PM, sans perdre toute son importance. L'enracinement courant n'intervient plus dans cette importance de base. Le debug affiche les deux composantes et les deux multiplicateurs de base en plus de la présence finale.
+
+### Coefficients de caractéristiques et durée
 
 Le coefficient de force utilise des **paliers sur la force courante** : base de 0,2, puis +0,2 au-dessus de 0, +0,3 dès 200, +0,3 dès 400, +0,2 dès 600, +0,2 dès 800 et +0,1 dès 1 000. Les coefficients cumulés sont donc 0,2, 0,4, 0,7, 1, 1,2, 1,4 et 1,5. Si `Equipment.strengthYield` est nul sur poireaux et invocations, le coefficient vaut toujours zéro. Le rendement et son cache sont conservés, mais leur amplitude et les proportions de cibles ne pondèrent plus ce coefficient. Les dégâts effectivement simulés sont déjà comptés dans la vie.
 
@@ -83,6 +244,8 @@ Ce rendement considère une cible au centre de la zone, au coût nominal de l'it
 
 Les fonctions de coefficient ne doivent dépendre que de leur état `stat`, du catalogue immuable et du contexte figé à la racine pour conserver le calcul incrémental. Les caches d'équipement stockent des `EquipmentYield` sans pondération, par ID et classe réelle/virtuelle, et supposent l'inventaire constant au sein d'une recherche. Le contexte `ScoringStateConstants` contient un `TargetWeights` adverse et allié par camp ; rendements et poids exposent les champs nommés `LEEKS` et `SUMMONS`. Son cache par `BaseHash` s'utilise sur les racines réelles, où Me est vivant, et est vidé au début du tour de chaque joueur. Les caches de scores restent locaux à la recherche. Les pénalités de placement doivent rester positives ou nulles ; si leurs entrées changent, adapter aussi les clés de cache.
 
+### Protections et renvoi
+
 Le **bouclier absolu** vaut `valeur par tranches × importance de base / 3000 × facteur adverse`. Les 100 premiers points valent 2 chacun, les points de 100 à 300 valent 1,5, ceux de 300 à 600 valent 1, puis 0,5 au-delà. Les tranches s'additionnent ; une vulnérabilité absolue (stock négatif) garde une valeur signée linéaire de 2 par point. `Coefficients.absoluteShield` renvoie le coefficient moyen puisque le scoring multiplie déjà par le stock. Ces poids restent hors du facteur commun PT/PM ; durée et interaction avec le bouclier relatif ne sont pas estimées dans ce terme.
 
 Le **bouclier relatif** suit le même poids d'importance et de profil adverse, avec une échelle par point de pourcentage : 10 pour les 30 premiers points, 8 de 30 à 60, puis 5 de 60 à 100. Le stock valorisé est limité à 100 pour cette estimation de protection ; ce n'est pas une limite du moteur. Une vulnérabilité relative garde une valeur signée de 10 par point. Le **renvoi de dégâts** utilise aussi ce poids : 5 pour les 50 premiers points, 10 de 50 à 100, 8 de 100 à 200, puis 3 au-delà, sans plafond. Il ne dépend ni des PV courants du porteur ni de ses boucliers, puisque le moteur calcule le renvoi avant les protections.
@@ -92,6 +255,8 @@ Les deux boucliers reçoivent un **bonus additif de protection à faible vie**, 
 Le **facteur adverse** de `ShieldProfile` oppose deux poids de profils offensifs : attaques de force/Châtiment, et poison/nova/contrecoup. Les inventaires sont filtrés par les utilitaires d'équipement en cache. Force, magie et science de BASE donnent un poids de 0 sous 100, 0,25 dès 100, 0,5 dès 200, 1 dès 400 et 1,5 dès 800 ; Châtiment garantit un poids de 1 dans le canal sensible aux boucliers. Chaque entité peut contribuer aux deux canaux, mais seule sa meilleure famille compte dans chacun. Les purs soutiens n'ajoutent aucun poids. Les vivants, invocations incluses, sont regroupés par camp, et tous les autres camps sont considérés adverses en BR.
 
 Si au moins 66 % du poids offensif adverse est sensible au bouclier, le facteur vaut 1 ; à partir de 25 %, il vaut 0,6 ; sinon 0,25, y compris sans menace significative identifiée. Ce même facteur oriente les deux boucliers et le renvoi. Les poids et seuils se règlent dans `ShieldProfile.leek`. C'est une orientation grossière : aucune portée, distance, combinaison d'attaques ou disponibilité de puce n'est calculée. Le résultat est conservé par `BaseHash` dans `ScoringStateConstants` et **figé pendant tout le BFS**, pour ne pas revaloriser des entités non clonées lors d'une mort simulée. Une nouvelle racine réelle actualise le contexte si les vivants changent. Le debug affiche le facteur en plus des coefficients finaux.
+
+### Effets périodiques
 
 Les **dégâts périodiques futurs** ont le même poids par PV pour poison et contrecoup, multiplié par `importance de base / 3000`. Les ticks valent successivement **1 ; 0,8 ; 0,6 ; puis 0,4 pour tous les suivants**, réglables dans `Coefficients.periodicTickWeight`. Les agrégats `*_OVER_TIME` contiennent déjà les durées ; aucune multiplication supplémentaire ne s'ajoute. Les prochains ticks `POISON` et `AFTEREFFECT` donnent la taille des trois premiers morceaux ; tout le stock restant utilise le dernier poids. C'est une approximation lorsque plusieurs lignes ont des durées différentes.
 
@@ -103,13 +268,100 @@ Les autres porteurs encaissent leur premier tick avant de pouvoir se nettoyer ; 
 
 Repères pour 100 PV de poison par tick, importance 3 000 et PV suffisants : trois ticks valent **156 / 184 / 212 / 240** chez un autre porteur selon Antidote ; chez Me, **96 / 144 / 192 / 240**. Sans Antidote, douze ticks valent **600**. Avec seulement 150 PV, ces douze ticks valent **140** sans Antidote, **116** chez un autre porteur avec Antidote disponible. Le **soin continu** reste `HEAL_OVER_TIME × 0,5 × importance / 3000`, neutralisé sous `UNHEALABLE`, sans plafond aux PV manquants actuels ni décote d'avenir. Ces termes restent hors des multiplicateurs courants PT/PM. Le debug affiche cooldown/facteur Antidote et les contributions futures.
 
+## Projection du danger et des soins
+
+La projection sert à départager les **placements terminaux de Me**. Le scoring
+courant ne calcule pas un danger pour chaque entité à chaque nœud. Les API générales
+de `Danger`, `Heal` et `Delta` restent disponibles, mais ne sont pas ajoutées aux
+contributions de `ScoringClass.entityValue`.
+
+### Menace adverse
+
+1. `EntityDanger` retient les items offensifs de chaque adversaire vivant hors Me
+   dont le cooldown permet un lancer au prochain tour (`<= 1`). Les vues d'effets
+   précompilées distinguent cible poireau/invocation et masques applicables.
+   Le canal de dégâts retient `EFFECT_DAMAGE`, `EFFECT_LIFE_DAMAGE` et `EFFECT_POISON` ;
+   le canal de préparation retient les vulnérabilités et les deux types de débuff.
+2. `WalkCells` fournit les paliers marche, Saut, Téléportation et combinaison,
+   selon la mobilité et les ressources projetées. Les coûts des casts de déplacement
+   sont retirés du budget ; les auto-buffs de PT pris en charge peuvent l'augmenter,
+   en tenant compte des effets déjà portés et de leur expiration.
+3. `ItemCoverage` partage les géométries par déplacement, portée et zone. La liste
+   des items atteignant **une cellule donnée** est assemblée à la demande, avec la
+   meilleure distance de zone disponible. On ne construit pas tous les combos du plateau.
+4. `DangerCombo` empile les attaques par rendement dégâts/PT dans le budget et
+   les limites d'usage. Il essaie d'abord les vulnérabilités/débuffs lorsque leur coût
+   améliore le combo. C'est un choix glouton, pas un knapsack exhaustif.
+5. `DangerPlan` partage le plan entre les cibles d'un même camp. `Danger` déroule
+   les adversaires dans l'ordre pertinent pour la cible ; les boucliers après une
+   vulnérabilité/débuff et leurs expirations affectent les attaquants suivants.
+   Les couches de déplacement admissibles sont comparées pour conserver le danger retenu.
+
+Les effets offensifs projetés prennent leur **valeur haute**. Le critique adverse
+est craint dès **50 agilité** ; nos casts et les soins alliés ne prennent le critique
+qu'à **950**. Le saut peut changer la classe critique du palier considéré. Les
+coefficients globaux `DANGER_COEF` et `HEAL_COEF` valent actuellement **1**.
+Cette convention pessimiste est volontairement différente de la simulation de nos casts.
+
+La fenêtre place les lanceurs sur un cycle de jeu ; elle n'est pas une prédiction
+exclusivement faite de dégâts directs sur ce cycle. Une contribution de **poison
+nouvellement projeté** peut condenser plusieurs ticks, selon sa durée et Antidote.
+Les flux déjà posés restent valorisés séparément par `PeriodicScoring`.
+
+### Soin et dégâts nets
+
+`HealClass` estime ce qu'un soigneur peut poser sur une cellule en soin instantané
+et en vitalité, avec valeur basse, sagesse, masques poireau/invocation, paliers de
+mobilité et budget glouton de PT/usages. Me est exclu : ses soins sont déjà simulés
+par le BFS. Le soin continu ne devient pas un cast instantané de la heal map.
+
+Le placement de Me prépare **seulement les soigneurs de son camp**. L'API complète
+peut préparer les deux camps pour les projections d'autres cibles. Les couvertures
+restent séparées par soigneur pour ne pas additionner aveuglément tous les soins
+avant les dégâts.
+
+`DeltaClass.netDamage` déroule l'ordre jusqu'au prochain tour de la cible, cible
+exclue : dégâts adverses, puis vitalité et soin alliés aux créneaux correspondants.
+La vitalité augmente d'abord le cap et, si la cible est soignable, ses PV ; le soin
+ordinaire est plafonné à ce cap. Un mort ne reçoit plus de soin et les dégâts
+suivants gardent leur overkill. Le résultat est `max(0, PV initiaux - PV finaux)`.
+`UNHEALABLE` bloque le soin et le gain de PV de vitalité dans cette projection.
+
+Le danger **brut** conserve la somme des menaces après protections, avant ces soins.
+Brut et net sont mis en cache séparément ; ils alimentent ensemble la pénalité
+ci-dessous. L'aide de la heal map est un potentiel, pas une promesse que l'allié
+choisira effectivement de soigner cette cellule.
+
+## Placement final
+
+Pour chaque état terminal finançable, `FinalCell.evaluate` parcourt les cellules
+accessibles dans sa mobilité courante et minimise :
+
+```text
+Pénalité(cellule) = coût du soutien allié perdu
+                 + coût du potentiel offensif perdu
+                 + risque brut/net pondéré par mon importance de base
+```
+
+Le score de la suite devient son score brut moins cette pénalité minimale. Les
+pénalités restent positives ou nulles : un candidat dont le score brut ne dépasse
+plus le meilleur score terminal validé peut être écarté sans calculer son danger.
+Pendant le balayage, le coût spatial seul permet aussi d'écarter une cellule déjà
+plus chère que le meilleur total trouvé. Ces deux coupures utilisent cette
+non-négativité ; elles sont distinctes de la coupure gloutonne approximative des actions.
+
+Un balayage interrompu retourne un résultat marqué **tronqué**. Il n'entre pas dans
+le cache des placements complets et ne qualifie pas un nouveau plan comme pleinement
+validé avec danger. Le placement réel recalcule sur la dernière capture du combat,
+au lieu de suivre aveuglément la cellule terminale d'une ancienne simulation.
+
 Le **danger de placement** utilise la fraction des PV courants menacée : les 10 premiers % ne coûtent rien, puis les tranches 10–40 %, 40–70 %, 70–100 % et au-delà de 100 % ont respectivement les poids 1, 2, 4 et 20. Les tranches s'additionnent sans saut aux seuils. `Placement.dangerRisk` règle ce barème ; sa valeur est multipliée par l'importance de base du porteur.
 
 Le soin atténue ce risque : **pénalité = importance × (0,4 × risque brut + 0,6 × risque net)**. `Placement.HEAL_ATTENUATION = 0.6` règle la part effaçable par les soins. Le danger brut est pris après les protections et avant les soins ; le net réutilise l'ordre de jeu, le plafond de vie et l'impossibilité de soigner un mort. Aucun soin ne donne de bonus autonome : même avec un net nul, 40 % du risque brut reste compté. Pour 3 000 PV et une importance de 3 000, 1 000 dégâts coûtent 700 sans soin, 340 avec 600 soins utilisables et 280 s'ils sont entièrement compensés. La somme brute est mise en cache par clé de danger, sans reconstruire la carte. Le soutien allié et le potentiel offensif forment le coût spatial décrit ci-dessous.
 
 Le **choix terminal du BFS** conserve immédiatement toute première suite entièrement évaluée avec danger. Si le meilleur score brut ne peut pas être évalué, les autres candidats restent examinés tant que le budget le permet. Un candidat non évalué ne remplace jamais un plan validé. Sans aucune évaluation complète, le repli brut reste possible et affiche `[BFS] danger not taken into account: raw-score fallback` ; une vidange de cette suite rappelle `[VIDANGE] danger not taken into account: raw-score plan`. Cela signale une absence d'évaluation, pas un danger estimé nul. Ces règles ne garantissent pas l'absence de dégâts : les suites validées restent départagées par leur score après pénalité de placement.
 
-Au placement final, le vrai repli sans danger affiche `[placement] danger not taken into account: spatial cost only`. Un résultat complet déjà en cache reste utilisé et ne produit pas cet avertissement. Les budgets existants restent inchangés ; aucune estimation de danger par nœud n'est ajoutée.
+Au placement final, le vrai repli sans danger affiche `[placement] danger not taken into account: spatial cost only`. Un résultat complet déjà en cache reste utilisé et ne produit pas cet avertissement. Ce repli n'ajoute aucune estimation de danger par nœud ; les réserves sont détaillées dans la section budget.
 
 Le **placement près des alliés** dépend du soutien qu'ils peuvent apporter à Me, dans `Scoring/AllySupport.leek`. Aucun soin n'y est ajouté : la heal map le compte déjà. Les buffs utiles sont filtrés selon l'équipement de Me et les masques de cible ; les effets réservés au lanceur sont exclus. Une famille scientifique vaut 20, puis +20 à 200 science de base, +20 à 400 et +10 à 600. Les boucliers suivent les mêmes seuils en résistance de base. Les buffs bruts ont leurs propres poids fixes, sans science ; force 20, agilité 15, sagesse/résistance/magie/science 20, puissance/PT 30, PM 15. Les boucliers bruts valent 20 sans résistance.
 
@@ -127,13 +379,21 @@ Les profils restent figés dans les branches, avec positions et morts lus depuis
 
 Quand tous les gains sont entièrement décotés, `FAR_DISTANCE_WEIGHT = 0.2` conserve une **petite pente de rapprochement**. Le surcoût vaut 0,2 par case au-delà de la plus longue portée utile sur une cible, plus les dix cases de décote (avec le réglage de 10 %). On prend le plus petit dépassement parmi les ennemis vivants ayant un potentiel offensif. Avec une portée maximale utile de 7, une distance de 17 n'ajoute rien, 22 ajoute 1 point, 27 ajoute 2 points. Ce coût n'est pas plafonné ; il ne modifie pas le score dans la plage normale. Sans cible offensive vivante, il reste nul. Le réglage à zéro désactive uniquement cette petite pente.
 
+## Coût des cooldowns
+
 Les **coûts de consommation des cooldowns** se règlent dans `Scoring/Cooldowns.leek` : Régénération **300**, Élévation **150**, Résurrection **200** ; Antidote **50** seulement si la pression adverse de poison atteint **1**, Manumission **30** seulement si celle des entraves atteint **1**. Les autres items valent zéro. Une puce sans cooldown ne paie rien. Le prix appartient au cast et s'ajoute aux frais des casts précédents dans la suite du BFS ; une replanification réelle repart du score de l'état, sans refacturer les consommations passées. `EnemyOffense` utilise le même prix avant de multiplier le gain par les usages possibles.
 
 Les pressions sont calculées par camp dans le contexte de racine et mises en cache avec `ScoringStateConstants`. Un adversaire vivant équipé de poison ou d'une des six entraves apporte **0,25 / 0,5 / 1 / 1,5** selon sa magie de **base ≥ 100 / 200 / 400 / 800**. Les deux familles sont indépendantes : un pur empoisonneur ne compte pas dans les entraves. Un hybride contribue aux deux, les alliés sont exclus, et tous les autres camps comptent en BR. Les seuils se règlent séparément ; aucun inventaire ni registre d'effets n'est parcouru par nœud pour calculer ces pressions.
 
 Un filtre ciblé empêche **Saut + Régénération sans soin** de se qualifier uniquement grâce au buff du Saut. Il examine le soin possible après le déplacement, avec masques, PV manquants, sagesse, critique et `UNHEALABLE`. Le soin propre du passif critique d'Unstable Destroyer reste autorisé lorsqu'il est utile. Une puce sous son prix de cooldown reste différée et peut être réexaminée si une action précédente crée un besoin ou augmente son gain ; elle n'est pas retenue telle quelle. Les valeurs d'entité et d'importance gardent leurs coefficients habituels.
 
-## Documentation et outils
+## Recherche de suites d'actions
+
+Malgré le nom `BFS.leek`, l'algorithme actuel ne développe pas exhaustivement
+toutes les combinaisons. Il score les actions de racine, ouvre un petit nombre de
+débuts de suite, puis choisit un successeur glouton pour chacun. Les autres débuts
+peuvent être développés ensuite si le budget le permet. L'état « ne rien jouer »
+et les nœuds intermédiaires font aussi partie des candidats terminaux.
 
 La **recherche d'actions** regroupe les couples de lancement `From → To` par item,
 cibles réellement concernées et distances dans la zone. Chaque groupe conserve ses
@@ -198,6 +458,30 @@ Tous les nœuds intermédiaires restent des candidats où arrêter le tour ; les
 prometteuses sont évaluées avec danger avant d'ouvrir les suivantes lorsque le budget
 le permet.
 
+## Budget d'opérations
+
+Les limites se règlent dans `User/BFS.leek` et `Load/Cache.leek`. La génération,
+le scoring de racine, la projection et l'expansion ont des coûts distincts : le quota
+ci-dessous ne limite pas tout le coût de la décision à 20 % du budget du tour.
+
+| Réglage | Valeur actuelle | Usage |
+| --- | ---: | --- |
+| `BFS_DECISION_BUDGET_RATIO` | 0,2 | Part du budget restant après préparation consacrée à l'expansion. |
+| `BFS_DECISION_MIN_EXPANSION` | 250 000 | Minimum demandé pour l'expansion, toujours borné par le plafond restant. |
+| `BFS_BEAM_WIDTH` | 4 | Nombre maximal de débuts développés en première vague. |
+| `BFS_BEAM_OPS_PER_BRANCH` | 1 500 000 | Réduit cette largeur quand le budget disponible est faible. |
+| `OPS_RESERVE_TURN` | 500 000 | Marge retirée du plafond de planification du joueur. |
+| `OPS_RESERVE_PLACEMENT` | 300 000 | Marge conservée pour le placement réel. |
+| `OPS_RESERVE_PER_BULB` | 1 000 000 | Part réservée à chaque bulbe du propriétaire qui doit encore jouer. |
+| `TERMINAL_EVAL_MARGIN` | 100 000 | Marge avant de commencer une évaluation terminale. |
+| `OPS_MOVE_MARGIN` | 25 000 | Marge du dernier déplacement réel. |
+
+Les coûts froids de danger/soin sont estimés avant de commencer une clôture et
+réévalués d'après les constructions observées. Une boucle peut s'arrêter entre
+deux candidats ou cellules ; certaines constructions restent indivisibles.
+Ces réserves réduisent les risques de dépassement, sans garantir que toute recherche
+ou toute cellule de placement pourra être entièrement évaluée.
+
 Une décision consacre **20 % du budget restant après sa préparation** à l'expansion
 (`BFS_DECISION_BUDGET_RATIO`, minimum 250 000 opérations, borné par le plafond restant).
 Le plafond du tour est restauré à la sortie : le reste permet de replanifier après les
@@ -208,11 +492,10 @@ global du tour et ne change pas les cœurs des builds.
 Après une action réelle, l'arbre et ces estimations sont abandonnés ; la recherche suivante
 repart de la capture moteur. Les caches géométriques restent utilisables sous leurs clés.
 Le danger demeure évalué à la clôture des plans, et le meilleur plan déjà validé reste
-prioritaire sur un score brut non évalué. Les coefficients sont inchangés. La réserve
-stricte de placement passe de 100 000 à 300 000 opérations : l'ancienne marge ne couvrait
-plus toujours la capture et les profils de fin de tour lors de longs combats avec
-invocations. La réserve globale de tour reste à 500 000 ; la vidange et les clôtures
-terminales disposent donc de moins de cette marge, plutôt que de tuer le placement réel.
+prioritaire sur un score brut non évalué. La réserve stricte de placement vaut
+300 000 opérations, à l'intérieur de la réserve globale de tour de 500 000.
+L'écart finance notamment la vidange et la clôture terminale, en conservant une
+part pour la capture et le placement réels.
 
 La couverture offensive de danger assemble maintenant les items **à la demande pour
 chaque cellule consultée**, en partageant leurs géométries. Le placement de Me ne
@@ -220,6 +503,133 @@ construit que la carte de soin de son camp, dans un cache séparé ; les project
 d'autres cibles gardent l'API complète. Ce sont des économies de calcul, sans nouvelle
 approximation de danger ou de soin. Les replis sans danger restent possibles si aucun
 plan validé n'a pu être financé, et gardent leurs avertissements explicites.
+
+## Caches et invalidation
+
+`BaseHash` décrit les **IDs et cellules des vivants hors Me**. Il change lors d'une
+invocation, d'une mort, d'un relevé ou d'un déplacement d'une autre entité. Il ne
+contient ni ma cellule ni les buffs, PV, cooldowns ou PT/PM : il ne suffit donc pas
+comme clé universelle de géométrie, de score ou de danger.
+
+Les nœuds transportent aussi l'empreinte de mobilité de Me, le contexte offensif
+par camp et les empreintes des soigneurs. Les modifications les patchent par
+contributions anciennes/nouvelles, sans recalculer tout le plateau. Les clés de
+cible ajoutent protections, immunités, échéances de boucliers et Antidote ; le net
+ajoute notamment PV/vie maximale et contexte de soin.
+
+| Durée de vie | Exemples | Règle |
+| --- | --- | --- |
+| Combat / VM | Catalogue `ITEMINFO`, coordonnées, obstacles, tables bitmap, géométries d'items sans occupants, `MIX64_MEMO` | Données statiques ou fonctions pures ; conservées tant que leur clé reste pertinente. |
+| Tour du joueur courant | Inventaires dérivés, rendements/verdicts d'équipement, contextes de scoring, catalogues d'origines, choix d'origine, danger/soin/net, placement | Vidés par `ReloadCacheNewTurn`, également à l'entrée de chaque bulbe. |
+| Racine réelle | `ROOT_SCORING_CONSTANTS`, `ROOT_ALLY_SUPPORT`, `ROOT_ENEMY_OFFENSE` | Sélectionnés/préparés sur la capture réelle ; figés dans les branches pour préserver les deltas locaux. Leurs caches peuvent servir une nouvelle racine équivalente. |
+| Une recherche | `ESTIMATES`, `ORDERED_GROUPS`, `GROUP_SETS` | Abandonnés après l'action réelle. Les estimations servent au classement, les états concrets sont simulés dans le parent courant. |
+| Un état/nœud | Mémos de capacité/disponibilité/importance, `SCORE_VALUES`, état matérialisé | Conservés ou invalidés selon les inputs modifiés ; les valeurs exactes d'une entité intacte peuvent être reprises chez un ancêtre. |
+
+Après un vrai cast, **tous les caches ne sont pas vidés** : l'arbre et ses estimations
+sont abandonnés, mais les caches de tour protégés par leurs empreintes restent
+réutilisables. La capture réelle fournit les nouvelles clés. Le changement de
+joueur/acteur remet les caches de tour à zéro pour éviter de partager des inventaires
+ou des actions propres à deux bulbes/poireaux différents.
+
+Les domaines et cartes cachés partagés doivent rester en lecture seule. Un nouvel
+input consommé par un calcul doit être ajouté à sa clé ou à son invalidation.
+Les identifiants locaux ne doivent pas masquer une fonction native LeekScript ;
+le contrôle du 13 octobre a retiré les collisions détectées, dont `resurrect`.
+
+## Diagnostics
+
+| Sortie ou réglage | Signification |
+| --- | --- |
+| `[COEFS]` | Valeurs des coefficients, importance de base, potentiel courant, facteurs PT/PM et contributions périodiques. |
+| `ScoringDebug.ENABLED` | Actuellement `true` : affichage au début du tour, puis **une** `pause()` après la liste complète. `false` désactive logs et pause. |
+| `Best: … bases, … steps` | Première action du plan retenu et delta terminal. Les bases sont les entrées de racine ; les steps sont les successeurs ajoutés aux suites, pas toutes les simulations effectuées. |
+| `[BFS] group scores: …` | Nombre de scores calculés, estimations reprises et tris servis par le cache pendant cette recherche. |
+| `[BFS] danger not taken into account: raw-score fallback` | Aucun candidat n'a pu être complètement évalué avec danger ; le choix repose sur le score brut. |
+| `[VIDANGE] danger not taken into account: raw-score plan` | La suite exécutée sans nouvelle recherche venait d'un plan non validé avec danger. |
+| `[placement] danger not taken into account: spatial cost only` | Le placement réel n'a pas pu financer le danger ; seuls les coûts spatiaux sont pris en compte. |
+| `[placement] offensive potential truncated: operation budget` | Le profil offensif de placement est partiel ; il ne devient pas une entrée de cache complète. |
+| `[FAIL]`, `[FAIL x2]` | Échec réel et replanification, puis arrêt sur le deuxième échec identique. |
+| `BenchOps.ENABLED` | Actuellement `false`. Le passer temporairement à `true` pour profiler les opérations ; les catégories imbriquées se recouvrent et ne doivent pas être additionnées comme des coûts exclusifs. |
+
+Les debug servent à comprendre les choix. Le journal d'actions du moteur reste la
+source de vérité pour ce qui a réellement été joué : `Using :` ne couvre pas les
+casts de déplacement et les chemins spéciaux d'invocation/résurrection.
+
+## TODO
+
+### Prochaines modifications de scoring
+
+- [ ] **Covid au placement final** : ajouter la valeur de transmission/propagation
+  liée à la cellule de fin de tour. Les conséquences d'un item et la valeur actuelle
+  des effets ne remplacent pas ce terme spatial ; préciser son périmètre avant de
+  fixer les poids et adapter les clés de placement.
+- [ ] **Lock au placement final** : valoriser ou pénaliser les situations de tacle
+  créées par la cellule finale. Ce terme n'existe pas encore dans `Placement` ;
+  définir des paliers simples et éviter de compter deux fois un danger déjà projeté.
+- [ ] **Entités statiques** : revoir leur importance pour les termes de vie/vie max
+  et la valeur de leurs buffs selon ce qu'elles peuvent réellement faire. Reprendre
+  le cas de la tourelle buffée en PM et en force. Le facteur courant de PM ignore
+  déjà les PM lorsque `stat.STATIC` ou l'enracinement est reconnu ; il faut vérifier
+  l'origine du choix observé, pas ajouter aveuglément une seconde pénalité. Une
+  entité immobile conserve une utilité offensive/tactique et ne doit pas valoir zéro.
+
+### Travaux déjà discutés pour la suite
+
+- [ ] **Nettoyage par la team** : compléter les heuristiques Antidote et Manumission
+  par l'aide accessible des alliés et leurs cooldowns. Aujourd'hui le scoring regarde
+  le porteur, sa capacité à payer et son propre cooldown ; la moyenne de team reste
+  à concevoir sans parcours coûteux à chaque nœud.
+- [ ] **Réglage manuel du scoring** : poursuivre les coefficients et paliers à partir
+  des décisions observées en combat, en distinguant une erreur de conséquence,
+  de recherche, de budget et de préférence du scoring.
+- [ ] **Optimisation de la nouvelle recherche** : réduire encore la préparation et
+  les évaluations répétées, conserver les plans validés et rendre le repli brut plus
+  rare. Mesurer la nouvelle version à scoring/builds constants ; aucune nouvelle
+  comparaison avec l'ancien arbre et son quota n'est requise pour ce chantier.
+
+Les TODO ci-dessus ne sont pas implémentés par cette mise à jour documentaire.
+Les autres approximations ci-dessous décrivent l'état actuel ; elles ne constituent
+pas automatiquement des correctifs à entreprendre.
+
+## Limites actuelles
+
+- La recherche ne visite pas tout l'arbre et ne garantit pas le meilleur combo.
+  Les gains réutilisés ne sont pas des bornes admissibles ; la coupure gloutonne
+  peut ignorer une action devenue meilleure après un buff ou une nouvelle cible.
+- Un groupe garde une visée légale par origine et une origine concrète est choisie
+  pour sa simulation. Toutes les origines équivalentes ne sont pas développées
+  comme des branches distinctes avec leur futur placement.
+- Le danger et les soins sont des projections gloutonnes sur les ressources du
+  prochain tour, pas une simulation de toutes les décisions adverses. Les
+  couvertures de déplacement sans occupants ignorent les blocages dynamiques.
+- Les dégâts de vie dans le danger utilisent une vie maximale de référence du
+  lanceur ; Plasma y est évalué avec un multiplicateur de 1. Le danger ne rejoue
+  pas toute la mécanique de `Consequences` ni tous les buffs possibles avant une attaque.
+  Nova, contrecoup et renvoi n'y sont pas des canaux de dégâts indépendants, même
+  si ces effets existent dans la simulation des casts et le scoring d'état.
+- La réduction projetée de boucliers travaille sur des agrégats : les arrondis
+  ligne par ligne du moteur ne sont pas toujours reproduits. Ce chantier reste
+  une approximation connue, pas une exigence de cette alpha.
+- Les profils spatiaux sont figés dans une recherche. Le soutien allié emploie
+  une distance géométrique ; le profil offensif suppose une cible isolée et ne
+  multiplie pas les casts en simulant une chaîne réelle.
+- Les durées de buffs de PT/PM, puissance, stocks de boucliers et renvoi ne suivent
+  pas toutes la pondération détaillée utilisée pour les six caractéristiques.
+  Les flux périodiques utilisent des agrégats, et le soin continu n'est pas plafonné
+  aux PV manquants lors de son scoring.
+- La vidange, les préparations partielles et les replis sans danger restent
+  possibles faute d'opérations. Un plan « validé » a été évalué par notre modèle ;
+  ce n'est pas une garantie de survie dans le combat réel.
+- Certaines empreintes compactes ont des domaines de validité bornés : notamment
+  la clé de soin peut recouvrir la classe critique à partir de **3 996 sagesse**.
+  Les builds habituels ne s'en approchent pas ; des stats extrêmes nécessiteraient
+  de reprendre les packs concernés.
+
+## Mesures historiques
+
+Les résultats suivants décrivent des versions et lots précis ; ils ne sont pas
+un test de réception permanent de la tête actuelle. Le comparatif de l'ancien
+arbre inclut le changement de quota de décision : il n'isole pas le gain des caches.
 
 Comparatif du 12 octobre 2026 contre l'ancien arbre `adbf60d`, à scoring identique,
 avec les cœurs réels et les deux orientations par bloc :
@@ -249,6 +659,12 @@ de 6,3 % celui de préparation des successeurs au budget de 12 millions d'opéra
 Elle visite 8 plutôt que 7 steps au petit budget, et 52 dans les deux versions au grand
 budget. Ce sont des mesures locales, sans garantie de davantage de steps sur tout combat.
 Le comparatif de 128 combats ci-dessus précède cette seconde passe.
+
+## Documentation et outils
+
+Ce README est la référence de fonctionnement actuelle. Les anciens rapports
+d'architecture décrivent leur commit de référence et peuvent contenir des formules
+ou chemins de scoring remplacés depuis.
 
 Le dépôt séparé **[Leekwars-AI-tools](https://github.com/Traual/Leekwars-AI-tools)** conserve :
 
