@@ -81,6 +81,7 @@ class ActionSearchCacheClass {
 	SCORING_CONTEXT
 	ORDERED_GROUPS
 	GROUP_SETS
+	KNOWN_GROUP_SETS
 	NEW_SCORES = 0
 	REUSED_SCORES = 0
 	ORDER_HITS = 0
@@ -94,6 +95,7 @@ class ActionSearchCacheClass {
 		this.DEPENDENCIES = [:]
 		this.ORDERED_GROUPS = [:]
 		this.GROUP_SETS = [:]
+		this.KNOWN_GROUP_SETS = [:]
 	}
 
 	// Les nœuds/validations appartiennent à UNE recherche ; seuls les catalogues et
@@ -128,6 +130,7 @@ class ActionSearchCacheClass {
 		this.SCORING_CONTEXT = context
 		this.RETAINED_ESTIMATES = mapSize(this.ESTIMATES)
 		this.ORDERED_GROUPS = [:] // priorités à retrier après les scores racine courants
+		this.KNOWN_GROUP_SETS = [:] // présence des estimations établie dans CETTE recherche
 		this.NEW_SCORES = 0
 		this.REUSED_SCORES = 0
 		this.ORDER_HITS = 0
@@ -206,6 +209,18 @@ class ActionPriorityClass {
 	}
 }
 
+// Même ordre relatif que le tri complet, pour les gains à reconsidérer malgré
+// leur ancienne estimation nulle/négative. Ce filtre ne dépend pas du parent.
+class ActionSearchOrderClass {
+	ENTRIES
+	RECHECK
+	constructor(entries) {
+		this.ENTRIES = entries
+		this.RECHECK = []
+		for (var hint in entries) if (hint.GAIN <= BFS_DELTA_EPSILON) push(this.RECHECK, hint)
+	}
+}
+
 class ActionSearchFrameClass {
 	GROUPS
 	FRESH
@@ -213,6 +228,7 @@ class ActionSearchFrameClass {
 	COSTS
 	USES
 	ORDER
+	RECHECK_ORDER
 	BEST_FRESH
 	constructor() {
 		this.GROUPS = [:]

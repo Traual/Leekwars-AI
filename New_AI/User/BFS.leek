@@ -158,7 +158,9 @@ class ActionSuite {
 			for (var entry in rootEntries) known[estimateKeyOf(entry.PLAYABLE)] = true
 			var freshPairs = []
 			for (var pair in otherPairs) if (!(estimateKeyOf(pair) in known)) push(freshPairs, pair)
-			pushAll(rootEntries, enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, MyWalkCells, freshPairs, SearchCache))
+			// La fusion est triée juste après : éviter un second tri des nouveaux candidats.
+			// Le tri stable conserve le même ordre de création pour les priorités égales.
+			pushAll(rootEntries, enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, MyWalkCells, freshPairs, SearchCache, false, false))
 			rootEntries = arraySort(rootEntries, function(a, b) { return b.PRIORITY - a.PRIORITY })
 		}
 		BFS_CHAIN_STEPS = 0
@@ -316,14 +318,16 @@ class ActionSuite {
 		var terminalDeadline = terminalLimit - TERMINAL_EVAL_MARGIN
 		var best = SearchCache == null ? null : SearchCache.VALIDATED_NODE
 		var bestFinal = best == null ? 0 : SearchCache.VALIDATED_FINAL
-		var seedClose = (getOperations() <= terminalDeadline && canCloseNow(seed, terminalLimit)) ? closeOf(seed, terminalLimit) : null
-
-		var seedValidated = seedClose != null && count(seedClose) == 3
-		if (seedValidated) {
-			// Conserver cette validation AVANT tout tri ou nouveau calcul : le budget peut
-			// manquer juste après, sans rendre ce plan déjà évalué moins valable.
-			var seedFinal = bestRaw - seedClose[1]
-			if (best == null || seedFinal > bestFinal) { best = seed; bestFinal = seedFinal }
+		// Le même objet a déjà une clôture complète : son score final est connu.
+		// Éviter les gardes, la matérialisation et la consultation du placement à nouveau.
+		var seedValidated = best != null && seed == best
+		if (!seedValidated && getOperations() <= terminalDeadline && canCloseNow(seed, terminalLimit)) {
+			var seedClose = closeOf(seed, terminalLimit)
+			if (count(seedClose) == 3) {
+				seedValidated = true
+				var seedFinal = bestRaw - seedClose[1]
+				if (best == null || seedFinal > bestFinal) { best = seed; bestFinal = seedFinal }
+			}
 		}
 
 		if (getOperations() <= terminalDeadline) {
@@ -480,9 +484,11 @@ class ActionSuite {
 			}
 		}
 		// Les dégâts annulés et les puces sous leur prix peuvent redevenir utiles.
-		for (var hint in frame.ORDER) {
+		// Le tri partage aussi son sous-ensemble de gains nuls/négatifs : ne pas
+		// reparcourir tous les gains positifs à chaque développement.
+		for (var hint in frame.RECHECK_ORDER) {
 			if (getOperations() > OPS_DEADLINE) break
-			if (hint.GAIN > BFS_DELTA_EPSILON || hint.KEY in frame.FRESH) continue
+			if (hint.KEY in frame.FRESH) continue
 			var item = frame.GROUPS[hint.KEY].Item
 			if (!ITEMINFO[item].IS_BOUNDABLE_DAMAGE && CooldownScoring.costOf(item, MySide) <= 0) continue
 			var playable = framePlayable(frame, hint.KEY, mine, walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
@@ -537,7 +543,14 @@ class ActionSuite {
 		var fingerprint = 0
 		var incomplete = false
 		var Workspace = null
-		for (var key in set.KEYS) {
+		// Les estimations ne sont jamais retirées pendant une recherche. Une fois
+		// toutes les clés connues, inutile de vérifier à nouveau leur présence.
+		// Seule la liste est reprise : le tri lit les gains actuels et les actions
+		// examinées résolvent toujours leur origine avant d'être resimulées.
+		if (!BFS_SCORE_PER_ACTION_COST && setKey in SearchCache.KNOWN_GROUP_SETS) {
+			keys = set.KEYS
+			SearchCache.REUSED_SCORES += count(keys)
+		} else for (var key in set.KEYS) {
 			if (getOperations() > OPS_DEADLINE) { incomplete = true; break }
 			if (!(key in SearchCache.ESTIMATES)) {
 				var playable = framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
@@ -560,7 +573,10 @@ class ActionSuite {
 			push(keys, key)
 		}
 		if (!BFS_SCORE_PER_ACTION_COST) {
-			if (!incomplete) fingerprint = set.FINGERPRINT
+			if (!incomplete) {
+				fingerprint = set.FINGERPRINT
+				SearchCache.KNOWN_GROUP_SETS[setKey] = true
+			}
 			else for (var key in keys) fingerprint ^= mix64(key)
 		}
 		var orderKey = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ fingerprint, (count(keys) << 1) | (BFS_SCORE_PER_ACTION_COST ? 1 : 0)), SearchCache.ESTIMATE_VERSION)
@@ -573,11 +589,13 @@ class ActionSuite {
 				push(order, new ActionPriorityClass(key, gain, priority))
 			}
 			order = arraySort(order, function(a, b) { return b.PRIORITY - a.PRIORITY })
+			order = new ActionSearchOrderClass(order)
 			SearchCache.ORDERED_GROUPS[orderKey] = order
 		} else {
 			SearchCache.ORDER_HITS++
 		}
-		frame.ORDER = order
+		frame.ORDER = order.ENTRIES
+		frame.RECHECK_ORDER = order.RECHECK
 		return frame
 	}
 
@@ -647,7 +665,7 @@ class ActionSuite {
 	/* Scoring APRÈS dédoublonnage. La racine calcule ses vrais nœuds. En branche,
 	 * seuls les nouveaux groupes sont scorés pour construire le tri ; les autres
 	 * reprennent leur estimation, puis sont resimulés s'ils sont examinés. */
-	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk, pairs, SearchCache = null, reuseEstimates = false) {
+	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk, pairs, SearchCache = null, reuseEstimates = false, sortResults = true) {
 		if (SearchCache == null) SearchCache = new ActionSearchCacheClass()
 		var entries = []
 		var Workspace = null
@@ -667,7 +685,7 @@ class ActionSuite {
 			}
 			push(entries, entry)
 		}
-		return arraySort(entries, function(a, b) { return b.PRIORITY - a.PRIORITY })
+		return sortResults ? arraySort(entries, function(a, b) { return b.PRIORITY - a.PRIORITY }) : entries
 	}
 
 	static estimateKeyOf(playable) {

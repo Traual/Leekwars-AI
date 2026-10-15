@@ -565,6 +565,23 @@ erreur ni tour avorté : ce test établit un gain d'efficacité observé, pas un
 winrate. Les compteurs sont propres aux bundles de mesure et ne sont pas livrés.
 L'essai de reprise du plan précédent a été retiré, faute de bénéfice mesuré.
 
+Un second essai conserve le suffixe seulement comme candidat terminal, sans place
+réservée dans l'expansion. Sur les 65 tours identiques avant sa première divergence,
+il augmente le coût de `Play` de **0,37 %**, et économise seulement 2 064 opérations
+de calcul du net pour 2,73 millions dépensés à reprendre les plans : il reste retiré.
+
+Un contrôle 4v4 séparé (graine **1756442328**) relève temporairement les plafonds
+natifs et internes, sans changer le générateur ni les builds. Il joue 64 rounds
+sans erreur ni coupure. Les raccourcis exacts évitent un tri intermédiaire, une
+seconde consultation du placement d'un même plan validé, le parcours des clés
+déjà toutes connues dans une recherche et les gains positifs lors du second passage
+réservé aux actions dont le gain estimé est nul ou négatif. Sur ce contrôle, le déroulement complet
+reste identique : **12 076 actions, 20 789 steps et 29 476 développements** pour
+**4 118 304 opérations de moins (0,41 %)** dans les bundles instrumentés.
+Les limites normales restent actives dans l'IA livrée ; ce petit gain ne démontre
+pas un gain de winrate. Les origines et scores des candidats examinés restent
+revalidés ; les clés connues sont remises à zéro à chaque nouvelle recherche.
+
 ## Diagnostics
 
 | Sortie ou réglage | Signification |
@@ -625,6 +642,10 @@ casts de déplacement et les chemins spéciaux d'invocation/résurrection.
   de lancement commune, maintenant que les groupes conservent de nombreuses origines
   `From`. Évaluer la réutilisation de ces listes et l'intérêt de cette approche comme
   alternative ou repli, sans décider pour l'instant de remplacer l'arbre actuel.
+- [ ] **Cache du danger brut absent** : trois journaux `NOT_ITERABLE(null)` observés
+  dans le témoin `db474b4`, dans `Delta.rawAtFleeCell` sur le lot `3-right`. Vérifier
+  pourquoi le danger net peut être disponible sans `CELL_DANGER_GET_CACHE[dangerKey]`,
+  avant de sommer ce dernier ; aucun tour avorté associé dans ce lot.
 
 Les TODO ci-dessus ne sont pas implémentés par cette mise à jour documentaire.
 Les autres approximations ci-dessous décrivent l'état actuel ; elles ne constituent
