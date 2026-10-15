@@ -46,6 +46,7 @@ function ReloadCacheNewTurn() {
     ENTITY_TACTICAL_IMPORTANCE_CACHE = [:]
     SCORING_STATE_CONSTANTS_CACHE = [:]
     ROOT_SCORING_CONSTANTS = null
+    TURN_ACTION_SEARCH_CACHE = null
     ALLY_SUPPORT_PROFILE_CACHE = [:]
     ROOT_ALLY_SUPPORT = null
     ENEMY_OFFENSE_CACHE = [:]
@@ -512,6 +513,10 @@ global OPS_MOVE_MARGIN = 25000
 // Chaine complete du meilleur candidat du dernier plan, racine comprise : quand le budget
 // ne finance plus un plan, ses actions suivantes se jouent telles quelles.
 global BFS_LAST_CHAIN = []
+
+// Catalogues de groupes et estimations, conservés entre les décisions réelles de Me.
+// Reset au tour/acteur ; beginSearch invalide les dépendances modifiées au vrai cast.
+global TURN_ACTION_SEARCH_CACHE = null
 
 // Vrai seulement si la suite retenue a une clôture terminale complète avec danger.
 // Copié par le choix du BFS et relu par la vidange ; reset par Play à chaque tour.

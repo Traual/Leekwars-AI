@@ -71,24 +71,77 @@ class ScoredActionClass {
 	}
 }
 
-/* Durée de vie : UNE recherche, puis abandon après l'action réelle. Les gains
+/* Durée de vie : un TOUR d'entité. Les gains
  * mémorisés ordonnent les candidats ; ils ne sont PAS des majorants. Les candidats
  * réutilisés sont toujours simulés depuis leur parent avant d'entrer dans l'arbre. */
 class ActionSearchCacheClass {
 	ESTIMATES
+	DEPENDENCIES
+	ROOT_STATE
+	SCORING_CONTEXT
 	ORDERED_GROUPS
 	GROUP_SETS
 	NEW_SCORES = 0
 	REUSED_SCORES = 0
 	ORDER_HITS = 0
 	SET_HITS = 0
+	RETAINED_ESTIMATES = 0
 	ESTIMATE_VERSION = 0
 	VALIDATED_NODE
 	VALIDATED_FINAL
 	constructor() {
 		this.ESTIMATES = [:]
+		this.DEPENDENCIES = [:]
 		this.ORDERED_GROUPS = [:]
 		this.GROUP_SETS = [:]
+	}
+
+	// Les nœuds/validations appartiennent à UNE recherche ; seuls les catalogues et
+	// indications de gain survivent à un vrai cast. Un buff de Me invalide tous les
+	// groupes dépendant du lanceur ; une blessure de cible seulement les groupes concernés.
+	beginSearch(State, context) {
+		if (this.SCORING_CONTEXT != context) {
+			this.ESTIMATES = [:]
+			this.DEPENDENCIES = [:]
+			this.ESTIMATE_VERSION++
+		} else if (this.ROOT_STATE != null) {
+			var dirty = 0
+			for (var id: var stat in State) {
+				var before = this.ROOT_STATE[id]
+				if (before == null || !ScoringClass.sameEntityScoreInputs(stat, before)
+					|| stat.CELL != before.CELL || !sameLedger(stat.EFFECTS, before.EFFECTS)) dirty |= dependencyBit(id)
+			}
+			if (dirty != 0) {
+				var stale = []
+				for (var key: var mask in this.DEPENDENCIES) if ((mask & dirty) != 0) push(stale, key)
+				for (var key in stale) { mapRemove(this.ESTIMATES, key); mapRemove(this.DEPENDENCIES, key) }
+				if (count(stale) > 0) this.ESTIMATE_VERSION++
+			}
+		}
+		this.ROOT_STATE = State // capture immuable, jamais le workspace de simulation
+		this.SCORING_CONTEXT = context
+		this.RETAINED_ESTIMATES = mapSize(this.ESTIMATES)
+		this.ORDERED_GROUPS = [:] // priorités à retrier après les scores racine courants
+		this.NEW_SCORES = 0
+		this.REUSED_SCORES = 0
+		this.ORDER_HITS = 0
+		this.SET_HITS = 0
+		this.VALIDATED_NODE = null
+		this.VALIDATED_FINAL = null
+	}
+
+	// Collisions d'ids modulo 64 : elles invalident TROP, jamais pas assez.
+	static dependencyBit(id) { return 1 << (id & 63) }
+
+	static sameLedger(a, b) {
+		if (a == b) return true
+		if (count(a) != count(b)) return false
+		for (var i: var line in a) {
+			var other = b[i]
+			if (count(line) != count(other)) return false
+			for (var j: var value in line) if (value != other[j]) return false
+		}
+		return true
 	}
 }
 

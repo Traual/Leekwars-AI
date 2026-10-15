@@ -123,9 +123,14 @@ class ActionSuite {
 			return null
 		}
 
-		// Gains de groupes partagés entre boards, mais seulement dans CETTE recherche.
-		// Une invocation ne force pas à rescorer les groupes dont la signature ne bouge pas.
-		var SearchCache = new ActionSearchCacheClass()
+		// Les indications survivent au cast réel, les nœuds jamais. La racine continue
+		// à simuler tous ses candidats : aucun score ancien ne devient un score exact.
+		var SearchCache = TURN_ACTION_SEARCH_CACHE
+		if (SearchCache == null) {
+			SearchCache = new ActionSearchCacheClass()
+			TURN_ACTION_SEARCH_CACHE = SearchCache
+		}
+		SearchCache.beginSearch(State, ROOT_SCORING_CONSTANTS)
 
 		// noPlay = plancher "ne rien jouer" ET racine de la chaîne d'états.
 		var noPlay = new NodeClass(null, State, null)
@@ -216,7 +221,7 @@ class ActionSuite {
 			validateChain(leaf, SearchCache)
 		}
 		BenchOps.Stop("BFS")
-		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " reused, " + SearchCache.ORDER_HITS + " cached orders")
+		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " reused, " + SearchCache.ORDER_HITS + " cached orders, " + SearchCache.RETAINED_ESTIMATES + " retained across casts")
 
 		return pickTerminal(candidates, initialScore, count(rootEntries), SearchCache)
 	}
@@ -466,7 +471,7 @@ class ActionSuite {
 				if (Workspace == null) Workspace = clone(State, 1)
 				actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
 					MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk)
-				rememberEstimate(SearchCache, hint.KEY, actual.GAIN)
+				rememberScored(SearchCache, hint.KEY, actual)
 			}
 			if (!actual.DEFERRED && actual.PRIORITY > bestPriority) {
 				bestPriority = actual.PRIORITY
@@ -484,7 +489,7 @@ class ActionSuite {
 			if (Workspace == null) Workspace = clone(State, 1)
 			var actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
 				MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk)
-			rememberEstimate(SearchCache, hint.KEY, actual.GAIN)
+			rememberScored(SearchCache, hint.KEY, actual)
 			if (!actual.DEFERRED && actual.PRIORITY > bestPriority) {
 				bestPriority = actual.PRIORITY
 				best = actual.NODE
@@ -540,7 +545,7 @@ class ActionSuite {
 				var actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
 					MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, Walk)
 				frame.FRESH[key] = actual
-				SearchCache.ESTIMATES[key] = actual.GAIN
+				rememberScored(SearchCache, key, actual)
 				SearchCache.NEW_SCORES++
 				if (!actual.DEFERRED && (frame.BEST_FRESH == null || actual.PRIORITY > frame.BEST_FRESH.PRIORITY)) frame.BEST_FRESH = actual
 			} else {
@@ -581,6 +586,13 @@ class ActionSuite {
 		if (SearchCache.ESTIMATES[key] == gain) return;
 		SearchCache.ESTIMATES[key] = gain
 		SearchCache.ESTIMATE_VERSION++
+	}
+
+	static rememberScored(SearchCache, key, entry) {
+		rememberEstimate(SearchCache, key, entry.GAIN)
+		var mask = SearchCache.DEPENDENCIES[key] ?? 0
+		for (var id: var _stat in entry.NODE.STATE_PATCH) mask |= ActionSearchCacheClass.dependencyBit(id)
+		SearchCache.DEPENDENCIES[key] = mask
 	}
 
 	static framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, WalkFingerprint) {
@@ -649,7 +661,7 @@ class ActionSuite {
 			} else {
 				if (Workspace == null) Workspace = clone(State, 1)
 				entry = simulatePlayable(playable, Workspace, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk)
-				SearchCache.ESTIMATES[key] = entry.GAIN
+				rememberScored(SearchCache, key, entry)
 				SearchCache.NEW_SCORES++
 			}
 			push(entries, entry)
