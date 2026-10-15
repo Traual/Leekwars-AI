@@ -64,6 +64,7 @@ class EntityStateClass extends EntityClass {
 	CRITICAL_SCALE_MEMO = null // dépend uniquement de BASE_STATS, immuable en branche
 	IMPORTANCE_MEMO = null // bases, inventaire et STATIC immuables, copié au clone
 	POTENTIAL_MEMO = null // caractéristiques de base utilisables + tactique, sans PT/PM
+	SCORE_MEMO = null // valeur complète ; inputs immuables + contexte, validés à la lecture
 	RESISTANCE
 	RESISTANCE_BUFF = 0
 	RESISTANCE_BUFF_WEIGHTED = 0
