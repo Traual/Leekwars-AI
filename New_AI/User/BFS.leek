@@ -7,7 +7,8 @@
  *  - Une petite première vague répartit l'expansion entre des items distincts ; les
  *    autres débuts sont ensuite déroulés récursivement (unroll) s'il reste du budget.
  *    Chaque branche suit la plus haute priorité, avec une coupure gloutonne mémorisée.
- *  - Les gains de groupes sont partagés par signature de cibles dans cet appel.
+ *  - Les gains de groupes sont partagés par signature de cibles pendant le tour,
+ *    avec invalidation des dépendances après chaque vrai cast.
  *    Le catalogue géométrique est lié au board et à l'item ; son domaine grandit avec
  *    la mobilité du nœud. Les actions locales suivent sa cellule actuelle.
  *    Les gains cachés sont des estimations, pas des bornes.
@@ -590,7 +591,7 @@ class ActionSuite {
 
 	static rememberScored(SearchCache, key, entry) {
 		rememberEstimate(SearchCache, key, entry.GAIN)
-		var mask = SearchCache.DEPENDENCIES[key] ?? 0
+		var mask = (SearchCache.DEPENDENCIES[key] ?? 0) | ActionSearchCacheClass.dependencyBit(Me)
 		for (var id: var _stat in entry.NODE.STATE_PATCH) mask |= ActionSearchCacheClass.dependencyBit(id)
 		SearchCache.DEPENDENCIES[key] = mask
 	}

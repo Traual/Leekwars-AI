@@ -105,17 +105,23 @@ class ActionSearchCacheClass {
 			this.DEPENDENCIES = [:]
 			this.ESTIMATE_VERSION++
 		} else if (this.ROOT_STATE != null) {
-			var dirty = 0
-			for (var id: var stat in State) {
-				var before = this.ROOT_STATE[id]
-				if (before == null || !ScoringClass.sameEntityScoreInputs(stat, before)
-					|| stat.CELL != before.CELL || !sameLedger(stat.EFFECTS, before.EFFECTS)) dirty |= dependencyBit(id)
-			}
-			if (dirty != 0) {
-				var stale = []
-				for (var key: var mask in this.DEPENDENCIES) if ((mask & dirty) != 0) push(stale, key)
-				for (var key in stale) { mapRemove(this.ESTIMATES, key); mapRemove(this.DEPENDENCIES, key) }
-				if (count(stale) > 0) this.ESTIMATE_VERSION++
+			// Toute estimation dépend de Me : si ses inputs ont changé, inutile de
+			// comparer les registres de tous les autres porteurs avant de tout vider.
+			if (!sameRootInputs(State[Me], this.ROOT_STATE[Me])) {
+				this.ESTIMATES = [:]
+				this.DEPENDENCIES = [:]
+				this.ESTIMATE_VERSION++
+			} else {
+				var dirty = 0
+				for (var id: var stat in State) {
+					if (id != Me && !sameRootInputs(stat, this.ROOT_STATE[id])) dirty |= dependencyBit(id)
+				}
+				if (dirty != 0) {
+					var stale = []
+					for (var key: var mask in this.DEPENDENCIES) if ((mask & dirty) != 0) push(stale, key)
+					for (var key in stale) { mapRemove(this.ESTIMATES, key); mapRemove(this.DEPENDENCIES, key) }
+					if (count(stale) > 0) this.ESTIMATE_VERSION++
+				}
 			}
 		}
 		this.ROOT_STATE = State // capture immuable, jamais le workspace de simulation
@@ -132,6 +138,11 @@ class ActionSearchCacheClass {
 
 	// Collisions d'ids modulo 64 : elles invalident TROP, jamais pas assez.
 	static dependencyBit(id) { return 1 << (id & 63) }
+
+	static sameRootInputs(stat, before) {
+		return before != null && ScoringClass.sameEntityScoreInputs(stat, before)
+			&& stat.CELL == before.CELL && sameLedger(stat.EFFECTS, before.EFFECTS)
+	}
 
 	static sameLedger(a, b) {
 		if (a == b) return true

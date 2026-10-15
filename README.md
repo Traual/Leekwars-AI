@@ -187,7 +187,7 @@ exactes du parent ou d'un ancêtre intact. Le danger projeté n'est pas un terme
 
 Une entité morte vaut zéro. Le bonus fixe de présence est remplacé par `EntityImportance.value(stat)` : **(caractéristiques utiles + tactique) × multiplicateur PT × multiplicateur PM**. Les poids et les paliers sont des valeurs de départ à régler manuellement dans `Importance.leek`.
 
-Les coefficients de **vie et de vie maximale** utilisent chacun des tranches de points : les 1 000 premiers valent ×2, les points de 1 000 à 3 000 ×1,75, de 3 000 à 5 000 ×1,5, de 5 000 à 7 000 ×1,25, et ceux au-delà de 7 000 ×1. Les contributions des tranches s'additionnent, puis la somme est multipliée par `EntityImportance.value(stat) / 3000` pour la vie, et par `EntityImportance.value(stat) / 1500` pour la vie maximale. Le score reste continu aux seuils : un poids ne s'applique jamais rétroactivement à tous les PV.
+Les coefficients de **vie et de vie maximale** utilisent chacun des tranches de points : les 1 000 premiers valent ×2, les points de 1 000 à 3 000 ×1,75, de 3 000 à 5 000 ×1,5, de 5 000 à 7 000 ×1,25, et ceux au-delà de 7 000 ×1. Les contributions des tranches s'additionnent, puis la somme est multipliée par `EntityImportance.value(stat) / 3000` pour la vie, et par `EntityImportance.value(stat) / 2000` pour la vie maximale. Le score reste continu aux seuils : un poids ne s'applique jamais rétroactivement à tous les PV.
 
 `life` et `totalLife` rendent le coefficient moyen `importance / diviseur × points pondérés / points`, avec une garde pour les valeurs nulles ou négatives. Le scoring conserve ainsi son calcul avant/après. Pour une importance de 3 000, la perte de 9 000 à 8 000 PV rapporte 1 000 sur le terme de vie, celle de 2 000 à 1 000 rapporte 1 750, et celle de 1 000 à 0 rapporte 2 000, avant les autres contributions du kill. Les soins suivent la même courbe en sens inverse. La vie maximale utilise exclusivement `TOTAL_LIFE` pour ses tranches, sans dépendre des blessures courantes ; un gain de vitalité qui augmente à la fois vie et vie max valorise les deux deltas. Les deux fonctions ont les mêmes tranches, mais des diviseurs distincts (3 000 pour la vie, 1 500 pour la vie max), réglables séparément dans `Coefficients.leek`.
 
@@ -381,7 +381,7 @@ Quand tous les gains sont entièrement décotés, `FAR_DISTANCE_WEIGHT = 0.2` co
 
 ## Coût des cooldowns
 
-Les **coûts de consommation des cooldowns** se règlent dans `Scoring/Cooldowns.leek` : Régénération **300**, Élévation **150**, Résurrection **200** ; Antidote **50** seulement si la pression adverse de poison atteint **1**, Manumission **30** seulement si celle des entraves atteint **1**. Les autres items valent zéro. Une puce sans cooldown ne paie rien. Le prix appartient au cast et s'ajoute aux frais des casts précédents dans la suite du BFS ; une replanification réelle repart du score de l'état, sans refacturer les consommations passées. `EnemyOffense` utilise le même prix avant de multiplier le gain par les usages possibles.
+Les **coûts de consommation des cooldowns** se règlent dans `Scoring/Cooldowns.leek` : Régénération **300**, Élévation **150**, Résurrection **200** ; Antidote **20** seulement si la pression adverse de poison atteint **1**, Manumission **20** seulement si celle des entraves atteint **1**. Les autres items valent zéro. Une puce sans cooldown ne paie rien. Le prix appartient au cast et s'ajoute aux frais des casts précédents dans la suite du BFS ; une replanification réelle repart du score de l'état, sans refacturer les consommations passées. `EnemyOffense` utilise le même prix avant de multiplier le gain par les usages possibles.
 
 Les pressions sont calculées par camp dans le contexte de racine et mises en cache avec `ScoringStateConstants`. Un adversaire vivant équipé de poison ou d'une des six entraves apporte **0,25 / 0,5 / 1 / 1,5** selon sa magie de **base ≥ 100 / 200 / 400 / 800**. Les deux familles sont indépendantes : un pur empoisonneur ne compte pas dans les entraves. Un hybride contribue aux deux, les alliés sont exclus, et tous les autres camps comptent en BR. Les seuils se règlent séparément ; aucun inventaire ni registre d'effets n'est parcouru par nœud pour calculer ces pressions.
 
@@ -445,11 +445,26 @@ le remplace également. Il filtre les items avant leur géométrie. Chaque nœud
 aussi les valeurs exactes des entités déjà scorées : ses candidats réutilisent les
 valeurs d'avant-cast et calculent celles d'après-cast avec les mêmes formules.
 
+Le mémo `SCORE_MEMO` évite aussi de recalculer la valeur complète d'un clone dont
+les inputs de score n'ont pas changé. Une simple dépense de PT/PM ou un changement
+d'arme n'invalide pas cette valeur ; les capacités totales, caractéristiques, puissance,
+protections, PV, états, durées pondérées, entraves et cooldowns de nettoyage pertinents
+sont comparés exactement. Le contexte de scoring doit être le même. Les objets scorés
+sont immuables ; les conséquences écrivent leurs clones. Tout nouvel input ajouté au
+scoring doit aussi entrer dans `sameEntityScoreInputs`.
+
 À la racine, les actions locales sont scorées avant la génération offensive. Une première
 suite entièrement évaluée avec danger est conservée avant l'expansion, dans les limites
 existantes, lorsque son coût est finançable. Une préparation ou une expansion qui épuise
-ensuite le budget ne peut pas effacer ce plan validé. Les nouveaux catalogues d'origines et leurs choix sont vidés
-au changement de tour/acteur ; les ordres de priorité et gains restent locaux à la recherche.
+ensuite le budget ne peut pas effacer ce plan validé. Les catalogues d'origines et leurs choix sont vidés
+au changement de tour/acteur. `TURN_ACTION_SEARCH_CACHE` conserve les ensembles de groupes
+et les estimations entre les casts réels. À chaque nouvelle capture, les modifications
+de stats, cellule ou registre d'effets invalident les estimations qui en dépendent ;
+un changement du contexte de scoring les vide toutes. Les dépendances utilisent un
+masque d'IDs modulo 64 : une collision peut provoquer une invalidation supplémentaire.
+Les nœuds et validations de danger ne survivent jamais à une recherche. La racine
+resimule tous ses candidats ; dans les branches, les gains conservés restent des
+indications gloutonnes, jamais des bornes ni des scores exacts pour un autre état.
 
 L'expansion partage son budget entre **au plus quatre débuts**, en privilégiant des
 items distincts. La largeur diminue lorsque le budget disponible ne finance pas
@@ -489,8 +504,9 @@ effets réels du premier cast, au lieu de dépenser presque tout sur une longue 
 projetée puis de la vider sans nouvelle recherche. Ce quota ne réduit pas le budget
 global du tour et ne change pas les cœurs des builds.
 
-Après une action réelle, l'arbre et ces estimations sont abandonnés ; la recherche suivante
-repart de la capture moteur. Les caches géométriques restent utilisables sous leurs clés.
+Après une action réelle, l'arbre est abandonné ; la recherche suivante repart de la
+capture moteur. Les estimations encore pertinentes et les caches géométriques restent
+utilisables sous leurs clés. Les candidats examinés sont toujours resimulés.
 Le danger demeure évalué à la clôture des plans, et le meilleur plan déjà validé reste
 prioritaire sur un score brut non évalué. La réserve stricte de placement vaut
 300 000 opérations, à l'intérieur de la réserve globale de tour de 500 000.
@@ -522,11 +538,12 @@ ajoute notamment PV/vie maximale et contexte de soin.
 | Combat / VM | Catalogue `ITEMINFO`, coordonnées, obstacles, tables bitmap, géométries d'items sans occupants, `MIX64_MEMO` | Données statiques ou fonctions pures ; conservées tant que leur clé reste pertinente. |
 | Tour du joueur courant | Inventaires dérivés, rendements/verdicts d'équipement, contextes de scoring, catalogues d'origines, choix d'origine, danger/soin/net, placement | Vidés par `ReloadCacheNewTurn`, également à l'entrée de chaque bulbe. |
 | Racine réelle | `ROOT_SCORING_CONSTANTS`, `ROOT_ALLY_SUPPORT`, `ROOT_ENEMY_OFFENSE` | Sélectionnés/préparés sur la capture réelle ; figés dans les branches pour préserver les deltas locaux. Leurs caches peuvent servir une nouvelle racine équivalente. |
-| Une recherche | `ESTIMATES`, `ORDERED_GROUPS`, `GROUP_SETS` | Abandonnés après l'action réelle. Les estimations servent au classement, les états concrets sont simulés dans le parent courant. |
-| Un état/nœud | Mémos de capacité/disponibilité/importance, `SCORE_VALUES`, état matérialisé | Conservés ou invalidés selon les inputs modifiés ; les valeurs exactes d'une entité intacte peuvent être reprises chez un ancêtre. |
+| Tour du joueur courant, entre les casts | `ESTIMATES`, `DEPENDENCIES`, `GROUP_SETS` | Estimations invalidées selon les entités modifiées et le contexte ; groupes protégés par plateau/mobilité/disponibilité. Aucun nœud réutilisé. |
+| Une recherche | `ORDERED_GROUPS`, candidat validé avec danger | Tris reconstruits à la nouvelle racine ; aucune ancienne validation de danger reprise. |
+| Un état/nœud | Mémos de capacité/disponibilité/importance, `SCORE_MEMO`, `SCORE_VALUES`, état matérialisé | Conservés ou invalidés selon les inputs modifiés ; les valeurs exactes d'une entité intacte peuvent être reprises chez un ancêtre. |
 
-Après un vrai cast, **tous les caches ne sont pas vidés** : l'arbre et ses estimations
-sont abandonnés, mais les caches de tour protégés par leurs empreintes restent
+Après un vrai cast, **tous les caches ne sont pas vidés** : l'arbre est abandonné,
+mais les estimations non invalidées et les caches de tour protégés par leurs empreintes restent
 réutilisables. La capture réelle fournit les nouvelles clés. Le changement de
 joueur/acteur remet les caches de tour à zéro pour éviter de partager des inventaires
 ou des actions propres à deux bulbes/poireaux différents.
@@ -536,6 +553,18 @@ input consommé par un calcul doit être ajouté à sa clé ou à son invalidati
 Les identifiants locaux ne doivent pas masquer une fonction native LeekScript ;
 le contrôle du 13 octobre a retiré les collisions détectées, dont `resurrect`.
 
+### Mesure des caches du 15 octobre 2026
+
+Lot fixe de dix combats d'éleveur par variante, adversaire `6c145af`, mêmes graines,
+builds et cœurs réels. Les deux caches conservés produisent, sur les 44 fenêtres de
+tour communes à tous les essais et plafonnées dans le témoin, **19,5 % de steps et
+20,6 % de tentatives de développement supplémentaires**, pour **7,8 % d'opérations
+en moins**. La profondeur maximale moyenne ne progresse pas (5,75 → 5,41).
+Sur ce lot, témoin et finale font chacun **4 victoires, 2 nuls, 4 défaites**, sans
+erreur ni tour avorté : ce test établit un gain d'efficacité observé, pas un gain de
+winrate. Les compteurs sont propres aux bundles de mesure et ne sont pas livrés.
+L'essai de reprise du plan précédent a été retiré, faute de bénéfice mesuré.
+
 ## Diagnostics
 
 | Sortie ou réglage | Signification |
@@ -543,7 +572,7 @@ le contrôle du 13 octobre a retiré les collisions détectées, dont `resurrect
 | `[COEFS]` | Valeurs des coefficients, importance de base, potentiel courant, facteurs PT/PM et contributions périodiques. |
 | `ScoringDebug.ENABLED` | Actuellement `true` : affichage au début du tour, puis **une** `pause()` après la liste complète. `false` désactive logs et pause. |
 | `Best: … bases, … steps` | Première action du plan retenu et delta terminal. Les bases sont les entrées de racine ; les steps sont les successeurs ajoutés aux suites, pas toutes les simulations effectuées. |
-| `[BFS] group scores: …` | Nombre de scores calculés, estimations reprises et tris servis par le cache pendant cette recherche. |
+| `[BFS] group scores: …` | Scores calculés, estimations reprises, tris servis et estimations conservées depuis les casts précédents. |
 | `[BFS] danger not taken into account: raw-score fallback` | Aucun candidat n'a pu être complètement évalué avec danger ; le choix repose sur le score brut. |
 | `[VIDANGE] danger not taken into account: raw-score plan` | La suite exécutée sans nouvelle recherche venait d'un plan non validé avec danger. |
 | `[placement] danger not taken into account: spatial cost only` | Le placement réel n'a pas pu financer le danger ; seuls les coûts spatiaux sont pris en compte. |
