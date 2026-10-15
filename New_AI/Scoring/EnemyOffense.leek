@@ -4,6 +4,7 @@ include("../includes.leek")
 
 global ENEMY_OFFENSE_CACHE = [:]
 global ROOT_ENEMY_OFFENSE = null
+global ENEMY_OFFENSE_MIX_MEMO = [:]
 
 class EnemyOffenseProfile {
     GAIN = 0
@@ -18,6 +19,17 @@ class EnemyOffenseContext {
     PROFILES = [:]
 }
 
+class EnemyOffenseCurve {
+    GAIN
+    MIN_RANGE
+    MAX_RANGE
+    constructor(gain, info) {
+        this.GAIN = gain
+        this.MIN_RANGE = info.MINRANGE
+        this.MAX_RANGE = info.MAXRANGE
+    }
+}
+
 class EnemyOffense {
     // Réglages manuels : perdre 10 % du potentiel par case hors portée, jusqu'à 100 %.
     static RANGE_PENALTY_PER_CELL = 0.1
@@ -28,6 +40,16 @@ class EnemyOffense {
     // Préparation bornée à la racine ; aucune simulation dans le balayage des cellules.
     static MAX_PREP_OPERATIONS = 200000
     static CAST_MARGIN = 20000
+
+    // Les captures successives d'un tour partagent de longs préfixes de registre.
+    // Même mélange exact, mémo propre à ce profil et vidé à chaque changement de joueur.
+    // Ne pas remplir le cache persistant de mix64Memo avec ces digests de contenu.
+    static memoMix(value) {
+        if (value in ENEMY_OFFENSE_MIX_MEMO) return ENEMY_OFFENSE_MIX_MEMO[value]
+        var mixed = mix64(value)
+        ENEMY_OFFENSE_MIX_MEMO[value] = mixed
+        return mixed
+    }
 
     static rangePenalty(distance, minRange, maxRange) {
         var gap = 0
@@ -87,7 +109,7 @@ class EnemyOffense {
     // retirer des effets chez d'autres porteurs et activer des passifs : inclure tout l'état,
     // les registres et les cooldowns, plutôt qu'une clé de seuls dégâts/positions.
     static inputHash(State, BaseHash) {
-        var hash = mix64(BaseHash ^ Me)
+        var hash = memoMix(BaseHash ^ Me)
         for (var id: var stat in State) {
             var part = mix64Memo(id + 1)
             for (var value in [stat.LIFE, stat.TOTAL_LIFE, stat.STRENGTH, stat.WISDOM,
@@ -98,32 +120,32 @@ class EnemyOffense {
                 stat.CELL, stat.SIDE, stat.SUMMONER == null ? -1 : stat.SUMMONER,
                 stat.WEAPON == null ? -1 : stat.WEAPON, stat.STATIC ? 1 : 0,
                 stat.IS_SUMMON ? 1 : 0, stat instanceof BulbState ? 1 : 0,
-                stat.SPECIAL_WEAPON, stat.SHIELD_EXPIRY_HASH]) part = mix64(part ^ value)
-            part = mix64(part ^ mapSize(stat.BASE_STATS))
-            for (var type: var value in stat.BASE_STATS) part = mix64(mix64(part ^ type) ^ value)
-            part = mix64(part ^ count(stat.INVENTORY))
+                stat.SPECIAL_WEAPON, stat.SHIELD_EXPIRY_HASH]) part = memoMix(part ^ value)
+            part = memoMix(part ^ mapSize(stat.BASE_STATS))
+            for (var type: var value in stat.BASE_STATS) part = memoMix(memoMix(part ^ type) ^ value)
+            part = memoMix(part ^ count(stat.INVENTORY))
             for (var item in stat.INVENTORY) {
                 var cd = StateClass.cooldownOf(stat, item)
-                part = mix64(mix64(part ^ item) ^ (cd == null ? -1 : cd))
+                part = memoMix(memoMix(part ^ item) ^ (cd == null ? -1 : cd))
             }
-            part = mix64(part ^ count(stat.EFFECTS))
+            part = memoMix(part ^ count(stat.EFFECTS))
             for (var effect in stat.EFFECTS) {
-                part = mix64(part ^ count(effect))
+                part = memoMix(part ^ count(effect))
                 for (var index = 0; index < count(effect); index++) {
                     var value = index == 4 ? (effect[index] ? 1 : 0) : effect[index]
-                    part = mix64(part ^ value)
+                    part = memoMix(part ^ value)
                 }
             }
             if (stat.AWAKEN_MARKS != null) {
                 var marks = 0
                 for (var awakeningKey: var active in stat.AWAKEN_MARKS) if (active) marks ^= mix64Memo(awakeningKey)
-                part = mix64(part ^ marks)
+                part = memoMix(part ^ marks)
             }
-            hash = mix64(hash ^ part)
+            hash = memoMix(hash ^ part)
         }
         // Les comparaisons d'ordre gouvernent les ticks. Encoder l'ordre relatif exact,
         // sans arrondir les créneaux fractionnaires des invocations/résurrections.
-        for (var id in StateClass.getSortedEntityByTurnOrder(State)) hash = mix64(hash ^ id)
+        for (var id in StateClass.getSortedEntityByTurnOrder(State)) hash = memoMix(hash ^ id)
         return hash
     }
 
@@ -157,6 +179,7 @@ class EnemyOffense {
         for (var id: var target in State) {
             if (target.SIDE == caster.SIDE || target.LIFE <= 0) continue
             var profile = new EnemyOffenseProfile()
+            var curves = []
             var before = ScoringClass.entityValue(target)
             beforeValues[id] = before
             for (var item in playable) {
@@ -171,12 +194,23 @@ class EnemyOffense {
                 if (gain <= 0) continue
                 profile.GAIN = max(profile.GAIN, gain)
                 profile.MAX_RANGE = max(profile.MAX_RANGE, info.MAXRANGE)
+                // Une courbe déjà calculée, au moins aussi forte et dont la portée
+                // contient celle-ci, domine chaque distance. Aucun maximum ne bouge.
+                var dominated = false
+                for (var curve in curves) {
+                    if (curve.GAIN >= gain && curve.MIN_RANGE <= info.MINRANGE && curve.MAX_RANGE >= info.MAXRANGE) {
+                        dominated = true
+                        break
+                    }
+                }
+                if (dominated) continue
+                push(curves, new EnemyOffenseCurve(gain, info))
                 // Au-delà de ces distances, tous les gains valent zéro ; la petite pente
                 // lointaine reste calculée à part. Tables denses,
                 // préparées ici : jamais de boucle sur l'inventaire pendant le placement.
                 var reach = info.MAXRANGE + (RANGE_PENALTY_PER_CELL > 0 ? ceil(1 / RANGE_PENALTY_PER_CELL) : 0)
+                while (count(profile.SCORE_BY_DISTANCE) <= reach) push(profile.SCORE_BY_DISTANCE, 0)
                 for (var distance = 0; distance <= reach; distance++) {
-                    if (distance >= count(profile.SCORE_BY_DISTANCE)) push(profile.SCORE_BY_DISTANCE, 0)
                     var accessible = gain * (1 - rangePenalty(distance, info.MINRANGE, info.MAXRANGE))
                     profile.SCORE_BY_DISTANCE[distance] = max(profile.SCORE_BY_DISTANCE[distance], accessible)
                 }

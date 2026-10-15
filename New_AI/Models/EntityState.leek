@@ -65,6 +65,7 @@ class EntityStateClass extends EntityClass {
 	IMPORTANCE_MEMO = null // bases, inventaire et STATIC immuables, copié au clone
 	POTENTIAL_MEMO = null // caractéristiques de base utilisables + tactique, sans PT/PM
 	SCORE_MEMO = null // valeur complète ; inputs immuables + contexte, validés à la lecture
+	CHARACTERISTICS_MEMO = null // sous-terme exact, réutilisable après une blessure ou un poison
 	RESISTANCE
 	RESISTANCE_BUFF = 0
 	RESISTANCE_BUFF_WEIGHTED = 0

@@ -67,18 +67,19 @@ class ScoringClass {
         var score = Coefficients.presence(stat)
         score += stat.LIFE                  * Coefficients.life(stat)
         score += stat.TOTAL_LIFE            * Coefficients.totalLife(stat)
-        var characteristics = characteristicsValue(stat)
-        score += characteristics + ShackleScoring.correction(stat, characteristics)
-        score += stat.ABSOLUTE_SHIELD       * Coefficients.absoluteShield(stat)
-        score += stat.RELATIVE_SHIELD       * Coefficients.relativeShield(stat)
-        score += stat.DAMAGE_RETURN         * Coefficients.damageReturn(stat)
+        score += characteristicsScore(stat)
+        // Un stock nul contribue exactement zéro : le coefficient peut rester
+        // paresseux. Ses fonctions restent inchangées pour le debug et les réglages.
+        if (stat.ABSOLUTE_SHIELD != 0) score += stat.ABSOLUTE_SHIELD * Coefficients.absoluteShield(stat)
+        if (stat.RELATIVE_SHIELD != 0) score += stat.RELATIVE_SHIELD * Coefficients.relativeShield(stat)
+        if (stat.DAMAGE_RETURN != 0) score += stat.DAMAGE_RETURN * Coefficients.damageReturn(stat)
         // Une seule projection pour partager les PV entre poison et contrecoup.
         var periodic = PeriodicScoring.damageValues(stat)
         if (periodic != null) {
             score += stat.POISON_OVER_TIME      * Coefficients.poison(stat, periodic)
             score += stat.AFTEREFFECT_OVER_TIME * Coefficients.aftereffect(stat, periodic)
         }
-        score += stat.HEAL_OVER_TIME        * Coefficients.heal(stat)
+        if (stat.HEAL_OVER_TIME != 0) score += stat.HEAL_OVER_TIME * Coefficients.heal(stat)
         return max(0, score) // Un allié vivant ne devient pas plus rentable mort.
     }
 
@@ -87,6 +88,40 @@ class ScoringClass {
     // Partagée avec la copie sans entraves : Manumission décote aussi leurs synergies.
     static characteristicsValue(stat) {
         return characteristicsPotential(stat) * Coefficients.tpMultiplier(stat) * Coefficients.mpMultiplier(stat)
+    }
+
+    // Les PV, protections et flux périodiques changent souvent sans modifier le
+    // potentiel des caractéristiques. Conserver sa somme exacte, correction des
+    // entraves comprise, au lieu de recalculer tous les coefficients après chaque hit.
+    static characteristicsScore(stat) {
+        var memo = stat.CHARACTERISTICS_MEMO
+        if (memo != null && memo.CONTEXT == ROOT_SCORING_CONSTANTS
+            && sameCharacteristicsInputs(stat, memo.INPUTS)) return memo.VALUE
+        var characteristics = characteristicsValue(stat)
+        var value = characteristics + ShackleScoring.correction(stat, characteristics)
+        stat.CHARACTERISTICS_MEMO = new EntityScoreMemo(stat, ROOT_SCORING_CONSTANTS, value)
+        return value
+    }
+
+    static sameCharacteristicsInputs(a, b) {
+        if (a == b) return true
+        if (a.STRENGTH != b.STRENGTH || a.WISDOM != b.WISDOM
+            || a.AGILITY != b.AGILITY || a.RESISTANCE != b.RESISTANCE
+            || a.SCIENCE != b.SCIENCE || a.MAGIC != b.MAGIC || a.POWER != b.POWER
+            || a.TOTAL_TP != b.TOTAL_TP || a.TOTAL_MP != b.TOTAL_MP || a.STATES != b.STATES
+            || a.STRENGTH_BUFF != b.STRENGTH_BUFF || a.STRENGTH_BUFF_WEIGHTED != b.STRENGTH_BUFF_WEIGHTED
+            || a.WISDOM_BUFF != b.WISDOM_BUFF || a.WISDOM_BUFF_WEIGHTED != b.WISDOM_BUFF_WEIGHTED
+            || a.AGILITY_BUFF != b.AGILITY_BUFF || a.AGILITY_BUFF_WEIGHTED != b.AGILITY_BUFF_WEIGHTED
+            || a.RESISTANCE_BUFF != b.RESISTANCE_BUFF || a.RESISTANCE_BUFF_WEIGHTED != b.RESISTANCE_BUFF_WEIGHTED
+            || a.SCIENCE_BUFF != b.SCIENCE_BUFF || a.SCIENCE_BUFF_WEIGHTED != b.SCIENCE_BUFF_WEIGHTED
+            || a.MAGIC_BUFF != b.MAGIC_BUFF || a.MAGIC_BUFF_WEIGHTED != b.MAGIC_BUFF_WEIGHTED
+            || a.SHACKLE_STRENGTH != b.SHACKLE_STRENGTH || a.SHACKLE_AGILITY != b.SHACKLE_AGILITY
+            || a.SHACKLE_WISDOM != b.SHACKLE_WISDOM || a.SHACKLE_MAGIC != b.SHACKLE_MAGIC
+            || a.SHACKLE_TP != b.SHACKLE_TP || a.SHACKLE_MP != b.SHACKLE_MP) return false
+        // Châtiment est le seul équipement dont le coefficient de puissance lit les PV.
+        if (a.LIFE != b.LIFE && Equipment.canUseLifeDamage(a)) return false
+        if (ShackleScoring.hasShackles(a) && ShackleScoring.cooldown(a) != ShackleScoring.cooldown(b)) return false
+        return true
     }
 
     // Potentiel COURANT, distinct de l'importance de BASE utilisée pour présence/vie.

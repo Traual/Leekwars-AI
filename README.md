@@ -582,6 +582,25 @@ Les limites normales restent actives dans l'IA livrée ; ce petit gain ne démon
 pas un gain de winrate. Les origines et scores des candidats examinés restent
 revalidés ; les clés connues sont remises à zéro à chaque nouvelle recherche.
 
+La passe suivante conserve les formules et coefficients, et cible des postes plus
+importants : mémo séparé du potentiel des caractéristiques, calcul paresseux des
+protections/soins dont le stock est nul, mélanges de hash du profil offensif
+mémorisés pendant le tour, et courbes de portée entièrement dominées ignorées.
+Les deux orientations du même contrôle 4v4 restent identiques octet pour octet
+(hors opérations/logs), avec les mêmes simulations, steps et développements :
+
+| Camp mesuré | Opérations avant | Après | Économie |
+| --- | ---: | ---: | ---: |
+| `4-left` | 1 004 728 333 | 940 763 437 | **6,37 %** |
+| `4-right` | 6 152 826 540 | 5 950 071 846 | **3,30 %** |
+
+Les durées de buffs, six entraves, Manumission, capacités PT/PM et états sont
+vérifiés par le mémo des caractéristiques ; les PV l'invalident aussi pour un
+porteur de Châtiment. Une nouvelle dépendance introduite dans un coefficient doit
+être ajoutée aux validations de mémos correspondantes. La sonde compare **360
+mutations** au calcul direct sans ce mémo, sans écart. Le test final aux limites
+normales ne présente aucune erreur ni tour avorté ; il ne mesure pas la winrate.
+
 ## Diagnostics
 
 | Sortie ou réglage | Signification |
