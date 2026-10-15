@@ -11,8 +11,8 @@ class CooldownScoring {
     static REGENERATION_COST = 300
     static ELEVATION_COST = 150
     static RESURRECTION_COST = 200
-    static ANTIDOTE_COST = 50
-    static MANUMISSION_COST = 30
+    static ANTIDOTE_COST = 20
+    static MANUMISSION_COST = 20
     static POISON_PRESSURE_THRESHOLD = 1
     static SHACKLE_PRESSURE_THRESHOLD = 1
 
