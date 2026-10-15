@@ -210,7 +210,7 @@ class DangerPlanClass {
 		var ordersById = [: ]
 		var orders = []
 		var maps = []
-		var mapKeys = []
+		var coverageKeys = []
 		var seeds = []
 		var actives = []
 		var sameSides = []
@@ -295,7 +295,7 @@ class DangerPlanClass {
 				}
 			}
 			push(maps, offMap)
-			push(mapKeys, mapKey)
+			push(coverageKeys, mapKey)
 			push(tierMaps, tiers)
 			push(tierKeys, tierKey)
 			push(tierCrits, tierCrit)
@@ -314,7 +314,7 @@ class DangerPlanClass {
 			// chaque cellule et à chaque nœud dans le déroulé du net.
 			push(sameSides, stat != null && stat.SIDE == TargetSide)
 		}
-		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, mapKeys, seeds, actives, sameSides, tierMaps, tierKeys, tierCrits, tierPacks, tierTps)
+		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, coverageKeys, seeds, actives, sameSides, tierMaps, tierKeys, tierCrits, tierPacks, tierTps)
 		// Les séquences de jeu ne dépendent QUE de l'ordre de tour (donc du set des vivants, qui
 		// pinne le tri), du camp visé, de qui menace et de qui peut changer un net. La clé du plan,
 		// elle, porte le BaseHash : un ennemi poussé fabrique un plan neuf dont les séquences

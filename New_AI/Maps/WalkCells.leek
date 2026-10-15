@@ -304,8 +304,8 @@ class WalkCellsClass {
 		var jump = cJ  ? getJump(state, entity, base_hash, stats, hashWalk) : [:]
 		var tele = cT  ? getTele(state, entity, base_hash, stats, hashWalk) : [:]
 		var tpj  = cTJ ? getTPJ(state, entity, base_hash, stats, hashWalk)  : [:]
-		var max  = cTJ ? tpj : (cT ? tele : (cJ ? jump : walk))
-		var layers = new LayersClass(walk, jump, tele, tpj, max)
+		var maxLayer = cTJ ? tpj : (cT ? tele : (cJ ? jump : walk))
+		var layers = new LayersClass(walk, jump, tele, tpj, maxLayer)
 		if (layerKey != null) LEEK_LAYERS_CACHE[layerKey] = layers
 		return layers
 	}
@@ -915,11 +915,11 @@ class WalkCellsClass {
 					for (var tc = tlo_s; tc <= thi_s; tc++) TGT[tc] |= shift_combo
 				}
 			}
-			for (var c: var sum in TGT) {
-				if (sum == 0) continue
+			for (var c: var reachedBits in TGT) {
+				if (reachedBits == 0) continue
 				TGT[c] = 0
 				var cur = acct[c]
-				var d = sum & OBS[c] & ~cur
+				var d = reachedBits & OBS[c] & ~cur
 				if (d) {
 					acct[c] = cur | d
 					var ct = CELL_BY_LSB[c]
@@ -1043,9 +1043,9 @@ class WalkCellsClass {
 		}
 
 		// Sweep TGT_INIT → acctj (emit at mp=0, dense chunk decode)
-		for (var c: var sum in TGT_INIT) {
-			if (sum == 0) continue
-			var d = sum & OBS[c] & ~acctj[c]
+		for (var c: var reachedBits in TGT_INIT) {
+			if (reachedBits == 0) continue
+			var d = reachedBits & OBS[c] & ~acctj[c]
 			if (d) {
 				acctj[c] |= d
 				var t = BINARY_TO_CELL_BY_COUPLE[c]
@@ -1206,10 +1206,10 @@ class WalkCellsClass {
 				if (sc + 2 > hi_aj_w) hi_aj_w = sc + 2 > 17 ? 17 : sc + 2
 			}
 			// sweep TGT → acct (no emit)
-			for (var c: var sum in TGT) {
-				if (sum == 0) continue
+			for (var c: var reachedBits in TGT) {
+				if (reachedBits == 0) continue
 				TGT[c] = 0
-				var d = sum & OBS[c] & ~acct[c]
+				var d = reachedBits & OBS[c] & ~acct[c]
 				if (d) {
 					acct[c] |= d
 					if (c < lo_at_w) lo_at_w = c
@@ -1261,10 +1261,10 @@ class WalkCellsClass {
 					TGT[17] |= o_2 | ke_4
 				}
 			}
-			for (var c: var sum in TGT) {
-				if (sum == 0) continue
+			for (var c: var reachedBits in TGT) {
+				if (reachedBits == 0) continue
 				TGT[c] = 0
-				var d = sum & OBS[c] & ~acctj[c]
+				var d = reachedBits & OBS[c] & ~acctj[c]
 				if (d) {
 					acctj[c] |= d
 					var ct = CELL_BY_LSB[c]
