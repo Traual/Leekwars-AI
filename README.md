@@ -950,6 +950,14 @@ séparer un réel et un bulbe virtuel de même id. **65 sondes** passent ; l'aud
 **1 099 694 323**, **131 977 099** et **1 324 178 513** opérations natives, soit
 **−21,16 %**, **−5,62 %** et **−8,82 %** depuis `5fb87af`, aux mêmes actions et steps.
 
+Le dernier lot de dix combats aux budgets réels, sur les mêmes scénarios et face
+à la référence fixe `6c145af`, obtient **5,5 points**, contre **5 pour `5fb87af`**.
+Il compte **86 242 steps**, **133 355 développements**, zéro erreur et zéro tour
+avorté du candidat. Le rendement observé est **13,61 steps par million d'opérations**,
+contre **10,65** au départ ; les trajectoires diffèrent, ce n'est donc pas un coût
+comparé à état identique. Dix combats ne prouvent pas une meilleure force et le
+duel apparié contre `main` reste à réaliser avant toute fusion.
+
 ## Documentation et outils
 
 Ce README est la référence de fonctionnement actuelle. Les anciens rapports
