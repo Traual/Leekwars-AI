@@ -14,6 +14,7 @@ class BulbState {
 	SUMMONER
 	IS_SUMMON
 	TYPE_TAG    // (id << 1) | est-ce un summon, même contrat qu'EntityClass : immuable
+	EQUIPMENT_CACHE_KEY
 	ID
 	WEAPON
 	INVENTORY
@@ -112,6 +113,7 @@ class BulbState {
 		this.SUMMONER = Summoner
 		this.IS_SUMMON = true
 		this.ID = id
+		this.EQUIPMENT_CACHE_KEY = id * 2 + 1
 		this.TYPE_TAG = (id << 1) | 1
 		this.INVENTORY = getBulbChips(Chip)
 		this.ITEM_STATE_PARENT = null   // racine : maps complètes

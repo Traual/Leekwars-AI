@@ -19,8 +19,10 @@ class EntityClass {
     // cle du net. IMMUABLE — le type d'une entite ne change jamais — donc pose une fois ici au
     // lieu d'etre repacke a chaque evaluation de terme.
     TYPE_TAG
+    EQUIPMENT_CACHE_KEY // id + type de snapshot (réel/virtuel), immuable au clonage
     constructor(id) {
 		  this.ID = id
+		  this.EQUIPMENT_CACHE_KEY = id * 2
 		  // Le moteur insère un summon dans l'ordre en cours de tour : l'ordre est relu.
 		  this.TURN_ORDER = getEntityTurnOrder(id)
 		  // Le reste est constant pendant le tour — relevé une seule fois par entité, alors

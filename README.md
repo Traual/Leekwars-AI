@@ -943,6 +943,13 @@ du combat complet est **1 338 288 830 opérations** : **−7,85 %** depuis `5fb8
 avec les **12 128 actions** et **25 113 steps** inchangés. Les économies correspondantes
 sont **21,12 % sur le dense** et **4,55 % sur le court**.
 
+La clé des caches d'équipement est maintenant précalculée sur l'entité puis copiée
+au clonage. Elle garde exactement l'ancien encodage id + type de snapshot, pour
+séparer un réel et un bulbe virtuel de même id. **65 sondes** passent ; l'audit vérifie
+**37 246 valeurs** de caractéristiques sans écart. Les trois coûts finaux sont
+**1 099 694 323**, **131 977 099** et **1 324 178 513** opérations natives, soit
+**−21,16 %**, **−5,62 %** et **−8,82 %** depuis `5fb87af`, aux mêmes actions et steps.
+
 ## Documentation et outils
 
 Ce README est la référence de fonctionnement actuelle. Les anciens rapports

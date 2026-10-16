@@ -94,7 +94,7 @@ class Equipment {
     // interroge à chaque nœud, les rendements détaillés ne sont relus qu'au premier appel.
     // Vrai si l'équipement peut lancer une attaque physique, sur poireaux ou invocations.
     static canUseStrength(stat) {
-        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        var key = stat.EQUIPMENT_CACHE_KEY
         if (key in EQUIPMENT_CAN_USE_STRENGTH) return EQUIPMENT_CAN_USE_STRENGTH[key]
         var result = anyYield([strengthYield(stat)])
         EQUIPMENT_CAN_USE_STRENGTH[key] = result
@@ -102,7 +102,7 @@ class Equipment {
     }
     // Vrai si l'équipement peut lancer un renvoi, sur poireaux ou invocations.
     static canUseDamageReturn(stat) {
-        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        var key = stat.EQUIPMENT_CACHE_KEY
         if (key in EQUIPMENT_CAN_USE_DAMAGE_RETURN) return EQUIPMENT_CAN_USE_DAMAGE_RETURN[key]
         var result = anyYield([damageReturnYield(stat)])
         EQUIPMENT_CAN_USE_DAMAGE_RETURN[key] = result
@@ -110,7 +110,7 @@ class Equipment {
     }
     // Vrai si l'équipement peut lancer un soin ou de la vitalité, sur poireaux ou invocations.
     static canUseWisdom(stat) {
-        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        var key = stat.EQUIPMENT_CACHE_KEY
         if (key in EQUIPMENT_CAN_USE_WISDOM) return EQUIPMENT_CAN_USE_WISDOM[key]
         var result = anyYield([healYield(stat), boostMaxLifeYield(stat)])
         EQUIPMENT_CAN_USE_WISDOM[key] = result
@@ -118,7 +118,7 @@ class Equipment {
     }
     // Vrai si l'équipement peut lancer un bouclier absolu ou relatif, sur poireaux ou invocations.
     static canUseResistance(stat) {
-        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        var key = stat.EQUIPMENT_CACHE_KEY
         if (key in EQUIPMENT_CAN_USE_RESISTANCE) return EQUIPMENT_CAN_USE_RESISTANCE[key]
         var result = anyYield([absoluteShieldYield(stat), relativeShieldYield(stat)])
         EQUIPMENT_CAN_USE_RESISTANCE[key] = result
@@ -126,7 +126,7 @@ class Equipment {
     }
     // Vrai si l'équipement peut lancer un poison ou une entrave, sur poireaux ou invocations.
     static canUseMagic(stat) {
-        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        var key = stat.EQUIPMENT_CACHE_KEY
         if (key in EQUIPMENT_CAN_USE_MAGIC) return EQUIPMENT_CAN_USE_MAGIC[key]
         var result = anyYield([poisonYield(stat), shackleStrengthYield(stat), shackleMagicYield(stat), shackleAgilityYield(stat),
                                      shackleWisdomYield(stat), shackleTpYield(stat), shackleMpYield(stat)])
@@ -137,7 +137,7 @@ class Equipment {
     // Vrai si l'équipement peut lancer un buff, une vitalité nova, un contrecoup ou des dégâts
     // nova, sur poireaux ou invocations.
     static canUseScience(stat) {
-        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        var key = stat.EQUIPMENT_CACHE_KEY
         if (key in EQUIPMENT_CAN_USE_SCIENCE) return EQUIPMENT_CAN_USE_SCIENCE[key]
         var result = anyYield([buffStrengthYield(stat), buffAgilityYield(stat), buffWisdomYield(stat), buffResistanceYield(stat),
                                buffTpYield(stat), buffMpYield(stat), novaVitalityYield(stat), aftereffectYield(stat),
@@ -149,7 +149,7 @@ class Equipment {
     // Vrai si l'équipement peut lancer un effet multiplié par la puissance, sur poireaux ou
     // invocations : dégâts, châtiment, dégâts nova ou poison.
     static canUsePower(stat) {
-        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        var key = stat.EQUIPMENT_CACHE_KEY
         if (key in EQUIPMENT_CAN_USE_POWER) return EQUIPMENT_CAN_USE_POWER[key]
         var result = anyYield([strengthYield(stat), lifeDamageYield(stat), novaDamageYield(stat), poisonYield(stat)])
         EQUIPMENT_CAN_USE_POWER[key] = result
@@ -157,7 +157,7 @@ class Equipment {
     }
     // Vrai si l'équipement peut lancer un poison, sur poireaux ou invocations.
     static canUsePoison(stat) {
-        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        var key = stat.EQUIPMENT_CACHE_KEY
         if (key in EQUIPMENT_CAN_USE_POISON) return EQUIPMENT_CAN_USE_POISON[key]
         var result = anyYield([poisonYield(stat)])
         EQUIPMENT_CAN_USE_POISON[key] = result
@@ -165,7 +165,7 @@ class Equipment {
     }
     // Les SIX entraves, sans assimiler un pur empoisonneur à un entraveur.
     static canUseShackles(stat) {
-        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        var key = stat.EQUIPMENT_CACHE_KEY
         if (key in EQUIPMENT_CAN_USE_SHACKLES) return EQUIPMENT_CAN_USE_SHACKLES[key]
         var result = anyYield([shackleStrengthYield(stat), shackleMagicYield(stat), shackleAgilityYield(stat),
             shackleWisdomYield(stat), shackleTpYield(stat), shackleMpYield(stat)])
@@ -174,7 +174,7 @@ class Equipment {
     }
     // Vrai si l'équipement peut lancer des dégâts nova, sur poireaux ou invocations.
     static canUseNovaDamage(stat) {
-        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        var key = stat.EQUIPMENT_CACHE_KEY
         if (key in EQUIPMENT_CAN_USE_NOVA_DAMAGE) return EQUIPMENT_CAN_USE_NOVA_DAMAGE[key]
         var result = anyYield([novaDamageYield(stat)])
         EQUIPMENT_CAN_USE_NOVA_DAMAGE[key] = result
@@ -182,7 +182,7 @@ class Equipment {
     }
     // Vrai si l'équipement peut lancer un châtiment, sur poireaux ou invocations.
     static canUseLifeDamage(stat) {
-        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        var key = stat.EQUIPMENT_CACHE_KEY
         if (key in EQUIPMENT_CAN_USE_LIFE_DAMAGE) return EQUIPMENT_CAN_USE_LIFE_DAMAGE[key]
         var result = anyYield([lifeDamageYield(stat)])
         EQUIPMENT_CAN_USE_LIFE_DAMAGE[key] = result
@@ -205,7 +205,7 @@ class Equipment {
     // équipement de l'arme, cooldowns, limites d'usage et portée. Un cache par type d'effet.
     static effectYield(stat, effectType, cache, onEnemies) {
         // Une invocation simulée et une vraie peuvent partager un ID après un cast réel.
-        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        var key = stat.EQUIPMENT_CACHE_KEY
         if (key in cache) return cache[key]
         var bestLeek = 0
         var bestSummon = 0
