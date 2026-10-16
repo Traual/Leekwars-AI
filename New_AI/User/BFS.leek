@@ -513,6 +513,7 @@ class ActionSuite {
 			SearchCache.SET_HITS++
 		}
 		var table = ActionGains.tableOf(Parent)
+		if (count(set.KEYS) >= ScoringClass.CHARACTERISTIC_MIN_ACTIONS) ScoringClass.CHARACTERISTIC_SHARING = true
 		var checks = new ActionGainChecks(mine, BaseHash)
 		var Workspace = null
 		var keys = set.KEYS
@@ -654,6 +655,7 @@ class ActionSuite {
 	 * Les enfants héritent seulement des deltas, pas de leurs nœuds déjà simulés. */
 	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk, pairs, SearchCache = null, sortResults = true) {
 		var entries = []
+		if (count(pairs) >= ScoringClass.CHARACTERISTIC_MIN_ACTIONS) ScoringClass.CHARACTERISTIC_SHARING = true
 		var Workspace = null
 		var table = ActionGains.tableOf(StateParent)
 		var checks = new ActionGainChecks(State[Me], BaseHash)

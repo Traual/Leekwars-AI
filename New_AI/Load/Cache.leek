@@ -46,6 +46,7 @@ function ReloadCacheNewTurn() {
     ENTITY_TACTICAL_IMPORTANCE_CACHE = [:]
     SCORING_STATE_CONSTANTS_CACHE = [:]
     ROOT_SCORING_CONSTANTS = null
+    ScoringClass.clearCharacteristicContexts()
     TURN_ACTION_SEARCH_CACHE = null
     ALLY_SUPPORT_PROFILE_CACHE = [:]
     ROOT_ALLY_SUPPORT = null

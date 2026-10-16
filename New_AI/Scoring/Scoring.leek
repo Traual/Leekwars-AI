@@ -18,6 +18,30 @@ class EntityScoreMemo {
 }
 
 class ScoringClass {
+    static CHARACTERISTIC_CONTEXTS = [:]
+    static CHARACTERISTIC_CONTEXT
+    static MAX_CHARACTERISTIC_CONTEXTS = 1024
+    static CHARACTERISTIC_HITS = 0
+    static CHARACTERISTIC_SHARING = false
+    static CHARACTERISTIC_MIN_ACTIONS = 64
+
+    static clearCharacteristicContexts() {
+        CHARACTERISTIC_CONTEXTS = [:]
+        CHARACTERISTIC_CONTEXT = ROOT_SCORING_CONSTANTS
+        CHARACTERISTIC_HITS = 0
+        CHARACTERISTIC_SHARING = false
+    }
+
+    // Présélection légère : les durées et entraves restent dans la comparaison
+    // exacte. Deux valeurs différentes sous cette clé ne peuvent partager un score.
+    static characteristicKey(stat) {
+        var hash = (OFFSET_BASIS ^ stat.ID) * MIX_A
+        hash = ((hash ^ stat.STRENGTH) * MIX_A ^ stat.WISDOM) * MIX_A
+        hash = ((hash ^ stat.AGILITY) * MIX_A ^ stat.RESISTANCE) * MIX_A
+        hash = ((hash ^ stat.SCIENCE) * MIX_A ^ stat.MAGIC) * MIX_A
+        hash = ((hash ^ stat.POWER) * MIX_A ^ stat.STATES) * MIX_A
+        return ((hash ^ stat.TOTAL_TP) * MIX_A ^ stat.TOTAL_MP) * MIX_A
+    }
     static entityValue(stat) {
         // Le delta d'un kill retire toute la valeur AVANT la mort, buffs compris dans
         // les termes ci-dessous. Aucun bonus « stats courantes - bases » à rajouter.
@@ -102,9 +126,30 @@ class ScoringClass {
             if (memo.INPUTS != stat) stat.CHARACTERISTICS_MEMO = new EntityScoreMemo(stat, ROOT_SCORING_CONSTANTS, memo.VALUE)
             return memo.VALUE
         }
+        var key = null
+        var shared = null
+        if (CHARACTERISTIC_SHARING) {
+            if (CHARACTERISTIC_CONTEXT != ROOT_SCORING_CONSTANTS) {
+                clearCharacteristicContexts()
+                CHARACTERISTIC_SHARING = true
+            }
+            key = characteristicKey(stat)
+            shared = CHARACTERISTIC_CONTEXTS[key]
+            if (shared != null && shared.INPUTS.ID == stat.ID
+                && shared.INPUTS.INVENTORY == stat.INVENTORY && shared.INPUTS.STATIC == stat.STATIC
+                // Les bases ne servent ici qu'à l'échelle critique. Leur map est
+                // recapturée après chaque vrai cast : comparer cette échelle exacte.
+                && ScoringStateConstants.criticalScale(shared.INPUTS) == ScoringStateConstants.criticalScale(stat)
+                && sameCharacteristicsInputs(stat, shared.INPUTS)) {
+                stat.CHARACTERISTICS_MEMO = new EntityScoreMemo(stat, ROOT_SCORING_CONSTANTS, shared.VALUE)
+                CHARACTERISTIC_HITS++
+                return shared.VALUE
+            }
+        }
         var characteristics = characteristicsValue(stat)
         var value = characteristics + ShackleScoring.correction(stat, characteristics)
         stat.CHARACTERISTICS_MEMO = new EntityScoreMemo(stat, ROOT_SCORING_CONSTANTS, value)
+        if (key != null && (shared != null || mapSize(CHARACTERISTIC_CONTEXTS) < MAX_CHARACTERISTIC_CONTEXTS)) CHARACTERISTIC_CONTEXTS[key] = stat.CHARACTERISTICS_MEMO
         return value
     }
 

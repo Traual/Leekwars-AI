@@ -880,6 +880,17 @@ et **613 enfants**, sans écart. Un audit séparé compare **34 776 valeurs** de
 caractéristiques aux formules complètes, sans écart. Ces économies ne constituent
 pas une mesure de victoire contre `main`.
 
+Le sous-score des caractéristiques dispose aussi d'un cache borné à 1 024 entrées,
+activé pour les domaines d'au moins 64 actions. Une clé légère présélectionne un
+mémo ; caractéristiques, durées, entraves, cooldown utile, inventaire, statut statique
+et échelle critique sont ensuite vérifiés. Les replanifications du même tour peuvent
+le partager ; le changement de contexte ou de joueur le vide. Aucun coefficient
+ni aucune formule ne change. Cette passe porte l'économie depuis `5fb87af` à
+**18,23 % sur le témoin dense** et **5,17 % sur le combat complet**, toujours avec
+les mêmes actions et steps. Le témoin court coûte 45 437 opérations de plus que
+`97c36b3` (0,033 %). La sonde compte **53 contrôles** ; l'audit vérifie **35 796 valeurs**,
+dont **14 357 partagées**, sans écart avec les formules complètes.
+
 ## Documentation et outils
 
 Ce README est la référence de fonctionnement actuelle. Les anciens rapports
