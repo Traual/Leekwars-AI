@@ -919,6 +919,12 @@ dont **43 679 raccourcis de parent direct**, retrouve le prédicat exhaustif.
 Aucune erreur ni tour avorté sur ces vérifications. Le duel contre `main` reste
 à faire ; ces chiffres mesurent le coût à décisions identiques.
 
+Le filtre de signature des effets utilise ensuite un masque exact des huit
+catégories de cible par item, avec une garde séparée des morts. Les **2 528 cas**
+item/catégorie/vivant-mort vérifiés rendent le même résultat que la lecture brute
+des effets. Le combat complet passe à **1 339 448 156** opérations, avec ses
+actions et steps identiques ; le gain reste une économie de coût.
+
 ## Documentation et outils
 
 Ce README est la référence de fonctionnement actuelle. Les anciens rapports

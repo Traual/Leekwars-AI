@@ -248,7 +248,7 @@ global PASSIVE_INFO = [: ]
 // TARGET
 
 global TARGETABLECACHE = [: ]
-global ACTION_EFFECT_TARGET_CACHE = [:]
+global ACTION_EFFECT_TARGET_CACHE = [:] // masque exact des catégories de cible par item immuable
 // Cooldowns RÉELS des entités autres que Me, relevés une fois par tour : elles ne jouent pas
 // pendant le mien, leurs cooldowns ne bougent donc pas. Map partagée par toutes les racines
 // de l'entité — personne n'écrit une racine non-Me (setCooldown ne touche que le clone de Me,

@@ -80,19 +80,27 @@ class ActionsClass {
 	// Garder aussi les effets néfastes collatéraux, que Target ne propose pas de viser.
 	// Un effet ON_CASTER sans multiplicateur ne dépend pas des cibles de la zone.
 	static affectsSignature(item, target, caster) {
-		var key = ((target.ID == caster.ID ? 1 : 0) << 36)
-			| ((target.IS_SUMMON ? 1 : 0) << 34) | ((target.LIFE > 0 ? 1 : 0) << 33)
-			| ((target.SIDE == caster.SIDE ? 1 : 0) << 32) | item
-		if (key in ACTION_EFFECT_TARGET_CACHE) return ACTION_EFFECT_TARGET_CACHE[key]
-		for (var effect in ITEMINFO[item].EFFECTS) {
-			if ((effect[5] & EFFECT_MODIFIER_ON_CASTER) && !(effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS)) continue
-			if (ConsequencesClass.isHitable(effect, target, caster, target.ID == caster.ID)) {
-				ACTION_EFFECT_TARGET_CACHE[key] = true
-				return true
+		if (target.LIFE <= 0) return false
+		// Huit catégories exactes : summon (bit 0), allié (bit 1), caster
+		// (bit 2). L'union des masques d'effet est immuable pour chaque item.
+		var mask = ACTION_EFFECT_TARGET_CACHE[item]
+		if (mask == null) {
+			mask = 0
+			for (var effect in ITEMINFO[item].EFFECTS) {
+				if ((effect[5] & EFFECT_MODIFIER_ON_CASTER) && !(effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS)) continue
+				var targets = effect[4]
+				var types = ((targets & EFFECT_TARGET_NON_SUMMONS) ? 1 : 0)
+					| ((targets & EFFECT_TARGET_SUMMONS) ? 2 : 0)
+				var flags = ((targets & EFFECT_TARGET_ENEMIES) ? types : 0)
+					| ((targets & EFFECT_TARGET_ALLIES) ? types << 2 : 0)
+				if (targets & EFFECT_TARGET_CASTER) flags |= flags << 4
+				mask |= flags
 			}
+			ACTION_EFFECT_TARGET_CACHE[item] = mask
 		}
-		ACTION_EFFECT_TARGET_CACHE[key] = false
-		return false
+		var category = (target.IS_SUMMON ? 1 : 0) | (target.SIDE == caster.SIDE ? 2 : 0)
+			| (target.ID == caster.ID ? 4 : 0)
+		return (mask & (1 << category)) != 0
 	}
 
 	static groupSignature(item, targetHash, from, to) {
