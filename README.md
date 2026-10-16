@@ -925,6 +925,18 @@ item/catégorie/vivant-mort vérifiés rendent le même résultat que la lecture
 des effets. Le combat complet passe à **1 339 448 156** opérations, avec ses
 actions et steps identiques ; le gain reste une économie de coût.
 
+Quand l'expansion atteint son plafond au milieu d'un rafraîchissement, elle peut
+conserver son meilleur candidat **déjà simulé** comme fin de branche. Elle n'annonce
+pas le maximum des actions restantes et n'ouvre aucune nouvelle simulation. Les
+empreintes sont terminées si la réserve terminale le permet ; le choix passe toujours
+par le placement avec danger. La sonde vérifie les cas sans score frais et sans réserve.
+
+Sur un combat instrumenté, **60 candidats** ont ainsi été récupérés, **2 retenus**,
+pour **22 242 opérations** dans ce mécanisme sur environ 868 millions. Les dix
+combats fixes aux budgets réels donnent **4,5 points avec et sans cette récupération**,
+sans erreur ni tour avorté. Cela établit son faible coût et son emploi effectif,
+pas une amélioration de force. Les budgets de production restent inchangés.
+
 ## Documentation et outils
 
 Ce README est la référence de fonctionnement actuelle. Les anciens rapports

@@ -452,7 +452,9 @@ class ActionSuite {
 	}
 
 	/* Tous les gains jouables appartiennent à CE parent. Le maximum est exact sous
-	 * notre simulateur ; choisir la meilleure entrée positive ne la rescrore pas.
+	 * notre simulateur quand la préparation est complète. À l'échéance, seul un
+	 * candidat déjà simulé peut encore être conservé comme terminal, sans garantir
+	 * qu'il soit le maximum des actions non examinées. Il n'est plus développé.
 	 * Un héritage de delta ne réutilise jamais le nœud d'un autre parent : il faut
 	 * encore appliquer l'action pour obtenir ressources, cooldowns et état enfant. */
 	static findBestNextNode(Parent, SearchCache, MySide) {
@@ -464,9 +466,11 @@ class ActionSuite {
 		var walk = WalkCellsClass.getAllLayers(State, Me, BaseHash, Parent.ME_WALK_FINGERPRINT)
 		var resurrectionTargetId = resurrectIdOf(State)
 		var frame = prepareGroups(State, BaseHash, Parent, MySide, walk, resurrectionTargetId, SearchCache)
-		// Ne jamais annoncer le meilleur successeur avec un tri partiellement périmé.
-		// Les candidats terminaux et le plan déjà validé restent disponibles.
-		if (!frame.COMPLETE || getOperations() > OPS_DEADLINE || frame.BEST == null) return null
+		// Une préparation coupée ne prouve pas le maximum. Son meilleur candidat
+		// déjà SIMULÉ peut néanmoins devenir terminal : son delta est courant,
+		// aucun nœud ne sera développé au-delà de cette échéance d'expansion.
+		if (!frame.COMPLETE || getOperations() > OPS_DEADLINE) return terminalFromPartial(frame, Parent)
+		if (frame.BEST == null) return null
 		var hint = frame.BEST
 		var actual = frame.BEST_FRESH
 		if (actual == null) {
@@ -477,6 +481,17 @@ class ActionSuite {
 		NodeClass.finishMetadata(actual.NODE)
 		actual.NODE.PARENT = Parent
 		return actual.NODE
+	}
+
+	static terminalFromPartial(frame, Parent) {
+		// Aucun nouveau cast à simuler après l'échéance. Garder la réserve réelle
+		// du placement ; une entrée seulement héritée reste ignorée ici.
+		if (frame.BEST_FRESH == null || frame.BEST == null
+			|| getOperations() + TERMINAL_EVAL_MARGIN > OPS_DEADLINE + OPS_RESERVE_TURN - OPS_RESERVE_PLACEMENT) return null
+		var candidate = frame.BEST_FRESH.NODE
+		NodeClass.finishMetadata(candidate)
+		candidate.PARENT = Parent
+		return candidate
 	}
 
 	/* Géométrie partagée, disponibilité courante, deltas hérités dans la lignée.
