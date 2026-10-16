@@ -71,80 +71,33 @@ class ScoredActionClass {
 	}
 }
 
-/* Durée de vie : un TOUR d'entité. Les gains
- * mémorisés ordonnent les candidats ; ils ne sont PAS des majorants. Les candidats
- * réutilisés sont toujours simulés depuis leur parent avant d'entrer dans l'arbre. */
+// Seuls les catalogues géométriques survivent au cast réel. EXACT_GAINS partage
+// des mémos immuables dans UNE recherche ; leurs lecteurs doivent être validés
+// avant tout emploi. Les tables et classements appartiennent à Node.ACTION_GAINS.
 class ActionSearchCacheClass {
-	ESTIMATES
-	DEPENDENCIES
-	ROOT_STATE
-	SCORING_CONTEXT
-	ORDERED_GROUPS
 	GROUP_SETS
-	KNOWN_GROUP_SETS
+	EXACT_GAINS // mémos immuables partageables seulement après validation de leurs lecteurs
 	NEW_SCORES = 0
 	REUSED_SCORES = 0
-	ORDER_HITS = 0
 	SET_HITS = 0
-	RETAINED_ESTIMATES = 0
-	ESTIMATE_VERSION = 0
+	INCOMPLETE_FRAMES = 0
+	EXACT_HITS = 0
 	VALIDATED_NODE
 	VALIDATED_FINAL
 	constructor() {
-		this.ESTIMATES = [:]
-		this.DEPENDENCIES = [:]
-		this.ORDERED_GROUPS = [:]
 		this.GROUP_SETS = [:]
-		this.KNOWN_GROUP_SETS = [:]
+		this.EXACT_GAINS = [:]
 	}
 
-	// Les nœuds/validations appartiennent à UNE recherche ; seuls les catalogues et
-	// indications de gain survivent à un vrai cast. Un buff de Me invalide tous les
-	// groupes dépendant du lanceur ; une blessure de cible seulement les groupes concernés.
-	beginSearch(State, context) {
-		if (this.SCORING_CONTEXT != context) {
-			this.ESTIMATES = [:]
-			this.DEPENDENCIES = [:]
-			this.ESTIMATE_VERSION++
-		} else if (this.ROOT_STATE != null) {
-			// Toute estimation dépend de Me : si ses inputs ont changé, inutile de
-			// comparer les registres de tous les autres porteurs avant de tout vider.
-			if (!sameRootInputs(State[Me], this.ROOT_STATE[Me])) {
-				this.ESTIMATES = [:]
-				this.DEPENDENCIES = [:]
-				this.ESTIMATE_VERSION++
-			} else {
-				var dirty = 0
-				for (var id: var stat in State) {
-					if (id != Me && !sameRootInputs(stat, this.ROOT_STATE[id])) dirty |= dependencyBit(id)
-				}
-				if (dirty != 0) {
-					var stale = []
-					for (var key: var mask in this.DEPENDENCIES) if ((mask & dirty) != 0) push(stale, key)
-					for (var key in stale) { mapRemove(this.ESTIMATES, key); mapRemove(this.DEPENDENCIES, key) }
-					if (count(stale) > 0) this.ESTIMATE_VERSION++
-				}
-			}
-		}
-		this.ROOT_STATE = State // capture immuable, jamais le workspace de simulation
-		this.SCORING_CONTEXT = context
-		this.RETAINED_ESTIMATES = mapSize(this.ESTIMATES)
-		this.ORDERED_GROUPS = [:] // priorités à retrier après les scores racine courants
-		this.KNOWN_GROUP_SETS = [:] // présence des estimations établie dans CETTE recherche
+	beginSearch() {
+		this.EXACT_GAINS = [:]
 		this.NEW_SCORES = 0
 		this.REUSED_SCORES = 0
-		this.ORDER_HITS = 0
 		this.SET_HITS = 0
+		this.INCOMPLETE_FRAMES = 0
+		this.EXACT_HITS = 0
 		this.VALIDATED_NODE = null
 		this.VALIDATED_FINAL = null
-	}
-
-	// Collisions d'ids modulo 64 : elles invalident TROP, jamais pas assez.
-	static dependencyBit(id) { return 1 << (id & 63) }
-
-	static sameRootInputs(stat, before) {
-		return before != null && ScoringClass.sameEntityScoreInputs(stat, before)
-			&& stat.CELL == before.CELL && sameLedger(stat.EFFECTS, before.EFFECTS)
 	}
 
 	static sameLedger(a, b) {
@@ -209,27 +162,14 @@ class ActionPriorityClass {
 	}
 }
 
-// Même ordre relatif que le tri complet, pour les gains à reconsidérer malgré
-// leur ancienne estimation nulle/négative. Ce filtre ne dépend pas du parent.
-class ActionSearchOrderClass {
-	ENTRIES
-	RECHECK
-	constructor(entries) {
-		this.ENTRIES = entries
-		this.RECHECK = []
-		for (var hint in entries) if (hint.GAIN <= BFS_DELTA_EPSILON) push(this.RECHECK, hint)
-	}
-}
-
 class ActionSearchFrameClass {
 	GROUPS
 	FRESH
 	PLAYABLES
 	COSTS
 	USES
-	ORDER
-	RECHECK_ORDER
-	BEST_FRESH
+	BEST
+	COMPLETE = true
 	constructor() {
 		this.GROUPS = [:]
 		this.FRESH = [:]
@@ -244,14 +184,11 @@ class ActionSearchFrameClass {
 class ActionGroupSetClass {
 	GROUPS
 	KEYS
-	FINGERPRINT
 	constructor(groups) {
 		this.GROUPS = groups
 		this.KEYS = []
-		this.FINGERPRINT = 0
 		for (var key: var _group in groups) {
 			push(this.KEYS, key)
-			this.FINGERPRINT ^= mix64(key)
 		}
 	}
 }

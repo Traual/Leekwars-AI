@@ -7,11 +7,11 @@
  *  - Une petite première vague répartit l'expansion entre des items distincts ; les
  *    autres débuts sont ensuite déroulés récursivement (unroll) s'il reste du budget.
  *    Chaque branche suit la plus haute priorité, avec une coupure gloutonne mémorisée.
- *  - Les gains de groupes sont partagés par signature de cibles pendant le tour,
- *    avec invalidation des dépendances après chaque vrai cast.
+ *  - Chaque nœud hérite de deltas exacts, recalculés si leurs lecteurs ont changé.
+ *    Les branches voisines ne partagent jamais leurs mises à jour de scores.
  *    Le catalogue géométrique est lié au board et à l'item ; son domaine grandit avec
  *    la mobilité du nœud. Les actions locales suivent sa cellule actuelle.
- *    Les gains cachés sont des estimations, pas des bornes.
+ *    Tous les gains jouables sont actualisés avant de choisir leur maximum.
  *  - Un nœud "ne rien jouer" (score initial) sert de plancher.
  *
  * 2. RECLASSEMENT TERMINAL : tout nœud visité est une suite où l'on PEUT s'arrêter. Chacun
@@ -124,14 +124,14 @@ class ActionSuite {
 			return null
 		}
 
-		// Les indications survivent au cast réel, les nœuds jamais. La racine continue
-		// à simuler tous ses candidats : aucun score ancien ne devient un score exact.
+		// Seule la géométrie survit au vrai cast. Une nouvelle capture réelle crée
+		// une nouvelle racine de gains ; aucune hypothèse simulée ne devient réelle.
 		var SearchCache = TURN_ACTION_SEARCH_CACHE
 		if (SearchCache == null) {
 			SearchCache = new ActionSearchCacheClass()
 			TURN_ACTION_SEARCH_CACHE = SearchCache
 		}
-		SearchCache.beginSearch(State, ROOT_SCORING_CONSTANTS)
+		SearchCache.beginSearch()
 
 		// noPlay = plancher "ne rien jouer" ET racine de la chaîne d'états.
 		var noPlay = new NodeClass(null, State, null)
@@ -155,12 +155,12 @@ class ActionSuite {
 		if (getOperations() <= OPS_DEADLINE) {
 			var otherPairs = getBaseActions(State, BaseHash, RootResurrectId, MyWalkCells, false, true)
 			var known = [:]
-			for (var entry in rootEntries) known[estimateKeyOf(entry.PLAYABLE)] = true
+			for (var entry in rootEntries) known[gainKeyOf(entry.PLAYABLE)] = true
 			var freshPairs = []
-			for (var pair in otherPairs) if (!(estimateKeyOf(pair) in known)) push(freshPairs, pair)
+			for (var pair in otherPairs) if (!(gainKeyOf(pair) in known)) push(freshPairs, pair)
 			// La fusion est triée juste après : éviter un second tri des nouveaux candidats.
 			// Le tri stable conserve le même ordre de création pour les priorités égales.
-			pushAll(rootEntries, enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, MyWalkCells, freshPairs, SearchCache, false, false))
+			pushAll(rootEntries, enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, MyWalkCells, freshPairs, SearchCache, false))
 			rootEntries = arraySort(rootEntries, function(a, b) { return b.PRIORITY - a.PRIORITY })
 		}
 		BFS_CHAIN_STEPS = 0
@@ -224,7 +224,7 @@ class ActionSuite {
 			validateChain(leaf, SearchCache)
 		}
 		BenchOps.Stop("BFS")
-		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " reused, " + SearchCache.ORDER_HITS + " cached orders, " + SearchCache.RETAINED_ESTIMATES + " retained across casts")
+		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " exact gains reused (" + SearchCache.EXACT_HITS + " shared), " + SearchCache.SET_HITS + " cached catalogs, " + SearchCache.INCOMPLETE_FRAMES + " incomplete refreshes")
 
 		return pickTerminal(candidates, initialScore, count(rootEntries), SearchCache)
 	}
@@ -451,8 +451,10 @@ class ActionSuite {
 		return unroll(next, SearchCache, MySide, candidates)
 	}
 
-	/* Les priorités sont triées sans résoudre toutes les origines. Les hits
-	 * partagent un ordre de CLÉS, jamais les actions concrètes d'un autre parent. */
+	/* Tous les gains jouables appartiennent à CE parent. Le maximum est exact sous
+	 * notre simulateur ; choisir la meilleure entrée positive ne la rescrore pas.
+	 * Un héritage de delta ne réutilise jamais le nœud d'un autre parent : il faut
+	 * encore appliquer l'action pour obtenir ressources, cooldowns et état enfant. */
 	static findBestNextNode(Parent, SearchCache, MySide) {
 		var State = StateClass.materializeNodeState(Parent)
 		var mine = State[Me]
@@ -461,55 +463,23 @@ class ActionSuite {
 		var walk = WalkCellsClass.getAllLayers(State, Me, BaseHash, Parent.ME_WALK_FINGERPRINT)
 		var resurrectionTargetId = resurrectIdOf(State)
 		var frame = prepareGroups(State, BaseHash, Parent, MySide, walk, resurrectionTargetId, SearchCache)
-		var fresh = frame.BEST_FRESH
-		var best = fresh == null ? null : fresh.NODE
-		var bestPriority = fresh == null ? 0 : fresh.PRIORITY
-		var Workspace = null
-		for (var hint in frame.ORDER) {
-			if (getOperations() > OPS_DEADLINE) break
-			// Coupure gloutonne APPROXIMATIVE : un ancien gain n'est pas un majorant.
-			if (bestPriority >= hint.PRIORITY) break
-			var actual = frame.FRESH[hint.KEY]
-			if (actual == null) {
-				var playable = framePlayable(frame, hint.KEY, mine, walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
-				if (playable == null) continue
-				if (Workspace == null) Workspace = clone(State, 1)
-				actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
-					MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk)
-				rememberScored(SearchCache, hint.KEY, actual)
-			}
-			if (!actual.DEFERRED && actual.PRIORITY > bestPriority) {
-				bestPriority = actual.PRIORITY
-				best = actual.NODE
-			}
+		// Ne jamais annoncer le meilleur successeur avec un tri partiellement périmé.
+		// Les candidats terminaux et le plan déjà validé restent disponibles.
+		if (!frame.COMPLETE || getOperations() > OPS_DEADLINE || frame.BEST == null) return null
+		var hint = frame.BEST
+		var actual = frame.FRESH[hint.KEY]
+		if (actual == null) {
+			var playable = frame.PLAYABLES[hint.KEY]
+			actual = simulatePlayable(playable, clone(State, 1), BaseHash, Parent.SCORE,
+				MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk, hint.GAIN)
 		}
-		// Les dégâts annulés et les puces sous leur prix peuvent redevenir utiles.
-		// Le tri partage aussi son sous-ensemble de gains nuls/négatifs : ne pas
-		// reparcourir tous les gains positifs à chaque développement.
-		for (var hint in frame.RECHECK_ORDER) {
-			if (getOperations() > OPS_DEADLINE) break
-			if (hint.KEY in frame.FRESH) continue
-			var item = frame.GROUPS[hint.KEY].Item
-			if (!ITEMINFO[item].IS_BOUNDABLE_DAMAGE && CooldownScoring.costOf(item, MySide) <= 0) continue
-			var playable = framePlayable(frame, hint.KEY, mine, walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
-			if (playable == null) continue
-			if (Workspace == null) Workspace = clone(State, 1)
-			var actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
-				MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk)
-			rememberScored(SearchCache, hint.KEY, actual)
-			if (!actual.DEFERRED && actual.PRIORITY > bestPriority) {
-				bestPriority = actual.PRIORITY
-				best = actual.NODE
-			}
-		}
-		if (best != null) best.PARENT = Parent
-		return best
+		actual.NODE.PARENT = Parent
+		return actual.NODE
 	}
 
-	/* Réunir les groupes actuels, apprendre seulement les priorités inconnues,
-	 * puis reprendre un tri déjà fait pour ce même ensemble. Les coûts/usages
-	 * restent propres au parent. Par gain brut, aucune origine des hits n'est
-	 * cherchée ici ; par rendement, le coût actuel entre aussi dans la clé du tri. */
+	/* Géométrie partagée, disponibilité courante, deltas hérités dans la lignée.
+	 * Actualiser aussi les positifs : aucun ancien classement ne coupe ce passage.
+	 * Le travail n'est payé qu'au développement du nœud, jamais à sa création. */
 	static prepareGroups(State, BaseHash, Parent, MySide, Walk, resurrectionTargetId, SearchCache) {
 		var mine = State[Me]
 		var frame = new ActionSearchFrameClass()
@@ -530,7 +500,7 @@ class ActionSuite {
 			for (var group in groups) {
 				if (group.Item == CHIP_RESURRECTION && resurrectionTargetId == null) continue
 				if (baseCostOf(mine, group.Item, frame.COSTS, frame.USES) < 0) continue
-				var key = groupEstimateKey(group, resurrectionTargetId)
+				var key = groupGainKey(group, resurrectionTargetId)
 				if (!(key in frame.GROUPS) || group.IS_LOCAL) frame.GROUPS[key] = group
 			}
 			set = new ActionGroupSetClass(frame.GROUPS)
@@ -539,79 +509,48 @@ class ActionSuite {
 			frame.GROUPS = set.GROUPS
 			SearchCache.SET_HITS++
 		}
-		var keys = []
-		var fingerprint = 0
-		var incomplete = false
+		var table = ActionGains.tableOf(Parent)
+		var checks = new ActionGainChecks(mine)
 		var Workspace = null
-		// Les estimations ne sont jamais retirées pendant une recherche. Une fois
-		// toutes les clés connues, inutile de vérifier à nouveau leur présence.
-		// Seule la liste est reprise : le tri lit les gains actuels et les actions
-		// examinées résolvent toujours leur origine avant d'être resimulées.
-		if (!BFS_SCORE_PER_ACTION_COST && setKey in SearchCache.KNOWN_GROUP_SETS) {
-			keys = set.KEYS
-			SearchCache.REUSED_SCORES += count(keys)
-		} else for (var key in set.KEYS) {
-			if (getOperations() > OPS_DEADLINE) { incomplete = true; break }
-			if (!(key in SearchCache.ESTIMATES)) {
-				var playable = framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
-				if (playable == null) { incomplete = true; continue }
+		for (var key in set.KEYS) {
+			if (getOperations() > OPS_DEADLINE) { frame.COMPLETE = false; break }
+			var playable = framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
+			if (playable == null) continue
+			var memo = table.find(key)
+			var valid = ActionGains.matches(memo, State, playable, Walk, checks)
+			if (!valid) {
+				var shared = SearchCache.EXACT_GAINS[key]
+				if (shared != memo && ActionGains.matches(shared, State, playable, Walk, checks)) {
+					memo = shared
+					valid = true
+					table.VALUES[key] = shared // partager l'objet immuable, pas sa table
+					SearchCache.EXACT_HITS++
+				}
+			}
+			var gain
+			if (valid) {
+				gain = memo.GAIN
+				SearchCache.REUSED_SCORES++
+			} else {
 				if (Workspace == null) Workspace = clone(State, 1)
 				var actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
 					MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, Walk)
 				frame.FRESH[key] = actual
-				rememberScored(SearchCache, key, actual)
+				var updated = ActionGains.capture(actual, State, BaseHash, Walk)
+				table.VALUES[key] = updated
+				SearchCache.EXACT_GAINS[key] = updated
+				gain = actual.GAIN
 				SearchCache.NEW_SCORES++
-				if (!actual.DEFERRED && (frame.BEST_FRESH == null || actual.PRIORITY > frame.BEST_FRESH.PRIORITY)) frame.BEST_FRESH = actual
-			} else {
-				SearchCache.REUSED_SCORES++
 			}
-			if (BFS_SCORE_PER_ACTION_COST) {
-				var playable = framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
-				if (playable == null) continue
-				fingerprint ^= mix64(addValueToBinHash(key, playable.COST))
+			// Même premier résultat qu'un tri stable décroissant, sans allouer
+			// et trier toute une liste pour n'en utiliser que la première entrée.
+			var priority = priorityOf(gain, playable.COST)
+			if (gain > BFS_DELTA_EPSILON && (frame.BEST == null || priority > frame.BEST.PRIORITY)) {
+				frame.BEST = new ActionPriorityClass(key, gain, priority)
 			}
-			push(keys, key)
 		}
-		if (!BFS_SCORE_PER_ACTION_COST) {
-			if (!incomplete) {
-				fingerprint = set.FINGERPRINT
-				SearchCache.KNOWN_GROUP_SETS[setKey] = true
-			}
-			else for (var key in keys) fingerprint ^= mix64(key)
-		}
-		var orderKey = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ fingerprint, (count(keys) << 1) | (BFS_SCORE_PER_ACTION_COST ? 1 : 0)), SearchCache.ESTIMATE_VERSION)
-		var order = SearchCache.ORDERED_GROUPS[orderKey]
-		if (order == null) {
-			order = []
-			for (var key in keys) {
-				var gain = SearchCache.ESTIMATES[key]
-				var priority = BFS_SCORE_PER_ACTION_COST ? priorityOf(gain, frame.PLAYABLES[key].COST) : gain
-				push(order, new ActionPriorityClass(key, gain, priority))
-			}
-			order = arraySort(order, function(a, b) { return b.PRIORITY - a.PRIORITY })
-			order = new ActionSearchOrderClass(order)
-			SearchCache.ORDERED_GROUPS[orderKey] = order
-		} else {
-			SearchCache.ORDER_HITS++
-		}
-		frame.ORDER = order.ENTRIES
-		frame.RECHECK_ORDER = order.RECHECK
+		if (!frame.COMPLETE) SearchCache.INCOMPLETE_FRAMES++
 		return frame
-	}
-
-	// Une revalidation apprend le gain courant. Ne pas garder un tri qui date
-	// d'avant ce changement ; les estimations restent des indications gloutonnes.
-	static rememberEstimate(SearchCache, key, gain) {
-		if (SearchCache.ESTIMATES[key] == gain) return;
-		SearchCache.ESTIMATES[key] = gain
-		SearchCache.ESTIMATE_VERSION++
-	}
-
-	static rememberScored(SearchCache, key, entry) {
-		rememberEstimate(SearchCache, key, entry.GAIN)
-		var mask = (SearchCache.DEPENDENCIES[key] ?? 0) | ActionSearchCacheClass.dependencyBit(Me)
-		for (var id: var _stat in entry.NODE.STATE_PATCH) mask |= ActionSearchCacheClass.dependencyBit(id)
-		SearchCache.DEPENDENCIES[key] = mask
 	}
 
 	static framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, WalkFingerprint) {
@@ -624,37 +563,37 @@ class ActionSuite {
 
 	/* Un seul workspace restauré entre candidats. Le score inclut TOUJOURS la
 	 * couche de déplacement actuelle, ses buffs/passifs et le prix du cooldown. */
-	static simulatePlayable(playable, Workspace, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk) {
+	static simulatePlayable(playable, Workspace, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk, KnownGain = null) {
 		var act = playable.ACTION
 		var item = act.Item
 		var node = NodeClass.ActionToNodeInTree(act, Workspace, act.From, Walk, playable.COST,
 			ITEMINFO[item], item, act.To, BaseHash, null, StateParent, Context, Hfp, playable.USES)
-		// Tous les candidats de ce parent relisent les mêmes valeurs d'avant action.
-		// Le mémo appartient au nœud immuable, jamais à un autre état ou une autre recherche.
-		// Tester la variable locale évite que l'analyseur réduise le type du champ
-		// à null au moment de lui affecter la map (avertissement dans l'éditeur).
-		var parentValues = StateParent.SCORE_VALUES
-		if (parentValues == null) {
-			parentValues = [:]
-			StateParent.SCORE_VALUES = parentValues
-		}
-		// Un parent ne stocke d'abord que les entités modifiées par son action.
-		// Une entité intacte garde la valeur du plus proche ancêtre qui l'a scorée :
-		// remonter les petits patches évite de recalculer cette même valeur complète.
-		if (StateParent.STATE_PARENT != null) for (var id: var before in node.CLONED) {
-			if (id == Me) continue // sa valeur existe déjà sur tout parent scoré
-			if (before == null || id in parentValues) continue
-			var ancestor = StateParent.STATE_PARENT
-			while (ancestor != null) {
-				var values = ancestor.SCORE_VALUES
-				if (values != null && id in values) {
-					parentValues[id] = values[id]
-					break
-				}
-				ancestor = ancestor.STATE_PARENT
+		var score
+		if (KnownGain != null) {
+			// Le delta inclut déjà le prix du cooldown. Aucun second score d'état,
+			// aucun second paiement : la branche additionne seulement ses deltas.
+			score = ReferenceScore + KnownGain
+		} else {
+			var parentValues = StateParent.SCORE_VALUES
+			if (parentValues == null) {
+				parentValues = [:]
+				StateParent.SCORE_VALUES = parentValues
 			}
+			// Un nœud construit depuis un delta connu peut ne pas avoir scoré ses
+			// entités. Arrêter la remontée dès leur dernière mutation : une valeur
+			// plus ancienne serait périmée. Le scorer calculera alors before lui-même.
+			for (var id: var before in node.CLONED) {
+				if (id == Me || before == null || id in parentValues) continue
+				var ancestor = StateParent
+				while (ancestor != null) {
+					var values = ancestor.SCORE_VALUES
+					if (values != null && id in values) { parentValues[id] = values[id]; break }
+					if (ancestor.STATE_PARENT == null || id in ancestor.STATE_PATCH) break
+					ancestor = ancestor.STATE_PARENT
+				}
+			}
+			score = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, MySide, parentValues)
 		}
-		var score = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, MySide, parentValues)
 		StateClass.restoreWorkspace(Workspace, node.CLONED)
 		node.CLONED = null
 		node.SCORE = score
@@ -662,37 +601,30 @@ class ActionSuite {
 		return new ScoredActionClass(playable, gain, priorityOf(gain, playable.COST), node, score)
 	}
 
-	/* Scoring APRÈS dédoublonnage. La racine calcule ses vrais nœuds. En branche,
-	 * seuls les nouveaux groupes sont scorés pour construire le tri ; les autres
-	 * reprennent leur estimation, puis sont resimulés s'ils sont examinés. */
-	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk, pairs, SearchCache = null, reuseEstimates = false, sortResults = true) {
-		if (SearchCache == null) SearchCache = new ActionSearchCacheClass()
+	/* La racine score ses candidats une fois et enregistre leurs dépendances.
+	 * Les enfants héritent seulement des deltas, pas de leurs nœuds déjà simulés. */
+	static enumerateAndSort(State, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk, pairs, SearchCache = null, sortResults = true) {
 		var entries = []
 		var Workspace = null
+		var table = ActionGains.tableOf(StateParent)
 		for (var playable in pairs) {
 			if (getOperations() > OPS_DEADLINE) break
-			var key = estimateKeyOf(playable)
-			var entry
-			if (reuseEstimates && key in SearchCache.ESTIMATES) {
-				var gain = SearchCache.ESTIMATES[key]
-				entry = new ScoredActionClass(playable, gain, priorityOf(gain, playable.COST), null, null)
-				SearchCache.REUSED_SCORES++
-			} else {
-				if (Workspace == null) Workspace = clone(State, 1)
-				entry = simulatePlayable(playable, Workspace, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk)
-				rememberScored(SearchCache, key, entry)
-				SearchCache.NEW_SCORES++
-			}
+			if (Workspace == null) Workspace = clone(State, 1)
+			var entry = simulatePlayable(playable, Workspace, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk)
+			var memo = ActionGains.capture(entry, State, BaseHash, Walk)
+			table.VALUES[gainKeyOf(playable)] = memo
+			if (SearchCache != null) SearchCache.EXACT_GAINS[gainKeyOf(playable)] = memo
+			if (SearchCache != null) SearchCache.NEW_SCORES++
 			push(entries, entry)
 		}
 		return sortResults ? arraySort(entries, function(a, b) { return b.PRIORITY - a.PRIORITY }) : entries
 	}
 
-	static estimateKeyOf(playable) {
-		return groupEstimateKey(playable.GROUP, playable.ACTION.RESURRECT_ID)
+	static gainKeyOf(playable) {
+		return groupGainKey(playable.GROUP, playable.ACTION.RESURRECT_ID)
 	}
 
-	static groupEstimateKey(group, resurrectionTargetId) {
+	static groupGainKey(group, resurrectionTargetId) {
 		var key = group.SIGNATURE
 		if (group.Item == CHIP_RESURRECTION) key = addValueToBinHash(key, resurrectionTargetId + 1)
 		return key

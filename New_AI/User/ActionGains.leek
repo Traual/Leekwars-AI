@@ -1,0 +1,278 @@
+// Gains EXACTS dans une lignée de nœuds, sous le contexte de scoring de la racine.
+// La géométrie reste partagée ; chaque table n'écrit que ses propres remplacements.
+include("../includes.leek")
+
+class ActionGainTable {
+    PARENT
+    VALUES = [:]
+    constructor(parent = null) { this.PARENT = parent }
+
+    find(key) {
+        var layer = this
+        while (layer != null) {
+            if (key in layer.VALUES) return layer.VALUES[key]
+            layer = layer.PARENT
+        }
+        return null
+    }
+}
+
+// Lectures du lanceur nécessaires au montant des effets. Les cibles portent aussi
+// leurs inputs de SCORING et leur registre : un soin nul reste dépendant de sa cible.
+class ActionGainProfile {
+    READS = 0
+    SELF = false
+    WORLD = false
+    constructor(info) {
+        this.WORLD = info.ORIGIN_SENSITIVE
+        for (var effect in info.EFFECTS) {
+            if (effect[5] & EFFECT_MODIFIER_ON_CASTER) this.SELF = true
+            switch (effect[0]) {
+                case EFFECT_DAMAGE:
+                    this.READS |= ActionGains.STRENGTH | ActionGains.POWER
+                    this.SELF = true // vol de vie, retour, érosion et passifs du lanceur
+                    break
+                case EFFECT_LIFE_DAMAGE:
+                    this.READS |= ActionGains.LIFE | ActionGains.POWER
+                    this.SELF = true
+                    break
+                case EFFECT_HEAL:
+                case EFFECT_BOOST_MAX_LIFE:
+                    this.READS |= ActionGains.WISDOM
+                    break
+                case EFFECT_ABSOLUTE_SHIELD:
+                case EFFECT_RELATIVE_SHIELD:
+                    this.READS |= ActionGains.RESISTANCE
+                    break
+                case EFFECT_BUFF_AGILITY:
+                case EFFECT_BUFF_MP:
+                case EFFECT_BUFF_TP:
+                case EFFECT_BUFF_STRENGTH:
+                case EFFECT_BUFF_WISDOM:
+                case EFFECT_BUFF_RESISTANCE:
+                case EFFECT_NOVA_VITALITY:
+                case EFFECT_AFTEREFFECT:
+                    this.READS |= ActionGains.SCIENCE
+                    break
+                case EFFECT_NOVA_DAMAGE:
+                    this.READS |= ActionGains.SCIENCE | ActionGains.POWER
+                    break
+                case EFFECT_POISON:
+                    this.READS |= ActionGains.MAGIC | ActionGains.POWER
+                    break
+                case EFFECT_SHACKLE_AGILITY:
+                case EFFECT_SHACKLE_MAGIC:
+                case EFFECT_SHACKLE_MP:
+                case EFFECT_SHACKLE_STRENGTH:
+                case EFFECT_SHACKLE_TP:
+                case EFFECT_SHACKLE_WISDOM:
+                    this.READS |= ActionGains.MAGIC
+                    break
+                case EFFECT_DAMAGE_RETURN:
+                    this.READS |= ActionGains.AGILITY
+                    break
+                case EFFECT_STEAL_LIFE:
+                case EFFECT_STEAL_ABSOLUTE_SHIELD:
+                    this.SELF = true
+                    break
+                case EFFECT_ADD_STATE:
+                case EFFECT_RAW_HEAL:
+                case EFFECT_RAW_ABSOLUTE_SHIELD:
+                case EFFECT_RAW_RELATIVE_SHIELD:
+                case EFFECT_RAW_BUFF_AGILITY:
+                case EFFECT_RAW_BUFF_MAGIC:
+                case EFFECT_RAW_BUFF_MP:
+                case EFFECT_RAW_BUFF_POWER:
+                case EFFECT_RAW_BUFF_RESISTANCE:
+                case EFFECT_RAW_BUFF_SCIENCE:
+                case EFFECT_RAW_BUFF_STRENGTH:
+                case EFFECT_RAW_BUFF_TP:
+                case EFFECT_RAW_BUFF_WISDOM:
+                case EFFECT_ANTIDOTE:
+                case EFFECT_REMOVE_SHACKLES:
+                case EFFECT_DEBUFF:
+                case EFFECT_TOTAL_DEBUFF:
+                case EFFECT_VULNERABILITY:
+                case EFFECT_ABSOLUTE_VULNERABILITY:
+                    break
+                default:
+                    // Invocation, résurrection, déplacements et effets non décrits :
+                    // lectures non locales, donc nouveau calcul dans un autre état.
+                    this.WORLD = true
+            }
+        }
+    }
+}
+
+class ActionGainMemo {
+    GAIN
+    CASTER
+    PROFILE
+    TARGETS
+    SELF
+    MOVEMENT
+    SOURCE // non-null = effet non local ; réutilisable seulement dans CE même état
+    FROM
+    TO
+    constructor(gain, caster, profile, targets, self, movement, source, from, to) {
+        this.GAIN = gain
+        this.CASTER = caster
+        this.PROFILE = profile
+        this.TARGETS = targets
+        this.SELF = self
+        this.MOVEMENT = movement
+        this.SOURCE = source
+        this.FROM = from
+        this.TO = to
+    }
+}
+
+class ActionGainComparison {
+    INPUT
+    MATCH
+    constructor(input, match) { this.INPUT = input; this.MATCH = match }
+}
+
+// Le parent et les snapshots sont immuables : comparer les mêmes inputs pour
+// cinquante items ne donne pas cinquante réponses différentes. Cache local au nœud,
+// par id / masque, avec vérification de la référence du snapshot (aucun hash arrondi).
+class ActionGainChecks {
+    CASTER
+    TARGETS = [:]
+    CASTERS = [:]
+    constructor(caster) { this.CASTER = caster }
+
+    sameTarget(current, before) {
+        if (current == before) return true
+        if (current == null || before == null) return false
+        var cached = this.TARGETS[current.ID]
+        if (cached != null && cached.INPUT == before) return cached.MATCH
+        var result = ActionGains.sameTargetInputs(current, before)
+        this.TARGETS[current.ID] = new ActionGainComparison(before, result)
+        return result
+    }
+
+    sameCaster(before, reads) {
+        if (this.CASTER == before) return true
+        var cached = this.CASTERS[reads]
+        if (cached != null && cached.INPUT == before) return cached.MATCH
+        var result = ActionGains.sameCasterInputs(this.CASTER, before, reads)
+        this.CASTERS[reads] = new ActionGainComparison(before, result)
+        return result
+    }
+}
+
+class ActionGains {
+    static STRENGTH = 1
+    static WISDOM = 2
+    static AGILITY = 4
+    static RESISTANCE = 8
+    static SCIENCE = 16
+    static MAGIC = 32
+    static POWER = 64
+    static LIFE = 128
+    static PROFILES = [:] // catalogue d'items immuable, pas un cache de scores de branche
+
+    static profileOf(item) {
+        if (!(item in PROFILES)) PROFILES[item] = new ActionGainProfile(ITEMINFO[item])
+        return PROFILES[item]
+    }
+
+    static tableOf(node) {
+        var table = node.ACTION_GAINS
+        if (table == null) {
+            var ancestor = node.STATE_PARENT
+            table = new ActionGainTable(ancestor == null ? null : ancestor.ACTION_GAINS)
+            node.ACTION_GAINS = table
+        }
+        return table
+    }
+
+    // Même ordre et mêmes couches que Node.ActionToNodeInTree. Une marche ne donne
+    // aucun bonus ; Saut/Télépo modifient le gain, même à cibles géométriques identiques.
+    static movementOf(playable, walk) {
+        var origin = playable.ACTION.From
+        if (origin in walk.WALK) return 0
+        if (origin in walk.JUMP) return 1
+        if (origin in walk.TELEPORTATION) return 2
+        return WalkCellsClass.lastStepIsJump(walk, origin) ? 3 : 4
+    }
+
+    static sameTargetInputs(a, b) {
+        if (a == b) return true
+        return a != null && b != null && a.TURN_ORDER == b.TURN_ORDER
+            // Deux invocations virtuelles de même id dans deux branches peuvent
+            // naître avec des bases différentes (critique). Elles ne sont pas des clones.
+            && a.BASE_STATS == b.BASE_STATS
+            && a.HEAL == b.HEAL && ScoringClass.sameEntityScoreInputs(a, b)
+            && ActionSearchCacheClass.sameLedger(a.EFFECTS, b.EFFECTS)
+            // L'action peut CREER du poison/des entraves, ou rendre le nettoyage
+            // payable en augmentant les PT. Lire les cooldowns bruts même quand
+            // le score AVANT action n'a encore aucun de ces canaux.
+            && DangerComboClass.antidoteCdOf(a) == DangerComboClass.antidoteCdOf(b)
+            && ShackleScoring.cooldown(a) == ShackleScoring.cooldown(b)
+    }
+
+    static capture(entry, State, BaseHash, walk) {
+        var playable = entry.PLAYABLE
+        var action = playable.ACTION
+        var profile = profileOf(action.Item)
+        var caster = State[Me]
+        var movement = movementOf(playable, walk)
+        var own = profile.SELF || movement != 0
+            || (caster.SPECIAL_WEAPON & SPW_UNSTABLE_DESTROYER) != 0
+            || action.Item == CHIP_ANTIDOTE || action.Item == CHIP_MANUMISSION
+        var targets = [:]
+        // Inclure les lecteurs AVANT les filtres de remplacement ou les caps :
+        // « aucun effet appliqué » ne signifie pas « aucune dépendance ».
+        var geometric = ConsequencesClass.ConsequenceTargets(action.Item, action.From, action.To, State, Me, BaseHash)
+        for (var id: var _distance in geometric) {
+            if (!ActionsClass.affectsSignature(action.Item, State[id], caster)) continue
+            if (id == Me) own = true
+            else targets[id] = State[id]
+        }
+        var world = profile.WORLD || !mapIsEmpty(PLANT_ZONE_BY_ID)
+        for (var id: var after in entry.NODE.STATE_PATCH) {
+            var before = State[id]
+            if (before == null || (before.LIFE > 0 && after.LIFE <= 0)) world = true
+            if (id != Me) targets[id] = before
+        }
+        // Un kill lit les porteurs des effets du mort, ses invocations et les
+        // passifs alliés. Ne pas prétendre qu'il ne dépend que de la victime.
+        return new ActionGainMemo(entry.GAIN, caster, profile, targets, own, movement,
+            world ? State : null, action.From, action.To)
+    }
+
+    static sameCasterInputs(caster, before, reads) {
+        if (caster == before) return true
+        if ((caster.LIFE > 0) != (before.LIFE > 0) || caster.STATES != before.STATES
+            || (caster.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT) != (before.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)) return false
+        return !(((reads & STRENGTH) && caster.STRENGTH != before.STRENGTH)
+            || ((reads & WISDOM) && caster.WISDOM != before.WISDOM)
+            || ((reads & AGILITY) && caster.AGILITY != before.AGILITY)
+            || ((reads & RESISTANCE) && caster.RESISTANCE != before.RESISTANCE)
+            || ((reads & SCIENCE) && caster.SCIENCE != before.SCIENCE)
+            || ((reads & MAGIC) && caster.MAGIC != before.MAGIC)
+            || ((reads & POWER) && caster.POWER != before.POWER)
+            || ((reads & LIFE) && caster.LIFE != before.LIFE))
+    }
+
+    static matches(memo, State, playable, walk, checks = null) {
+        if (memo == null || (memo.SOURCE != null && memo.SOURCE != State)) return false
+        if (memo.MOVEMENT != movementOf(playable, walk)) return false
+        if (memo.SOURCE != null) return memo.SOURCE == State
+            && memo.FROM == playable.ACTION.From && memo.TO == playable.ACTION.To
+        var caster = State[Me]
+        var before = memo.CASTER
+        if (memo.SELF) {
+            if (!(checks == null ? sameTargetInputs(caster, before) : checks.sameTarget(caster, before))) return false
+        } else {
+            if (!(checks == null ? sameCasterInputs(caster, before, memo.PROFILE.READS)
+                : checks.sameCaster(before, memo.PROFILE.READS))) return false
+        }
+        for (var id: var oldTarget in memo.TARGETS) {
+            if (!(checks == null ? sameTargetInputs(State[id], oldTarget) : checks.sameTarget(State[id], oldTarget))) return false
+        }
+        return true
+    }
+}

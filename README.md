@@ -10,7 +10,7 @@ Le point d’entrée est [`New_AI/Main.leek`](New_AI/Main.leek). Importer le dos
 
 Les modifications courantes du scoring se font sur **`main`**.
 
-Ce document décrit le code de `main` au **13 octobre 2026**. Les valeurs indiquées
+Ce document décrit le code au **16 octobre 2026**. Les valeurs indiquées
 sont les réglages actuels, pas des paramètres validés pour tous les builds.
 
 ## Sommaire
@@ -92,7 +92,7 @@ pas les globals du joueur dont l'action est interrompue.
 | Invocations | `Modifier/BulbState.leek`, `Resurrection.leek`, `Awakening.leek` | Entités virtuelles, résurrection, politique des plantes et simulation des réveils. |
 | Projection | `Maps/ItemCoverage.leek`, `Danger/*`, `Heal/Heal.leek`, `Delta/Delta.leek` | Couvertures, combos adverses, soin projeté et dégâts nets séquencés. |
 | Valeur et placement | `Scoring/*` | Valeur d'état, coefficients manuels, frais de cooldown et pénalités de position. |
-| Décision et exécution | `User/Node.leek`, `BFS.leek`, `FinalCell.leek`, `Play.leek`, `BulbAI.leek` | Simulation d'un nœud, recherche, clôture du plan et appels moteur réels. |
+| Décision et exécution | `User/Node.leek`, `ActionGains.leek`, `BFS.leek`, `FinalCell.leek`, `Play.leek`, `BulbAI.leek` | Simulation d'un nœud, deltas hérités par branche, recherche, clôture du plan et appels moteur réels. |
 | Mesures | `Utils/Benchmark.leek` | Profilage facultatif des opérations par catégorie. |
 
 ## État virtuel et simulation
@@ -123,7 +123,9 @@ Pour chaque candidat, `NodeClass.ActionToNodeInTree` :
 4. Dépense le coût total, équipe l'arme si nécessaire et applique les effets de l'item
    dans leur ordre, en clonant les autres entités à leur première mutation.
 5. Met à jour cooldown/usages, captures des entités modifiées et empreintes de caches.
-6. Calcule le delta de score sur ces seules entités, puis restaure le workspace.
+6. Calcule le delta de score sur ces seules entités lorsqu'il n'est pas déjà connu.
+   Un delta exact réutilisé donne directement `score enfant = score parent + delta`.
+   Le workspace est restauré dans les deux cas.
 
 Le nœud conserve un **patch**, pas une copie profonde de tout le combat.
 `STATE_PARENT` est la chaîne d'états immuable ; `PARENT` sert à reconstruire la suite
@@ -348,7 +350,7 @@ pénalités restent positives ou nulles : un candidat dont le score brut ne dép
 plus le meilleur score terminal validé peut être écarté sans calculer son danger.
 Pendant le balayage, le coût spatial seul permet aussi d'écarter une cellule déjà
 plus chère que le meilleur total trouvé. Ces deux coupures utilisent cette
-non-négativité ; elles sont distinctes de la coupure gloutonne approximative des actions.
+non-négativité ; elles concernent le placement, indépendamment du classement des actions.
 
 Un balayage interrompu retourne un résultat marqué **tronqué**. Il n'entre pas dans
 le cache des placements complets et ne qualifie pas un nouveau plan comme pleinement
@@ -412,14 +414,38 @@ le cast et l'équipement. Les cooldowns, usages et coûts sont relus dans chaque
 Le domaine consulté suit la mobilité courante : un gain de PM ou l'accès au Saut
 peut créer de nouvelles origines, sans se limiter aux cellules de la racine.
 
-Les gains mémorisés par signature survivent aux changements de `BaseHash` dans une
-recherche : seuls les nouveaux groupes sont simulés pour construire leur priorité.
-Une zone qui gagne une cible a une nouvelle signature et est encore simulée en entier ;
-il n'y a pas de cache additif par cible. Les gains réutilisés sont des **estimations de
-classement**, pas des majorants : chaque candidat examiné est simulé et rescorré dans
-son parent réel, avec les buffs/passifs du déplacement. Le classement et sa coupure
-gloutonne restent approximatifs après une modification de stats. Le debug `[BFS] group
-scores: … computed, … reused, … cached orders` rend cette réutilisation visible.
+Les gains mémorisés sont des **deltas exacts dans leur état**, sous le contexte figé
+de la racine. `User/ActionGains.leek` décrit leurs dépendances : caractéristiques lues
+chez le lanceur, inputs de score et registre des cibles, critique, effets de déplacement.
+Les cibles sont enregistrées avant les filtres de remplacement et les caps : un soin
+nul dépend quand même des PV de sa cible. Une zone qui gagne une cible a une nouvelle
+signature et est simulée en entier ; il n'y a pas de cache additif par cible.
+
+Chaque nœud développé possède une `ActionGainTable` : références héritées de son
+parent et remplacements locaux, sans copier les objets géométriques ni modifier les
+scores des branches voisines. Tous les gains jouables dont les lecteurs ont changé
+sont recalculés, positifs comme négatifs. Le maximum est conservé pendant ce passage :
+c'est le même choix que la première entrée d'un tri stable décroissant, sans payer
+un tri complet à chaque successeur. Une action inchangée garde son
+delta et ne paie aucune nouvelle simulation pour être classée. Le rafraîchissement
+n'est payé qu'au développement du nœud, pas pour tous les candidats seulement simulés.
+Un mémo immuable calculé dans une autre branche peut aussi être repris, uniquement
+après la même validation exacte de ses lecteurs (`EXACT_GAINS`, vidé à la racine réelle).
+Les comparaisons répétées des mêmes snapshots sont partagées dans le nœud courant.
+
+Le premier gain positif du classement donne le successeur. Si son nouveau nœud a
+déjà été produit par le rafraîchissement, il est repris ; sinon l'action est appliquée
+dans l'état courant, sans rescoring, pour construire son patch et ses ressources.
+Son score est celui du parent plus le delta, **prix du cooldown déjà compris**.
+Le danger et le placement sont toujours calculés séparément à la clôture terminale.
+
+Les cas à lectures non locales (kill et cascades, invocation, résurrection,
+déplacements forcés, plantes, effets non décrits dans le profil) sont recalculés dans
+un autre état. C'est une invalidation conservatrice, pas une réutilisation approximative.
+Si le budget interrompt le rafraîchissement, cette branche s'arrête : aucun classement
+partiellement périmé ne choisit son successeur. Les candidats terminaux déjà visités et
+le plan validé avec danger restent disponibles. Le debug `[BFS] group scores` indique
+les calculs, deltas exacts réutilisés, catalogues repris et rafraîchissements incomplets.
 
 La géométrie est conservée **par plateau et item**, avec les origines déjà calculées.
 Un déplacement ou un changement de PM complète uniquement les nouvelles cellules ;
@@ -432,18 +458,19 @@ construire une map intermédiaire pour chaque couple origine/visée. Pour une zo
 l'empreinte des autres entités est calculée une fois par centre, puis celle du lanceur
 est ajoutée à sa distance propre depuis chaque origine.
 
-Dans les successeurs, le tri réutilise des **clés et des priorités**, jamais des nœuds ni
-des actions concrètes d'une ancienne branche. En mode gain brut, le choix d'origine
-n'est effectué que pour les nouveaux groupes à scorer et les candidats examinés.
-Son cache porte le plateau, la mobilité et les seuils de PT restant **après** le coût du
-cast/équipement : un ancien échec faute de PT ne bloque pas une origine devenue payable.
-Le mode rendement ajoute aussi les coûts courants à la clé du tri.
+Dans les successeurs, les origines et disponibilités sont résolues dans l'état courant
+avant le classement. Leur cache porte le plateau, la mobilité et les seuils de PT restant
+**après** le coût du cast/équipement : un ancien échec faute de PT ne bloque pas une origine
+devenue payable. La couche de déplacement et l'ordre Saut/Téléportation entrent dans la
+validité du delta. Le mode rendement calcule sa priorité avec le coût courant.
 
 Les coûts et usages disponibles sont mémorisés sur l'entité simulée. Le mémo est
 invalidé au clone et aux écritures de cooldown/usages ; un changement de PT ou d'arme
 le remplace également. Il filtre les items avant leur géométrie. Chaque nœud conserve
 aussi les valeurs exactes des entités déjà scorées : ses candidats réutilisent les
-valeurs d'avant-cast et calculent celles d'après-cast avec les mêmes formules.
+valeurs d'avant-cast et calculent celles d'après-cast avec les mêmes formules lorsqu'un
+delta doit être recalculé. Un nœud construit par addition peut ne pas avoir ces valeurs :
+la remontée des mémos s'arrête à la dernière mutation de l'entité et la recalcule au besoin.
 
 Le mémo `SCORE_MEMO` évite aussi de recalculer la valeur complète d'un clone dont
 les inputs de score n'ont pas changé. Une simple dépense de PT/PM ou un changement
@@ -458,13 +485,9 @@ suite entièrement évaluée avec danger est conservée avant l'expansion, dans 
 existantes, lorsque son coût est finançable. Une préparation ou une expansion qui épuise
 ensuite le budget ne peut pas effacer ce plan validé. Les catalogues d'origines et leurs choix sont vidés
 au changement de tour/acteur. `TURN_ACTION_SEARCH_CACHE` conserve les ensembles de groupes
-et les estimations entre les casts réels. À chaque nouvelle capture, les modifications
-de stats, cellule ou registre d'effets invalident les estimations qui en dépendent ;
-un changement du contexte de scoring les vide toutes. Les dépendances utilisent un
-masque d'IDs modulo 64 : une collision peut provoquer une invalidation supplémentaire.
-Les nœuds et validations de danger ne survivent jamais à une recherche. La racine
-resimule tous ses candidats ; dans les branches, les gains conservés restent des
-indications gloutonnes, jamais des bornes ni des scores exacts pour un autre état.
+entre les casts réels. Les nœuds, tables de gains et validations de danger appartiennent
+à une recherche. Chaque nouvelle racine réelle score ses candidats depuis la capture
+moteur ; seuls les descendants de cette racine peuvent hériter de leurs deltas.
 
 L'expansion partage son budget entre **au plus quatre débuts**, en privilégiant des
 items distincts. La largeur diminue lorsque le budget disponible ne finance pas
@@ -505,8 +528,8 @@ projetée puis de la vider sans nouvelle recherche. Ce quota ne réduit pas le b
 global du tour et ne change pas les cœurs des builds.
 
 Après une action réelle, l'arbre est abandonné ; la recherche suivante repart de la
-capture moteur. Les estimations encore pertinentes et les caches géométriques restent
-utilisables sous leurs clés. Les candidats examinés sont toujours resimulés.
+capture moteur. Les caches géométriques restent utilisables sous leurs clés ; les deltas
+de l'ancienne recherche ne sont pas transférés à cette nouvelle capture.
 Le danger demeure évalué à la clôture des plans, et le meilleur plan déjà validé reste
 prioritaire sur un score brut non évalué. La réserve stricte de placement vaut
 300 000 opérations, à l'intérieur de la réserve globale de tour de 500 000.
@@ -538,12 +561,12 @@ ajoute notamment PV/vie maximale et contexte de soin.
 | Combat / VM | Catalogue `ITEMINFO`, coordonnées, obstacles, tables bitmap, géométries d'items sans occupants, `MIX64_MEMO` | Données statiques ou fonctions pures ; conservées tant que leur clé reste pertinente. |
 | Tour du joueur courant | Inventaires dérivés, rendements/verdicts d'équipement, contextes de scoring, catalogues d'origines, choix d'origine, danger/soin/net, placement | Vidés par `ReloadCacheNewTurn`, également à l'entrée de chaque bulbe. |
 | Racine réelle | `ROOT_SCORING_CONSTANTS`, `ROOT_ALLY_SUPPORT`, `ROOT_ENEMY_OFFENSE` | Sélectionnés/préparés sur la capture réelle ; figés dans les branches pour préserver les deltas locaux. Leurs caches peuvent servir une nouvelle racine équivalente. |
-| Tour du joueur courant, entre les casts | `ESTIMATES`, `DEPENDENCIES`, `GROUP_SETS` | Estimations invalidées selon les entités modifiées et le contexte ; groupes protégés par plateau/mobilité/disponibilité. Aucun nœud réutilisé. |
-| Une recherche | `ORDERED_GROUPS`, candidat validé avec danger | Tris reconstruits à la nouvelle racine ; aucune ancienne validation de danger reprise. |
-| Un état/nœud | Mémos de capacité/disponibilité/importance, `SCORE_MEMO`, `SCORE_VALUES`, état matérialisé | Conservés ou invalidés selon les inputs modifiés ; les valeurs exactes d'une entité intacte peuvent être reprises chez un ancêtre. |
+| Tour du joueur courant, entre les casts | `GROUP_SETS` | Groupes protégés par plateau/mobilité/disponibilité. Aucun ancien gain ni nœud repris à la nouvelle racine réelle. |
+| Une recherche | `EXACT_GAINS`, contexte de gains et candidat validé avec danger | Mémos immuables réutilisables entre branches après validation exacte des lecteurs ; aucun ancien delta ni plan validé d'une autre capture réelle repris. |
+| Un état/nœud | `ACTION_GAINS`, mémos de capacité/disponibilité/importance, `SCORE_MEMO`, `SCORE_VALUES`, état matérialisé | Deltas hérités en lecture seule et remplacés localement si leurs lecteurs ont changé ; valeurs d'entités reprises jusqu'à leur dernière mutation. |
 
 Après un vrai cast, **tous les caches ne sont pas vidés** : l'arbre est abandonné,
-mais les estimations non invalidées et les caches de tour protégés par leurs empreintes restent
+mais les caches de tour protégés par leurs empreintes restent
 réutilisables. La capture réelle fournit les nouvelles clés. Le changement de
 joueur/acteur remet les caches de tour à zéro pour éviter de partager des inventaires
 ou des actions propres à deux bulbes/poireaux différents.
@@ -673,8 +696,9 @@ pas automatiquement des correctifs à entreprendre.
 ## Limites actuelles
 
 - La recherche ne visite pas tout l'arbre et ne garantit pas le meilleur combo.
-  Les gains réutilisés ne sont pas des bornes admissibles ; la coupure gloutonne
-  peut ignorer une action devenue meilleure après un buff ou une nouvelle cible.
+  Chaque successeur maximise le gain immédiat parmi les groupes jouables actualisés ;
+  cela ne garantit pas la meilleure suite. Les actions non positives restent exclues
+  du déroulé, et un budget insuffisant peut arrêter une branche avant son successeur.
 - Un groupe garde une visée légale par origine et une origine concrète est choisie
   pour sa simulation. Toutes les origines équivalentes ne sont pas développées
   comme des branches distinctes avec leur futur placement.
@@ -738,6 +762,24 @@ de 6,3 % celui de préparation des successeurs au budget de 12 millions d'opéra
 Elle visite 8 plutôt que 7 steps au petit budget, et 52 dans les deux versions au grand
 budget. Ce sont des mesures locales, sans garantie de davantage de steps sur tout combat.
 Le comparatif de 128 combats ci-dessus précède cette seconde passe.
+
+### 16 octobre 2026 : deltas exacts, branche expérimentale
+
+La branche `search-exact-deltas` remplace les estimations globales et leur récupération
+des négatifs par les tables de gains décrites plus haut. La réception compare les deltas
+réutilisés et les enfants construits par addition à un recalcul complet : **15 398 deltas
+et 475 enfants, zéro écart** à la tolérance de 0,000001. Les sondes ciblent aussi les buffs
+sur soi/autrui, le soin initialement nul, l'isolation des parents et les cooldowns de
+nettoyage avant l'apparition de leur canal. Ces audits restent hors de l'IA distribuée.
+
+Sur dix combats fixes aux cœurs réels, mêmes builds/graines/orientations et même référence
+adverse `6c145af`, `main` à `13e20a4` obtient **7 points**, cette branche **3,5**. Les rendements
+observés sont respectivement **23,54 et 9,21 steps par million d'opérations**, sans erreur
+ni tour avorté chez le candidat. Les trajectoires diffèrent : ce n'est pas un rapport de
+coût à état identique. Le lot est petit, mais ne justifie pas de remplacer `main`.
+Le rafraîchissement de tous les candidats affectés, y compris positifs, et les dépendances
+conservatrices restent coûteux malgré le partage exact et la suppression du tri des
+successeurs. La refonte est conservée séparément pour poursuivre ce travail.
 
 ## Documentation et outils
 
