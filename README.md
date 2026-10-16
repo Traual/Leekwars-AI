@@ -429,7 +429,8 @@ signature et est simulée en entier ; il n'y a pas de cache additif par cible.
 Chaque nœud développé possède une `ActionGainTable` : références héritées de son
 parent et remplacements locaux, sans copier les objets géométriques ni modifier les
 scores des branches voisines. Tous les gains jouables dont les lecteurs ont changé
-sont recalculés, positifs comme négatifs. Le maximum est conservé pendant ce passage :
+sont actualisés, par recalcul ou reprise d'un contexte déjà validé, positifs comme
+négatifs. Le maximum est conservé pendant ce passage :
 c'est le même choix que la première entrée d'un tri stable décroissant, sans payer
 un tri complet à chaque successeur. Une action inchangée garde son
 delta et ne paie aucune nouvelle simulation pour être classée. Le rafraîchissement
@@ -437,6 +438,21 @@ n'est payé qu'au développement du nœud, pas pour tous les candidats seulement
 Un mémo immuable calculé dans une autre branche peut aussi être repris, uniquement
 après la même validation exacte de ses lecteurs (`EXACT_GAINS`, vidé à la racine réelle).
 Les comparaisons répétées des mêmes snapshots sont partagées dans le nœud courant.
+
+`User/ActionGainHistory.leek` conserve aussi plusieurs contextes par action dans
+`GAIN_HISTORY`. L'empreinte des stats du lanceur et des cibles est calculée une fois
+par snapshot, puis combinée avec la couche de déplacement. Elle présélectionne un
+mémo, ensuite soumis à la validation exacte habituelle : registres, durées, bases,
+cooldowns utiles et critique restent contrôlés. Les empreintes sont remises à zéro
+au clonage et l'historique est vidé à chaque nouvelle recherche. Limites : **8
+contextes par action**, **4 096 entrées par recherche** ; l'éviction provoque seulement
+un nouveau calcul. Un contexte retrouvé devient aussi le dernier mémo d'accès rapide.
+
+La clé décrit les inputs avant le prochain cast. Rémission puis Protéines et
+Protéines puis Rémission partagent ainsi un gain quand elles laissent les mêmes
+inputs ; tirer avant ou après Protéines conserve des contextes distincts. Le cache
+stocke le delta du prochain cast, sans réutiliser le score cumulé ni le nœud d'une
+autre branche. Les cas non locaux décrits ci-dessous ne sont pas admis à cet historique.
 
 Le premier gain positif du classement donne le successeur. Si son nouveau nœud a
 déjà été produit par le rafraîchissement, il est repris ; sinon l'action est appliquée
@@ -567,7 +583,7 @@ ajoute notamment PV/vie maximale et contexte de soin.
 | Tour du joueur courant | Inventaires dérivés, rendements/verdicts d'équipement, contextes de scoring, catalogues d'origines, choix d'origine, danger/soin/net, placement | Vidés par `ReloadCacheNewTurn`, également à l'entrée de chaque bulbe. |
 | Racine réelle | `ROOT_SCORING_CONSTANTS`, `ROOT_ALLY_SUPPORT`, `ROOT_ENEMY_OFFENSE` | Sélectionnés/préparés sur la capture réelle ; figés dans les branches pour préserver les deltas locaux. Leurs caches peuvent servir une nouvelle racine équivalente. |
 | Tour du joueur courant, entre les casts | `GROUP_SETS` | Groupes protégés par plateau/mobilité/disponibilité. Aucun ancien gain ni nœud repris à la nouvelle racine réelle. |
-| Une recherche | `EXACT_GAINS`, contexte de gains et candidat validé avec danger | Mémos immuables réutilisables entre branches après validation exacte des lecteurs ; aucun ancien delta ni plan validé d'une autre capture réelle repris. |
+| Une recherche | `EXACT_GAINS`, `GAIN_HISTORY`, contexte de gains et candidat validé avec danger | Mémos immuables réutilisables entre branches après validation exacte des lecteurs ; aucun ancien delta ni plan validé d'une autre capture réelle repris. |
 | Un état/nœud | `ACTION_GAINS`, mémos de capacité/disponibilité/importance, `SCORE_MEMO`, `SCORE_VALUES`, état matérialisé | Deltas hérités en lecture seule et remplacés localement si leurs lecteurs ont changé ; valeurs d'entités reprises jusqu'à leur dernière mutation. |
 
 Après un vrai cast, **tous les caches ne sont pas vidés** : l'arbre est abandonné,
@@ -804,6 +820,14 @@ de **265 989 à 224 531** ; la préparation des empreintes de nœud passe de
 **294 726 à 53 850** appels. Aucune erreur ni tour avorté. L'instrumentation fine
 reste hors de l'IA distribuée ; ces coûts proviennent du banc à compteurs légers.
 Ce résultat mesure une économie à décisions identiques, pas un gain de victoire.
+
+L'historique de contextes ajoute ensuite **−2,86 %** sur le même combat complet :
+**1 495 106 933 → 1 452 308 279** opérations natives, **224 531 → 175 277** simulations
+en branche. Les **12 128 actions** et **25 113 steps** restent strictement identiques.
+Les sondes contrôlent les deux ordres Rémission/Protéines, la différence de dégâts
+avant/après le buff, une collision de hash et les limites/vidages du cache. L'audit
+sur deux combats courts compare **17 904 gains** et **531 enfants construits par
+delta** au recalcul complet : zéro écart à 0,000001, aucune erreur ni tour avorté.
 
 ## Documentation et outils
 

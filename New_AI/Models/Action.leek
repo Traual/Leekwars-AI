@@ -77,6 +77,9 @@ class ScoredActionClass {
 class ActionSearchCacheClass {
 	GROUP_SETS
 	EXACT_GAINS // mémos immuables partageables seulement après validation de leurs lecteurs
+	GAIN_HISTORY
+	HISTORY_SIZE = 0
+	HISTORY_HITS = 0
 	NEW_SCORES = 0
 	REUSED_SCORES = 0
 	SET_HITS = 0
@@ -87,10 +90,14 @@ class ActionSearchCacheClass {
 	constructor() {
 		this.GROUP_SETS = [:]
 		this.EXACT_GAINS = [:]
+		this.GAIN_HISTORY = [:]
 	}
 
 	beginSearch() {
 		this.EXACT_GAINS = [:]
+		this.GAIN_HISTORY = [:]
+		this.HISTORY_SIZE = 0
+		this.HISTORY_HITS = 0
 		this.NEW_SCORES = 0
 		this.REUSED_SCORES = 0
 		this.SET_HITS = 0

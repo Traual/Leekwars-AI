@@ -224,7 +224,7 @@ class ActionSuite {
 			validateChain(leaf, SearchCache)
 		}
 		BenchOps.Stop("BFS")
-		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " exact gains reused (" + SearchCache.EXACT_HITS + " shared), " + SearchCache.SET_HITS + " cached catalogs, " + SearchCache.INCOMPLETE_FRAMES + " incomplete refreshes")
+		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " exact gains reused (" + SearchCache.EXACT_HITS + " shared, " + SearchCache.HISTORY_HITS + " historical), " + SearchCache.SET_HITS + " cached catalogs, " + SearchCache.INCOMPLETE_FRAMES + " incomplete refreshes")
 
 		return pickTerminal(candidates, initialScore, count(rootEntries), SearchCache)
 	}
@@ -527,6 +527,17 @@ class ActionSuite {
 					table.VALUES[key] = shared // partager l'objet immuable, pas sa table
 					SearchCache.EXACT_HITS++
 				}
+				if (!valid) {
+					var historical = ActionGainHistory.find(SearchCache, key, State, playable, Walk, checks, memo, shared)
+					if (historical != null) {
+						memo = historical
+						valid = true
+						table.VALUES[key] = historical
+						SearchCache.EXACT_GAINS[key] = historical // prochain essai : accès rapide au contexte retrouvé
+						SearchCache.EXACT_HITS++
+						SearchCache.HISTORY_HITS++
+					}
+				}
 			}
 			var gain
 			if (valid) {
@@ -540,6 +551,7 @@ class ActionSuite {
 				var updated = ActionGains.capture(actual, State, BaseHash, Walk)
 				table.VALUES[key] = updated
 				SearchCache.EXACT_GAINS[key] = updated
+				ActionGainHistory.store(SearchCache, key, updated, State)
 				gain = actual.GAIN
 				SearchCache.NEW_SCORES++
 			}
@@ -614,8 +626,12 @@ class ActionSuite {
 			if (Workspace == null) Workspace = clone(State, 1)
 			var entry = simulatePlayable(playable, Workspace, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk)
 			var memo = ActionGains.capture(entry, State, BaseHash, Walk)
-			table.VALUES[gainKeyOf(playable)] = memo
-			if (SearchCache != null) SearchCache.EXACT_GAINS[gainKeyOf(playable)] = memo
+			var key = gainKeyOf(playable)
+			table.VALUES[key] = memo
+			if (SearchCache != null) {
+				SearchCache.EXACT_GAINS[key] = memo
+				ActionGainHistory.store(SearchCache, key, memo, State)
+			}
 			if (SearchCache != null) SearchCache.NEW_SCORES++
 			push(entries, entry)
 		}
