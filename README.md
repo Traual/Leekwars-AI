@@ -902,6 +902,23 @@ L'audit compare **22 930 gains**, **671 enfants** et **1 280 empreintes**, sans 
 Les **36 511 valeurs** de caractéristiques vérifiées restent également identiques
 aux formules complètes ; aucune erreur ni tour avorté sur ces contrôles.
 
+La résolution des origines conserve maintenant les domaines par budget de PT,
+sans recalculer les trois seuils pour chaque action du même nœud. La fusion et le
+remplacement d'une ligne d'effet utilisent une copie superficielle du registre ;
+les lignes des parents restent immuables. Le mémo de valeur d'entité peut aussi
+reprendre la preuve de caractéristiques inchangées depuis son parent direct,
+uniquement pour sa réutilisation locale. La certification des gains garde ses
+comparaisons brutes ; les coefficients et formules sont inchangés.
+
+Depuis `5fb87af`, les opérations natives passent à **1 103 100 288 sur le dense**,
+**133 617 612 sur le court** et **1 340 276 703 sur le complet**, soit environ
+**−20,91 %, −4,44 % et −7,71 %**. Chaque témoin conserve ses actions et steps.
+La sonde compte **58 contrôles** ; l'audit vérifie **24 397 gains**, **688 enfants**
+et **1 291 empreintes**, sans écart. Un contrôle distinct de **86 893 comparaisons**,
+dont **43 679 raccourcis de parent direct**, retrouve le prédicat exhaustif.
+Aucune erreur ni tour avorté sur ces vérifications. Le duel contre `main` reste
+à faire ; ces chiffres mesurent le coût à décisions identiques.
+
 ## Documentation et outils
 
 Ce README est la référence de fonctionnement actuelle. Les anciens rapports

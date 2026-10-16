@@ -161,11 +161,20 @@ class ActionOriginChoiceClass {
 // Une recherche de successeur les retrouve une fois par masque, pas par action.
 class ActionOriginDomainsClass {
 	VALUES = [:]
+	BUDGETS = [:]
 	BASE_HASH
 	WALK_FINGERPRINT
 	constructor(baseHash, walkFingerprint) {
 		this.BASE_HASH = baseHash
 		this.WALK_FINGERPRINT = walkFingerprint
+	}
+	choicesForBudget(budget) {
+		var choices = this.BUDGETS[budget]
+		if (choices != null) return choices
+		var mask = (budget >= JUMP_COST ? 1 : 0) | (budget >= TELE_COST ? 2 : 0) | (budget >= JUMP_TELE_COST ? 4 : 0)
+		choices = this.choices(mask)
+		this.BUDGETS[budget] = choices
+		return choices
 	}
 	choices(mask) {
 		var choices = this.VALUES[mask]

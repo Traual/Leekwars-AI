@@ -762,9 +762,9 @@ class ActionSuite {
 			var choices = null
 			if (BaseHash != null && WalkFingerprint != null) {
 				var budget = mine.TP - baseCost
-				var mask = (budget >= JUMP_COST ? 1 : 0) | (budget >= TELE_COST ? 2 : 0) | (budget >= JUMP_TELE_COST ? 4 : 0)
-				if (originDomains != null) choices = originDomains.choices(mask)
+				if (originDomains != null) choices = originDomains.choicesForBudget(budget)
 				else {
+					var mask = (budget >= JUMP_COST ? 1 : 0) | (budget >= TELE_COST ? 2 : 0) | (budget >= JUMP_TELE_COST ? 4 : 0)
 					var domain = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ BaseHash, WalkFingerprint), mask)
 					choices = ACTION_ORIGIN_CHOICE_CACHE[domain]
 					if (choices == null) { choices = [:]; ACTION_ORIGIN_CHOICE_CACHE[domain] = choices }

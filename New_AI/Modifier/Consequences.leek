@@ -966,14 +966,9 @@ class ConsequencesClass {
 			if (Duration == 1) EntityStateClass.refreshShieldExpiry(TarStats)
 			return;
 		}
-		var newEffects = []
-		for (var i: var old in effects) {
-			if (i == mergeIdx) {
-				push(newEffects, [old[0], old[1] + AppliedValue, old[2], old[3], old[4], old[5], old[6], old[7], old[8]])
-			} else {
-				push(newEffects, old)
-			}
-		}
+		var newEffects = clone(effects, 1)
+		var old = effects[mergeIdx]
+		newEffects[mergeIdx] = [old[0], old[1] + AppliedValue, old[2], old[3], old[4], old[5], old[6], old[7], old[8]]
 		TarStats.EFFECTS = newEffects
 		if (Duration == 1) EntityStateClass.refreshShieldExpiry(TarStats)
 	}
@@ -998,23 +993,18 @@ class ConsequencesClass {
 	static ReplacementChangeStats(Item, Effect, TarStats) {
 		if (Effect[3] == 0) return;
 		// Pré-scan : pas de match -> aucune allocation (chemin ultra-majoritaire).
-		var found = false
-		for (var eff in TarStats.EFFECTS) {
-			if (eff[0] == Effect[0] && eff[5] == Item) { found = true; break }
+		var index = -1
+		var effects = TarStats.EFFECTS
+		for (var i: var eff in effects) {
+			if (eff[0] == Effect[0] && eff[5] == Item) { index = i; break }
 		}
-		if (!found) return;
-		var newEffects = []
-		var removed = false
-		var statesDirty = false
-		for (var eff in TarStats.EFFECTS) {
-			if (!removed && eff[0] == Effect[0] && eff[5] == Item) {
-				removeCastedEffect(eff[0], TarStats, eff[1], eff[8], eff[3])
-				if (eff[0] == EFFECT_ADD_STATE) statesDirty = true
-				removed = true
-				continue   // la ligne remplacée ne passe pas dans le nouveau tableau
-			}
-			push(newEffects, eff)
-		}
+		if (index == -1) return;
+		var eff = effects[index]
+		removeCastedEffect(eff[0], TarStats, eff[1], eff[8], eff[3])
+		var statesDirty = eff[0] == EFFECT_ADD_STATE
+		// Copie superficielle : les autres lignes restent immuables et partagées.
+		var newEffects = clone(effects, 1)
+		remove(newEffects, index)
 		TarStats.EFFECTS = newEffects
 		// Ligne d'etat disparue : le masque se relit dans les lignes qui restent.
 		if (statesDirty) EntityStateClass.refreshStates(TarStats)

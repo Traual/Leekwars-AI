@@ -48,7 +48,10 @@ class ScoringClass {
         if (stat.LIFE <= 0) return 0
         var memo = stat.SCORE_MEMO
         if (memo != null && memo.CONTEXT == ROOT_SCORING_CONSTANTS
-            && sameEntityScoreInputs(stat, memo.INPUTS)) return memo.VALUE
+            && sameEntityScoreInputs(stat, memo.INPUTS, true)) {
+            if (memo.INPUTS != stat) stat.SCORE_MEMO = new EntityScoreMemo(stat, ROOT_SCORING_CONSTANTS, memo.VALUE)
+            return memo.VALUE
+        }
         var value = computeEntityValue(stat)
         stat.SCORE_MEMO = new EntityScoreMemo(stat, ROOT_SCORING_CONSTANTS, value)
         return value
@@ -58,16 +61,18 @@ class ScoringClass {
     // En revanche capacité, puissance, états, durées pondérées et entraves comptent.
     // Comparaison exacte (sans hash arrondi), indépendante de l'ancien DIFF_LOCAL_TERM.
     // Bases, inventaire, identité, camp et STATIC sont immuables dans une lignée de clones.
-    static sameEntityScoreInputs(a, b) {
+    static sameEntityScoreInputs(a, b, trackedParent = false) {
         if (a == b) return true
-        if (a.LIFE != b.LIFE || a.TOTAL_LIFE != b.TOTAL_LIFE
-            || a.STRENGTH != b.STRENGTH || a.WISDOM != b.WISDOM
+        if (a.LIFE != b.LIFE || a.TOTAL_LIFE != b.TOTAL_LIFE) return false
+        // La marque d'action certifie seulement les caractéristiques du parent
+        // DIRECT, pour la réutilisation locale de SCORE_MEMO uniquement. Les
+        // certifications d'ActionGains gardent la comparaison brute par défaut.
+        // Protections, puissance, états, flux et nettoyages restent relus.
+        if ((!trackedParent || a.CHARACTERISTICS_PARENT != b || a.CAP_DIRTY)
+            && (a.STRENGTH != b.STRENGTH || a.WISDOM != b.WISDOM
             || a.AGILITY != b.AGILITY || a.RESISTANCE != b.RESISTANCE
-            || a.SCIENCE != b.SCIENCE || a.MAGIC != b.MAGIC || a.POWER != b.POWER
+            || a.SCIENCE != b.SCIENCE || a.MAGIC != b.MAGIC
             || a.TOTAL_TP != b.TOTAL_TP || a.TOTAL_MP != b.TOTAL_MP
-            || a.ABSOLUTE_SHIELD != b.ABSOLUTE_SHIELD
-            || a.RELATIVE_SHIELD != b.RELATIVE_SHIELD || a.DAMAGE_RETURN != b.DAMAGE_RETURN
-            || a.STATES != b.STATES
             || a.STRENGTH_BUFF != b.STRENGTH_BUFF || a.STRENGTH_BUFF_WEIGHTED != b.STRENGTH_BUFF_WEIGHTED
             || a.WISDOM_BUFF != b.WISDOM_BUFF || a.WISDOM_BUFF_WEIGHTED != b.WISDOM_BUFF_WEIGHTED
             || a.AGILITY_BUFF != b.AGILITY_BUFF || a.AGILITY_BUFF_WEIGHTED != b.AGILITY_BUFF_WEIGHTED
@@ -76,7 +81,10 @@ class ScoringClass {
             || a.MAGIC_BUFF != b.MAGIC_BUFF || a.MAGIC_BUFF_WEIGHTED != b.MAGIC_BUFF_WEIGHTED
             || a.SHACKLE_STRENGTH != b.SHACKLE_STRENGTH || a.SHACKLE_AGILITY != b.SHACKLE_AGILITY
             || a.SHACKLE_WISDOM != b.SHACKLE_WISDOM || a.SHACKLE_MAGIC != b.SHACKLE_MAGIC
-            || a.SHACKLE_TP != b.SHACKLE_TP || a.SHACKLE_MP != b.SHACKLE_MP
+            || a.SHACKLE_TP != b.SHACKLE_TP || a.SHACKLE_MP != b.SHACKLE_MP)) return false
+        if (a.POWER != b.POWER || a.STATES != b.STATES
+            || a.ABSOLUTE_SHIELD != b.ABSOLUTE_SHIELD
+            || a.RELATIVE_SHIELD != b.RELATIVE_SHIELD || a.DAMAGE_RETURN != b.DAMAGE_RETURN
             || a.POISON != b.POISON || a.POISON_OVER_TIME != b.POISON_OVER_TIME
             || a.AFTEREFFECT != b.AFTEREFFECT || a.AFTEREFFECT_OVER_TIME != b.AFTEREFFECT_OVER_TIME
             || a.HEAL_OVER_TIME != b.HEAL_OVER_TIME) return false
