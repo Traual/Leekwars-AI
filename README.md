@@ -937,6 +937,12 @@ combats fixes aux budgets réels donnent **4,5 points avec et sans cette récup�
 sans erreur ni tour avorté. Cela établit son faible coût et son emploi effectif,
 pas une amélioration de force. Les budgets de production restent inchangés.
 
+Enfin, capture et validation évitent le contrôle de nettoyage pour les items dont
+le canal Antidote/Manumission est nul. Les **63 sondes** restent vertes. Le coût final
+du combat complet est **1 338 288 830 opérations** : **−7,85 %** depuis `5fb87af`,
+avec les **12 128 actions** et **25 113 steps** inchangés. Les économies correspondantes
+sont **21,12 % sur le dense** et **4,55 % sur le court**.
+
 ## Documentation et outils
 
 Ce README est la référence de fonctionnement actuelle. Les anciens rapports

@@ -295,7 +295,7 @@ class ActionGains {
         var movement = movementOf(playable, walk)
         var own = profile.SELF || movement != 0
             || (caster.SPECIAL_WEAPON & SPW_UNSTABLE_DESTROYER) != 0
-            || cooldownAffectsCaster(caster, profile.COOLDOWN_CHANNEL)
+            || (profile.COOLDOWN_CHANNEL != 0 && cooldownAffectsCaster(caster, profile.COOLDOWN_CHANNEL))
         var targets = [:]
         // Inclure les lecteurs AVANT les filtres de remplacement ou les caps :
         // « aucun effet appliqué » ne signifie pas « aucune dépendance ».
@@ -350,7 +350,7 @@ class ActionGains {
         if (memo.SELF) {
             if (!(checks == null ? sameTargetInputs(caster, before) : checks.sameTarget(caster, before))) return false
         } else {
-            if (cooldownAffectsCaster(caster, memo.PROFILE.COOLDOWN_CHANNEL)) return false
+            if (memo.PROFILE.COOLDOWN_CHANNEL != 0 && cooldownAffectsCaster(caster, memo.PROFILE.COOLDOWN_CHANNEL)) return false
             if (!(checks == null ? sameCasterInputs(caster, before, memo.PROFILE.READS)
                 : checks.sameCaster(before, memo.PROFILE.READS))) return false
         }
