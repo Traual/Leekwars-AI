@@ -157,6 +157,27 @@ class ActionOriginChoiceClass {
 	}
 }
 
+// Les domaines de choix ne dépendent que du financement des trois couches.
+// Une recherche de successeur les retrouve une fois par masque, pas par action.
+class ActionOriginDomainsClass {
+	VALUES = [:]
+	BASE_HASH
+	WALK_FINGERPRINT
+	constructor(baseHash, walkFingerprint) {
+		this.BASE_HASH = baseHash
+		this.WALK_FINGERPRINT = walkFingerprint
+	}
+	choices(mask) {
+		var choices = this.VALUES[mask]
+		if (choices != null) return choices
+		var domain = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ this.BASE_HASH, this.WALK_FINGERPRINT), mask)
+		choices = ACTION_ORIGIN_CHOICE_CACHE[domain]
+		if (choices == null) { choices = [:]; ACTION_ORIGIN_CHOICE_CACHE[domain] = choices }
+		this.VALUES[mask] = choices
+		return choices
+	}
+}
+
 // Le tri partage seulement des clés et des priorités, jamais un nœud ou un From.
 class ActionPriorityClass {
 	KEY
@@ -171,18 +192,15 @@ class ActionPriorityClass {
 
 class ActionSearchFrameClass {
 	GROUPS
-	FRESH
-	PLAYABLES
 	COSTS
 	USES
 	BEST
+	BEST_PLAYABLE
+	BEST_FRESH
+	ORIGIN_DOMAINS
 	COMPLETE = true
 	constructor() {
 		this.GROUPS = [:]
-		this.FRESH = [:]
-		this.PLAYABLES = [:]
-		this.COSTS = [:]
-		this.USES = [:]
 	}
 }
 

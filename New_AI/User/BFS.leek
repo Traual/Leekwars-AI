@@ -468,9 +468,9 @@ class ActionSuite {
 		// Les candidats terminaux et le plan déjà validé restent disponibles.
 		if (!frame.COMPLETE || getOperations() > OPS_DEADLINE || frame.BEST == null) return null
 		var hint = frame.BEST
-		var actual = frame.FRESH[hint.KEY]
+		var actual = frame.BEST_FRESH
 		if (actual == null) {
-			var playable = frame.PLAYABLES[hint.KEY]
+			var playable = frame.BEST_PLAYABLE
 			actual = simulatePlayable(playable, clone(State, 1), BaseHash, Parent.SCORE,
 				MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk, hint.GAIN)
 		}
@@ -485,6 +485,7 @@ class ActionSuite {
 	static prepareGroups(State, BaseHash, Parent, MySide, Walk, resurrectionTargetId, SearchCache) {
 		var mine = State[Me]
 		var frame = new ActionSearchFrameClass()
+		frame.ORIGIN_DOMAINS = new ActionOriginDomainsClass(BaseHash, Parent.ME_WALK_FINGERPRINT)
 		var availability = ActionsClass.availabilityOf(mine)
 		frame.COSTS = availability.COSTS
 		frame.USES = availability.USES
@@ -550,6 +551,7 @@ class ActionSuite {
 				}
 			}
 			var gain
+			var fresh = null
 			if (valid) {
 				gain = memo.GAIN
 				SearchCache.REUSED_SCORES++
@@ -557,7 +559,7 @@ class ActionSuite {
 				if (Workspace == null) Workspace = clone(State, 1)
 				var actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
 					MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, Walk)
-				frame.FRESH[key] = actual
+				fresh = actual
 				var updated = ActionGains.capture(actual, State, BaseHash, Walk, checks)
 				table.VALUES[key] = updated
 				SearchCache.EXACT_GAINS[key] = updated
@@ -570,6 +572,8 @@ class ActionSuite {
 			var priority = priorityOf(gain, playable.COST)
 			if (gain > BFS_DELTA_EPSILON && (frame.BEST == null || priority > frame.BEST.PRIORITY)) {
 				frame.BEST = new ActionPriorityClass(key, gain, priority)
+				frame.BEST_PLAYABLE = playable
+				frame.BEST_FRESH = fresh
 			}
 		}
 		if (!frame.COMPLETE) SearchCache.INCOMPLETE_FRAMES++
@@ -601,11 +605,8 @@ class ActionSuite {
 	}
 
 	static framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, WalkFingerprint) {
-		if (key in frame.PLAYABLES) return frame.PLAYABLES[key]
 		var group = frame.GROUPS[key]
-		var playable = resolveGroup(group, mine, Walk, frame.COSTS[group.Item], frame.USES[group.Item], resurrectionTargetId, BaseHash, WalkFingerprint)
-		frame.PLAYABLES[key] = playable
-		return playable
+		return resolveGroup(group, mine, Walk, frame.COSTS[group.Item], frame.USES[group.Item], resurrectionTargetId, BaseHash, WalkFingerprint, frame.ORIGIN_DOMAINS)
 	}
 
 	/* Un seul workspace restauré entre candidats. Le score inclut TOUJOURS la
@@ -705,11 +706,12 @@ class ActionSuite {
 		var availability = ActionsClass.availabilityOf(mine)
 		var baseCosts = availability.COSTS
 		var usesByItem = availability.USES
+		var originDomains = new ActionOriginDomainsClass(BaseHash, walkFingerprint)
 		for (var group in groups) {
 			var item = group.Item
 			var cost = baseCostOf(mine, item, baseCosts, usesByItem)
 			if (cost < 0 || (item == CHIP_RESURRECTION && ResurrectId == null)) continue
-			var playable = resolveGroup(group, mine, Walk, cost, usesByItem[item], ResurrectId, BaseHash, walkFingerprint)
+			var playable = resolveGroup(group, mine, Walk, cost, usesByItem[item], ResurrectId, BaseHash, walkFingerprint, originDomains)
 			if (playable == null) continue
 			var slot = slots[group.SIGNATURE]
 			if (slot == null) {
@@ -743,7 +745,7 @@ class ActionSuite {
 	/* Pas de copie de la map d'origines. Le cas courant (je peux déjà lancer ici)
 	 * se résout par une seule appartenance ; sinon on cherche le déplacement le
 	 * moins cher qui laisse ASSEZ de TP pour le cast, équipement compris. */
-	static resolveGroup(group, mine, Walk, baseCost, uses, ResurrectId, BaseHash = null, WalkFingerprint = null) {
+	static resolveGroup(group, mine, Walk, baseCost, uses, ResurrectId, BaseHash = null, WalkFingerprint = null, originDomains = null) {
 		var from = null
 		var to = null
 		var cost = baseCost
@@ -759,9 +761,12 @@ class ActionSuite {
 			if (BaseHash != null && WalkFingerprint != null) {
 				var budget = mine.TP - baseCost
 				var mask = (budget >= JUMP_COST ? 1 : 0) | (budget >= TELE_COST ? 2 : 0) | (budget >= JUMP_TELE_COST ? 4 : 0)
-				var domain = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ BaseHash, WalkFingerprint), mask)
-				choices = ACTION_ORIGIN_CHOICE_CACHE[domain]
-				if (choices == null) { choices = [:]; ACTION_ORIGIN_CHOICE_CACHE[domain] = choices }
+				if (originDomains != null) choices = originDomains.choices(mask)
+				else {
+					var domain = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ BaseHash, WalkFingerprint), mask)
+					choices = ACTION_ORIGIN_CHOICE_CACHE[domain]
+					if (choices == null) { choices = [:]; ACTION_ORIGIN_CHOICE_CACHE[domain] = choices }
+				}
 			}
 			if (choices != null && group.SIGNATURE in choices) {
 				var choice = choices[group.SIGNATURE]

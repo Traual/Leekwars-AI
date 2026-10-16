@@ -67,7 +67,9 @@ class EntityStateClass extends EntityClass {
 	SCORE_MEMO = null // valeur complète ; inputs immuables + contexte, validés à la lecture
 	ACTION_GAIN_HASH // présélection des gains entre branches ; remis à null au clone
 	ACTION_GAIN_INPUTS // représentant exact des lecteurs ; certifié au développement du nœud
+	ACTION_GAIN_INPUT_ID // identifiant unique du snapshot, pas une empreinte de ses valeurs
 	CHARACTERISTICS_MEMO = null // sous-terme exact, réutilisable après une blessure ou un poison
+	CHARACTERISTICS_PARENT // parent direct : CAP_DIRTY ne prouve rien sur un ancêtre plus ancien
 	RESISTANCE
 	RESISTANCE_BUFF = 0
 	RESISTANCE_BUFF_WEIGHTED = 0

@@ -864,6 +864,22 @@ et steps identiques. Sur le second témoin complet, elle coûte **0,109 %** de p
 son intérêt dépend donc du contexte. La sonde compte **44 contrôles** ; l'audit
 compare **20 965 gains** et **592 enfants** au recalcul complet, sans écart.
 
+La passe suivante conserve plusieurs résultats de comparaison par nœud, au lieu
+d'écraser le précédent quand les actions alternent entre des contextes. Les clés
+identifient les snapshots immuables ; elles ne remplacent aucune comparaison
+initiale par un hash. Les domaines d'origines sont partagés par masque de financement,
+et le déroulé ne garde que le meilleur candidat temporaire. Enfin, une marque
+d'absence de changement ne valide les caractéristiques que depuis le parent direct ;
+les autres cas gardent la comparaison complète, avec les mêmes formules.
+
+Depuis `5fb87af`, les opérations natives passent de **1 394 805 321 à 1 200 110 960**
+sur le témoin dense (**−13,96 %**), et de **1 452 308 279 à 1 379 494 394** sur
+le combat complet (**−5,01 %**). Les actions et steps restent identiques dans chaque
+comparatif. La sonde compte **49 contrôles** ; l'audit des gains vérifie **21 831 deltas**
+et **613 enfants**, sans écart. Un audit séparé compare **34 776 valeurs** de
+caractéristiques aux formules complètes, sans écart. Ces économies ne constituent
+pas une mesure de victoire contre `main`.
+
 ## Documentation et outils
 
 Ce README est la référence de fonctionnement actuelle. Les anciens rapports

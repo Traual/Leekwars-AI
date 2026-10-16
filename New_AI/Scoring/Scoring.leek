@@ -96,7 +96,12 @@ class ScoringClass {
     static characteristicsScore(stat) {
         var memo = stat.CHARACTERISTICS_MEMO
         if (memo != null && memo.CONTEXT == ROOT_SCORING_CONSTANTS
-            && sameCharacteristicsInputs(stat, memo.INPUTS)) return memo.VALUE
+            && sameCharacteristicsInputs(stat, memo.INPUTS)) {
+            // Rattacher la preuve au snapshot courant : le clone suivant pourra
+            // employer sa marque d'action, sans l'étendre à un ancien ancêtre.
+            if (memo.INPUTS != stat) stat.CHARACTERISTICS_MEMO = new EntityScoreMemo(stat, ROOT_SCORING_CONSTANTS, memo.VALUE)
+            return memo.VALUE
+        }
         var characteristics = characteristicsValue(stat)
         var value = characteristics + ShackleScoring.correction(stat, characteristics)
         stat.CHARACTERISTICS_MEMO = new EntityScoreMemo(stat, ROOT_SCORING_CONSTANTS, value)
@@ -105,6 +110,14 @@ class ScoringClass {
 
     static sameCharacteristicsInputs(a, b) {
         if (a == b) return true
+        // CAP_DIRTY couvre stats, durées pondérées et entraves via le ledger,
+        // mais seulement depuis le parent DIRECT. Puissance, états, Châtiment
+        // et cooldown de Manumission sont des canaux indépendants à relire.
+        if (a.CHARACTERISTICS_PARENT == b && !a.CAP_DIRTY) {
+            if (a.POWER != b.POWER || a.STATES != b.STATES) return false
+            if (a.LIFE != b.LIFE && Equipment.canUseLifeDamage(a)) return false
+            return !ShackleScoring.hasShackles(a) || ShackleScoring.cooldown(a) == ShackleScoring.cooldown(b)
+        }
         if (a.STRENGTH != b.STRENGTH || a.WISDOM != b.WISDOM
             || a.AGILITY != b.AGILITY || a.RESISTANCE != b.RESISTANCE
             || a.SCIENCE != b.SCIENCE || a.MAGIC != b.MAGIC || a.POWER != b.POWER

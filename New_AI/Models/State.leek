@@ -164,7 +164,9 @@ class StateClass {
 		c.AVAILABILITY_MEMO = null                // aucune mutation d'un mémo partagé avec le parent
 		c.ACTION_GAIN_HASH = null                 // les nouveaux inputs ne sont pas ceux du snapshot parent
 		c.ACTION_GAIN_INPUTS = null               // aucune équivalence héritée avant validation de l'action
+		c.ACTION_GAIN_INPUT_ID = null             // nouveau snapshot, même si sa future valeur est égale
 		c.CAP_DIRTY = false                       // marque d'action : jamais héritée du parent
+		c.CHARACTERISTICS_PARENT = stat           // validité limitée au parent direct de CE clone
 		if (isMe) {
 			c.ITEM_STATE_PARENT = stat
 			c.COOLDOWNS = [: ]

@@ -139,15 +139,10 @@ class ActionGainMemo {
     }
 }
 
-class ActionGainComparison {
-    INPUT
-    MATCH
-    constructor(input, match) { this.INPUT = input; this.MATCH = match }
-}
-
 // Le parent et les snapshots sont immuables : comparer les mêmes inputs pour
 // cinquante items ne donne pas cinquante réponses différentes. Cache local au nœud,
-// par id / masque, avec vérification de la référence du snapshot (aucun hash arrondi).
+// par identifiant UNIQUE de snapshot / masque, aucun hash de valeurs. Garder aussi
+// les comparaisons précédentes : les gains de plusieurs contextes peuvent alterner.
 class ActionGainChecks {
     CASTER
     BASE_HASH
@@ -161,19 +156,26 @@ class ActionGainChecks {
         if (current == null || before == null) return false
         var input = before.ACTION_GAIN_INPUTS ?? before
         if ((current.ACTION_GAIN_INPUTS ?? current) == input) return true
-        var cached = this.TARGETS[current.ID]
-        if (cached != null && cached.INPUT == input) return cached.MATCH
+        var inputId = input.ACTION_GAIN_INPUT_ID
+        if (inputId == null) { inputId = ++ActionGains.NEXT_INPUT_ID; input.ACTION_GAIN_INPUT_ID = inputId }
+        var cached = this.TARGETS[inputId]
+        if (cached != null) return cached
         var result = ActionGains.sameTargetInputValues(current, before)
-        this.TARGETS[current.ID] = new ActionGainComparison(input, result)
+        this.TARGETS[inputId] = result
         return result
     }
 
     sameCaster(before, reads) {
         if (this.CASTER == before) return true
-        var cached = this.CASTERS[reads]
-        if (cached != null && cached.INPUT == before) return cached.MATCH
-        var result = ActionGains.sameCasterInputs(this.CASTER, before, reads)
-        this.CASTERS[reads] = new ActionGainComparison(before, result)
+        var input = before.ACTION_GAIN_INPUTS ?? before
+        if ((this.CASTER.ACTION_GAIN_INPUTS ?? this.CASTER) == input) return true
+        var inputId = input.ACTION_GAIN_INPUT_ID
+        if (inputId == null) { inputId = ++ActionGains.NEXT_INPUT_ID; input.ACTION_GAIN_INPUT_ID = inputId }
+        var key = (inputId << 8) | reads
+        var cached = this.CASTERS[key]
+        if (cached != null) return cached
+        var result = ActionGains.sameCasterInputs(this.CASTER, input, reads)
+        this.CASTERS[key] = result
         return result
     }
 
@@ -187,6 +189,7 @@ class ActionGainChecks {
 }
 
 class ActionGains {
+    static NEXT_INPUT_ID = 0
     static STRENGTH = 1
     static WISDOM = 2
     static AGILITY = 4
