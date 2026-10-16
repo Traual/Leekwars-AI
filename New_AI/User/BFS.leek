@@ -459,6 +459,7 @@ class ActionSuite {
 		var State = StateClass.materializeNodeState(Parent)
 		var mine = State[Me]
 		if (mine.LIFE <= 0 || mine.TP < MINIMUM_COST_ITEM) return null
+		ActionGains.certifyNodeInputs(Parent)
 		var BaseHash = Parent.BASE_HASH
 		var walk = WalkCellsClass.getAllLayers(State, Me, BaseHash, Parent.ME_WALK_FINGERPRINT)
 		var resurrectionTargetId = resurrectIdOf(State)
@@ -511,12 +512,21 @@ class ActionSuite {
 			SearchCache.SET_HITS++
 		}
 		var table = ActionGains.tableOf(Parent)
-		var checks = new ActionGainChecks(mine)
+		var checks = new ActionGainChecks(mine, BaseHash)
 		var Workspace = null
-		for (var key in set.KEYS) {
+		var keys = set.KEYS
+		var funding = null
+		if (set.FILTER_ORIGINS) {
+			funding = originFundingOf(mine, frame.COSTS)
+			var stored = set.PLAYABLE_KEYS[funding]
+			if (stored != null) keys = stored
+		}
+		var playableKeys = []
+		for (var key in keys) {
 			if (getOperations() > OPS_DEADLINE) { frame.COMPLETE = false; break }
 			var playable = framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
 			if (playable == null) continue
+			push(playableKeys, key)
 			var memo = table.find(key)
 			var valid = ActionGains.matches(memo, State, playable, Walk, checks)
 			if (!valid) {
@@ -548,7 +558,7 @@ class ActionSuite {
 				var actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
 					MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, Walk)
 				frame.FRESH[key] = actual
-				var updated = ActionGains.capture(actual, State, BaseHash, Walk)
+				var updated = ActionGains.capture(actual, State, BaseHash, Walk, checks)
 				table.VALUES[key] = updated
 				SearchCache.EXACT_GAINS[key] = updated
 				ActionGainHistory.store(SearchCache, key, updated, State)
@@ -563,7 +573,31 @@ class ActionSuite {
 			}
 		}
 		if (!frame.COMPLETE) SearchCache.INCOMPLETE_FRAMES++
+		else if (count(playableKeys) * 4 <= count(set.KEYS) * 3) {
+			// Épargner les domaines avec beaucoup d'origines hors d'atteinte.
+			// Les faibles taux de rejet ne justifient pas le coût d'une clé de plus.
+			if (funding == null) funding = originFundingOf(mine, frame.COSTS)
+			var stored = set.PLAYABLE_KEYS
+			if (stored == null) { stored = [:]; set.PLAYABLE_KEYS = stored }
+			stored[funding] = playableKeys
+			set.FILTER_ORIGINS = true
+		}
 		return frame
+	}
+
+	// Plateau, cellule, PM et couches disponibles sont déjà dans la clé du set.
+	// Seuls les suppléments de TP finançables PAR ITEM manquent : le changement
+	// d'arme est inclus dans COSTS. Les usages et gains restent ceux du nœud courant.
+	static originFundingOf(mine, costs) {
+		var hash = OFFSET_BASIS
+		for (var i: var item in mine.INVENTORY) {
+			var cost = costs[item]
+			if (cost == null || cost < 0) continue
+			var left = mine.TP - cost
+			var mask = (left >= JUMP_COST ? 1 : 0) | (left >= TELE_COST ? 2 : 0) | (left >= JUMP_TELE_COST ? 4 : 0)
+			hash ^= mix64Memo(((i + 1) << 3) | mask)
+		}
+		return hash
 	}
 
 	static framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, WalkFingerprint) {
@@ -621,11 +655,12 @@ class ActionSuite {
 		var entries = []
 		var Workspace = null
 		var table = ActionGains.tableOf(StateParent)
+		var checks = new ActionGainChecks(State[Me], BaseHash)
 		for (var playable in pairs) {
 			if (getOperations() > OPS_DEADLINE) break
 			if (Workspace == null) Workspace = clone(State, 1)
 			var entry = simulatePlayable(playable, Workspace, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk)
-			var memo = ActionGains.capture(entry, State, BaseHash, Walk)
+			var memo = ActionGains.capture(entry, State, BaseHash, Walk, checks)
 			var key = gainKeyOf(playable)
 			table.VALUES[key] = memo
 			if (SearchCache != null) {

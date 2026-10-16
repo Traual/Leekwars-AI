@@ -163,6 +163,7 @@ class StateClass {
 		var c = clone(stat, 1)                    // scalaires copiés, containers partagés
 		c.AVAILABILITY_MEMO = null                // aucune mutation d'un mémo partagé avec le parent
 		c.ACTION_GAIN_HASH = null                 // les nouveaux inputs ne sont pas ceux du snapshot parent
+		c.ACTION_GAIN_INPUTS = null               // aucune équivalence héritée avant validation de l'action
 		c.CAP_DIRTY = false                       // marque d'action : jamais héritée du parent
 		if (isMe) {
 			c.ITEM_STATE_PARENT = stat

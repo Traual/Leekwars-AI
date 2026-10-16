@@ -439,6 +439,14 @@ Un mémo immuable calculé dans une autre branche peut aussi être repris, uniqu
 après la même validation exacte de ses lecteurs (`EXACT_GAINS`, vidé à la racine réelle).
 Les comparaisons répétées des mêmes snapshots sont partagées dans le nœud courant.
 
+Au développement d'un nœud, `ACTION_GAIN_INPUTS` certifie aussi les clones dont les
+lecteurs sont strictement identiques à ceux du parent : mêmes scalaires, registre,
+bases et cooldowns utiles. Un représentant commun évite de refaire cette comparaison
+pour tous les items. Le clonage annule d'abord le certificat ; sans certification,
+la comparaison brute reste obligatoire. L'empreinte de présélection peut être copiée
+avec cette preuve d'égalité. Les candidats qui ne sont jamais développés ne paient
+pas cette certification.
+
 `User/ActionGainHistory.leek` conserve aussi plusieurs contextes par action dans
 `GAIN_HISTORY`. L'empreinte des stats du lanceur et des cibles est calculée une fois
 par snapshot, puis combinée avec la couche de déplacement. Elle présélectionne un
@@ -460,9 +468,19 @@ dans l'état courant, sans rescoring, pour construire son patch et ses ressource
 Son score est celui du parent plus le delta, **prix du cooldown déjà compris**.
 Le danger et le placement sont toujours calculés séparément à la clôture terminale.
 
-Les cas à lectures non locales (kill et cascades, invocation, résurrection,
-déplacements forcés, plantes, effets non décrits dans le profil) sont recalculés dans
-un autre état. C'est une invalidation conservatrice, pas une réutilisation approximative.
+Les poussées, attractions, répulsions, inversions et téléportations ont un profil
+`SPATIAL` : le mémo valide en plus le `BaseHash` du plateau, et son groupe encode déjà
+From/To. Un buff sans rapport ne périme donc plus tout leur gain. Les stats et passifs
+des cibles restent validés, et les conséquences sont toujours appliquées dans l'état
+courant pour construire le nouvel enfant.
+
+Les cas à lectures non locales (kill et cascades, invocation, résurrection, réveils
+de plantes, effets non décrits dans le profil) sont recalculés dans un autre état.
+Le registre global contient aussi des plantes virtuelles d'autres branches : une
+entrée seule ne suffit plus à globaliser un cast sur place. Une marche ou un effet
+spatial avec une zone vivante dans l'état garde la garde non locale. L'apparition
+d'une plante est contrôlée à la réutilisation aussi bien qu'à la capture du gain.
+C'est une invalidation conservatrice, pas une réutilisation approximative.
 Si le budget interrompt le rafraîchissement, cette branche s'arrête : aucun classement
 partiellement périmé ne choisit son successeur. Les candidats terminaux déjà visités et
 le plan validé avec danger restent disponibles. Le debug `[BFS] group scores` indique
@@ -484,6 +502,13 @@ avant le classement. Leur cache porte le plateau, la mobilité et les seuils de 
 **après** le coût du cast/équipement : un ancien échec faute de PT ne bloque pas une origine
 devenue payable. La couche de déplacement et l'ordre Saut/Téléportation entrent dans la
 validité du delta. Le mode rendement calcule sa priorité avec le coût courant.
+
+Quand un catalogue rejette au moins un quart de ses groupes faute d'origine jouable,
+`PLAYABLE_KEYS` conserve leur sous-liste valide, dans le même ordre, par financement
+des couches de déplacement item par item. Le coût d'équipement de l'arme entre dans
+ces seuils. La clé du catalogue porte déjà plateau, cellule, PM, couches disponibles,
+items et cible de résurrection. Seuls les passages complets publient cette liste ;
+les gains, usages et actions concrètes restent actualisés dans le nœud courant.
 
 Les coûts et usages disponibles sont mémorisés sur l'entité simulée. Le mémo est
 invalidé au clone et aux écritures de cooldown/usages ; un changement de PT ou d'arme
@@ -828,6 +853,16 @@ Les sondes contrôlent les deux ordres Rémission/Protéines, la différence de 
 avant/après le buff, une collision de hash et les limites/vidages du cache. L'audit
 sur deux combats courts compare **17 904 gains** et **531 enfants construits par
 delta** au recalcul complet : zéro écart à 0,000001, aucune erreur ni tour avorté.
+
+Les effets spatiaux sans plante réveillable valident désormais l'occupation du
+plateau et leurs cibles, au lieu d'invalider leur gain pour tout buff sans rapport.
+Les domaines très filtrés conservent aussi leurs origines jouables par financement
+de déplacement. Les clones ne partagent un représentant d'inputs qu'après une
+comparaison exacte ; cette certification est différée au développement du nœud.
+Sur le témoin dense de quatre tours, cette passe économise **6,94 %** à actions
+et steps identiques. Sur le second témoin complet, elle coûte **0,109 %** de plus :
+son intérêt dépend donc du contexte. La sonde compte **44 contrôles** ; l'audit
+compare **20 965 gains** et **592 enfants** au recalcul complet, sans écart.
 
 ## Documentation et outils
 

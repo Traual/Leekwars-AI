@@ -66,6 +66,7 @@ class EntityStateClass extends EntityClass {
 	POTENTIAL_MEMO = null // caractéristiques de base utilisables + tactique, sans PT/PM
 	SCORE_MEMO = null // valeur complète ; inputs immuables + contexte, validés à la lecture
 	ACTION_GAIN_HASH // présélection des gains entre branches ; remis à null au clone
+	ACTION_GAIN_INPUTS // représentant exact des lecteurs ; certifié au développement du nœud
 	CHARACTERISTICS_MEMO = null // sous-terme exact, réutilisable après une blessure ou un poison
 	RESISTANCE
 	RESISTANCE_BUFF = 0

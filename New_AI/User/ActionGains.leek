@@ -23,9 +23,9 @@ class ActionGainProfile {
     READS = 0
     SELF = false
     WORLD = false
+    SPATIAL = false // occupation du plateau, mais pas les stats de tous ses occupants
     COOLDOWN_CHANNEL = 0
     constructor(info) {
-        this.WORLD = info.ORIGIN_SENSITIVE
         if (info.ID == CHIP_ANTIDOTE) this.COOLDOWN_CHANNEL = 1
         else if (info.ID == CHIP_MANUMISSION) this.COOLDOWN_CHANNEL = 2
         for (var effect in info.EFFECTS) {
@@ -74,6 +74,13 @@ class ActionGainProfile {
                 case EFFECT_DAMAGE_RETURN:
                     this.READS |= ActionGains.AGILITY
                     break
+                case EFFECT_PUSH:
+                case EFFECT_ATTRACT:
+                case EFFECT_REPEL:
+                case EFFECT_INVERT:
+                case EFFECT_TELEPORT:
+                    this.SPATIAL = true
+                    break
                 case EFFECT_STEAL_LIFE:
                 case EFFECT_STEAL_ABSOLUTE_SHIELD:
                     this.SELF = true
@@ -99,7 +106,7 @@ class ActionGainProfile {
                 case EFFECT_ABSOLUTE_VULNERABILITY:
                     break
                 default:
-                    // Invocation, résurrection, déplacements et effets non décrits :
+                    // Invocation, résurrection et effets non décrits :
                     // lectures non locales, donc nouveau calcul dans un autre état.
                     this.WORLD = true
             }
@@ -115,9 +122,10 @@ class ActionGainMemo {
     SELF
     MOVEMENT
     SOURCE // non-null = effet non local ; réutilisable seulement dans CE même état
+    BOARD // non-null = déplacement : occupation du plateau à valider en plus des stats
     FROM
     TO
-    constructor(gain, caster, profile, targets, self, movement, source, from, to) {
+    constructor(gain, caster, profile, targets, self, movement, source, from, to, board = null) {
         this.GAIN = gain
         this.CASTER = caster
         this.PROFILE = profile
@@ -125,6 +133,7 @@ class ActionGainMemo {
         this.SELF = self
         this.MOVEMENT = movement
         this.SOURCE = source
+        this.BOARD = board
         this.FROM = from
         this.TO = to
     }
@@ -141,17 +150,21 @@ class ActionGainComparison {
 // par id / masque, avec vérification de la référence du snapshot (aucun hash arrondi).
 class ActionGainChecks {
     CASTER
+    BASE_HASH
     TARGETS = [:]
     CASTERS = [:]
-    constructor(caster) { this.CASTER = caster }
+    PLANTS // présence dans CE snapshot, jamais déduite du seul catalogue global
+    constructor(caster, baseHash = null) { this.CASTER = caster; this.BASE_HASH = baseHash }
 
     sameTarget(current, before) {
         if (current == before) return true
         if (current == null || before == null) return false
+        var input = before.ACTION_GAIN_INPUTS ?? before
+        if ((current.ACTION_GAIN_INPUTS ?? current) == input) return true
         var cached = this.TARGETS[current.ID]
-        if (cached != null && cached.INPUT == before) return cached.MATCH
-        var result = ActionGains.sameTargetInputs(current, before)
-        this.TARGETS[current.ID] = new ActionGainComparison(before, result)
+        if (cached != null && cached.INPUT == input) return cached.MATCH
+        var result = ActionGains.sameTargetInputValues(current, before)
+        this.TARGETS[current.ID] = new ActionGainComparison(input, result)
         return result
     }
 
@@ -162,6 +175,14 @@ class ActionGainChecks {
         var result = ActionGains.sameCasterInputs(this.CASTER, before, reads)
         this.CASTERS[reads] = new ActionGainComparison(before, result)
         return result
+    }
+
+    hasPlants(State) {
+        var cached = this.PLANTS
+        if (cached != null) return cached
+        cached = ActionGains.hasPlantZone(State)
+        this.PLANTS = cached
+        return cached
     }
 }
 
@@ -210,6 +231,14 @@ class ActionGains {
 
     static sameTargetInputs(a, b) {
         if (a == b) return true
+        if (a == null || b == null) return false
+        if ((a.ACTION_GAIN_INPUTS ?? a) == (b.ACTION_GAIN_INPUTS ?? b)) return true
+        return sameTargetInputValues(a, b)
+    }
+
+    // Comparaison brute aussi utilisée pour CERTIFIER le représentant du clone.
+    // Ne jamais consulter les représentants dans cette fonction.
+    static sameTargetInputValues(a, b) {
         return a != null && b != null && a.TURN_ORDER == b.TURN_ORDER
             // Deux invocations virtuelles de même id dans deux branches peuvent
             // naître avec des bases différentes (critique). Elles ne sont pas des clones.
@@ -223,7 +252,39 @@ class ActionGains {
             && ShackleScoring.cooldown(a) == ShackleScoring.cooldown(b)
     }
 
-    static capture(entry, State, BaseHash, walk) {
+    static markInputs(before, after) {
+        if (before != null && sameTargetInputValues(after, before)) {
+            after.ACTION_GAIN_INPUTS = before.ACTION_GAIN_INPUTS ?? before
+            after.ACTION_GAIN_HASH = before.ACTION_GAIN_HASH // mêmes lecteurs => même présélection
+        } else after.ACTION_GAIN_INPUTS = after
+    }
+
+    // Aucun coût pour les candidats qu'on ne développera jamais. Sans certificat,
+    // les comparaisons restent brutes ; le clone ne reprend donc aucune égalité par défaut.
+    static certifyNodeInputs(node) {
+        if (node.STATE_PARENT == null) return;
+        var before = StateClass.materializeNodeState(node.STATE_PARENT)
+        for (var id: var after in node.STATE_PATCH) {
+            if (after.ACTION_GAIN_INPUTS == null) markInputs(before[id], after)
+        }
+    }
+
+    // Le catalogue contient aussi les plantes créées dans d'AUTRES branches.
+    // Seules les zones vivantes de cet état peuvent être réveillées par sa marche.
+    static hasPlantZone(State) {
+        for (var id: var _zone in PLANT_ZONE_BY_ID) {
+            var plant = State[id]
+            if (plant != null && plant.LIFE > 0 && plant.NAME in PLANT_ZONE_BY_NAME) return true
+        }
+        return false
+    }
+
+    static moveReadsWorld(State, action, checks = null, spatial = false) {
+        if (!spatial && action.From == State[Me].CELL) return false
+        return checks == null ? hasPlantZone(State) : checks.hasPlants(State)
+    }
+
+    static capture(entry, State, BaseHash, walk, checks = null) {
         var playable = entry.PLAYABLE
         var action = playable.ACTION
         var profile = profileOf(action.Item)
@@ -241,7 +302,9 @@ class ActionGains {
             if (id == Me) own = true
             else targets[id] = State[id]
         }
-        var world = profile.WORLD || !mapIsEmpty(PLANT_ZONE_BY_ID)
+        // Sans plante, les déplacements ne lisent que l'occupation et leurs cibles.
+        // Invocation, effets inconnus, réveils et kills restent strictement non locaux.
+        var world = profile.WORLD || (!mapIsEmpty(PLANT_ZONE_BY_ID) && moveReadsWorld(State, action, checks, profile.SPATIAL))
         for (var id: var after in entry.NODE.STATE_PATCH) {
             var before = State[id]
             if (before == null || (before.LIFE > 0 && after.LIFE <= 0)) world = true
@@ -250,7 +313,7 @@ class ActionGains {
         // Un kill lit les porteurs des effets du mort, ses invocations et les
         // passifs alliés. Ne pas prétendre qu'il ne dépend que de la victime.
         return new ActionGainMemo(entry.GAIN, caster, profile, targets, own, movement,
-            world ? State : null, action.From, action.To)
+            world ? State : null, action.From, action.To, profile.SPATIAL ? BaseHash : null)
     }
 
     static sameCasterInputs(caster, before, reads) {
@@ -272,6 +335,13 @@ class ActionGains {
         if (memo.MOVEMENT != movementOf(playable, walk)) return false
         if (memo.SOURCE != null) return memo.SOURCE == State
             && memo.FROM == playable.ACTION.From && memo.TO == playable.ACTION.To
+        // Une plante a pu apparaître APRÈS la capture d'un ancien gain local.
+        if (!mapIsEmpty(PLANT_ZONE_BY_ID) && moveReadsWorld(State, playable.ACTION, checks, memo.PROFILE.SPATIAL)) return false
+        if (memo.BOARD != null) {
+            var board = checks == null ? null : checks.BASE_HASH
+            if (board == null) board = StateClass.getBaseHash(State)
+            if (memo.BOARD != board) return false
+        }
         var caster = State[Me]
         var before = memo.CASTER
         if (memo.SELF) {

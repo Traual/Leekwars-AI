@@ -191,6 +191,8 @@ class ActionSearchFrameClass {
 class ActionGroupSetClass {
 	GROUPS
 	KEYS
+	PLAYABLE_KEYS // par financement des couches ; rempli seulement après un passage complet
+	FILTER_ORIGINS = false
 	constructor(groups) {
 		this.GROUPS = groups
 		this.KEYS = []
