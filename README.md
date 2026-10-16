@@ -122,10 +122,15 @@ Pour chaque candidat, `NodeClass.ActionToNodeInTree` :
 3. Rejoue les réveils de plantes lorsque le déplacement simulé l'exige.
 4. Dépense le coût total, équipe l'arme si nécessaire et applique les effets de l'item
    dans leur ordre, en clonant les autres entités à leur première mutation.
-5. Met à jour cooldown/usages, captures des entités modifiées et empreintes de caches.
+5. Met à jour cooldown/usages et capture les entités modifiées. Pour un candidat
+   rescorré en profondeur, les empreintes de déplacement/danger attendent sa sélection.
 6. Calcule le delta de score sur ces seules entités lorsqu'il n'est pas déjà connu.
    Un delta exact réutilisé donne directement `score enfant = score parent + delta`.
    Le workspace est restauré dans les deux cas.
+
+`finishMetadata` termine les empreintes et leurs invalidations avant de rendre un
+successeur développé ou évaluable au placement. Les candidats racine et les enfants
+appliqués depuis un delta connu sont déjà prêts.
 
 Le nœud conserve un **patch**, pas une copie profonde de tout le combat.
 `STATE_PARENT` est la chaîne d'états immuable ; `PARENT` sert à reconstruire la suite
@@ -780,6 +785,25 @@ coût à état identique. Le lot est petit, mais ne justifie pas de remplacer `m
 Le rafraîchissement de tous les candidats affectés, y compris positifs, et les dépendances
 conservatrices restent coûteux malgré le partage exact et la suppression du tri des
 successeurs. La refonte est conservée séparément pour poursuivre ce travail.
+
+Une passe de profilage puis d'optimisation conserve désormais les dépendances de
+cooldown de nettoyage seulement quand leur canal existe sur Me. L'apparition
+ultérieure de poison ou d'une entrave invalide bien le gain. Pour les candidats
+simulés en profondeur, les conséquences et le score restent immédiats, mais les
+empreintes de déplacement/danger et leurs invalidations de mémos sont préparées
+seulement si le candidat devient le successeur retenu, avant tout développement
+ou placement. La racine et les enfants construits avec un delta déjà connu restent
+préparés immédiatement.
+
+Sur le combat fixe 4v4 `4-left`, graine/builds/adversaire identiques et plafonds
+d'opérations levés, la version de départ `7f2f824` consomme **1 630 593 245** opérations
+chez les quatre poireaux suivis, contre **1 495 106 933** après cette passe :
+**−8,31 %**. Les **12 128 actions du combat sont strictement identiques**, ainsi que
+les **25 113 steps**, le résultat et la durée. Les simulations en branche passent
+de **265 989 à 224 531** ; la préparation des empreintes de nœud passe de
+**294 726 à 53 850** appels. Aucune erreur ni tour avorté. L'instrumentation fine
+reste hors de l'IA distribuée ; ces coûts proviennent du banc à compteurs légers.
+Ce résultat mesure une économie à décisions identiques, pas un gain de victoire.
 
 ## Documentation et outils
 

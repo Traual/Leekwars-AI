@@ -23,8 +23,11 @@ class ActionGainProfile {
     READS = 0
     SELF = false
     WORLD = false
+    COOLDOWN_CHANNEL = 0
     constructor(info) {
         this.WORLD = info.ORIGIN_SENSITIVE
+        if (info.ID == CHIP_ANTIDOTE) this.COOLDOWN_CHANNEL = 1
+        else if (info.ID == CHIP_MANUMISSION) this.COOLDOWN_CHANNEL = 2
         for (var effect in info.EFFECTS) {
             if (effect[5] & EFFECT_MODIFIER_ON_CASTER) this.SELF = true
             switch (effect[0]) {
@@ -188,6 +191,13 @@ class ActionGains {
         return table
     }
 
+    // Consommer ce cooldown ne change la valeur de Me que s'il porte le canal.
+    // Relu au match aussi : une action antérieure peut avoir créé ce canal.
+    static cooldownAffectsCaster(caster, channel) {
+        return (channel == 1 && caster.POISON_OVER_TIME != 0)
+            || (channel == 2 && ShackleScoring.hasShackles(caster))
+    }
+
     // Même ordre et mêmes couches que Node.ActionToNodeInTree. Une marche ne donne
     // aucun bonus ; Saut/Télépo modifient le gain, même à cibles géométriques identiques.
     static movementOf(playable, walk) {
@@ -221,7 +231,7 @@ class ActionGains {
         var movement = movementOf(playable, walk)
         var own = profile.SELF || movement != 0
             || (caster.SPECIAL_WEAPON & SPW_UNSTABLE_DESTROYER) != 0
-            || action.Item == CHIP_ANTIDOTE || action.Item == CHIP_MANUMISSION
+            || cooldownAffectsCaster(caster, profile.COOLDOWN_CHANNEL)
         var targets = [:]
         // Inclure les lecteurs AVANT les filtres de remplacement ou les caps :
         // « aucun effet appliqué » ne signifie pas « aucune dépendance ».
@@ -267,6 +277,7 @@ class ActionGains {
         if (memo.SELF) {
             if (!(checks == null ? sameTargetInputs(caster, before) : checks.sameTarget(caster, before))) return false
         } else {
+            if (cooldownAffectsCaster(caster, memo.PROFILE.COOLDOWN_CHANNEL)) return false
             if (!(checks == null ? sameCasterInputs(caster, before, memo.PROFILE.READS)
                 : checks.sameCaster(before, memo.PROFILE.READS))) return false
         }

@@ -473,6 +473,7 @@ class ActionSuite {
 			actual = simulatePlayable(playable, clone(State, 1), BaseHash, Parent.SCORE,
 				MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk, hint.GAIN)
 		}
+		NodeClass.finishMetadata(actual.NODE)
 		actual.NODE.PARENT = Parent
 		return actual.NODE
 	}
@@ -567,7 +568,8 @@ class ActionSuite {
 		var act = playable.ACTION
 		var item = act.Item
 		var node = NodeClass.ActionToNodeInTree(act, Workspace, act.From, Walk, playable.COST,
-			ITEMINFO[item], item, act.To, BaseHash, null, StateParent, Context, Hfp, playable.USES)
+			ITEMINFO[item], item, act.To, BaseHash, null, StateParent, Context, Hfp, playable.USES,
+			StateParent.ACTION != null && KnownGain == null)
 		var score
 		if (KnownGain != null) {
 			// Le delta inclut déjà le prix du cooldown. Aucun second score d'état,

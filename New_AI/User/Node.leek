@@ -18,6 +18,7 @@ class NodeClass {
 	PARENT            // nœud d'origine (null pour une action de base)
 	SCORE             // score de l'état moins les frais cumulés du plan (rempli par le BFS)
 	SCORE_VALUES      // valeurs exactes des entités de CE nœud, sous le contexte de sa recherche
+	METADATA_BEFORE   // anciens états du candidat avant sélection ; null quand ses hashs sont prêts
 	ACTION_GAINS      // deltas immuables hérités + remplacements locaux, créé au développement
 	COOLDOWN_COST = 0 // frais de CETTE action ; les précédents sont déjà dans Parent.SCORE
 	ITEM_HAS_BENEFIT = true // filtre ciblé des Régénérations nulles après déplacement
@@ -27,8 +28,8 @@ class NodeClass {
 	CLONED            // [id -> ANCIEN EntityState] : ensemble EXACT des entités possiblement mutées
 	                  // par l'action — la valeur est la référence read-only à l'état d'avant clonage
 	                  // (null pour un summon né en branche). Sert au clone-on-write, à la capture du
-	                  // patch et à la restauration du workspace, puis est libéré (null) par le BFS —
-	                  // STATE_PATCH reste la seule représentation persistante
+	                  // patch et à la restauration du workspace, puis est libéré (null) par le BFS.
+	                  // METADATA_BEFORE garde temporairement ces refs si les hashs attendent le choix.
 	COMBINED_HFP      // fold XOR des empreintes par camp : la clé de la heal map. Hérité tel quel
 	                  // du parent quand la map est partagée, recalculé sinon
 	ME_WALK_FINGERPRINT // empreinte de mobilité de Me pour l'état du nœud
@@ -61,8 +62,10 @@ class NodeClass {
 	 * @param StateParent nœud portant l'état d'avant l'action (chaîne STATE_PARENT)
 	 * @param ParentContext CONTEXT_BY_SIDE du parent
 	 * @param ParentHfp HFP_BY_SIDE du parent
+	 * @param DeferMetadata ne préparer que conséquences/patch ; finishMetadata obligatoire
+	 *        avant le développement ou l'évaluation terminale de ce candidat
 	 *
-	 * @return le nouveau nœud, hashs et patch remplis
+	 * @return le nouveau nœud et son patch ; hashs prêts sauf si DeferMetadata
 	 */
 	/*
 	 * Le cast de la puce de saut, jouee comme couche de deplacement (chip 144).
@@ -102,7 +105,7 @@ class NodeClass {
 		meStat.TOTAL_LIFE += gain
 	}
 
-	static ActionToNodeInTree(Act, Workspace, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, StateParent, ParentContext, ParentHfp, ItemUses) {
+	static ActionToNodeInTree(Act, Workspace, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, StateParent, ParentContext, ParentHfp, ItemUses, DeferMetadata = false) {
 		BenchOps.Start("Node")
 		// clonedIds = l'ensemble exact des entités effectivement mutables : Me pré-cloné ici ;
 		// cibles réellement touchées, victimes des cascades de kill et ressuscité (payload
@@ -173,16 +176,37 @@ class NodeClass {
 		// Le compte d'usages vient de l'appelant, qui l'a résolu pour son filtre de jouabilité :
 		// l'incrémenter ici rouvrait la chaîne d'inventaire, un niveau par nœud du chemin.
 		StateClass.setUses(meStat, Item, ItemUses + 1)
-		// Empreinte de mobilité de Me : calculée UNE fois, après TOUTES ses écritures
-		// (cellule, MP, TP, conséquences, cooldowns d'item et de déplacement). Elle sale le
-		// domaine d'origines du nœud et les caches de placement.
-		var meWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(meStat)
-		// END_STATS reste NULL : le nœud ne portera que son patch (matérialisation paresseuse).
 		var result = new NodeClass(Act, null, Parent)
 		result.COOLDOWN_COST = cooldownCost
 		result.ITEM_HAS_BENEFIT = itemHasBenefit
 		result.STATE_PARENT = StateParent
+		result.CLONED = clonedIds
+		if (DeferMetadata) {
+			// Pour comparer les gains, seuls les états modifiés et le prix du cast
+			// sont nécessaires. Les hashs de déplacement/danger attendent le CHOIX.
+			var patch = [:]
+			for (var id: var _before in clonedIds) patch[id] = ThisActionStats[id]
+			result.STATE_PATCH = patch
+			result.METADATA_BEFORE = clonedIds
+		} else populateMetadata(result, ThisActionStats, clonedIds, BaseHash, ParentContext, ParentHfp)
 
+		BenchOps.Stop("Node")
+		return result
+	}
+
+	// Les mémos du scoring comparent leurs inputs eux-mêmes. Les invalidations
+	// CAP/TLSQ/PKEY et les hashs ci-dessous servent au déplacement/danger : les
+	// terminer AVANT de développer ou d'évaluer le placement du candidat retenu.
+	static finishMetadata(node) {
+		var before = node.METADATA_BEFORE
+		if (before == null) return;
+		var parent = node.STATE_PARENT
+		populateMetadata(node, node.STATE_PATCH, before, parent.BASE_HASH, parent.CONTEXT_BY_SIDE, parent.HFP_BY_SIDE)
+		node.METADATA_BEFORE = null
+	}
+
+	static populateMetadata(result, ThisActionStats, clonedIds, BaseHash, ParentContext, ParentHfp) {
+		var meWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(ThisActionStats[Me])
 		// Patch incrémental des trois hashs, piloté par le SEUL clonedIds : old ^ new pour une
 		// entité préexistante, ajout pur pour une entité née dans l'action (valeur null). Un
 		// ressuscité était mort dans le parent -> ses contributions old valent 0 (LIFE-gated).
@@ -263,15 +287,10 @@ class NodeClass {
 			}
 		}
 
-		result.CLONED = clonedIds
 		result.BASE_HASH = bh
 		result.ME_WALK_FINGERPRINT = meWalkFingerprint
 		result.CONTEXT_BY_SIDE = ctx
 		result.HFP_BY_SIDE = hfpMap
 		result.STATE_PATCH = patch
-
-		BenchOps.Stop("Node")
-		return result
 	}
-
 }
