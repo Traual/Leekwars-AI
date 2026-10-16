@@ -8,23 +8,21 @@ include("../includes.leek")
 class ConsequencesClass {
 
 	/*
-	 * Les types d'effet qui touchent l'un des dix inputs de capability (STR/MAG/WIS/SCI/AGI/
-	 * RES/TOTAL_TP/TOTAL_MP/ABS/REL). Toute écriture de ces champs dans ce fichier est
+	 * Les types d'effet qui touchent les caractéristiques (STR/MAG/WIS/SCI/AGI/
+	 * RES/TOTAL_TP/TOTAL_MP) et leurs agrégats de durée/entrave. Toute écriture ici est
 	 * immédiatement suivie d'un passage au ledger — RecordCastedEffect à l'application,
 	 * removeCastedEffect au retrait — d'où deux seuls points de marquage pour la cinquantaine
-	 * de sites d'écriture. C'est ce qui permet à diffMaskOf de sauter les comparaisons.
-	 * INVARIANT : un nouveau case qui écrit une capability doit entrer ici.
+	 * de sites d'écriture. Le scoring et diffMaskOf évitent ainsi des comparaisons.
+	 * Les boucliers n'en font pas partie ; POWER et STATES sont relus séparément.
+	 * INVARIANT : un nouveau case qui écrit ces caractéristiques doit entrer ici.
 	 */
 	static CAP_EFFECT_TYPES = [
-		EFFECT_ABSOLUTE_SHIELD: true,
-		EFFECT_ABSOLUTE_VULNERABILITY: true,
 		EFFECT_BUFF_AGILITY: true,
 		EFFECT_BUFF_MP: true,
 		EFFECT_BUFF_RESISTANCE: true,
 		EFFECT_BUFF_STRENGTH: true,
 		EFFECT_BUFF_TP: true,
 		EFFECT_BUFF_WISDOM: true,
-		EFFECT_RAW_ABSOLUTE_SHIELD: true,
 		EFFECT_RAW_BUFF_AGILITY: true,
 		EFFECT_RAW_BUFF_MAGIC: true,
 		EFFECT_RAW_BUFF_MP: true,
@@ -33,16 +31,12 @@ class ConsequencesClass {
 		EFFECT_RAW_BUFF_STRENGTH: true,
 		EFFECT_RAW_BUFF_TP: true,
 		EFFECT_RAW_BUFF_WISDOM: true,
-		EFFECT_RAW_RELATIVE_SHIELD: true,
-		EFFECT_RELATIVE_SHIELD: true,
 		EFFECT_SHACKLE_AGILITY: true,
 		EFFECT_SHACKLE_MAGIC: true,
 		EFFECT_SHACKLE_MP: true,
 		EFFECT_SHACKLE_STRENGTH: true,
 		EFFECT_SHACKLE_TP: true,
-		EFFECT_SHACKLE_WISDOM: true,
-		EFFECT_STEAL_ABSOLUTE_SHIELD: true,
-		EFFECT_VULNERABILITY: true
+		EFFECT_SHACKLE_WISDOM: true
 	]
 
 	static applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds, PrevEffectTotal) {
@@ -755,15 +749,25 @@ class ConsequencesClass {
 					// Une invocation qui sort de terre dans une zone d'Éveil réveille la plante, et
 					// une plante posée est réveillée par ce qui l'entoure (Fight.summonEntity).
 					AwakeningClass.onSummoned(State, Id, clonedIds)
-					break
+					prevEffectTotal = 0 // applyEffect n'a aucun traitement SUMMON
+					continue
 				case EFFECT_RESURRECT:
 					ResurrectionClass.Update(To, State, ResurrectId, clonedIds)
-					break
+					prevEffectTotal = 0
+					continue
 			}
-			var TmpTargets = RealConsequenceTargets(Targets, Effect, State, CastStats, Caster, Item)
-			var Multiplier = (Effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) ? mapSize(TmpTargets) : 1 //Saving Multiplier
+			var RealTargets
+			var Multiplier = 1
+			if (Effect[5] & EFFECT_MODIFIER_ON_CASTER) {
+				// Le filtrage de zone ne sert ici qu'au multiplicateur de cibles.
+				// Sans ce bit, l'effet vise directement le lanceur.
+				if (Effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) Multiplier = mapSize(RealConsequenceTargets(Targets, Effect, State, CastStats, Caster, Item))
+				RealTargets = [Caster: 0]
+			} else {
+				RealTargets = RealConsequenceTargets(Targets, Effect, State, CastStats, Caster, Item)
+				if (Effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) Multiplier = mapSize(RealTargets)
+			}
 			if (CAST_IS_CRITICAL) Multiplier *= CRITICAL_FACTOR
-			var RealTargets = Effect[5] & EFFECT_MODIFIER_ON_CASTER ? [Caster: 0] : TmpTargets
 			// Clonage PARESSEUX : chaque cible réellement applicable est clonée au premier
 			// effet qui la touche (garde d'ensureCloned — clonedIds conserve l'état d'AVANT
 			// le cast entier). Les filtres ci-dessus ont lu l'état courant, identique en
@@ -781,20 +785,8 @@ class ConsequencesClass {
 
 		if (TarIsCaster && !(effMask & EFFECT_TARGET_CASTER)) return false
 
-		// 0: Enemy Leek, 1: Enemy Summon, 2: Ally Leek, 3: Ally Summon
-		var targetType = (CastStats.SIDE == TarStats.SIDE ? 2 : 0) | (TarStats.IS_SUMMON ? 1 : 0)
-
-		switch (targetType) {
-			case 0:
-				return (effMask & EFFECT_TARGET_ENEMIES) && (effMask & EFFECT_TARGET_NON_SUMMONS)
-			case 1:
-				return (effMask & EFFECT_TARGET_ENEMIES) && (effMask & EFFECT_TARGET_SUMMONS)
-			case 2:
-				return (effMask & EFFECT_TARGET_ALLIES) && (effMask & EFFECT_TARGET_NON_SUMMONS)
-			case 3:
-				return (effMask & EFFECT_TARGET_ALLIES) && (effMask & EFFECT_TARGET_SUMMONS)
-		}
-		return false
+		return (effMask & (CastStats.SIDE == TarStats.SIDE ? EFFECT_TARGET_ALLIES : EFFECT_TARGET_ENEMIES))
+			&& (effMask & (TarStats.IS_SUMMON ? EFFECT_TARGET_SUMMONS : EFFECT_TARGET_NON_SUMMONS))
 	}
 
 	// DurationOfEffect = ticks périodiques (eff[8]) ; RemainingTurns = durée brute (eff[3]).

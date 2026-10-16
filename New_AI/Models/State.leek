@@ -172,8 +172,6 @@ class StateClass {
 			c.COOLDOWNS = [: ]
 			c.USES = [: ]
 		}
-		// CAP_MEMO / TLSQ_MEMO : COPIÉS par clone(stat, 1) puis VALIDÉS après l'action
-		// (diffMaskOf dans la boucle de masque du Node) — plus d'invalidation au clonage.
 		return c
 	}
 
@@ -233,8 +231,7 @@ class StateClass {
 
 	/*
 	 * Masque différentiel d'une entité clonée, APRÈS l'action — SOURCE UNIQUE de la
-	 * comparaison parent/clone (absorbe l'ancien validateDerivedMemos : les mémos dérivés
-	 * sont invalidés ICI, sur les mêmes champs, jamais comparés deux fois).
+	 * comparaison parent/clone pour les empreintes de plateau, menace et soin.
 	 *   DIFF_BASE       : la contribution BaseHash peut réellement changer — vivant<->mort,
 	 *                     ou deux vivants et cellule différente (deux morts : jamais).
 	 *   DIFF_CONTEXT    : un input EFFECTIF de contextContribution a changé — vivant/mort,
@@ -244,31 +241,19 @@ class StateClass {
 	 *   DIFF_HFP        : un input EFFECTIF de healerContribution a changé — vivant/mort,
 	 *                     cellule, max(0, WIS+100), TP/MP totaux, classe critique (la
 	 *                     qualification de healer est immuable pour le replan).
-	 *   DIFF_LOCAL_TERM : un input LOCAL du terme de scoring a bougé — LIFE, TOTAL_LIFE
-	 *                     (plafond de soin Delta), CELL, DAMAGE_RETURN, six flux
-	 *                     périodiques, masque d'ÉTATS (il décide lesquels de ces flux
-	 *                     comptent), cooldown effectif d'Antidote, et tout input de
-	 *                     capability (même effet que l'ancienne invalidation de CAP_MEMO).
-	 * Mémos : TLSQ_MEMO <- TOTAL_LIFE seule ; CAP_MEMO <- les dix inputs de capability
-	 * (STR/MAG/WIS/SCI/AGI/RES/TOTAL_TP/TOTAL_MP/ABS/REL). Un mémo déjà null reste null.
-	 * isMe : Me est cloné à CHAQUE nœud mais exclu des trois hashs (Node le saute juste
-	 * après) -> la fonction rend son masque dès la partie locale, sans jamais calculer
-	 * BASE/CONTEXT/HFP ni leurs formes effectives. Ses checks supplémentaires (BaseHash
-	 * parent/enfant, fingerprint WalkCells) vivent dans Node, après le hash final.
-	 * parentStat null (summon né en branche) -> tout dirty, mémos laissés tels quels.
+	 * Me est exclu des trois empreintes : Node ne l'envoie pas ici. Ses ressources
+	 * et sa mobilité sont relues directement par les clés dédiées. Le scoring valide
+	 * ses propres lecteurs, indépendamment de ce masque.
+	 * parentStat null (summon né en branche) -> toutes les contributions ont changé.
 	 */
-	static diffMaskOf(parentStat, childStat, isMe) {
-		if (parentStat == null) return DIFF_BASE | DIFF_CONTEXT | DIFF_HFP | DIFF_LOCAL_TERM
+	static diffMaskOf(parentStat, childStat) {
+		if (parentStat == null) return DIFF_BASE | DIFF_CONTEXT | DIFF_HFP
 		var mask = 0
 		var cellChanged = parentStat.CELL != childStat.CELL
 
-		// ---- Partie LOCALE (toutes les entités) ----
-		var totalLifeChanged = parentStat.TOTAL_LIFE != childStat.TOTAL_LIFE
-		if (totalLifeChanged && childStat.TLSQ_MEMO != null) childStat.TLSQ_MEMO = null
-
-		// Les dix inputs de capability ne bougent qu'avec un effet qui les touche, et tout effet
+		// Ces six inputs de menace/soin ne bougent qu'avec un effet qui les touche, et tout effet
 		// de ce genre marque sa cible en passant par le ledger (CAP_DIRTY). Une entité non
-		// marquée saute les dix comparaisons — le cas ultra-majoritaire, une attaque ordinaire
+		// marquée saute les comparaisons — le cas ultra-majoritaire, une attaque ordinaire
 		// ne touchant aucune stat. Le marquage seul ne suffit pas : il ne dit pas si la valeur a
 		// VRAIMENT changé (un effet de valeur nulle, un débuff qui ne retire rien), d'où les
 		// comparaisons derrière.
@@ -276,60 +261,9 @@ class StateClass {
 			&& (parentStat.STRENGTH != childStat.STRENGTH
 			|| parentStat.MAGIC != childStat.MAGIC
 			|| parentStat.WISDOM != childStat.WISDOM
-			|| parentStat.SCIENCE != childStat.SCIENCE
 			|| parentStat.AGILITY != childStat.AGILITY
-			|| parentStat.RESISTANCE != childStat.RESISTANCE
 			|| parentStat.TOTAL_TP != childStat.TOTAL_TP
-			|| parentStat.TOTAL_MP != childStat.TOTAL_MP
-			|| parentStat.ABSOLUTE_SHIELD != childStat.ABSOLUTE_SHIELD
-			|| parentStat.RELATIVE_SHIELD != childStat.RELATIVE_SHIELD)
-		if (capChanged && childStat.CAP_MEMO != null) childStat.CAP_MEMO = null
-
-		// Antidote : SEUL Me peut voir son cooldown bouger en simulation — les setters
-		// n'écrivent que sur son patch local, neuf et vide à chaque nœud. Une entrée
-		// présente dans ce patch = une écriture de CE nœud ; absente = valeur héritée,
-		// donc identique au parent. Un non-Me ne paie aucune remontée de chaîne.
-		// INVARIANT : si un futur effet simulé modifie le cooldown d'une CIBLE non-Me,
-		// il devra étendre cette détection (sinon le terme de la cible resterait stale).
-		var antidoteChanged = false
-		if (isMe && (CHIP_ANTIDOTE in childStat.COOLDOWNS)) {
-			antidoteChanged = childStat.COOLDOWNS[CHIP_ANTIDOTE] != cooldownOf(parentStat, CHIP_ANTIDOTE)
-		}
-		// PKEY_MEMO <- max(0, TOTAL_MP) et cooldown effectif d'Antidote, rien d'autre :
-		// capChanged couvre le premier, antidoteChanged le second (seul Me peut le voir bouger).
-		if ((capChanged || antidoteChanged) && childStat.PKEY_MEMO != null) childStat.PKEY_MEMO = null
-		if (antidoteChanged && childStat.ANTICD_MEMO != null) childStat.ANTICD_MEMO = null
-
-		if (capChanged || totalLifeChanged || cellChanged || antidoteChanged
-			|| parentStat.LIFE != childStat.LIFE
-			|| parentStat.DAMAGE_RETURN != childStat.DAMAGE_RETURN
-			|| parentStat.POISON != childStat.POISON
-			|| parentStat.POISON_OVER_TIME != childStat.POISON_OVER_TIME
-			|| parentStat.AFTEREFFECT != childStat.AFTEREFFECT
-			|| parentStat.AFTEREFFECT_OVER_TIME != childStat.AFTEREFFECT_OVER_TIME
-			|| parentStat.HEAL != childStat.HEAL
-			|| parentStat.HEAL_OVER_TIME != childStat.HEAL_OVER_TIME
-			// Le digest des ECHEANCES de bouclier est un input du net projete
-			// (targetDangerSeedOf, Delta.leek:70) : remplacer une ligne de bouclier par une de
-			// meme valeur mais d'echeance differente ne change AUCUNE caracteristique finale,
-			// donc ni capChanged ni aucun autre test ci-dessus — et pourtant le danger subi
-			// change, parce que l'ancienne ligne expirait avant l'attaque projetee et que la
-			// neuve tient. Une comparaison d'entier, pas un parcours du ledger.
-			|| parentStat.SHIELD_EXPIRY_HASH != childStat.SHIELD_EXPIRY_HASH
-			// Le masque d'états décide lesquels des six flux comptent vraiment : UNHEALABLE éteint
-			// les deux flux de soin, INVINCIBLE annule les deux flux de poison au tick. Les lignes,
-			// elles, restent PLEINES au ledger — quand un état apparaît ou tombe, aucun autre champ
-			// comparé ici ne bouge, et le terme de la porteuse resterait celui qu'elle avait sous
-			// un état qu'elle ne porte plus. Le cas courant est la mort du lanceur de l'état, qui le
-			// retire chez toutes ses cibles sans rien changer d'autre chez elles.
-			// Deux entiers comparés, placés en DERNIER : un état bouge rarement, donc n'importe
-			// lequel des tests précédents court-circuite celui-ci.
-			|| parentStat.STATES != childStat.STATES) {
-			mask |= DIFF_LOCAL_TERM
-		}
-
-		// Me est exclu des trois hashs (Node le saute juste après) : rien d'autre à calculer.
-		if (isMe) return mask
+			|| parentStat.TOTAL_MP != childStat.TOTAL_MP)
 
 		// ---- Contributions (non-Me seulement) ----
 		var oldAlive = parentStat.LIFE > 0
@@ -340,7 +274,7 @@ class StateClass {
 		if (aliveChanged || (bothAlive && cellChanged)) mask |= DIFF_BASE
 
 		// Formes EFFECTIVES, calculées UNE fois et partagées par les deux contributions.
-		// Court-circuit exact : les dix inputs de capability contiennent AGI, STR, MAG, WIS,
+		// Court-circuit exact : les inputs ci-dessus contiennent AGI, STR, MAG, WIS,
 		// TOTAL_TP et TOTAL_MP — capChanged faux => classes critiques et valeurs clampées
 		// forcément identiques, seules la cellule et POWER peuvent encore bouger.
 		// Le montant d'auto-buff de TP porte et ce qui en TOMBE avant l'action sont DEUX entrees

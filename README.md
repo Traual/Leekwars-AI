@@ -891,6 +891,17 @@ les mêmes actions et steps. Le témoin court coûte 45 437 opérations de plus 
 `97c36b3` (0,033 %). La sonde compte **53 contrôles** ; l'audit vérifie **35 796 valeurs**,
 dont **14 357 partagées**, sans écart avec les formules complètes.
 
+Le simulateur évite ensuite les filtres de zone sans lecteur pour les effets sur
+le lanceur et le traitement vide après invocation/résurrection. Les anciens mémos
+`CAP_MEMO`, `TLSQ_MEMO`, `PKEY_MEMO` et le masque local sans lecteur ont été retirés.
+Le masque de nœud ne calcule plus que plateau/menace/soin, hors Me ; les boucliers
+n'invalident plus le sous-score indépendant des caractéristiques. Depuis `5fb87af`,
+les mêmes témoins consomment **18,88 % de moins sur le dense**, **3,11 % de moins
+sur le court** et **6,21 % de moins sur le complet**, à actions et steps identiques.
+L'audit compare **22 930 gains**, **671 enfants** et **1 280 empreintes**, sans écart.
+Les **36 511 valeurs** de caractéristiques vérifiées restent également identiques
+aux formules complètes ; aucune erreur ni tour avorté sur ces contrôles.
+
 ## Documentation et outils
 
 Ce README est la référence de fonctionnement actuelle. Les anciens rapports

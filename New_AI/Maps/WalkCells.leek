@@ -41,7 +41,7 @@ class WalkCellsClass {
 	// ============================================================================
 
 	/* Cooldown effectif de Saut, -1 sans le chip. Mémorisé sur l'objet stat, même contrat que
-	 * CAP_MEMO : copié au clone, périmé par le seul setCooldown. Un clone de Me repart avec un
+	 * ANTICD_MEMO : copié au clone, périmé par le seul setCooldown. Un clone de Me repart avec un
 	 * patch d'inventaire VIDE, la chaîne serait donc remontée entièrement à chaque nœud. */
 	static jumpCdOf(stats) {
 		var cd = stats.JCD_MEMO

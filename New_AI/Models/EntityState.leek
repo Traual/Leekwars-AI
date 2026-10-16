@@ -20,13 +20,6 @@ class EntityStateClass extends EntityClass {
 	ITEM_STATE_PARENT
 	AVAILABILITY_MEMO // coût/usages par item pour les PT et l'arme courants de CET objet
 	EFFECTS
-	// Memos de champs dérivés (scoring), calculés paresseusement. COPIÉS au clone puis
-	// VALIDÉS après l'action (StateClass.diffMaskOf, appelé par Node sur chaque
-	// cloné) : un clone dont les inputs n'ont pas bougé garde ses mémos. Écrire un memo sur
-	// un objet PARTAGÉ est sain : partage => stats identiques => même valeur.
-	CAP_MEMO    // ImportanceClass.capability(stat)
-	TLSQ_MEMO   // W_TOTAL_LIFE * sqrt(max(0, TOTAL_LIFE)) (terme hors cache de survivalValue)
-	PKEY_MEMO   // contribution de ce porteur a la cle de couverture antidote (ScoringClass.poisonKeyOf)
 	ANTICD_MEMO // cooldown effectif d'Antidote, 99 sans le chip (DangerComboClass.antidoteCdOf)
 	// Cooldowns effectifs des deux chips de DÉPLACEMENT, -1 quand le chip n'est pas équipé.
 	// Seul StateClass.setCooldown peut les périmer, et il les remet à null en passant : la
@@ -34,10 +27,10 @@ class EntityStateClass extends EntityClass {
 	JCD_MEMO
 	TCD_MEMO
 	MCD_MEMO = null // Manumission, même invalidation dans StateClass.setCooldown
-	// Un effet touchant l'un des dix inputs de capability est passé sur cette entité pendant
+	// Un effet touchant les caractéristiques ou leurs agrégats est passé sur cette entité pendant
 	// l'action. Remis à faux par le clone de simulation, posé par le ledger d'effets
-	// (RecordCastedEffect / removeCastedEffect) : sans lui, diffMaskOf saute les dix
-	// comparaisons de capability.
+	// (RecordCastedEffect / removeCastedEffect). Le scoring et les empreintes de menace
+	// peuvent sauter leurs comparaisons seulement depuis le parent direct de ce clone.
 	CAP_DIRTY
 	// Six flux périodiques SÉPARÉS et POSITIFS (jamais de "poison négatif") :
 	POISON                  // prochain tick des lignes EFFECT_POISON seules

@@ -230,7 +230,6 @@ global FIGHT_TYPE = getFightType() // sert au calcul du power dans Consequences
 global DIFF_BASE = 1        // contribution BaseHash (vivant<->mort, cellule d'un vivant)
 global DIFF_CONTEXT = 2     // contribution contexte danger (inputs effectifs offensifs)
 global DIFF_HFP = 4         // contribution fingerprint heal (inputs effectifs de healer)
-global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
 
 // BFS :
 // Seuil de Δ sous lequel une action de base est traitée comme un no-op (skip de l'expansion

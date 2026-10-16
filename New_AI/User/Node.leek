@@ -194,8 +194,8 @@ class NodeClass {
 		return result
 	}
 
-	// Les mémos du scoring comparent leurs inputs eux-mêmes. Les invalidations
-	// CAP/TLSQ/PKEY et les hashs ci-dessous servent au déplacement/danger : les
+	// Les mémos du scoring comparent leurs inputs eux-mêmes. Les
+	// empreintes ci-dessous servent au déplacement/danger : les
 	// terminer AVANT de développer ou d'évaluer le placement du candidat retenu.
 	static finishMetadata(node) {
 		var before = node.METADATA_BEFORE
@@ -256,11 +256,10 @@ class NodeClass {
 				}
 				continue
 			}
-			// Masque différentiel UNIQUE : une seule comparaison parent/clone pilote les
-			// trois patchs de hash et invalide les mémos dérivés
-			// (Me compris — il est seulement exclu des trois hashs).
-			var mask = StateClass.diffMaskOf(parentStat, newStat, tar == Me)
+			// Me est exclu des trois empreintes ; ses cooldowns sont invalidés par
+			// les setters et ses ressources par les clés dédiées. Aucun masque local.
 			if (tar == Me) continue          // Me est exclu des trois hashs
+			var mask = StateClass.diffMaskOf(parentStat, newStat)
 
 			if (mask & DIFF_BASE) bh ^= StateClass.baseContribution(parentStat, tar) ^ StateClass.baseContribution(newStat, tar)
 			if (mask & DIFF_CONTEXT) {
