@@ -21,11 +21,34 @@ class ActionGainTable {
 // leurs inputs de SCORING et leur registre : un soin nul reste dépendant de sa cible.
 class ActionGainProfile {
     READS = 0
+    ITEM
+    CHANNELS = 0 // 1 caractéristiques, 2 absolu, 4 relatif, 8 renvoi ; 0 = preuve stricte
     SELF = false
     WORLD = false
     SPATIAL = false // occupation du plateau, mais pas les stats de tous ses occupants
     COOLDOWN_CHANNEL = 0
     constructor(info) {
+        this.ITEM = info.ID
+        var channels = 0
+        var partial = true
+        for (var effect in info.EFFECTS) {
+            switch (effect[0]) {
+                case EFFECT_BUFF_AGILITY: case EFFECT_BUFF_MP: case EFFECT_BUFF_TP:
+                case EFFECT_BUFF_STRENGTH: case EFFECT_BUFF_WISDOM: case EFFECT_BUFF_RESISTANCE:
+                case EFFECT_RAW_BUFF_AGILITY: case EFFECT_RAW_BUFF_MAGIC: case EFFECT_RAW_BUFF_MP:
+                case EFFECT_RAW_BUFF_POWER: case EFFECT_RAW_BUFF_RESISTANCE: case EFFECT_RAW_BUFF_SCIENCE:
+                case EFFECT_RAW_BUFF_STRENGTH: case EFFECT_RAW_BUFF_TP: case EFFECT_RAW_BUFF_WISDOM:
+                    channels |= 1; break
+                case EFFECT_ABSOLUTE_SHIELD: case EFFECT_RAW_ABSOLUTE_SHIELD:
+                    channels |= 2; break
+                case EFFECT_RELATIVE_SHIELD: case EFFECT_RAW_RELATIVE_SHIELD:
+                    channels |= 4; break
+                case EFFECT_DAMAGE_RETURN:
+                    channels |= 8; break
+                default: partial = false
+            }
+        }
+        this.CHANNELS = partial ? channels : 0
         if (info.ID == CHIP_ANTIDOTE) this.COOLDOWN_CHANNEL = 1
         else if (info.ID == CHIP_MANUMISSION) this.COOLDOWN_CHANNEL = 2
         for (var effect in info.EFFECTS) {
@@ -116,6 +139,8 @@ class ActionGainProfile {
 
 class ActionGainMemo {
     GAIN
+    PARTIAL_SAFE = false // aucune contribution négative créée par ce cast
+    TP_RETURN // PT rendus par les effets ; le coût réel est résolu dans chaque parent
     CASTER
     PROFILE
     TARGETS
@@ -148,6 +173,7 @@ class ActionGainChecks {
     BASE_HASH
     TARGETS = [:]
     CASTERS = [:]
+    PARTIALS = [:]
     PLANTS // présence dans CE snapshot, jamais déduite du seul catalogue global
     constructor(caster, baseHash = null) { this.CASTER = caster; this.BASE_HASH = baseHash }
 
@@ -162,6 +188,23 @@ class ActionGainChecks {
         if (cached != null) return cached
         var result = ActionGains.sameTargetInputValues(current, before)
         this.TARGETS[inputId] = result
+        return result
+    }
+
+    sameAffected(current, before, profile) {
+        if (profile.CHANNELS == 0) return this.sameTarget(current, before)
+        if (current == before) return true
+        if (current == null || before == null) return false
+        var input = before.ACTION_GAIN_INPUTS ?? before
+        if ((current.ACTION_GAIN_INPUTS ?? current) == input) return true
+        var inputId = input.ACTION_GAIN_INPUT_ID
+        if (inputId == null) { inputId = ++ActionGains.NEXT_INPUT_ID; input.ACTION_GAIN_INPUT_ID = inputId }
+        var byItem = this.PARTIALS[inputId]
+        if (byItem == null) { byItem = [:]; this.PARTIALS[inputId] = byItem }
+        var result = byItem[profile.ITEM]
+        if (result != null) return result
+        result = ActionGains.sameAffectedValues(current, input, profile)
+        byItem[profile.ITEM] = result
         return result
     }
 
@@ -255,6 +298,39 @@ class ActionGains {
             && ShackleScoring.cooldown(a) == ShackleScoring.cooldown(b)
     }
 
+    // Seuls ces canaux sont écrits par ce profil. Les autres termes s'annulent
+    // dans après - avant, à condition que le clamp final à zéro ne puisse agir.
+    // Le registre pertinent reste exact : remplacement/fusion de CE même item.
+    static sameAffectedValues(a, b, profile) {
+        if (profile.CHANNELS == 0) return sameTargetInputs(a, b)
+        if (a == null || b == null || a.LIFE <= 0 || b.LIFE <= 0) return false
+        if (a.BASE_STATS != b.BASE_STATS || a.TURN_ORDER != b.TURN_ORDER || a.STATES != b.STATES) return false
+        if (a.POISON_OVER_TIME != 0 || b.POISON_OVER_TIME != 0
+            || a.AFTEREFFECT_OVER_TIME != 0 || b.AFTEREFFECT_OVER_TIME != 0
+            || a.ABSOLUTE_SHIELD < 0 || b.ABSOLUTE_SHIELD < 0
+            || a.RELATIVE_SHIELD < 0 || b.RELATIVE_SHIELD < 0
+            || a.DAMAGE_RETURN < 0 || b.DAMAGE_RETURN < 0
+            || a.HEAL_OVER_TIME < 0 || b.HEAL_OVER_TIME < 0) return sameTargetInputs(a, b)
+        var channels = profile.CHANNELS
+        if ((channels & 1) && !ScoringClass.sameCharacteristicsInputs(a, b)) return false
+        if ((channels & 6) && a.LIFE != b.LIFE) return false // bonus d'urgence des boucliers
+        if ((channels & 2) && a.ABSOLUTE_SHIELD != b.ABSOLUTE_SHIELD) return false
+        if ((channels & 4) && a.RELATIVE_SHIELD != b.RELATIVE_SHIELD) return false
+        if ((channels & 8) && a.DAMAGE_RETURN != b.DAMAGE_RETURN) return false
+        if (a.EFFECTS == b.EFFECTS) return true
+        var j = 0
+        for (var line in a.EFFECTS) {
+            if (line[5] != profile.ITEM) continue
+            while (j < count(b.EFFECTS) && b.EFFECTS[j][5] != profile.ITEM) j++
+            if (j >= count(b.EFFECTS)) return false
+            var other = b.EFFECTS[j++]
+            if (count(line) != count(other)) return false
+            for (var k: var value in line) if (value != other[k]) return false
+        }
+        while (j < count(b.EFFECTS)) if (b.EFFECTS[j++][5] == profile.ITEM) return false
+        return true
+    }
+
     static markInputs(before, after) {
         if (before != null && sameTargetInputValues(after, before)) {
             after.ACTION_GAIN_INPUTS = before.ACTION_GAIN_INPUTS ?? before
@@ -308,15 +384,24 @@ class ActionGains {
         // Sans plante, les déplacements ne lisent que l'occupation et leurs cibles.
         // Invocation, effets inconnus, réveils et kills restent strictement non locaux.
         var world = profile.WORLD || (!mapIsEmpty(PLANT_ZONE_BY_ID) && moveReadsWorld(State, action, checks, profile.SPATIAL))
+        var partialSafe = profile.CHANNELS != 0
         for (var id: var after in entry.NODE.STATE_PATCH) {
+            // Un remplacement peut découvrir une vulnérabilité : même si le
+            // stock AVANT est positif, le stock APRÈS peut être négatif. Le
+            // clamp du score doit alors garder tous ses lecteurs.
+            if (partialSafe && (after.ABSOLUTE_SHIELD < 0 || after.RELATIVE_SHIELD < 0
+                || after.DAMAGE_RETURN < 0 || after.HEAL_OVER_TIME < 0)) partialSafe = false
             var before = State[id]
             if (before == null || (before.LIFE > 0 && after.LIFE <= 0)) world = true
             if (id != Me) targets[id] = before
         }
         // Un kill lit les porteurs des effets du mort, ses invocations et les
         // passifs alliés. Ne pas prétendre qu'il ne dépend que de la victime.
-        return new ActionGainMemo(entry.GAIN, caster, profile, targets, own, movement,
+        var memo = new ActionGainMemo(entry.GAIN, caster, profile, targets, own, movement,
             world ? State : null, action.From, action.To, profile.SPATIAL ? BaseHash : null)
+        memo.TP_RETURN = entry.NODE.STATE_PATCH[Me].TP - caster.TP + playable.COST
+        memo.PARTIAL_SAFE = partialSafe
+        return memo
     }
 
     static sameCasterInputs(caster, before, reads) {
@@ -348,14 +433,24 @@ class ActionGains {
         var caster = State[Me]
         var before = memo.CASTER
         if (memo.SELF) {
-            if (!(checks == null ? sameTargetInputs(caster, before) : checks.sameTarget(caster, before))) return false
+            // Sans déplacement/passif, un buff sur soi lit ses multiplicateurs
+            // de lanceur puis seulement les canaux de score qu'il modifie.
+            var partialSelf = memo.PARTIAL_SAFE && memo.MOVEMENT == 0 && caster.SPECIAL_WEAPON == 0
+            if (partialSelf) {
+                if (!sameCasterInputs(caster, before, memo.PROFILE.READS)) return false
+                if (!(checks == null ? sameAffectedValues(caster, before, memo.PROFILE)
+                    : checks.sameAffected(caster, before, memo.PROFILE))) return false
+            } else if (!(checks == null ? sameTargetInputs(caster, before) : checks.sameTarget(caster, before))) return false
         } else {
             if (memo.PROFILE.COOLDOWN_CHANNEL != 0 && cooldownAffectsCaster(caster, memo.PROFILE.COOLDOWN_CHANNEL)) return false
             if (!(checks == null ? sameCasterInputs(caster, before, memo.PROFILE.READS)
                 : checks.sameCaster(before, memo.PROFILE.READS))) return false
         }
         for (var id: var oldTarget in memo.TARGETS) {
-            if (!(checks == null ? sameTargetInputs(State[id], oldTarget) : checks.sameTarget(State[id], oldTarget))) return false
+            if (memo.PARTIAL_SAFE) {
+                if (!(checks == null ? sameAffectedValues(State[id], oldTarget, memo.PROFILE)
+                    : checks.sameAffected(State[id], oldTarget, memo.PROFILE))) return false
+            } else if (!(checks == null ? sameTargetInputs(State[id], oldTarget) : checks.sameTarget(State[id], oldTarget))) return false
         }
         return true
     }

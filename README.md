@@ -398,8 +398,9 @@ Un filtre ciblé empêche **Saut + Régénération sans soin** de se qualifier u
 
 Malgré le nom `BFS.leek`, l'algorithme actuel ne développe pas exhaustivement
 toutes les combinaisons. Il score les actions de racine, ouvre un petit nombre de
-débuts de suite, puis choisit un successeur glouton pour chacun. Les autres débuts
-peuvent être développés ensuite si le budget le permet. L'état « ne rien jouer »
+débuts de suite, puis choisit un successeur glouton pour chacun. Une petite réserve
+conserve aussi des alternatives internes qui rendent davantage de PT disponibles.
+Les autres débuts peuvent être développés ensuite si le budget le permet. L'état « ne rien jouer »
 et les nœuds intermédiaires font aussi partie des candidats terminaux.
 
 La **recherche d'actions** regroupe les couples de lancement `From → To` par item,
@@ -439,6 +440,24 @@ Un mémo immuable calculé dans une autre branche peut aussi être repris, uniqu
 après la même validation exacte de ses lecteurs (`EXACT_GAINS`, vidé à la racine réelle).
 Les comparaisons répétées des mêmes snapshots sont partagées dans le nœud courant.
 
+Pour les items composés uniquement de buffs de caractéristiques, de boucliers ou
+de renvoi, le profil distingue les canaux de valeur effectivement modifiés. Les
+termes additifs inchangés s'annulent dans le delta : un bouclier ne relit pas toute
+la force de sa cible, et un buff de force ne relit pas ses protections positives.
+Les bases, états, ordre et lignes du même item restent comparés exactement ; les
+synergies de caractéristiques, PT/PM et nettoyages sont conservées. Les boucliers
+lisent toujours les PV pour leur bonus d'urgence. Poison, contrecoup ou protections
+négatives imposent la comparaison stricte, pour préserver le clamp à zéro du score.
+Cette garde lit aussi les stocks après le cast : remplacer une protection peut
+révéler une vulnérabilité jusque-là compensée.
+Sur soi, cette preuve partielle est réservée aux casts sans déplacement ni arme à
+passif, avec validation séparée des multiplicateurs du lanceur. Les dégâts, soins,
+nettoyages et effets non locaux gardent leurs lecteurs stricts.
+Ces dépendances font partie du contrat du scoring : ajouter un nouveau lecteur
+dans un coefficient impose d'étendre la preuve correspondante ou de revenir au
+profil strict. Les valeurs des coefficients restent réglables sans changer ce contrat.
+
+
 Au développement d'un nœud, `ACTION_GAIN_INPUTS` certifie aussi les clones dont les
 lecteurs sont strictement identiques à ceux du parent : mêmes scalaires, registre,
 bases et cooldowns utiles. Un représentant commun évite de refaire cette comparaison
@@ -467,6 +486,22 @@ déjà été produit par le rafraîchissement, il est repris ; sinon l'action es
 dans l'état courant, sans rescoring, pour construire son patch et ses ressources.
 Son score est celui du parent plus le delta, **prix du cooldown déjà compris**.
 Le danger et le placement sont toujours calculés séparément à la clôture terminale.
+
+Une alternative interne peut survivre au maximum immédiat si son gain atteint
+60 % de celui-ci et qu'elle consomme moins de PT nets, restitutions comprises.
+Elle est choisie par gain/PT net, avec un dénominateur minimal de 0,5 ; ce rendement
+ne remplace pas le classement principal par gain absolu. Les cibles différentes
+du même item restent admissibles : Adrénaline sur soi peut ouvrir Connaissance,
+alors qu'Adrénaline sur un allié rapporte un peu plus immédiatement.
+
+La réserve garde au plus six possibilités déjà évaluées. À la fin d'une chaîne,
+deux reprises au plus sont développées avant une autre tête racine, en commençant
+par la dernière conservée ; la réserve est ensuite vidée. Chaque reprise construit
+son propre état enfant et repasse par le même placement avec danger. Elle prend
+son budget dans l'expansion existante ; ce n'est ni un arbre exhaustif ni une
+garantie de trouver la meilleure combinaison. Le coût net utilise les PT rendus
+par les effets puis le coût réel courant, équipement et déplacement compris.
+
 
 Les poussées, attractions, répulsions, inversions et téléportations ont un profil
 `SPATIAL` : le mémo valide en plus le `BaseHash` du plateau, et son groupe encode déjà
@@ -957,6 +992,35 @@ avorté du candidat. Le rendement observé est **13,61 steps par million d'opér
 contre **10,65** au départ ; les trajectoires diffèrent, ce n'est donc pas un coût
 comparé à état identique. Dix combats ne prouvent pas une meilleure force et le
 duel apparié contre `main` reste à réaliser avant toute fusion.
+
+## 17 octobre 2026 : alternatives internes et dépendances de gains
+
+La recherche conserve une petite réserve d'alternatives déjà scorées qui laissent
+plus de PT pour la suite. Le cas Adrénaline soi puis Connaissance, manqué par le
+maximum immédiat, est retrouvé à état et budget identiques : gain final 6 814,83
+contre 6 464,62 auparavant. Un autre meilleur plan de soutien de main reste manqué.
+Les profils de buffs/protections valident désormais les seuls termes nécessaires
+au delta quand leur annulation est prouvée, avec repli strict autour des clampages.
+
+Un témoin d'une ronde sans plafond conserve exactement ses actions et 2 366 steps :
+208 471 441 → 199 190 676 opérations natives, soit **−4,45 %**. Les plafonds ne sont
+levés que dans cette copie de mesure. Deux fenêtres de quatre rondes aux budgets
+réels donnent **4 565 steps contre 3 949 (+15,6 %)** ; les trajectoires diffèrent,
+ce n'est donc pas une économie mesurée à déroulement identique.
+
+Le cache de gains entre vrais casts a aussi été essayé, avec validation des bases,
+du contexte et des inputs. Ses540hits racine sur deux témoins ne compensent pas
+ses coûts (+0,18 à +0,21 %) : il est écarté. Les caches de gains restent vidés à
+chaque nouvelle recherche réelle, et la géométrie garde sa durée de vie habituelle.
+
+La version retenue passe 77 contrôles ciblés. Son audit séparé compare 13 931 gains
+réutilisés et 527 enfants à une nouvelle simulation/somme complète : aucun écart
+supérieur à 10⁻⁶, aucune erreur ni action1002. Ces sondes ne sont pas dans l'IA.
+Le petit lot initial du prototype commun, avant la dernière garde de stock négatif,
+fait 6/10 contre main, contre 6,5/10 pour la référence exacte. La réception finale
+sur deux autres blocs fait 2/4, contre 1,5/4 pour la référence. Ces lots distincts
+restent trop petits pour établir un gain de force. Les coefficients et budgets
+de production sont inchangés ; main n'est pas fusionnée.
 
 ## Documentation et outils
 

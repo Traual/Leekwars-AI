@@ -217,11 +217,13 @@ class ActionSuite {
 			}
 			frontier = nextWave
 		}
+		exploreForks(SearchCache, MySide, candidates)
 		for (var i: var entry in rootEntries) {
 			if (getOperations() > OPS_DEADLINE) break
 			if (entry.DEFERRED || i in selected) continue
 			var leaf = unroll(entry.NODE, SearchCache, MySide, candidates)
 			validateChain(leaf, SearchCache)
+			exploreForks(SearchCache, MySide, candidates)
 		}
 		BenchOps.Stop("BFS")
 		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " exact gains reused (" + SearchCache.EXACT_HITS + " shared, " + SearchCache.HISTORY_HITS + " historical), " + SearchCache.SET_HITS + " cached catalogs, " + SearchCache.INCOMPLETE_FRAMES + " incomplete refreshes")
@@ -471,6 +473,13 @@ class ActionSuite {
 		// aucun nœud ne sera développé au-delà de cette échéance d'expansion.
 		if (!frame.COMPLETE || getOperations() > OPS_DEADLINE) return terminalFromPartial(frame, Parent)
 		if (frame.BEST == null) return null
+        // Le maximum immédiat peut fermer une action suivante faute de PT.
+        // Conserver une autre cible du MÊME item est permis (ex. Adrénaline soi).
+        var fork = frame.ECONOMY
+        if (fork != null && fork.PLAYABLE != frame.BEST_PLAYABLE
+            && fork.TP_COST < frame.BEST_TP_COST && fork.GAIN >= frame.BEST.GAIN * 0.6) {
+            if (count(SearchCache.FORKS) < 6) push(SearchCache.FORKS, fork)
+        }
 		var hint = frame.BEST
 		var actual = frame.BEST_FRESH
 		if (actual == null) {
@@ -482,6 +491,28 @@ class ActionSuite {
 		actual.NODE.PARENT = Parent
 		return actual.NODE
 	}
+
+    // Deux reprises au plus avant une autre tête racine. D'abord les bifurcations
+    // profondes : leur préfixe est déjà payé et leur suite est courte.
+    static exploreForks(SearchCache, MySide, candidates) {
+        for (var i = 0; i < 2 && count(SearchCache.FORKS) > 0 && getOperations() <= OPS_DEADLINE; i++) {
+            var fork = pop(SearchCache.FORKS)
+            var actual = fork.FRESH
+            if (actual == null) {
+                var parent = fork.PARENT
+                var State = StateClass.materializeNodeState(parent)
+                var walk = WalkCellsClass.getAllLayers(State, Me, parent.BASE_HASH, parent.ME_WALK_FINGERPRINT)
+                actual = simulatePlayable(fork.PLAYABLE, clone(State, 1), parent.BASE_HASH, parent.SCORE,
+                    MySide, parent.CONTEXT_BY_SIDE, parent.HFP_BY_SIDE, parent, walk, fork.GAIN)
+            }
+            NodeClass.finishMetadata(actual.NODE)
+            actual.NODE.PARENT = fork.PARENT
+            push(candidates, actual.NODE)
+            BFS_CHAIN_STEPS++
+            validateChain(unroll(actual.NODE, SearchCache, MySide, candidates), SearchCache)
+        }
+        SearchCache.FORKS = [] // pas d'explosion récursive de la réserve
+    }
 
 	static terminalFromPartial(frame, Parent) {
 		// Aucun nouveau cast à simuler après l'échéance. Garder la réserve réelle
@@ -577,6 +608,7 @@ class ActionSuite {
 					MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, Walk)
 				fresh = actual
 				var updated = ActionGains.capture(actual, State, BaseHash, Walk, checks)
+				memo = updated
 				table.VALUES[key] = updated
 				SearchCache.EXACT_GAINS[key] = updated
 				ActionGainHistory.store(SearchCache, key, updated, State)
@@ -585,11 +617,19 @@ class ActionSuite {
 			}
 			// Même premier résultat qu'un tri stable décroissant, sans allouer
 			// et trier toute une liste pour n'en utiliser que la première entrée.
+            if (gain > BFS_DELTA_EPSILON) {
+                var netCost = playable.COST - memo.TP_RETURN
+                var economy = gain / max(0.5, netCost)
+                if (frame.ECONOMY == null || economy > frame.ECONOMY.PRIORITY) {
+                    frame.ECONOMY = new ActionForkClass(Parent, playable, gain, fresh, netCost)
+                }
+            }
 			var priority = priorityOf(gain, playable.COST)
 			if (gain > BFS_DELTA_EPSILON && (frame.BEST == null || priority > frame.BEST.PRIORITY)) {
 				frame.BEST = new ActionPriorityClass(key, gain, priority)
 				frame.BEST_PLAYABLE = playable
 				frame.BEST_FRESH = fresh
+				frame.BEST_TP_COST = playable.COST - memo.TP_RETURN
 			}
 		}
 		if (!frame.COMPLETE) SearchCache.INCOMPLETE_FRAMES++

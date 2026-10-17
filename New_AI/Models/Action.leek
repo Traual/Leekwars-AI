@@ -85,6 +85,7 @@ class ActionSearchCacheClass {
 	SET_HITS = 0
 	INCOMPLETE_FRAMES = 0
 	EXACT_HITS = 0
+	FORKS = []
 	VALIDATED_NODE
 	VALIDATED_FINAL
 	constructor() {
@@ -103,6 +104,7 @@ class ActionSearchCacheClass {
 		this.SET_HITS = 0
 		this.INCOMPLETE_FRAMES = 0
 		this.EXACT_HITS = 0
+		this.FORKS = []
 		this.VALIDATED_NODE = null
 		this.VALIDATED_FINAL = null
 	}
@@ -206,6 +208,8 @@ class ActionSearchFrameClass {
 	BEST
 	BEST_PLAYABLE
 	BEST_FRESH
+	BEST_TP_COST
+	ECONOMY
 	ORIGIN_DOMAINS
 	COMPLETE = true
 	constructor() {
@@ -227,4 +231,20 @@ class ActionGroupSetClass {
 			push(this.KEYS, key)
 		}
 	}
+}
+
+// Possibilité déjà scorée dans un parent immuable. Le nœud n'est appliqué que
+// si cette petite réserve est effectivement explorée, sous le même budget.
+class ActionForkClass {
+    PARENT
+    PLAYABLE
+    GAIN
+    FRESH
+    TP_COST
+    PRIORITY
+    constructor(parent, playable, gain, fresh, tpCost) {
+        this.PARENT = parent; this.PLAYABLE = playable; this.GAIN = gain
+        this.FRESH = fresh; this.TP_COST = tpCost
+        this.PRIORITY = gain / max(0.5, tpCost)
+    }
 }
