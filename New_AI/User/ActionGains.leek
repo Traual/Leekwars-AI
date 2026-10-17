@@ -5,16 +5,15 @@ include("../includes.leek")
 class ActionGainTable {
     PARENT
     VALUES = [:]
-    constructor(parent = null) { this.PARENT = parent }
-
-    find(key) {
-        var layer = this
-        while (layer != null) {
-            if (key in layer.VALUES) return layer.VALUES[key]
-            layer = layer.PARENT
-        }
-        return null
+    // Copie superficielle : les mémos restent immuables ; seuls les remplacements
+    // de cette table appartiennent au nœud. Évite la remontée par action et par profondeur.
+    constructor(parent = null) {
+        this.PARENT = null
+        if (parent != null) this.VALUES = clone(parent.VALUES, 1)
     }
+
+    find(key) { return this.VALUES[key] }
+
 }
 
 // Lectures du lanceur nécessaires au montant des effets. Les cibles portent aussi
