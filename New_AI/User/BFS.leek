@@ -535,10 +535,13 @@ class ActionSuite {
 		var availability = ActionsClass.availabilityOf(mine)
 		frame.COSTS = availability.COSTS
 		frame.USES = availability.USES
-		var availableMask = 0
-		for (var i: var item in mine.INVENTORY) {
-			if (baseCostOf(mine, item, frame.COSTS, frame.USES) >= 0) availableMask ^= mix64Memo(i + 1)
-		}
+        var availableMask = 0
+        var packedInventory = count(mine.INVENTORY) < 64
+        for (var i: var item in mine.INVENTORY) {
+            if (baseCostOf(mine, item, frame.COSTS, frame.USES) >= 0) {
+                availableMask ^= packedInventory ? (1 << i) : mix64Memo(i + 1)
+            }
+        }
 		// Cellule/PM/capacités, items disponibles, payload de résurrection et
 		// stérilité déterminent cette liste. Stats, dégâts et gains restent courants.
 		var setKey = ((BaseHash * MIX_A) ^ Parent.ME_WALK_FINGERPRINT) * MIX_A
@@ -805,12 +808,18 @@ class ActionSuite {
 	static resolveGroup(group, mine, Walk, baseCost, uses, ResurrectId, BaseHash = null, WalkFingerprint = null, originDomains = null) {
 		var from = null
 		var to = null
+        var chosenOrigin = null
 		var cost = baseCost
 		if (group.IS_LOCAL) {
 			if (group.From != mine.CELL) return null // invariant : génération locale du nœud
+            var cached = group.DIRECT_PLAYABLE
+            if (cached != null && group.Item != CHIP_RESURRECTION && cached.COST == baseCost && cached.USES == uses) return cached
 			from = mine.CELL
 			to = group.To
 		} else if (mine.CELL in group.ORIGINS) {
+            var cached = group.DIRECT_PLAYABLE
+            if (cached != null && group.Item != CHIP_RESURRECTION && cached.ACTION.From == mine.CELL
+                && cached.COST == baseCost && cached.USES == uses) return cached
 			from = mine.CELL
 			to = group.ORIGINS[from]
 		} else {
@@ -831,6 +840,9 @@ class ActionSuite {
 				from = choice.FROM
 				to = choice.TO
 				cost = baseCost + choice.EXTRA_TP
+                chosenOrigin = choice
+                var cached = choice.PLAYABLE
+                if (cached != null && group.Item != CHIP_RESURRECTION && cached.COST == cost && cached.USES == uses) return cached
 			} else {
 				var bestRank = MAX_VALUE
 				for (var origin: var aim in group.ORIGINS) {
@@ -847,13 +859,21 @@ class ActionSuite {
 					to = aim
 					cost = baseCost + extra
 				}
-				if (choices != null) choices[group.SIGNATURE] = from == null ? null : new ActionOriginChoiceClass(from, to, cost - baseCost)
+                if (choices != null) {
+                    chosenOrigin = from == null ? null : new ActionOriginChoiceClass(from, to, cost - baseCost)
+                    choices[group.SIGNATURE] = chosenOrigin
+                }
 			}
 		}
 		if (from == null) return null
 		var action = new ActionClass(group.Item, from, to)
 		if (group.Item == CHIP_RESURRECTION) action.RESURRECT_ID = ResurrectId
-		return new PlayableActionClass(action, group, cost, uses)
+        var result = new PlayableActionClass(action, group, cost, uses)
+        if (group.Item != CHIP_RESURRECTION) {
+            if (from == mine.CELL) group.DIRECT_PLAYABLE = result
+            else if (chosenOrigin != null) chosenOrigin.PLAYABLE = result
+        }
+        return result
 	}
 
 	/*

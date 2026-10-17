@@ -439,6 +439,12 @@ n'est payé qu'au développement du nœud, pas pour tous les candidats seulement
 Un mémo immuable calculé dans une autre branche peut aussi être repris, uniquement
 après la même validation exacte de ses lecteurs (`EXACT_GAINS`, vidé à la racine réelle).
 Les comparaisons répétées des mêmes snapshots sont partagées dans le nœud courant.
+Les items d'un même canal (caractéristiques, bouclier absolu, relatif ou renvoi)
+partagent aussi la preuve d'égalité de leurs lecteurs numériques. Le registre de
+fusion/remplacement reste vérifié **séparément pour chaque item**. Poison,
+contrecoup ou stock négatif renvoient toujours au contrôle complet : ce partage
+ne réduit pas les dépendances requises par le score.
+
 
 Pour les items composés uniquement de buffs de caractéristiques, de boucliers ou
 de renvoi, le profil distingue les canaux de valeur effectivement modifiés. Les
@@ -450,9 +456,15 @@ lisent toujours les PV pour leur bonus d'urgence. Poison, contrecoup ou protecti
 négatives imposent la comparaison stricte, pour préserver le clamp à zéro du score.
 Cette garde lit aussi les stocks après le cast : remplacer une protection peut
 révéler une vulnérabilité jusque-là compensée.
-Sur soi, cette preuve partielle est réservée aux casts sans déplacement ni arme à
-passif, avec validation séparée des multiplicateurs du lanceur. Les dégâts, soins,
-nettoyages et effets non locaux gardent leurs lecteurs stricts.
+Sur soi, cette preuve partielle est réservée aux casts sans déplacement ni passif
+de cast actif, avec validation séparée des multiplicateurs du lanceur. Une arme à
+passif de dégâts reçus ne rend pas un buff pur dépendant de toutes les stats.
+Le soin critique du Destructeur instable garde le contrôle complet s'il peut agir
+dans l'état courant **ou** dans celui du mémo (critique, PV manquants, soin autorisé).
+Les dégâts, soins, nettoyages et effets non locaux gardent leurs lecteurs stricts.
+La reprise d'un delta calculé sous un autre score de parent peut déplacer les
+ultimes bits flottants et départager autrement deux valeurs mathématiquement
+égales ; les audits confrontent les gains à un recalcul, à 10⁻⁶ près.
 Ces dépendances font partie du contrat du scoring : ajouter un nouveau lecteur
 dans un coefficient impose d'étendre la preuve correspondante ou de revenir au
 profil strict. Les valeurs des coefficients restent réglables sans changer ce contrat.
@@ -537,6 +549,12 @@ avant le classement. Leur cache porte le plateau, la mobilité et les seuils de 
 **après** le coût du cast/équipement : un ancien échec faute de PT ne bloque pas une origine
 devenue payable. La couche de déplacement et l'ordre Saut/Téléportation entrent dans la
 validité du delta. Le mode rendement calcule sa priorité avec le coût courant.
+
+Les objets d'action concrets sont immuables et réutilisés pour la même origine,
+le même coût et le même nombre d'usages. Un swap ou un usage supplémentaire crée
+un objet neuf ; les anciennes branches ne sont pas modifiées. Aucun score ni nœud
+enfant n'entre dans ce cache. Les payloads de résurrection restent toujours neufs.
+
 
 Quand un catalogue rejette au moins un quart de ses groupes faute d'origine jouable,
 `PLAYABLE_KEYS` conserve leur sous-liste valide, dans le même ordre, par financement

@@ -27,6 +27,7 @@ class ActionGroupClass extends ActionClass {
 	TARGET_HASH
 	ORIGINS
 	IS_LOCAL
+    DIRECT_PLAYABLE // gabarit immuable, jamais un score ni un état enfant
 	constructor(item, from, to, signature, targetHash, local = false) {
 		super(item, from, to)
 		this.SIGNATURE = signature
@@ -149,6 +150,7 @@ class ActionAvailabilityClass {
 }
 
 class ActionOriginChoiceClass {
+    PLAYABLE // même origine, coût et usages : objet entièrement immuable
 	FROM
 	TO
 	EXTRA_TP

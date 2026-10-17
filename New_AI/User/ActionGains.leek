@@ -173,6 +173,7 @@ class ActionGainChecks {
     TARGETS = [:]
     CASTERS = [:]
     PARTIALS = [:]
+    CHANNELS = [:] // mêmes lecteurs de stats, registre vérifié séparément par item
     PLANTS // présence dans CE snapshot, jamais déduite du seul catalogue global
     constructor(caster, baseHash = null) { this.CASTER = caster; this.BASE_HASH = baseHash }
 
@@ -202,7 +203,15 @@ class ActionGainChecks {
         if (byItem == null) { byItem = [:]; this.PARTIALS[inputId] = byItem }
         var result = byItem[profile.ITEM]
         if (result != null) return result
-        result = ActionGains.sameAffectedValues(current, input, profile)
+        var channels = this.CHANNELS[inputId]
+        if (channels == null) { channels = [:]; this.CHANNELS[inputId] = channels }
+        var common = channels[profile.CHANNELS]
+        if (common == null) {
+            common = ActionGains.affectedChannelStatus(current, input, profile.CHANNELS)
+            channels[profile.CHANNELS] = common
+        }
+        result = common < 0 ? this.sameTarget(current, input)
+            : (common == 1 && ActionGains.sameItemLedger(current.EFFECTS, input.EFFECTS, profile.ITEM))
         byItem[profile.ITEM] = result
         return result
     }
@@ -302,31 +311,44 @@ class ActionGains {
     // Le registre pertinent reste exact : remplacement/fusion de CE même item.
     static sameAffectedValues(a, b, profile) {
         if (profile.CHANNELS == 0) return sameTargetInputs(a, b)
-        if (a == null || b == null || a.LIFE <= 0 || b.LIFE <= 0) return false
-        if (a.BASE_STATS != b.BASE_STATS || a.TURN_ORDER != b.TURN_ORDER || a.STATES != b.STATES) return false
+        var common = affectedChannelStatus(a, b, profile.CHANNELS)
+        return common < 0 ? sameTargetInputs(a, b)
+            : (common == 1 && sameItemLedger(a.EFFECTS, b.EFFECTS, profile.ITEM))
+    }
+
+    // 1 = ces lecteurs sont égaux ; 0 = ils diffèrent ; -1 = le clamp impose
+    // la preuve complète. Résultat partagé entre les items du MÊME canal.
+    static affectedChannelStatus(a, b, channels) {
+        if (a == null || b == null || a.LIFE <= 0 || b.LIFE <= 0) return 0
+        if (a.BASE_STATS != b.BASE_STATS || a.TURN_ORDER != b.TURN_ORDER || a.STATES != b.STATES) return 0
         if (a.POISON_OVER_TIME != 0 || b.POISON_OVER_TIME != 0
             || a.AFTEREFFECT_OVER_TIME != 0 || b.AFTEREFFECT_OVER_TIME != 0
             || a.ABSOLUTE_SHIELD < 0 || b.ABSOLUTE_SHIELD < 0
             || a.RELATIVE_SHIELD < 0 || b.RELATIVE_SHIELD < 0
             || a.DAMAGE_RETURN < 0 || b.DAMAGE_RETURN < 0
-            || a.HEAL_OVER_TIME < 0 || b.HEAL_OVER_TIME < 0) return sameTargetInputs(a, b)
-        var channels = profile.CHANNELS
-        if ((channels & 1) && !ScoringClass.sameCharacteristicsInputs(a, b)) return false
-        if ((channels & 6) && a.LIFE != b.LIFE) return false // bonus d'urgence des boucliers
-        if ((channels & 2) && a.ABSOLUTE_SHIELD != b.ABSOLUTE_SHIELD) return false
-        if ((channels & 4) && a.RELATIVE_SHIELD != b.RELATIVE_SHIELD) return false
-        if ((channels & 8) && a.DAMAGE_RETURN != b.DAMAGE_RETURN) return false
-        if (a.EFFECTS == b.EFFECTS) return true
+            || a.HEAL_OVER_TIME < 0 || b.HEAL_OVER_TIME < 0) return -1
+        if ((channels & 1) && !ScoringClass.sameCharacteristicsInputs(a, b)) return 0
+        if ((channels & 6) && a.LIFE != b.LIFE) return 0
+        if ((channels & 2) && a.ABSOLUTE_SHIELD != b.ABSOLUTE_SHIELD) return 0
+        if ((channels & 4) && a.RELATIVE_SHIELD != b.RELATIVE_SHIELD) return 0
+        if ((channels & 8) && a.DAMAGE_RETURN != b.DAMAGE_RETURN) return 0
+        return 1
+    }
+
+    // Les champs numériques peuvent être communs à deux items ; leur fusion /
+    // remplacement au registre ne l'est jamais. Garder la vérification par item.
+    static sameItemLedger(a, b, item) {
+        if (a == b) return true
         var j = 0
-        for (var line in a.EFFECTS) {
-            if (line[5] != profile.ITEM) continue
-            while (j < count(b.EFFECTS) && b.EFFECTS[j][5] != profile.ITEM) j++
-            if (j >= count(b.EFFECTS)) return false
-            var other = b.EFFECTS[j++]
+        for (var line in a) {
+            if (line[5] != item) continue
+            while (j < count(b) && b[j][5] != item) j++
+            if (j >= count(b)) return false
+            var other = b[j++]
             if (count(line) != count(other)) return false
             for (var k: var value in line) if (value != other[k]) return false
         }
-        while (j < count(b.EFFECTS)) if (b.EFFECTS[j++][5] == profile.ITEM) return false
+        while (j < count(b)) if (b[j++][5] == item) return false
         return true
     }
 
@@ -417,6 +439,16 @@ class ActionGains {
             || ((reads & LIFE) && caster.LIFE != before.LIFE))
     }
 
+    // Un buff/protecteur pur ne déclenche ni dégâts reçus ni déplacement subi.
+    // Le seul passif de cast est le soin critique du Destructeur instable : il
+    // réintroduit les lecteurs de PV seulement s'il peut agir dans l'un des états.
+    static criticalHealCanTrigger(stat) {
+        return (stat.SPECIAL_WEAPON & SPW_UNSTABLE_DESTROYER)
+            && stat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT
+            && stat.LIFE < stat.TOTAL_LIFE
+            && !EntityStateClass.hasState(stat, STATE_UNHEALABLE)
+    }
+
     static matches(memo, State, playable, walk, checks = null) {
         if (memo == null || (memo.SOURCE != null && memo.SOURCE != State)) return false
         if (memo.MOVEMENT != movementOf(playable, walk)) return false
@@ -434,7 +466,9 @@ class ActionGains {
         if (memo.SELF) {
             // Sans déplacement/passif, un buff sur soi lit ses multiplicateurs
             // de lanceur puis seulement les canaux de score qu'il modifie.
-            var partialSelf = memo.PARTIAL_SAFE && memo.MOVEMENT == 0 && caster.SPECIAL_WEAPON == 0
+            var partialSelf = memo.PARTIAL_SAFE && memo.MOVEMENT == 0
+                && (!(caster.SPECIAL_WEAPON & SPW_UNSTABLE_DESTROYER)
+                    || (!criticalHealCanTrigger(caster) && !criticalHealCanTrigger(before)))
             if (partialSelf) {
                 if (!sameCasterInputs(caster, before, memo.PROFILE.READS)) return false
                 if (!(checks == null ? sameAffectedValues(caster, before, memo.PROFILE)
