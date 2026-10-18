@@ -480,7 +480,11 @@ pas cette certification.
 
 `User/ActionGainHistory.leek` conserve aussi plusieurs contextes par action dans
 `GAIN_HISTORY`. L'empreinte des stats du lanceur et des cibles est calculée une fois
-par snapshot, puis combinée avec la couche de déplacement. Elle présélectionne un
+par snapshot et canal, puis combinée avec la couche de déplacement. Pour les buffs
+et protections purs, la présélection omet les stocks étrangers au canal : par
+exemple, un changement de bouclier n'efface plus l'historique d'un buff de force.
+Les empreintes par canal sont conservées dans `GAIN_HASHES`, vidé à chaque recherche.
+Une empreinte ne prouve aucune égalité : elle présélectionne seulement un
 mémo, ensuite soumis à la validation exacte habituelle : registres, durées, bases,
 cooldowns utiles et critique restent contrôlés. Les empreintes sont remises à zéro
 au clonage et l'historique est vidé à chaque nouvelle recherche. Limites : **8
@@ -493,7 +497,10 @@ inputs ; tirer avant ou après Protéines conserve des contextes distincts. Le c
 stocke le delta du prochain cast, sans réutiliser le score cumulé ni le nœud d'une
 autre branche. Les cas non locaux décrits ci-dessous ne sont pas admis à cet historique.
 
-Le premier gain positif du classement donne le successeur. Si son nouveau nœud a
+Le maximum et l'alternative économe sont retenus dans des variables locales pendant
+le passage ; leurs objets de sélection sont construits une seule fois à la sortie.
+Les gains non positifs ne calculent pas de priorité inutile. Le premier gain positif
+du classement donne le successeur. Si son nouveau nœud a
 déjà été produit par le rafraîchissement, il est repris ; sinon l'action est appliquée
 dans l'état courant, sans rescoring, pour construire son patch et ses ressources.
 Son score est celui du parent plus le delta, **prix du cooldown déjà compris**.
@@ -569,7 +576,9 @@ le remplace également. Un nouveau mémo peut copier les usages jouables déjà 
 le parent immuable, puis retirer les items présents dans les patches locaux de
 cooldown/usages. Ce stock est indépendant du financement : le coût, le changement
 d'arme et les PT courants sont toujours vérifiés. Un item indisponible faute de PT
-peut donc redevenir jouable après un buff. Le mémo filtre les items avant leur géométrie. Chaque nœud conserve
+peut donc redevenir jouable après un buff. Chaque phase géométrique retrouve ce mémo
+une fois, puis consulte directement les coûts déjà calculés dans sa boucle d'items.
+Le mémo filtre les items avant leur géométrie. Chaque nœud conserve
 aussi les valeurs exactes des entités déjà scorées : ses candidats réutilisent les
 valeurs d'avant-cast et calculent celles d'après-cast avec les mêmes formules lorsqu'un
 delta doit être recalculé. Un nœud construit par addition peut ne pas avoir ces valeurs :
@@ -1043,6 +1052,22 @@ fait 6/10 contre main, contre 6,5/10 pour la référence exacte. La réception f
 sur deux autres blocs fait 2/4, contre 1,5/4 pour la référence. Ces lots distincts
 restent trop petits pour établir un gain de force. Les coefficients et budgets
 de production sont inchangés ; main n'est pas fusionnée.
+
+## 18 octobre 2026 : coût de la recherche
+
+Sur huit fenêtres fixes de 4 contre 4, tronquées à une ronde et sans plafond dans
+la copie de mesure, les mêmes journaux de jeu et **50 889 steps** passent de
+**4 616 321 007 à 4 380 616 291 opérations natives (−5,11 %)** depuis `4d4e71d`.
+Cela combine le stock d'inventaire hérité, les preuves partagées, l'historique par
+canaux et la sélection locale des maxima. L'historique évite **81 517 simulations**
+sur ces huit fenêtres sans changer les développements ni les actions.
+
+La réception compte **94 contrôles**. L'audit indépendant de la combinaison finale
+compare **26 492 gains** et **1 475 enfants**, sans écart supérieur à 10⁻⁶ : maximum
+observé **1,46 × 10⁻¹¹** sur les gains et **6,69 × 10⁻¹¹** sur les chaînes.
+Ces arrondis peuvent départager des égalités dans d'autres témoins ; aucune nouvelle
+approximation de score n'est ajoutée. Les formules et budgets de production restent
+inchangés. Le triangulaire de force est réservé à la fin de la boucle d'optimisation.
 
 ## Documentation et outils
 

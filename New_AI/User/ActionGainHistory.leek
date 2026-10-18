@@ -3,13 +3,17 @@
 include("../includes.leek")
 
 class ActionGainContexts {
+    CHANNELS = 0
+    SELF = false
     TARGET_IDS = []
     VALUES = [:]
     KEYS = []
     NEXT = 0
     LAST
-    constructor(targets) {
-        for (var id: var _before in targets) push(this.TARGET_IDS, id)
+    constructor(memo) {
+        this.CHANNELS = memo.PROFILE.CHANNELS
+        this.SELF = memo.SELF
+        for (var id: var _before in memo.TARGETS) push(this.TARGET_IDS, id)
     }
 }
 
@@ -37,14 +41,42 @@ class ActionGainHistory {
         return hash
     }
 
-    static signature(contexts, State, movement) {
-        var hash = (inputHash(State[Me]) ^ movement) * MIX_A
+    // Présélection seulement : tous les lecteurs et registres restent certifiés
+    // par matches. Les canaux sans interaction omettent les stocks étrangers.
+    static channelHash(cache, stat, channels) {
+        var input = stat.ACTION_GAIN_INPUTS ?? stat
+        var inputId = input.ACTION_GAIN_INPUT_ID
+        if (inputId == null) { inputId = ++ActionGains.NEXT_INPUT_ID; input.ACTION_GAIN_INPUT_ID = inputId }
+        var key = (inputId << 5) | channels
+        var hash = cache.GAIN_HASHES[key]
+        if (hash != null) return hash
+        hash = ((OFFSET_BASIS ^ input.ID) * MIX_A ^ input.STATES) * MIX_A
+        if (channels & 17) {
+            hash = ((hash ^ input.STRENGTH) * MIX_A ^ input.WISDOM) * MIX_A
+            hash = ((hash ^ input.AGILITY) * MIX_A ^ input.RESISTANCE) * MIX_A
+            hash = ((hash ^ input.SCIENCE) * MIX_A ^ input.MAGIC) * MIX_A
+            hash = (hash ^ input.POWER) * MIX_A
+        }
+        if (channels & 1) hash = ((hash ^ input.TOTAL_TP) * MIX_A ^ input.TOTAL_MP) * MIX_A
+        if (channels & 6) hash = (hash ^ input.LIFE) * MIX_A
+        if (channels & 2) hash = (hash ^ input.ABSOLUTE_SHIELD) * MIX_A
+        if (channels & 4) hash = (hash ^ input.RELATIVE_SHIELD) * MIX_A
+        if (channels & 8) hash = (hash ^ input.DAMAGE_RETURN) * MIX_A
+        cache.GAIN_HASHES[key] = hash
+        return hash
+    }
+
+    static signature(cache, contexts, State, movement) {
+        var channels = contexts.CHANNELS
+        var casterHash = channels != 0 && movement == 0
+            ? channelHash(cache, State[Me], 16 | (contexts.SELF ? channels : 0)) : inputHash(State[Me])
+        var hash = (casterHash ^ movement) * MIX_A
         // XOR des contributions incluant l'id : ordre d'insertion sans importance.
         // Le groupe d'action encode déjà les cibles et leurs distances dans la zone.
         for (var id in contexts.TARGET_IDS) {
             var stat = State[id]
             if (stat == null) return null
-            hash ^= inputHash(stat)
+            hash ^= channels == 0 ? inputHash(stat) : channelHash(cache, stat, channels)
         }
         return hash
     }
@@ -54,7 +86,7 @@ class ActionGainHistory {
         if (contexts == null) return null
         // Avec un seul contexte déjà rejeté, il n'existe rien d'autre à retrouver.
         if (count(contexts.KEYS) == 1 && (contexts.LAST == inherited || contexts.LAST == latest)) return null
-        var hash = signature(contexts, State, ActionGains.movementOf(playable, Walk))
+        var hash = signature(cache, contexts, State, ActionGains.movementOf(playable, Walk))
         if (hash == null) return null
         var memo = contexts.VALUES[hash]
         if (memo == inherited || memo == latest) return null
@@ -67,10 +99,10 @@ class ActionGainHistory {
         var contexts = cache.GAIN_HISTORY[key]
         if (contexts == null) {
             if (cache.HISTORY_SIZE >= MAX_ENTRIES) return;
-            contexts = new ActionGainContexts(memo.TARGETS)
+            contexts = new ActionGainContexts(memo)
             cache.GAIN_HISTORY[key] = contexts
         }
-        var hash = signature(contexts, State, memo.MOVEMENT)
+        var hash = signature(cache, contexts, State, memo.MOVEMENT)
         if (hash == null) return;
         if (!(hash in contexts.VALUES)) {
             if (count(contexts.KEYS) < MAX_CONTEXTS) {

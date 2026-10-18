@@ -579,6 +579,17 @@ class ActionSuite {
 			var stored = set.PLAYABLE_KEYS[funding]
 			if (stored != null) keys = stored
 		}
+        var bestGain = null
+        var bestPriority = null
+        var bestKey = null
+        var bestPlayable = null
+        var bestFresh = null
+        var bestCost = null
+        var economyPriority = null
+        var economyPlayable = null
+        var economyGain = null
+        var economyFresh = null
+        var economyCost = null
 		var playableKeys = []
 		for (var key in keys) {
 			if (getOperations() > OPS_DEADLINE) { frame.COMPLETE = false; break }
@@ -631,18 +642,22 @@ class ActionSuite {
             if (gain > BFS_DELTA_EPSILON) {
                 var netCost = playable.COST - memo.TP_RETURN
                 var economy = gain / max(0.5, netCost)
-                if (frame.ECONOMY == null || economy > frame.ECONOMY.PRIORITY) {
-                    frame.ECONOMY = new ActionForkClass(Parent, playable, gain, fresh, netCost)
+                if (economyPriority == null || economy > economyPriority) {
+                    economyPriority = economy; economyPlayable = playable
+                    economyGain = gain; economyFresh = fresh; economyCost = netCost
+                }
+                var priority = priorityOf(gain, playable.COST)
+                if (bestGain == null || priority > bestPriority) {
+                    bestGain = gain; bestPriority = priority; bestKey = key
+                    bestPlayable = playable; bestFresh = fresh; bestCost = netCost
                 }
             }
-			var priority = priorityOf(gain, playable.COST)
-			if (gain > BFS_DELTA_EPSILON && (frame.BEST == null || priority > frame.BEST.PRIORITY)) {
-				frame.BEST = new ActionPriorityClass(key, gain, priority)
-				frame.BEST_PLAYABLE = playable
-				frame.BEST_FRESH = fresh
-				frame.BEST_TP_COST = playable.COST - memo.TP_RETURN
-			}
 		}
+        if (bestGain != null) {
+            frame.BEST = new ActionPriorityClass(bestKey, bestGain, bestPriority)
+            frame.BEST_PLAYABLE = bestPlayable; frame.BEST_FRESH = bestFresh; frame.BEST_TP_COST = bestCost
+        }
+        if (economyPriority != null) frame.ECONOMY = new ActionForkClass(Parent, economyPlayable, economyGain, economyFresh, economyCost)
 		if (!frame.COMPLETE) SearchCache.INCOMPLETE_FRAMES++
 		else if (count(playableKeys) * 4 <= count(set.KEYS) * 3) {
 			// Épargner les domaines avec beaucoup d'origines hors d'atteinte.

@@ -79,6 +79,7 @@ class ActionSearchCacheClass {
 	GROUP_SETS
 	EXACT_GAINS // mémos immuables partageables seulement après validation de leurs lecteurs
 	GAIN_HISTORY
+	GAIN_HASHES = [:]
 	HISTORY_SIZE = 0
 	HISTORY_HITS = 0
 	NEW_SCORES = 0
@@ -98,6 +99,7 @@ class ActionSearchCacheClass {
 	beginSearch() {
 		this.EXACT_GAINS = [:]
 		this.GAIN_HISTORY = [:]
+		this.GAIN_HASHES = [:]
 		this.HISTORY_SIZE = 0
 		this.HISTORY_HITS = 0
 		this.NEW_SCORES = 0

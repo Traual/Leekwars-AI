@@ -199,9 +199,8 @@ class ActionGainChecks {
         if ((current.ACTION_GAIN_INPUTS ?? current) == input) return true
         var inputId = input.ACTION_GAIN_INPUT_ID
         if (inputId == null) { inputId = ++ActionGains.NEXT_INPUT_ID; input.ACTION_GAIN_INPUT_ID = inputId }
-        var byItem = this.PARTIALS[inputId]
-        if (byItem == null) { byItem = [:]; this.PARTIALS[inputId] = byItem }
-        var result = byItem[profile.ITEM]
+        var itemKey = (inputId << 16) | profile.ITEM
+        var result = this.PARTIALS[itemKey]
         if (result != null) return result
         var channelKey = (inputId << 4) | profile.CHANNELS
         var common = this.CHANNELS[channelKey]
@@ -211,7 +210,7 @@ class ActionGainChecks {
         }
         result = common < 0 ? this.sameTarget(current, input)
             : (common == 1 && ActionGains.sameItemLedger(current.EFFECTS, input.EFFECTS, profile.ITEM))
-        byItem[profile.ITEM] = result
+        this.PARTIALS[itemKey] = result
         return result
     }
 
