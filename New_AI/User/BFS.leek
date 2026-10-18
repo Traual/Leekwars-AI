@@ -535,12 +535,16 @@ class ActionSuite {
 		var availability = ActionsClass.availabilityOf(mine)
 		frame.COSTS = availability.COSTS
 		frame.USES = availability.USES
-        var availableMask = 0
-        var packedInventory = count(mine.INVENTORY) < 64
-        for (var i: var item in mine.INVENTORY) {
-            if (baseCostOf(mine, item, frame.COSTS, frame.USES, availability.STOCKS) >= 0) {
-                availableMask ^= packedInventory ? (1 << i) : mix64Memo(i + 1)
+        var availableMask = availability.MASK
+        if (availableMask == null) {
+            availableMask = 0
+            var packedInventory = count(mine.INVENTORY) < 64
+            for (var i: var item in mine.INVENTORY) {
+                if (baseCostOf(mine,item,frame.COSTS,frame.USES,availability.STOCKS) >= 0) {
+                    availableMask ^= packedInventory ? (1 << i) : mix64Memo(i + 1)
+                }
             }
+            availability.MASK = availableMask
         }
 		// Cellule/PM/capacités, items disponibles, payload de résurrection et
 		// stérilité déterminent cette liste. Stats, dégâts et gains restent courants.

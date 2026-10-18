@@ -158,23 +158,47 @@ class ActionsClass {
 		return ActionSuite.baseCostOf(stat, item, memo.COSTS, memo.USES, memo.STOCKS) >= 0
 	}
 
-	static availabilityOf(stat) {
-		var memo = stat.AVAILABILITY_MEMO
-		if (memo == null || memo.TP != stat.TP || memo.WEAPON != stat.WEAPON) {
-			memo = new ActionAvailabilityClass(stat.TP, stat.WEAPON)
-            // Le parent est immuable. Seuls les patches locaux de cooldown/usages
-            // peuvent invalider son stock ; coûts et financement restent courants.
-            var parent = stat.ITEM_STATE_PARENT
-            var previous = parent == null ? null : parent.AVAILABILITY_MEMO
-            if (previous != null) {
-                memo.STOCKS = clone(previous.STOCKS, 1)
-                for (var item: var _cd in stat.COOLDOWNS) mapRemove(memo.STOCKS, item)
-                for (var item: var _uses in stat.USES) mapRemove(memo.STOCKS, item)
+    static availabilityOf(stat) {
+        var memo = stat.AVAILABILITY_MEMO
+        if (memo != null && memo.TP == stat.TP && memo.WEAPON == stat.WEAPON) return memo
+        var parent = stat.ITEM_STATE_PARENT
+        var previous = parent == null ? null : parent.AVAILABILITY_MEMO
+        var children = previous == null ? null : previous.CHILDREN
+        var inputs = null
+        var key = null
+        if (previous != null) {
+            // L'identité du mémo parent certifie le même inventaire EFFECTIF.
+            // Le vecteur capture les valeurs, pas les maps qui seront invalidées.
+            inputs = []
+            key = addValueToBinHash(OFFSET_BASIS ^ stat.TP, stat.WEAPON)
+            for (var item: var cd in stat.COOLDOWNS) {
+                push(inputs,item); push(inputs,cd)
+                key = addValueToBinHash(addValueToBinHash(key,item),cd)
             }
-			stat.AVAILABILITY_MEMO = memo
-		}
-		return memo
-	}
+            push(inputs,null)
+            key = addValueToBinHash(key,-1)
+            for (var item: var uses in stat.USES) {
+                push(inputs,item); push(inputs,uses)
+                key = addValueToBinHash(addValueToBinHash(key,item),uses)
+            }
+            var cached = children == null ? null : children[key]
+            if (cached != null && cached.TP == stat.TP && cached.WEAPON == stat.WEAPON && cached.PATCH_INPUTS == inputs) {
+                stat.AVAILABILITY_MEMO = cached
+                return cached
+            }
+        }
+        memo = new ActionAvailabilityClass(stat.TP,stat.WEAPON)
+        if (previous != null) {
+            memo.STOCKS = clone(previous.STOCKS,1)
+            for (var item: var _cd in stat.COOLDOWNS) mapRemove(memo.STOCKS,item)
+            for (var item: var _uses in stat.USES) mapRemove(memo.STOCKS,item)
+            memo.PATCH_INPUTS = inputs
+            if (children == null) { children = [:]; previous.CHILDREN = children }
+            if (mapSize(children) < 64) children[key] = memo
+        }
+        stat.AVAILABILITY_MEMO = memo
+        return memo
+    }
 
 	/* La meilleure façon de me cibler moi-même avec l'item (cellule d'AoE la plus proche si minrange > 0). */
 	static getActionOnMe(MyCell, LaunchType, MinRange, MaxRange, item, NeedLos, State, BaseHash) {

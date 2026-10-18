@@ -578,6 +578,15 @@ cooldown/usages. Ce stock est indépendant du financement : le coût, le changem
 d'arme et les PT courants sont toujours vérifiés. Un item indisponible faute de PT
 peut donc redevenir jouable après un buff. Chaque phase géométrique retrouve ce mémo
 une fois, puis consulte directement les coûts déjà calculés dans sa boucle d'items.
+Des enfants issus du même mémo parent peuvent partager leur disponibilité si leurs
+PT, arme et vecteurs locaux de cooldown/usages sont exactement identiques. Le hash
+présélectionne ; la comparaison complète du vecteur tranche. L'identité du parent
+certifie l'inventaire effectif par induction depuis la racine unique : le stock
+agrégé seul ne suffit jamais, car deux cooldowns différents peuvent rendre le même
+item indisponible. Les vecteurs copient les scalaires, sans conserver de patch mutable.
+Le cache reste borné à 64 enfants par mémo. Le masque d'items jouables n'est publié
+qu'après lecture complète de l'inventaire ; géométrie et gains restent propres au nœud.
+
 Le mémo filtre les items avant leur géométrie. Chaque nœud conserve
 aussi les valeurs exactes des entités déjà scorées : ses candidats réutilisent les
 valeurs d'avant-cast et calculent celles d'après-cast avec les mêmes formules lorsqu'un
@@ -1057,12 +1066,12 @@ de production sont inchangés ; main n'est pas fusionnée.
 
 Sur huit fenêtres fixes de 4 contre 4, tronquées à une ronde et sans plafond dans
 la copie de mesure, les mêmes journaux de jeu et **50 889 steps** passent de
-**4 616 321 007 à 4 366 905 676 opérations natives (−5,40 %)** depuis `4d4e71d`.
+**4 616 321 007 à 4 327 291 078 opérations natives (−6,26 %)** depuis `4d4e71d`.
 Cela combine le stock d'inventaire hérité, les preuves partagées, l'historique par
 canaux et la sélection locale des maxima. L'historique évite **81 517 simulations**
 sur ces huit fenêtres sans changer les développements ni les actions.
 
-La réception compte **94 contrôles**. L'audit indépendant du cache de gains
+La réception compte **105 contrôles**. L'audit indépendant du cache de gains
 compare **26 492 gains** et **1 475 enfants**, sans écart supérieur à 10⁻⁶ : maximum
 observé **1,46 × 10⁻¹¹** sur les gains et **6,69 × 10⁻¹¹** sur les chaînes.
 Ces arrondis peuvent départager des égalités dans d'autres témoins ; aucune nouvelle
@@ -1076,6 +1085,14 @@ La recherche d'origine s'arrête au premier rang 1 quand la cellule actuelle a d
 les primitives natives, qui gardent l'ordre d'insertion ; les contributions géométriques
 répétées reprennent le cache pur de `mix64`. Ce petit ensemble retire encore **0,325 %**
 sur les dix fenêtres fixes, avec leurs journaux, scores et steps inchangés.
+
+Le partage de disponibilité entre branches sœurs économise **0,936 %** supplémentaires
+sur ces dix fenêtres à journaux, steps et développements identiques. Son oracle
+indépendant vérifie **143 380 coûts/usages** et **5 670 masques**, sans écart. Les tests
+couvrent aussi les cooldowns cachés par un stock indisponible, leur réouverture,
+les changements de PT/arme et la conservation du mémo d'un parent. Le contrôle au
+budget réel sur deux combats de quatre rondes termine sans erreur ni tour avorté ;
+ce lot tronqué ne mesure pas la force de jeu.
 
 ## Documentation et outils
 

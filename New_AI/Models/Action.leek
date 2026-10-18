@@ -139,6 +139,9 @@ class ActionOriginCatalogClass {
 }
 
 class ActionAvailabilityClass {
+    CHILDREN // par delta d'inventaire depuis CE mémo parent ; construction paresseuse
+    PATCH_INPUTS // copie plate de scalaires, jamais une map de patch mutable
+    MASK // rempli seulement après lecture complète de l'inventaire
 	STOCKS = [:] // usages jouables, indépendants des PT et de l’arme équipée
 	TP
 	WEAPON
