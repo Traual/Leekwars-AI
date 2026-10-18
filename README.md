@@ -441,7 +441,18 @@ Le mode rendement ajoute aussi les coûts courants à la clé du tri.
 
 Les coûts et usages disponibles sont mémorisés sur l'entité simulée. Le mémo est
 invalidé au clone et aux écritures de cooldown/usages ; un changement de PT ou d'arme
-le remplace également. Il filtre les items avant leur géométrie. Chaque nœud conserve
+le remplace également. Le stock brut d'usages jouables est repris depuis le parent
+immuable, en retirant les items écrits dans les patches locaux ; coût d'équipement et
+financement par les PT restent courants. Chaque phase géométrique retrouve ce mémo
+une fois avant sa boucle d'items.
+
+Deux branches sœurs peuvent partager ce mémo seulement depuis le même mémo parent,
+avec les mêmes PT, arme et vecteurs locaux de cooldown/usages. Le hash présélectionne,
+puis les vecteurs de scalaires sont comparés exactement. Deux stocks indisponibles
+ne suffisent jamais à établir cette égalité : leurs cooldowns/usages cachés peuvent
+différer. Ce cache est borné à 64 enfants par mémo. Le masque d'items disponibles
+n'est publié qu'après lecture complète de l'inventaire ; les scores et origines sont
+toujours résolus par la recherche de main. Chaque nœud conserve
 aussi les valeurs exactes des entités déjà scorées : ses candidats réutilisent les
 valeurs d'avant-cast et calculent celles d'après-cast avec les mêmes formules.
 
@@ -738,6 +749,35 @@ de 6,3 % celui de préparation des successeurs au budget de 12 millions d'opéra
 Elle visite 8 plutôt que 7 steps au petit budget, et 52 dans les deux versions au grand
 budget. Ce sont des mesures locales, sans garantie de davantage de steps sur tout combat.
 Le comparatif de 128 combats ci-dessus précède cette seconde passe.
+
+## Portages de performance sur main — 18 octobre 2026
+
+La recherche de main et sa deuxième boucle de réexamen des gains nuls/négatifs sont
+conservées. Aucun cache de gains exacts de `search-exact-deltas` n'est importé.
+Les portages concernent la disponibilité d'inventaire, la génération d'actions et
+la résolution des origines : stock hérité, partage entre branches sœurs sous preuve
+exacte, masque de disponibilité complet, accès locaux, dédoublonnage par map native,
+cache pur des contributions géométriques et arrêt de marche au rang 1. La cellule
+courante étant déjà exclue, aucune origine restante ne peut battre ce rang ; les
+égalités gardent la première origine. L'empreinte propre aux groupes de main reste
+calculée par son constructeur.
+
+Sur dix fenêtres fixes de 4v4, tronquées à une ronde et sans plafond dans la copie
+de mesure, les **mêmes journaux, 43 071 steps, 57 635 développements et 323 décisions**
+passent de **1 243 320 329 à 1 137 336 222 opérations natives : −8,52 %** par rapport
+à `13e20a4`. Aucun changement des formules, budgets de production, builds ou générateur.
+Cela mesure le coût à travail identique, pas une amélioration de winrate.
+
+Réception : **18 contrôles ciblés** d'inventaire ; **163 424 coûts/usages** et
+**39 079 résolutions d'origine** comparés aux lecteurs directs et à l'ancien balayage,
+sans écart. Sur deux témoins de quatre rondes aux budgets réels : **5 536 → 6 793 steps**,
+avec des trajectoires différentes, sans erreur ni tour avorté. Cette dernière mesure
+n'est donc pas une comparaison de coût à travail identique ni un duel de force.
+
+La suppression de la deuxième boucle et la mise en cache d'objets PlayableAction ont
+été essayées séparément. La première change la politique de recherche ; les deux
+petits témoins ne suffisent pas à justifier son adoption. La seconde n'économise que
+0,033 % supplémentaires sur ces témoins : elle n'est pas conservée.
 
 ## Documentation et outils
 

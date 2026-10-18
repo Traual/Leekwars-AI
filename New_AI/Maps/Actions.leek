@@ -65,7 +65,7 @@ class ActionsClass {
 	// XOR de contributions non linéaires : même ensemble de (id, distance), même hash,
 	// indépendamment de l'ordre d'insertion (local, zone, laser, invocation virtuelle).
 	static targetContribution(id, distance) {
-		return mix64(((id + 1) << MAX_AOE_DIST_BINARY) | distance)
+		return mix64Memo(((id + 1) << MAX_AOE_DIST_BINARY) | distance)
 	}
 
 	static hashTargets(targets, item = null, State = null) {
@@ -128,9 +128,13 @@ class ActionsClass {
 	static getEveryActionsOnMe(MyCell, Inventory, State, BaseHash) {
 		var prefix = addValueToBinHash(OFFSET_BASIS ^ BaseHash, MyCell)
 		var _final = []
+		var availability = availabilityOf(State[Me])
+		var costs = availability.COSTS
 		for (var item in Inventory) {
 			var Infos = ITEMINFO[item]
-			if (!canUseItem(State[Me], item, Infos)) continue
+			var cost = costs[item]
+			if (cost == null) cost = ActionSuite.baseCostOf(State[Me], item, costs, availability.USES, availability.STOCKS)
+			if (cost < 0) continue
 			var key = addValueToBinHash(prefix, item)
 			if (!(key in ACTIONS_ON_ME_CACHE)) ACTIONS_ON_ME_CACHE[key] = getActionOnMe(MyCell, Infos.LAUNCHTYPE, Infos.MINRANGE, Infos.MAXRANGE, item, Infos.NEEDLOS, State, BaseHash)
 			var Act = ACTIONS_ON_ME_CACHE[key]
@@ -143,17 +147,50 @@ class ActionsClass {
 	// immédiatement visible après un gain de PT ou un retrait de cooldown.
 	static canUseItem(stat, item, info) {
 		var memo = availabilityOf(stat)
-		return ActionSuite.baseCostOf(stat, item, memo.COSTS, memo.USES) >= 0
+		return ActionSuite.baseCostOf(stat, item, memo.COSTS, memo.USES, memo.STOCKS) >= 0
 	}
 
 	static availabilityOf(stat) {
-		var memo = stat.AVAILABILITY_MEMO
-		if (memo == null || memo.TP != stat.TP || memo.WEAPON != stat.WEAPON) {
-			memo = new ActionAvailabilityClass(stat.TP, stat.WEAPON)
-			stat.AVAILABILITY_MEMO = memo
-		}
-		return memo
-	}
+        var memo = stat.AVAILABILITY_MEMO
+        if (memo != null && memo.TP == stat.TP && memo.WEAPON == stat.WEAPON) return memo
+        var parent = stat.ITEM_STATE_PARENT
+        var previous = parent == null ? null : parent.AVAILABILITY_MEMO
+        var children = previous == null ? null : previous.CHILDREN
+        var inputs = null
+        var key = null
+        if (previous != null) {
+            // L'identité du mémo parent certifie le même inventaire EFFECTIF.
+            // Le vecteur capture les valeurs, pas les maps qui seront invalidées.
+            inputs = []
+            key = addValueToBinHash(OFFSET_BASIS ^ stat.TP, stat.WEAPON)
+            for (var item: var cd in stat.COOLDOWNS) {
+                push(inputs,item); push(inputs,cd)
+                key = addValueToBinHash(addValueToBinHash(key,item),cd)
+            }
+            push(inputs,null)
+            key = addValueToBinHash(key,-1)
+            for (var item: var uses in stat.USES) {
+                push(inputs,item); push(inputs,uses)
+                key = addValueToBinHash(addValueToBinHash(key,item),uses)
+            }
+            var cached = children == null ? null : children[key]
+            if (cached != null && cached.TP == stat.TP && cached.WEAPON == stat.WEAPON && cached.PATCH_INPUTS == inputs) {
+                stat.AVAILABILITY_MEMO = cached
+                return cached
+            }
+        }
+        memo = new ActionAvailabilityClass(stat.TP,stat.WEAPON)
+        if (previous != null) {
+            memo.STOCKS = clone(previous.STOCKS,1)
+            for (var item: var _cd in stat.COOLDOWNS) mapRemove(memo.STOCKS,item)
+            for (var item: var _uses in stat.USES) mapRemove(memo.STOCKS,item)
+            memo.PATCH_INPUTS = inputs
+            if (children == null) { children = [:]; previous.CHILDREN = children }
+            if (mapSize(children) < 64) children[key] = memo
+        }
+        stat.AVAILABILITY_MEMO = memo
+        return memo
+    }
 
 	/* La meilleure façon de me cibler moi-même avec l'item (cellule d'AoE la plus proche si minrange > 0). */
 	static getActionOnMe(MyCell, LaunchType, MinRange, MaxRange, item, NeedLos, State, BaseHash) {
@@ -214,9 +251,13 @@ class ActionsClass {
 		// set des vivants, que BaseHash pinne (summon/mort en branche -> nouvelle clé).
 		var livingSummons = StateClass.countLivingSummons(State, State[Me].SIDE)
 		var _final = []
+		var availability = availabilityOf(State[Me])
+		var costs = availability.COSTS
 		for (var item in Inventory) {
 			var Infos = ITEMINFO[item]
-			if (!canUseItem(State[Me], item, Infos)) continue
+			var cost = costs[item]
+			if (cost == null) cost = ActionSuite.baseCostOf(State[Me], item, costs, availability.USES, availability.STOCKS)
+			if (cost < 0) continue
 			// Bulbe : une place libre suffit. Résurrection : action GÉOMÉTRIQUE pure, TOUJOURS
 			// générée — le filtre "existe-t-il un candidat ?" vit dans le BFS (resurrectIdOf) :
 			// ce cache est partagé par BaseHash, qui n'encode PAS un summon virtuel MORT
@@ -350,10 +391,14 @@ class ActionsClass {
 		var domain = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(mine)
 		var sorted = null
 		var result = []
+		var availability = availabilityOf(State[Me])
+		var costs = availability.COSTS
 		for (var item in Inventory) {
 			if (getOperations() > OPS_DEADLINE) break // arrêter entre deux extensions, jamais cacher un domaine partiel
 			var info = ITEMINFO[item]
-			if (!canUseItem(mine, item, info)) continue
+			var cost = costs[item]
+			if (cost == null) cost = ActionSuite.baseCostOf(State[Me], item, costs, availability.USES, availability.STOCKS)
+			if (cost < 0) continue
 			var key = addValueToBinHash(OFFSET_BASIS ^ BaseHash, item)
 			var catalog = ENTITY_ACTIONS_CACHE[key]
 			if (catalog == null) {
@@ -787,9 +832,13 @@ class ActionsClass {
 	static getEveryActionsInVoid(MyCell, Inventory, State, LeekCells, BaseHash) {
 		var TmpHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), MyCell)
 		var _final = []
+		var availability = availabilityOf(State[Me])
+		var costs = availability.COSTS
 		for (var item in Inventory) {
 			var Infos = ITEMINFO[item]
-			if (!canUseItem(State[Me], item, Infos)) continue
+			var cost = costs[item]
+			if (cost == null) cost = ActionSuite.baseCostOf(State[Me], item, costs, availability.USES, availability.STOCKS)
+			if (cost < 0) continue
 			var key = addValueToBinHash(TmpHash, item)
 			if (!(key in ACTIONS_ON_VOID_CACHE)) ACTIONS_ON_VOID_CACHE[key] = getActionInVoid(MyCell, Infos.LAUNCHTYPE, Infos.MINRANGE, Infos.MAXRANGE, LeekCells, item, State, BaseHash)
 			var Act = ACTIONS_ON_VOID_CACHE[key]
