@@ -538,7 +538,7 @@ class ActionSuite {
         var availableMask = 0
         var packedInventory = count(mine.INVENTORY) < 64
         for (var i: var item in mine.INVENTORY) {
-            if (baseCostOf(mine, item, frame.COSTS, frame.USES) >= 0) {
+            if (baseCostOf(mine, item, frame.COSTS, frame.USES, availability.STOCKS) >= 0) {
                 availableMask ^= packedInventory ? (1 << i) : mix64Memo(i + 1)
             }
         }
@@ -551,7 +551,7 @@ class ActionSuite {
 			var groups = ActionsClass.getEveryActionsInAState(State, Walk, mine.CELL, BaseHash)
 			for (var group in groups) {
 				if (group.Item == CHIP_RESURRECTION && resurrectionTargetId == null) continue
-				if (baseCostOf(mine, group.Item, frame.COSTS, frame.USES) < 0) continue
+				if (baseCostOf(mine, group.Item, frame.COSTS, frame.USES, availability.STOCKS) < 0) continue
 				var key = groupGainKey(group, resurrectionTargetId)
 				if (!(key in frame.GROUPS) || group.IS_LOCAL) frame.GROUPS[key] = group
 			}
@@ -564,6 +564,13 @@ class ActionSuite {
 		var table = ActionGains.tableOf(Parent)
 		if (count(set.KEYS) >= ScoringClass.CHARACTERISTIC_MIN_ACTIONS) ScoringClass.CHARACTERISTIC_SHARING = true
 		var checks = new ActionGainChecks(mine, BaseHash)
+		var gainValues = table.VALUES
+		var sharedGains = SearchCache.EXACT_GAINS
+		var groupValues = frame.GROUPS
+		var costs = frame.COSTS
+		var uses = frame.USES
+		var originDomains = frame.ORIGIN_DOMAINS
+		var walkFingerprint = Parent.ME_WALK_FINGERPRINT
 		var Workspace = null
 		var keys = set.KEYS
 		var funding = null
@@ -575,17 +582,18 @@ class ActionSuite {
 		var playableKeys = []
 		for (var key in keys) {
 			if (getOperations() > OPS_DEADLINE) { frame.COMPLETE = false; break }
-			var playable = framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
+			var group = groupValues[key]
+			var playable = resolveGroup(group, mine, Walk, costs[group.Item], uses[group.Item], resurrectionTargetId, BaseHash, walkFingerprint, originDomains)
 			if (playable == null) continue
 			push(playableKeys, key)
-			var memo = table.find(key)
+			var memo = gainValues[key]
 			var valid = ActionGains.matches(memo, State, playable, Walk, checks)
 			if (!valid) {
-				var shared = SearchCache.EXACT_GAINS[key]
+				var shared = sharedGains[key]
 				if (shared != memo && ActionGains.matches(shared, State, playable, Walk, checks)) {
 					memo = shared
 					valid = true
-					table.VALUES[key] = shared // partager l'objet immuable, pas sa table
+					gainValues[key] = shared // partager l'objet immuable, pas sa table
 					SearchCache.EXACT_HITS++
 				}
 				if (!valid) {
@@ -593,8 +601,8 @@ class ActionSuite {
 					if (historical != null) {
 						memo = historical
 						valid = true
-						table.VALUES[key] = historical
-						SearchCache.EXACT_GAINS[key] = historical // prochain essai : accès rapide au contexte retrouvé
+						gainValues[key] = historical
+						sharedGains[key] = historical // prochain essai : accès rapide au contexte retrouvé
 						SearchCache.EXACT_HITS++
 						SearchCache.HISTORY_HITS++
 					}
@@ -612,8 +620,8 @@ class ActionSuite {
 				fresh = actual
 				var updated = ActionGains.capture(actual, State, BaseHash, Walk, checks)
 				memo = updated
-				table.VALUES[key] = updated
-				SearchCache.EXACT_GAINS[key] = updated
+				gainValues[key] = updated
+				sharedGains[key] = updated
 				ActionGainHistory.store(SearchCache, key, updated, State)
 				gain = actual.GAIN
 				SearchCache.NEW_SCORES++
@@ -769,7 +777,8 @@ class ActionSuite {
 		var originDomains = new ActionOriginDomainsClass(BaseHash, walkFingerprint)
 		for (var group in groups) {
 			var item = group.Item
-			var cost = baseCostOf(mine, item, baseCosts, usesByItem)
+			var cost = baseCosts[item]
+			if (cost == null) cost = baseCostOf(mine, item, baseCosts, usesByItem, availability.STOCKS)
 			if (cost < 0 || (item == CHIP_RESURRECTION && ResurrectId == null)) continue
 			var playable = resolveGroup(group, mine, Walk, cost, usesByItem[item], ResurrectId, BaseHash, walkFingerprint, originDomains)
 			if (playable == null) continue
@@ -785,22 +794,28 @@ class ActionSuite {
 		return result
 	}
 
-	static baseCostOf(mine, item, costs, usesByItem) {
-		var cost = costs[item]
-		if (cost != null) return cost
-		cost = -1
-		var info = ITEMINFO[item]
-		if (StateClass.cooldownOf(mine, item) <= 0) {
-			var uses = StateClass.usesOf(mine, item)
-			if (uses < info.MAX_USES) {
-				usesByItem[item] = uses
-				cost = info.COST + ((info.IS_WEAPON && mine.WEAPON != item) ? 1 : 0)
-				if (cost > mine.TP) cost = -1
-			}
-		}
-		costs[item] = cost
-		return cost
-	}
+	static baseCostOf(mine, item, costs, usesByItem, stocks = null) {
+        var cost = costs[item]
+        if (cost != null) return cost
+        var info = ITEMINFO[item]
+        var stock = stocks == null ? null : stocks[item]
+        if (stock == null) {
+            stock = -1
+            if (StateClass.cooldownOf(mine, item) <= 0) {
+                var uses = StateClass.usesOf(mine, item)
+                if (uses < info.MAX_USES) stock = uses
+            }
+            if (stocks != null) stocks[item] = stock
+        }
+        cost = -1
+        if (stock >= 0) {
+            usesByItem[item] = stock
+            cost = info.COST + ((info.IS_WEAPON && mine.WEAPON != item) ? 1 : 0)
+            if (cost > mine.TP) cost = -1
+        }
+        costs[item] = cost
+        return cost
+    }
 
 	/* Pas de copie de la map d'origines. Le cas courant (je peux déjà lancer ici)
 	 * se résout par une seule appartenance ; sinon on cherche le déplacement le

@@ -203,12 +203,11 @@ class ActionGainChecks {
         if (byItem == null) { byItem = [:]; this.PARTIALS[inputId] = byItem }
         var result = byItem[profile.ITEM]
         if (result != null) return result
-        var channels = this.CHANNELS[inputId]
-        if (channels == null) { channels = [:]; this.CHANNELS[inputId] = channels }
-        var common = channels[profile.CHANNELS]
+        var channelKey = (inputId << 4) | profile.CHANNELS
+        var common = this.CHANNELS[channelKey]
         if (common == null) {
             common = ActionGains.affectedChannelStatus(current, input, profile.CHANNELS)
-            channels[profile.CHANNELS] = common
+            this.CHANNELS[channelKey] = common
         }
         result = common < 0 ? this.sameTarget(current, input)
             : (common == 1 && ActionGains.sameItemLedger(current.EFFECTS, input.EFFECTS, profile.ITEM))
@@ -470,7 +469,8 @@ class ActionGains {
                 && (!(caster.SPECIAL_WEAPON & SPW_UNSTABLE_DESTROYER)
                     || (!criticalHealCanTrigger(caster) && !criticalHealCanTrigger(before)))
             if (partialSelf) {
-                if (!sameCasterInputs(caster, before, memo.PROFILE.READS)) return false
+                if (!(checks == null ? sameCasterInputs(caster, before, memo.PROFILE.READS)
+                    : checks.sameCaster(before, memo.PROFILE.READS))) return false
                 if (!(checks == null ? sameAffectedValues(caster, before, memo.PROFILE)
                     : checks.sameAffected(caster, before, memo.PROFILE))) return false
             } else if (!(checks == null ? sameTargetInputs(caster, before) : checks.sameTarget(caster, before))) return false

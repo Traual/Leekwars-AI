@@ -565,7 +565,11 @@ les gains, usages et actions concrètes restent actualisés dans le nœud couran
 
 Les coûts et usages disponibles sont mémorisés sur l'entité simulée. Le mémo est
 invalidé au clone et aux écritures de cooldown/usages ; un changement de PT ou d'arme
-le remplace également. Il filtre les items avant leur géométrie. Chaque nœud conserve
+le remplace également. Un nouveau mémo peut copier les usages jouables déjà lus dans
+le parent immuable, puis retirer les items présents dans les patches locaux de
+cooldown/usages. Ce stock est indépendant du financement : le coût, le changement
+d'arme et les PT courants sont toujours vérifiés. Un item indisponible faute de PT
+peut donc redevenir jouable après un buff. Le mémo filtre les items avant leur géométrie. Chaque nœud conserve
 aussi les valeurs exactes des entités déjà scorées : ses candidats réutilisent les
 valeurs d'avant-cast et calculent celles d'après-cast avec les mêmes formules lorsqu'un
 delta doit être recalculé. Un nœud construit par addition peut ne pas avoir ces valeurs :

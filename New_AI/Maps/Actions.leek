@@ -151,13 +151,22 @@ class ActionsClass {
 	// immédiatement visible après un gain de PT ou un retrait de cooldown.
 	static canUseItem(stat, item, info) {
 		var memo = availabilityOf(stat)
-		return ActionSuite.baseCostOf(stat, item, memo.COSTS, memo.USES) >= 0
+		return ActionSuite.baseCostOf(stat, item, memo.COSTS, memo.USES, memo.STOCKS) >= 0
 	}
 
 	static availabilityOf(stat) {
 		var memo = stat.AVAILABILITY_MEMO
 		if (memo == null || memo.TP != stat.TP || memo.WEAPON != stat.WEAPON) {
 			memo = new ActionAvailabilityClass(stat.TP, stat.WEAPON)
+            // Le parent est immuable. Seuls les patches locaux de cooldown/usages
+            // peuvent invalider son stock ; coûts et financement restent courants.
+            var parent = stat.ITEM_STATE_PARENT
+            var previous = parent == null ? null : parent.AVAILABILITY_MEMO
+            if (previous != null) {
+                memo.STOCKS = clone(previous.STOCKS, 1)
+                for (var item: var _cd in stat.COOLDOWNS) mapRemove(memo.STOCKS, item)
+                for (var item: var _uses in stat.USES) mapRemove(memo.STOCKS, item)
+            }
 			stat.AVAILABILITY_MEMO = memo
 		}
 		return memo

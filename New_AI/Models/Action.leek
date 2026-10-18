@@ -137,6 +137,7 @@ class ActionOriginCatalogClass {
 }
 
 class ActionAvailabilityClass {
+	STOCKS = [:] // usages jouables, indépendants des PT et de l’arme équipée
 	TP
 	WEAPON
 	COSTS
