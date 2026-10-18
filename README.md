@@ -783,6 +783,30 @@ La suppression de la deuxième boucle et la mise en cache d'objets PlayableActio
 petits témoins ne suffisent pas à justifier son adoption. La seconde n'économise que
 0,033 % supplémentaires sur ces témoins : elle n'est pas conservée.
 
+## Essai du beam search — 19 octobre 2026
+
+Le candidat `search-beam` **41074cd** (largeur 3, sans deuxième boucle) a joué
+**100 combats 4v4 complets** contre main **1cbeb61**, qui garde sa deuxième boucle.
+Les 50 scénarios sont rejoués dans les deux orientations : mêmes cartes et builds,
+budgets réels, limite de 64 tours, sans instrumentation des IA. La graine de campagne
+est `2026101901`. Les sources sont figées avant le premier combat, sans ajustement
+ni arrêt sur les résultats.
+
+| Résultat du beam | Valeur |
+| --- | ---: |
+| Victoires / nuls / défaites | 40 / 24 / 36 |
+| Points, un nul valant 0,5 | 52 / 100 |
+| Intervalle à 95 % des points, bootstrap des 50 paires | 46,5–57,5 % |
+| Paires favorables / équilibrées / défavorables | 8 / 36 / 6 |
+| Erreurs LeekScript / coupures moteur, deux camps réunis | 0 / 0 |
+
+Les neuf contrôles ciblés vérifient notamment la ramification à deux profondeurs
+et les scores contre un recalcul complet des états ; deux courts témoins aux budgets
+réels précèdent le gel. Le beam fonctionne, mais ces 100 combats ne démontrent pas
+sa supériorité sur main. Les trajectoires diffèrent : les totaux d'opérations et de
+steps de ce duel ne mesurent pas une économie à déroulement identique. Main reste
+inchangée et cette branche demeure expérimentale.
+
 ## Documentation et outils
 
 Ce README est la référence de fonctionnement actuelle. Les anciens rapports
