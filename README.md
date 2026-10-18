@@ -1057,17 +1057,25 @@ de production sont inchangés ; main n'est pas fusionnée.
 
 Sur huit fenêtres fixes de 4 contre 4, tronquées à une ronde et sans plafond dans
 la copie de mesure, les mêmes journaux de jeu et **50 889 steps** passent de
-**4 616 321 007 à 4 380 616 291 opérations natives (−5,11 %)** depuis `4d4e71d`.
+**4 616 321 007 à 4 366 905 676 opérations natives (−5,40 %)** depuis `4d4e71d`.
 Cela combine le stock d'inventaire hérité, les preuves partagées, l'historique par
 canaux et la sélection locale des maxima. L'historique évite **81 517 simulations**
 sur ces huit fenêtres sans changer les développements ni les actions.
 
-La réception compte **94 contrôles**. L'audit indépendant de la combinaison finale
+La réception compte **94 contrôles**. L'audit indépendant du cache de gains
 compare **26 492 gains** et **1 475 enfants**, sans écart supérieur à 10⁻⁶ : maximum
 observé **1,46 × 10⁻¹¹** sur les gains et **6,69 × 10⁻¹¹** sur les chaînes.
 Ces arrondis peuvent départager des égalités dans d'autres témoins ; aucune nouvelle
 approximation de score n'est ajoutée. Les formules et budgets de production restent
 inchangés. Le triangulaire de force est réservé à la fin de la boucle d'optimisation.
+
+La recherche d'origine s'arrête au premier rang 1 quand la cellule actuelle a déjà
+été exclue : aucune marche restante ne peut coûter moins. Un audit compare
+**405 856 résolutions** à l'ancien balayage exhaustif sans son cache : aucun écart,
+**9 322 arrêts anticipés**. Les tableaux de clés et le dédoublonnage de racine utilisent
+les primitives natives, qui gardent l'ordre d'insertion ; les contributions géométriques
+répétées reprennent le cache pur de `mix64`. Ce petit ensemble retire encore **0,325 %**
+sur les dix fenêtres fixes, avec leurs journaux, scores et steps inchangés.
 
 ## Documentation et outils
 

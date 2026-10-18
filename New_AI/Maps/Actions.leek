@@ -65,7 +65,7 @@ class ActionsClass {
 	// XOR de contributions non linéaires : même ensemble de (id, distance), même hash,
 	// indépendamment de l'ordre d'insertion (local, zone, laser, invocation virtuelle).
 	static targetContribution(id, distance) {
-		return mix64(((id + 1) << MAX_AOE_DIST_BINARY) | distance)
+		return mix64Memo(((id + 1) << MAX_AOE_DIST_BINARY) | distance)
 	}
 
 	static hashTargets(targets, item = null, State = null) {

@@ -781,8 +781,7 @@ class ActionSuite {
 	/* Filtrage DYNAMIQUE : disponibilité, équipement et TP ne sont jamais figés
 	 * dans la géométrie. Les doublons locaux/zone sont retirés AVANT le scoring. */
 	static getBaseActions(State, BaseHash, ResurrectId, Walk, localOnly = false, othersOnly = false) {
-		var result = []
-		var slots = [:]
+		var result = [:]
 		var mine = State[Me]
 		var groups = ActionsClass.getEveryActionsInAState(State, Walk, mine.CELL, BaseHash, localOnly, othersOnly)
 		var walkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(mine)
@@ -797,16 +796,10 @@ class ActionSuite {
 			if (cost < 0 || (item == CHIP_RESURRECTION && ResurrectId == null)) continue
 			var playable = resolveGroup(group, mine, Walk, cost, usesByItem[item], ResurrectId, BaseHash, walkFingerprint, originDomains)
 			if (playable == null) continue
-			var slot = slots[group.SIGNATURE]
-			if (slot == null) {
-				slots[group.SIGNATURE] = count(result)
-				push(result, playable)
-			} else {
-				var old = result[slot]
-				if (playable.ACTION.From == mine.CELL || playable.COST < old.COST) result[slot] = playable
-			}
+            var old = result[group.SIGNATURE]
+            if (old == null || playable.ACTION.From == mine.CELL || playable.COST < old.COST) result[group.SIGNATURE] = playable
 		}
-		return result
+		return mapValues(result)
 	}
 
 	static baseCostOf(mine, item, costs, usesByItem, stocks = null) {
@@ -888,6 +881,8 @@ class ActionSuite {
 					from = origin
 					to = aim
 					cost = baseCost + extra
+                    // Ma cellule a déjà été exclue : aucune marche restante ne vaut moins de 1.
+                    if (rank == 1) break
 				}
                 if (choices != null) {
                     chosenOrigin = from == null ? null : new ActionOriginChoiceClass(from, to, cost - baseCost)

@@ -13,7 +13,7 @@ class ActionGainContexts {
     constructor(memo) {
         this.CHANNELS = memo.PROFILE.CHANNELS
         this.SELF = memo.SELF
-        for (var id: var _before in memo.TARGETS) push(this.TARGET_IDS, id)
+        this.TARGET_IDS = mapKeys(memo.TARGETS)
     }
 }
 

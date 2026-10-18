@@ -231,10 +231,7 @@ class ActionGroupSetClass {
 	FILTER_ORIGINS = false
 	constructor(groups) {
 		this.GROUPS = groups
-		this.KEYS = []
-		for (var key: var _group in groups) {
-			push(this.KEYS, key)
-		}
+		this.KEYS = mapKeys(groups)
 	}
 }
 
