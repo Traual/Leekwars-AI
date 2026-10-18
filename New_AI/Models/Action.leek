@@ -213,18 +213,6 @@ class ActionPriorityClass {
 	}
 }
 
-// Même ordre relatif que le tri complet, pour les gains à reconsidérer malgré
-// leur ancienne estimation nulle/négative. Ce filtre ne dépend pas du parent.
-class ActionSearchOrderClass {
-	ENTRIES
-	RECHECK
-	constructor(entries) {
-		this.ENTRIES = entries
-		this.RECHECK = []
-		for (var hint in entries) if (hint.GAIN <= BFS_DELTA_EPSILON) push(this.RECHECK, hint)
-	}
-}
-
 class ActionSearchFrameClass {
 	GROUPS
 	FRESH
@@ -232,8 +220,6 @@ class ActionSearchFrameClass {
 	COSTS
 	USES
 	ORDER
-	RECHECK_ORDER
-	BEST_FRESH
 	constructor() {
 		this.GROUPS = [:]
 		this.FRESH = [:]

@@ -385,15 +385,18 @@ Les **coûts de consommation des cooldowns** se règlent dans `Scoring/Cooldowns
 
 Les pressions sont calculées par camp dans le contexte de racine et mises en cache avec `ScoringStateConstants`. Un adversaire vivant équipé de poison ou d'une des six entraves apporte **0,25 / 0,5 / 1 / 1,5** selon sa magie de **base ≥ 100 / 200 / 400 / 800**. Les deux familles sont indépendantes : un pur empoisonneur ne compte pas dans les entraves. Un hybride contribue aux deux, les alliés sont exclus, et tous les autres camps comptent en BR. Les seuils se règlent séparément ; aucun inventaire ni registre d'effets n'est parcouru par nœud pour calculer ces pressions.
 
-Un filtre ciblé empêche **Saut + Régénération sans soin** de se qualifier uniquement grâce au buff du Saut. Il examine le soin possible après le déplacement, avec masques, PV manquants, sagesse, critique et `UNHEALABLE`. Le soin propre du passif critique d'Unstable Destroyer reste autorisé lorsqu'il est utile. Une puce sous son prix de cooldown reste différée et peut être réexaminée si une action précédente crée un besoin ou augmente son gain ; elle n'est pas retenue telle quelle. Les valeurs d'entité et d'importance gardent leurs coefficients habituels.
+Un filtre ciblé empêche **Saut + Régénération sans soin** de se qualifier uniquement grâce au buff du Saut. Il examine le soin possible après le déplacement, avec masques, PV manquants, sagesse, critique et `UNHEALABLE`. Le soin propre du passif critique d'Unstable Destroyer reste autorisé lorsqu'il est utile. Une puce sous son prix de cooldown reste différée. Sur cette branche expérimentale, une ancienne estimation non positive n'est pas réexaminée dans les successeurs ; la prochaine racine réelle rescore ses actions. Les valeurs d'entité et d'importance gardent leurs coefficients habituels.
 
 ## Recherche de suites d'actions
 
-Malgré le nom `BFS.leek`, l'algorithme actuel ne développe pas exhaustivement
-toutes les combinaisons. Il score les actions de racine, ouvre un petit nombre de
-débuts de suite, puis choisit un successeur glouton pour chacun. Les autres débuts
-peuvent être développés ensuite si le budget le permet. L'état « ne rien jouer »
-et les nœuds intermédiaires font aussi partie des candidats terminaux.
+La branche expérimentale **`search-beam`** utilise un beam search de largeur **3**.
+Après le scoring de racine, elle conserve les trois meilleurs états. À chaque profondeur,
+chacun propose jusqu'à trois successeurs réellement jouables et de gain positif ; les
+trois meilleurs états de cette nouvelle vague continuent. Le classement entre parents
+compare le score absolu des états, pas seulement le gain de la dernière action.
+La recherche ne développe pas exhaustivement toutes les combinaisons. L'état « ne rien
+jouer », toutes les racines positives et tous les successeurs proposés restent des
+candidats terminaux, même s'ils ne continuent pas dans le beam.
 
 La **recherche d'actions** regroupe les couples de lancement `From → To` par item,
 cibles réellement concernées et distances dans la zone. Chaque groupe conserve ses
@@ -477,12 +480,14 @@ Les nœuds et validations de danger ne survivent jamais à une recherche. La rac
 resimule tous ses candidats ; dans les branches, les gains conservés restent des
 indications gloutonnes, jamais des bornes ni des scores exacts pour un autre état.
 
-L'expansion partage son budget entre **au plus quatre débuts**, en privilégiant des
-items distincts. La largeur diminue lorsque le budget disponible ne finance pas
-1 500 000 opérations par branche. Chaque branche avance ensuite de manière gloutonne.
-Tous les nœuds intermédiaires restent des candidats où arrêter le tour ; les chaînes
-prometteuses sont évaluées avec danger avant d'ouvrir les suivantes lorsque le budget
-le permet.
+La largeur **3** reste la même à chaque profondeur ; il n'y a plus de déroulé séparé
+des autres racines ni de deuxième boucle sur les estimations nulles/négatives. Les
+estimations positives ordonnent les essais, avec une coupure approximative lorsque
+trois successeurs actuels dépassent les estimations restantes. Chaque successeur
+proposé a été simulé et rescorré dans son parent, déplacements réels inclus. Une
+inversion, un kill ou une invocation modifie donc le plateau de sa branche normalement.
+La validation finale du danger, les réserves et le plan déjà validé restent identiques
+à main. Les feuilles sans continuation peuvent aussi être validées pendant l'expansion.
 
 ## Budget d'opérations
 
@@ -494,8 +499,7 @@ ci-dessous ne limite pas tout le coût de la décision à 20 % du budget du tour
 | --- | ---: | --- |
 | `BFS_DECISION_BUDGET_RATIO` | 0,2 | Part du budget restant après préparation consacrée à l'expansion. |
 | `BFS_DECISION_MIN_EXPANSION` | 250 000 | Minimum demandé pour l'expansion, toujours borné par le plafond restant. |
-| `BFS_BEAM_WIDTH` | 4 | Nombre maximal de débuts développés en première vague. |
-| `BFS_BEAM_OPS_PER_BRANCH` | 1 500 000 | Réduit cette largeur quand le budget disponible est faible. |
+| `BFS_BEAM_WIDTH` | 3 | Parents conservés à chaque profondeur et successeurs proposés par parent. |
 | `OPS_RESERVE_TURN` | 500 000 | Marge retirée du plafond de planification du joueur. |
 | `OPS_RESERVE_PLACEMENT` | 300 000 | Marge conservée pour le placement réel. |
 | `OPS_RESERVE_PER_BULB` | 1 000 000 | Part réservée à chaque bulbe du propriétaire qui doit encore jouer. |
@@ -752,7 +756,7 @@ Le comparatif de 128 combats ci-dessus précède cette seconde passe.
 
 ## Portages de performance sur main — 18 octobre 2026
 
-La recherche de main et sa deuxième boucle de réexamen des gains nuls/négatifs sont
+La recherche de main et sa deuxième boucle de réexamen des gains nuls/négatifs étaient
 conservées. Aucun cache de gains exacts de `search-exact-deltas` n'est importé.
 Les portages concernent la disponibilité d'inventaire, la génération d'actions et
 la résolution des origines : stock hérité, partage entre branches sœurs sous preuve

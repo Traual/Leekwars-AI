@@ -1,12 +1,12 @@
 /*
- * Sélecteur d'action par recherche arborescente gloutonne, en DEUX temps.
+ * Sélecteur d'action par beam search, en DEUX temps.
  *
  * 1. EXPANSION, sur les scores BRUTS (aucun danger positionnel de Me) :
  *  - Profondeur 1 : chaque action jouable est clonée + appliquée + scorée, puis triée
  *    par PRIORITÉ décroissante (BFS_SCORE_PER_ACTION_COST : rendement par TP, ou Δscore).
- *  - Une petite première vague répartit l'expansion entre des items distincts ; les
- *    autres débuts sont ensuite déroulés récursivement (unroll) s'il reste du budget.
- *    Chaque branche suit la plus haute priorité, avec une coupure gloutonne mémorisée.
+ *  - À chaque profondeur, chaque parent propose jusqu'à BFS_BEAM_WIDTH successeurs
+ *    jouables et positifs. Seuls les BFS_BEAM_WIDTH meilleurs états continuent.
+ *    Les priorités cachées guident les essais ; chaque état retenu a un score courant.
  *  - Les gains de groupes sont partagés par signature de cibles pendant le tour,
  *    avec invalidation des dépendances après chaque vrai cast.
  *    Le catalogue géométrique est lié au board et à l'item ; son domaine grandit avec
@@ -60,10 +60,8 @@ global TERMINAL_EVAL_MARGIN = 100000
 // pris en compte, mais par la chaine elle-meme, qui s'arrete quand les TP manquent.
 global BFS_SCORE_PER_ACTION_COST = false
 
-// Explorer plusieurs débuts en parallèle avant de consacrer le reste aux autres.
-// Chaque branche reste gloutonne ; la largeur règle seulement le partage du budget.
-global BFS_BEAM_WIDTH = 4
-global BFS_BEAM_OPS_PER_BRANCH = 1500000
+// Largeur maintenue à TOUTES les profondeurs, pour les parents et leurs successeurs.
+global BFS_BEAM_WIDTH = 3
 global BFS_DECISION_BUDGET_RATIO = 0.2
 global BFS_DECISION_MIN_EXPANSION = 250000
 
@@ -101,7 +99,7 @@ class ActionSuite {
 		var rootCombinedHfp = 0
 		for (var s: var h in RootHfp) rootCombinedHfp ^= h
 		// Fast-path racine : sous le coût du moindre item jouable du tour (même garde que
-		// findBestNextNode), aucune action de base n'existe — rien à chercher. Le tour se termine
+		// findBestNextNodes), aucune action de base n'existe — rien à chercher. Le tour se termine
 		// donc ici, et le placement suit : on lui prépare ses structures avant de rendre la main.
 		if (MyStats.TP < MINIMUM_COST_ITEM) {
 			prewarmIfAffordable(State, BaseHash, RootContext, rootCombinedHfp, RootHfp[MySide])
@@ -171,7 +169,7 @@ class ActionSuite {
 		OPS_DEADLINE = min(OPS_DEADLINE, expansionStart + allowance)
 		debug("[BFS] expansion budget: " + min(remaining, allowance) + " operations (" + remaining + " remaining this turn)")
 
-		// Déroulé de chaque action de base. TOUT nœud visité est une suite où l'on peut
+		// TOUT nœud retenu est une suite où l'on peut
 		// s'arrêter : le plancher, chaque action racine retenue, et chaque nœud intermédiaire
 		// du déroulé — pas seulement le dernier de chaque chaîne.
 		var candidates = [noPlay]
@@ -183,45 +181,22 @@ class ActionSuite {
 			baseNode.SCORE = entry.SCORE
 			push(candidates, baseNode)
 		}
-		var selected = [:]
-		var seenItems = [:]
-		var frontier = []
-		var beamWidth = min(BFS_BEAM_WIDTH, max(1, floor((OPS_DEADLINE - getOperations()) / BFS_BEAM_OPS_PER_BRANCH)))
-		// La première vague privilégie des items distincts, pour ne pas dépenser
-		// tout le budget sur huit variantes géométriques d'un même buff de zone.
-		for (var i: var entry in rootEntries) {
-			if (count(frontier) >= beamWidth) break
-			var item = entry.PLAYABLE.ACTION.Item
-			if (entry.DEFERRED || item in seenItems) continue
-			seenItems[item] = true
-			selected[i] = true
-			push(frontier, entry.NODE)
-		}
-		for (var i: var entry in rootEntries) {
-			if (count(frontier) >= beamWidth) break
-			if (entry.DEFERRED || i in selected) continue
-			selected[i] = true
-			push(frontier, entry.NODE)
-		}
+		var roots = []
+		for (var entry in rootEntries) if (!entry.DEFERRED) push(roots, entry.NODE)
+		var frontier = selectBeam(roots)
 		while (count(frontier) > 0 && getOperations() <= OPS_DEADLINE) {
 			var nextWave = []
 			for (var parent in frontier) {
 				if (getOperations() > OPS_DEADLINE) break
-				var next = findBestNextNode(parent, SearchCache, MySide)
-				if (next == null) validateChain(parent, SearchCache)
-				else {
+				var successors = findBestNextNodes(parent, SearchCache, MySide)
+				if (count(successors) == 0) validateChain(parent, SearchCache)
+				for (var next in successors) {
 					push(candidates, next)
 					BFS_CHAIN_STEPS++
 					push(nextWave, next)
 				}
 			}
-			frontier = nextWave
-		}
-		for (var i: var entry in rootEntries) {
-			if (getOperations() > OPS_DEADLINE) break
-			if (entry.DEFERRED || i in selected) continue
-			var leaf = unroll(entry.NODE, SearchCache, MySide, candidates)
-			validateChain(leaf, SearchCache)
+			frontier = selectBeam(nextWave)
 		}
 		BenchOps.Stop("BFS")
 		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " reused, " + SearchCache.ORDER_HITS + " cached orders, " + SearchCache.RETAINED_ESTIMATES + " retained across casts")
@@ -438,72 +413,63 @@ class ActionSuite {
 		return getOperations() + FinalCell.coldCost(State, combinedHfpOf(node), node.HFP_BY_SIDE[State[Me].SIDE]) <= truncateAt
 	}
 
-	/*
-	 * Déroulé glouton récursif d'une branche : descend la meilleure action suivante tant
-	 * qu'il y en a une, en collectant chaque nœud traversé comme candidat terminal.
-	 */
-	static unroll(node, SearchCache, MySide, candidates) {
-		if (getOperations() > OPS_DEADLINE) return node
-		var next = findBestNextNode(node, SearchCache, MySide)
-		if (next == null) return node
-		push(candidates, next)
-		BFS_CHAIN_STEPS++
-		return unroll(next, SearchCache, MySide, candidates)
+	// Classement global des états à la même profondeur, sur leur score absolu.
+	// Le tri stable conserve l'ordre de génération en cas d'égalité.
+	static selectBeam(nodes) {
+		var sorted = arraySort(nodes, function(a, b) { return b.SCORE - a.SCORE })
+		var beam = []
+		for (var i = 0; i < min(BFS_BEAM_WIDTH, count(sorted)); i++) push(beam, sorted[i])
+		return beam
+	}
+
+	// Petite liste triée des meilleurs gains réellement simulés pour UN parent.
+	static keepBeamSuccessor(best, entry) {
+		if (entry.DEFERRED) return;
+		var slot = 0
+		while (slot < count(best) && best[slot].PRIORITY >= entry.PRIORITY) slot++
+		if (slot >= BFS_BEAM_WIDTH) return;
+		if (count(best) < BFS_BEAM_WIDTH) push(best, entry)
+		for (var j = count(best) - 1; j > slot; j--) best[j] = best[j - 1]
+		best[slot] = entry
 	}
 
 	/* Les priorités sont triées sans résoudre toutes les origines. Les hits
 	 * partagent un ordre de CLÉS, jamais les actions concrètes d'un autre parent. */
-	static findBestNextNode(Parent, SearchCache, MySide) {
+	static findBestNextNodes(Parent, SearchCache, MySide) {
 		var State = StateClass.materializeNodeState(Parent)
 		var mine = State[Me]
-		if (mine.LIFE <= 0 || mine.TP < MINIMUM_COST_ITEM) return null
+		if (mine.LIFE <= 0 || mine.TP < MINIMUM_COST_ITEM) return []
 		var BaseHash = Parent.BASE_HASH
 		var walk = WalkCellsClass.getAllLayers(State, Me, BaseHash, Parent.ME_WALK_FINGERPRINT)
 		var resurrectionTargetId = resurrectIdOf(State)
 		var frame = prepareGroups(State, BaseHash, Parent, MySide, walk, resurrectionTargetId, SearchCache)
-		var fresh = frame.BEST_FRESH
-		var best = fresh == null ? null : fresh.NODE
-		var bestPriority = fresh == null ? 0 : fresh.PRIORITY
+		var best = []
+		// Les nouveaux groupes sont déjà simulés par prepareGroups. Les garder même
+		// si cette préparation a épuisé le budget, sans les simuler une seconde fois.
+		for (var actual in frame.FRESH) keepBeamSuccessor(best, actual)
 		var Workspace = null
 		for (var hint in frame.ORDER) {
 			if (getOperations() > OPS_DEADLINE) break
-			// Coupure gloutonne APPROXIMATIVE : un ancien gain n'est pas un majorant.
-			if (bestPriority >= hint.PRIORITY) break
-			var actual = frame.FRESH[hint.KEY]
-			if (actual == null) {
-				var playable = framePlayable(frame, hint.KEY, mine, walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
-				if (playable == null) continue
-				if (Workspace == null) Workspace = clone(State, 1)
-				actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
-					MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk)
-				rememberScored(SearchCache, hint.KEY, actual)
-			}
-			if (!actual.DEFERRED && actual.PRIORITY > bestPriority) {
-				bestPriority = actual.PRIORITY
-				best = actual.NODE
-			}
-		}
-		// Les dégâts annulés et les puces sous leur prix peuvent redevenir utiles.
-		// Le tri partage aussi son sous-ensemble de gains nuls/négatifs : ne pas
-		// reparcourir tous les gains positifs à chaque développement.
-		for (var hint in frame.RECHECK_ORDER) {
-			if (getOperations() > OPS_DEADLINE) break
+			// Aucun second passage sur les anciennes estimations non positives.
+			if (hint.GAIN <= BFS_DELTA_EPSILON) break
+			// Coupure APPROXIMATIVE : les anciens gains guident les essais, sans
+			// garantir qu'une action plus bas n'a pas augmenté depuis son estimation.
+			if (count(best) == BFS_BEAM_WIDTH && best[BFS_BEAM_WIDTH - 1].PRIORITY >= hint.PRIORITY) break
 			if (hint.KEY in frame.FRESH) continue
-			var item = frame.GROUPS[hint.KEY].Item
-			if (!ITEMINFO[item].IS_BOUNDABLE_DAMAGE && CooldownScoring.costOf(item, MySide) <= 0) continue
 			var playable = framePlayable(frame, hint.KEY, mine, walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
 			if (playable == null) continue
 			if (Workspace == null) Workspace = clone(State, 1)
 			var actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
 				MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk)
 			rememberScored(SearchCache, hint.KEY, actual)
-			if (!actual.DEFERRED && actual.PRIORITY > bestPriority) {
-				bestPriority = actual.PRIORITY
-				best = actual.NODE
-			}
+			keepBeamSuccessor(best, actual)
 		}
-		if (best != null) best.PARENT = Parent
-		return best
+		var successors = []
+		for (var entry in best) {
+			entry.NODE.PARENT = Parent
+			push(successors, entry.NODE)
+		}
+		return successors
 	}
 
 	/* Réunir les groupes actuels, apprendre seulement les priorités inconnues,
@@ -565,7 +531,6 @@ class ActionSuite {
 				frame.FRESH[key] = actual
 				rememberScored(SearchCache, key, actual)
 				SearchCache.NEW_SCORES++
-				if (!actual.DEFERRED && (frame.BEST_FRESH == null || actual.PRIORITY > frame.BEST_FRESH.PRIORITY)) frame.BEST_FRESH = actual
 			} else {
 				SearchCache.REUSED_SCORES++
 			}
@@ -593,13 +558,11 @@ class ActionSuite {
 				push(order, new ActionPriorityClass(key, gain, priority))
 			}
 			order = arraySort(order, function(a, b) { return b.PRIORITY - a.PRIORITY })
-			order = new ActionSearchOrderClass(order)
 			SearchCache.ORDERED_GROUPS[orderKey] = order
 		} else {
 			SearchCache.ORDER_HITS++
 		}
-		frame.ORDER = order.ENTRIES
-		frame.RECHECK_ORDER = order.RECHECK
+		frame.ORDER = order
 		return frame
 	}
 
