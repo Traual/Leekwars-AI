@@ -395,7 +395,7 @@ Un filtre ciblé empêche **Saut + Régénération sans soin** de se qualifier u
 
 ## Recherche de suites d'actions
 
-La branche expérimentale **`search-beam`** utilise un beam search de largeur
+Le **`main` actuel**, issu de `search-beam`, utilise un beam search de largeur
 **automatique, de 1 à 12**. Cette largeur est choisie après la préparation de racine,
 selon le nombre d'actions scorées, les PT restants, leur coût moyen et les opérations
 disponibles, puis reste la même
@@ -517,9 +517,14 @@ racines, on calcule le coût moyen **en PT** des actions positives, déplacement
 ```text
 longueur estimée = max(1, PT restants / max(1, coût moyen))
 disponible estimé = max(0, limite du tour − opérations utilisées − coût froid estimé)
-cible d'expansion = disponible estimé / longueur estimée
+cible d'expansion = disponible estimé × 0,5
 unité de coût = cible d'expansion / (max(16, actions initiales) × longueur estimée)
 ```
+
+Les PT n'interviennent qu'une fois dans cette normalisation. Diviser aussi la cible
+par la longueur pénalisait le début du tour au carré et faisait monter le beam
+trop tard. Le facteur `0,5` laisse une estimation pour les recherches suivantes ;
+il dimensionne la largeur, sans ajouter de quota ni de coupure intermédiaire.
 
 | Unité de coût, en opérations | Largeur |
 | --- | ---: |
@@ -943,6 +948,41 @@ seulement des géométries complètes et les LoS déjà calculées. Le cas régr
 48 essais indépendants et les 20 combats natifs passent ensuite. Dix-huit contrôles
 fonctionnels passent, dont l'égalité des géométries et le choix terminal contre un
 oracle exhaustif. Scoring, simulation, projections et réserves restent inchangés.
+
+## Répartition du beam dans le tour — 19 octobre 2026
+
+La double division par `PT / coût moyen` est remplacée par une seule, avec une cible
+indicative de 50 % du disponible estimé. Les seuils de largeur, les réserves et les
+gardes ne changent pas. Les formules de scoring et le classement terminal avec
+danger restent identiques.
+
+Six scénarios distincts, rejoués avant/après pendant huit rounds avec les budgets
+natifs, donnent les mesures suivantes. Trois ont servi au diagnostic, trois autres
+au contrôle du réglage retenu :
+
+| Mesure | Avant | Après |
+| --- | ---: | ---: |
+| Décisions avec candidats | 1 660 | 1 663 |
+| Premier beam moyen, tours d'au moins trois décisions | 5,05 | 6,90 |
+| Dernier beam moyen, mêmes critères | 9,61 | 10,24 |
+| Steps retenus | 99 174 | 133 689 |
+| Coupures d'expansion par budget | 24 | 20 |
+| Coupures pendant les racines | 28 | 24 |
+| Opérations des décisions | 1,97 milliard | 2,24 milliards |
+| Arrêts sans plan terminal finançable, camp suivi | 5 | 6 |
+
+Les steps augmentent de 34,8 % pour 13,7 % d'opérations de décision en plus. Les
+trajectoires diffèrent : ce sont des observations de répartition, pas une économie
+à déroulement égal ni une preuve de meilleure winrate. Sur les trois contrôles pris
+seuls, les coupures d'expansion passent de 10 à 11 ; leur total sur les six baisse.
+Les fins de tour peuvent encore afficher 12 : peu d'actions et peu de profondeur
+les rendent peu coûteuses. L'estimation du coût froid peut encore imposer un
+premier beam étroit ; elle est conservée.
+
+Dix-huit contrôles passent, dont les scores comparés à l'oracle complet aux
+profondeurs 1 et 2 et le danger terminal. Trois combats courts supplémentaires sans
+instrumentation ne présentent aucune erreur ni interruption moteur. Les mesures
+restent hors de l'IA de production.
 
 ## Documentation et outils
 

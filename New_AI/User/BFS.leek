@@ -166,9 +166,9 @@ class ActionSuite {
 			totalActionCost += entry.PLAYABLE.COST
 		}
 		var averageCost = totalActionCost / max(1, count(roots))
-		var expectedPlays = max(1, MyStats.TP / max(1, averageCost))
-		// Une cible de dépense pour dimensionner le beam, jamais une date de coupure.
-		var allowance = remaining / expectedPlays
+		// Les TP pondèrent déjà le coût dans beamWidthFor : une seule fois.
+		// Le disponible dimensionne le beam, sans quota par action réelle.
+		var allowance = remaining * 0.5
 		var beamWidth = beamWidthFor(count(rootEntries), MyStats.TP, averageCost, allowance)
 		debug("[BFS] expansion target: " + floor(allowance) + " operations | beam width: " + beamWidth + " | TP: " + MyStats.TP + " | mean action cost: " + averageCost)
 		var frontier = selectBeam(roots, beamWidth)
