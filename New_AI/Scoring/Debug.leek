@@ -1,8 +1,8 @@
-// Affichage manuel des coefficients au début du tour, avant la première recherche.
+// Affichage optionnel des coefficients au début du tour, avant la première recherche.
 include("../includes.leek")
 
 class ScoringDebug {
-    static ENABLED = true // false désactive les logs ET les pauses.
+    static ENABLED = false // true active l'affichage des coefficients, sans pause.
 
     static coefficients(State) {
         // Même contexte que le BFS : les coefficients d'équipement ont besoin des poids.
@@ -60,6 +60,5 @@ class ScoringDebug {
                 "cooldowns (prix Manumission)": CooldownScoring.costOf(CHIP_MANUMISSION, stat.SIDE)
             ])
         }
-        pause()
     }
 }

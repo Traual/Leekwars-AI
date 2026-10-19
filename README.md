@@ -159,7 +159,7 @@ Quatorze fichiers :
 - [`Shackles.leek`](New_AI/Scoring/Shackles.leek) : décote des six entraves selon Manumission, synergies PT/PM comprises.
 - [`ShieldProfile.leek`](New_AI/Scoring/ShieldProfile.leek) : profil offensif adverse grossier, calculé par camp et conservé dans le contexte de racine.
 - [`PeriodicEffects.leek`](New_AI/Scoring/PeriodicEffects.leek) : avenir du poison/contrecoup, plafond de PV commun et décote Antidote du porteur, sans parcours des lignes d'effets.
-- [`Debug.leek`](New_AI/Scoring/Debug.leek) : coefficients de chaque vivant au début du tour, avec une pause après toute la liste. `ScoringDebug.ENABLED = false` désactive l'affichage et les pauses ; coefficients bruts avant durée/PT/PM, potentiel courant, facteurs communs et leur produit sont affichés séparément.
+- [`Debug.leek`](New_AI/Scoring/Debug.leek) : affichage optionnel des coefficients de chaque vivant au début du tour, désactivé par défaut et sans pause. `ScoringDebug.ENABLED = true` active l'affichage ; coefficients bruts avant durée/PT/PM, potentiel courant, facteurs communs et leur produit sont affichés séparément.
 - [`Placement.leek`](New_AI/Scoring/Placement.leek) : distances et exposition au danger, soustraites à la fin des suites d’actions.
 - [`AllySupport.leek`](New_AI/Scoring/AllySupport.leek) : potentiel de buffs/boucliers alliés et coût de l'éloignement.
 - [`EnemyOffense.leek`](New_AI/Scoring/EnemyOffense.leek) : potentiel offensif obtenu avec les conséquences et le scoring communs, puis décote hors portée.
@@ -654,7 +654,7 @@ normales ne présente aucune erreur ni tour avorté ; il ne mesure pas la winrat
 | Sortie ou réglage | Signification |
 | --- | --- |
 | `[COEFS]` | Valeurs des coefficients, importance de base, potentiel courant, facteurs PT/PM et contributions périodiques. |
-| `ScoringDebug.ENABLED` | Actuellement `true` : affichage au début du tour, puis **une** `pause()` après la liste complète. `false` désactive logs et pause. |
+| `ScoringDebug.ENABLED` | Actuellement `false` : coefficients non affichés. `true` active l'affichage au début du tour, sans pause. |
 | `Best: … bases, … steps` | Première action du plan retenu et delta terminal. Les bases sont les entrées de racine ; les steps sont les successeurs ajoutés aux suites, pas toutes les simulations effectuées. |
 | `[BFS] group scores: …` | Scores calculés, estimations reprises, tris servis et estimations conservées depuis les casts précédents. |
 | `[BFS] danger not taken into account: no affordable terminal plan, stop actions` | Aucun candidat complètement évalué avec danger ; arrêt des actions, sans repli brut. |
