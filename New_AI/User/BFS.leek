@@ -4,8 +4,9 @@
  * 1. EXPANSION, sur les scores BRUTS (aucun danger positionnel de Me) :
  *  - Profondeur 1 : chaque action jouable est clonée + appliquée + scorée, puis triée
  *    par PRIORITÉ décroissante (BFS_SCORE_PER_ACTION_COST : rendement par TP, ou Δscore).
- *  - À chaque profondeur, chaque parent propose jusqu'à la largeur choisie de successeurs
- *    jouables et positifs. Seuls les meilleurs états de cette largeur continuent.
+ *  - Chaque première action conserve son propre beam. À chaque profondeur, chaque parent
+ *    propose jusqu'à la largeur choisie de successeurs jouables et positifs ; le tri ne
+ *    compare que les descendants d'une même première action.
  *    Les priorités cachées guident les essais ; chaque état retenu a un score courant.
  *  - Les gains de groupes sont partagés par signature de cibles pendant le tour,
  *    avec invalidation des dépendances après chaque vrai cast.
@@ -55,7 +56,7 @@ global BFS_CHAIN_STEPS = 0
 // pris en compte, mais par la chaine elle-meme, qui s'arrete quand les TP manquent.
 global BFS_SCORE_PER_ACTION_COST = false
 
-// Largeur choisie par décision puis maintenue à toutes ses profondeurs.
+// Largeur PAR DÉPART, choisie par décision puis maintenue à toutes ses profondeurs.
 // 0 : largeur automatique ; une valeur positive impose une largeur fixe.
 global BFS_BEAM_WIDTH = 0
 
@@ -65,8 +66,8 @@ class ActionSuite {
 	 * Renvoie la meilleure action à jouer dans l'état donné (null = ne rien jouer).
 	 */
 	static getBestAction(State) {
-		// Une seule limite pour la recherche. La sortie du tour reste réservée par Play.
-		// Les estimations de coût règlent le beam ; elles ne déplacent pas cette limite.
+		// Play réserve la sortie du tour ; le coût froid est protégé pendant l'expansion.
+		// La même garde borne chaque phase ; le danger n'est évalué qu'au classement terminal.
 		BFS_CHAIN_STEPS = 0
 		var terminalLimit = OPS_DEADLINE + OPS_RESERVE_TURN - OPS_RESERVE_PLACEMENT
 		return searchBestAction(State, terminalLimit)
@@ -94,7 +95,7 @@ class ActionSuite {
 			return null
 		}
 		var RootResurrectId = resurrectIdOf(State)
-		// Coût indicatif du froid pour dimensionner le beam, sans bloquer les petits budgets.
+		// Prévision du coût terminal à protéger avant l'expansion.
 		var coldEstimate = FinalCell.coldCost(State, rootCombinedHfp, RootHfp[MySide])
 		// Empreinte de mobilité de Me à la racine : construite UNE fois par getBestAction
 		// effectif, portée par noPlay et héritée par ses enfants. Elle sert aux caches de
@@ -150,6 +151,9 @@ class ActionSuite {
 		debugC("--- " + count(rootEntries) + " base actions ---", COLOR_BLUE)
 		var expansionStart = getOperations()
 		var remaining = max(0, OPS_DEADLINE - expansionStart - coldEstimate)
+		// Protéger le travail terminal déjà estimé, même quand la largeur minimale est 1.
+		var searchDeadline = OPS_DEADLINE
+		OPS_DEADLINE = max(expansionStart, searchDeadline - coldEstimate)
 
 		// TOUT nœud retenu est une suite où l'on peut
 		// s'arrêter : le plancher, chaque action racine retenue, et chaque nœud intermédiaire
@@ -170,21 +174,31 @@ class ActionSuite {
 		// Le disponible dimensionne le beam, sans quota par action réelle.
 		var allowance = remaining * 0.5
 		var beamWidth = beamWidthFor(count(rootEntries), MyStats.TP, averageCost, allowance)
-		debug("[BFS] expansion target: " + floor(allowance) + " operations | beam width: " + beamWidth + " | TP: " + MyStats.TP + " | mean action cost: " + averageCost)
-		var frontier = selectBeam(roots, beamWidth)
-		while (count(frontier) > 0) {
-			var nextWave = []
-			for (var parent in frontier) {
+		debug("[BFS] expansion target: " + floor(allowance) + " operations | beam width per start: " + beamWidth + " | starts: " + count(roots) + " | TP: " + MyStats.TP + " | mean action cost: " + averageCost)
+		// Un beam indépendant par première action, sans élimination entre départs.
+		// Avancer par profondeur donne leur chance aux départs avant de poursuivre
+		// leurs descendants. La limite commune peut interrompre une vague.
+		var frontiers = []
+		for (var root in roots) push(frontiers, [root])
+		while (count(frontiers) > 0) {
+			var nextFrontiers = []
+			for (var frontier in frontiers) {
 				if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) break
-				var successors = findBestNextNodes(parent, SearchCache, MySide, beamWidth)
-				for (var next in successors) {
-					push(candidates, next)
-					BFS_CHAIN_STEPS++
-					push(nextWave, next)
+				var nextWave = []
+				for (var parent in frontier) {
+					if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) break
+					var successors = findBestNextNodes(parent, SearchCache, MySide, beamWidth)
+					for (var next in successors) {
+						push(candidates, next)
+						BFS_CHAIN_STEPS++
+						push(nextWave, next)
+					}
 				}
+				if (count(nextWave) > 0) push(nextFrontiers, selectBeam(nextWave, beamWidth))
 			}
-			frontier = selectBeam(nextWave, beamWidth)
+			frontiers = nextFrontiers
 		}
+		OPS_DEADLINE = searchDeadline
 		BenchOps.Stop("BFS")
 		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " reused, " + SearchCache.ORDER_HITS + " cached orders, " + SearchCache.RETAINED_ESTIMATES + " retained across casts")
 
@@ -280,24 +294,21 @@ class ActionSuite {
 	}
 
 	// Coût d'une expansion complète, normalisé par actions initiales et longueur TP/coût.
-	// Paliers : q90 +20%, 24 états × 7 largeurs ; prévision, jamais borne de sécurité.
+	// Beams indépendants : q90 +20%, 18 états × 4 largeurs ; prévision, pas une limite.
 	// La cible ajuste seulement la largeur : aucune coupure au budget indicatif.
 	static beamWidthFor(actionCount, tp, averageCost, budget) {
 		if (BFS_BEAM_WIDTH > 0) return BFS_BEAM_WIDTH
 		var depth = max(1, tp / max(1, averageCost))
 		var perAction = budget / (max(16, actionCount) * depth)
 		switch (true) {
-			case perAction >= 10700: return 12
-			case perAction >= 5400: return 8
-			case perAction >= 3900: return 6
-			case perAction >= 2200: return 4
-			case perAction >= 1700: return 3
-			case perAction >= 1100: return 2
+			case perAction >= 40200: return 4
+			case perAction >= 32100: return 3
+			case perAction >= 22900: return 2
 			default: return 1
 		}
 	}
 
-	// Classement global des états par score absolu, stable en cas d'égalité.
+	// Classement des états d'un même départ par score absolu, stable à égalité.
 	static selectBeam(nodes, width = 3) {
 		var sorted = arraySort(nodes, function(a, b) { return b.SCORE - a.SCORE })
 		var beam = []

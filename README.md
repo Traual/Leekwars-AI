@@ -395,14 +395,17 @@ Un filtre ciblé empêche **Saut + Régénération sans soin** de se qualifier u
 
 ## Recherche de suites d'actions
 
-Le **`main` actuel**, issu de `search-beam`, utilise un beam search de largeur
-**automatique, de 1 à 12**. Cette largeur est choisie après la préparation de racine,
-selon le nombre d'actions scorées, les PT restants, leur coût moyen et les opérations
-disponibles, puis reste la même
-à toutes les profondeurs de cette décision. Chaque parent propose au plus ce nombre
-de successeurs réellement jouables et de gain positif ; les meilleurs états de cette
-nouvelle vague continuent dans la même limite. Le classement entre parents
-compare le score absolu des états, pas seulement le gain de la dernière action.
+Le **`main` actuel** conserve un beam **indépendant pour chaque première action
+positive**, de largeur automatique **1 à 4 par départ**. La largeur est choisie après
+la préparation de racine selon le nombre d'actions scorées, les PT restants, leur
+coût moyen et les opérations disponibles, puis reste la même à toutes les
+profondeurs de la décision. Aucune sélection globale ne supprime des départs.
+Chaque parent propose au plus cette largeur de successeurs jouables et positifs ;
+seuls les meilleurs états issus de la **même première action** continuent dans son
+beam. Le tri compare le score absolu des états, pas seulement le dernier gain.
+À largeur 1, chaque départ poursuit une chaîne gloutonne ; à largeur 2, chacun
+garde jusqu'à deux suites. Les beams avancent par profondeur avec le budget commun,
+qui peut interrompre une vague avant que tous les départs aient été examinés.
 La recherche ne développe pas exhaustivement toutes les combinaisons. L'état « ne rien
 jouer », toutes les racines positives et tous les successeurs proposés restent des
 candidats terminaux, même s'ils ne continuent pas dans le beam.
@@ -488,8 +491,8 @@ Les nœuds et validations de danger ne survivent jamais à une recherche. La rac
 resimule tous ses candidats ; dans les branches, les gains conservés restent des
 indications gloutonnes, jamais des bornes ni des scores exacts pour un autre état.
 
-La largeur choisie reste la même à chaque profondeur ; il n'y a plus de déroulé séparé
-des autres racines ni de deuxième boucle sur les estimations nulles/négatives. Les
+La largeur choisie reste la même à chaque profondeur et s'applique séparément à
+chaque départ. Il n'y a pas de deuxième boucle sur les estimations nulles/négatives. Les
 estimations positives ordonnent les essais, avec une coupure approximative lorsque
 assez de successeurs actuels dépassent les estimations restantes pour remplir le beam. Chaque successeur
 proposé a été simulé et rescorré dans son parent, déplacements réels inclus. Une
@@ -502,10 +505,12 @@ danger se fait seulement après les branches ; aucun candidat brut ne remplace u
 
 Le plafond absolu de recherche est fixé par `Play`, à partir du plafond moteur,
 des **500 000 opérations de fin de tour** et des **1 000 000 par bulbe** encore à
-jouer. Il ne change plus pendant une décision. Génération et expansion consultent
-la même limite avec `OPS_SEARCH_MARGIN = 250000`. Le contrôle en double dans la
-boucle extérieure du beam a été retiré ; les boucles qui peuvent durer gardent
-leur interruption entre éléments. L'entrée de chaque décision utilise aussi cette
+jouer. La génération utilise cette limite. Pour que le parcours de tous les départs
+ne consomme pas le budget du danger, l'expansion protège le coût froid déjà estimé :
+sa limite vaut `max(début d'expansion, limite du tour − coût froid estimé)`.
+`OPS_DEADLINE` est restaurée avant le classement terminal. Les phases utilisent la
+même garde `OPS_SEARCH_MARGIN = 250000`, entre les éléments de leurs boucles.
+L'entrée de chaque décision utilise aussi cette
 marge et reprend la vidange existante quand la recherche doit s'arrêter.
 Une préparation interrompue n'est jamais publiée
 dans un cache qui promet un résultat complet.
@@ -528,20 +533,19 @@ il dimensionne la largeur, sans ajouter de quota ni de coupure intermédiaire.
 
 | Unité de coût, en opérations | Largeur |
 | --- | ---: |
-| ≥ 10 700 | 12 |
-| ≥ 5 400 | 8 |
-| ≥ 3 900 | 6 |
-| ≥ 2 200 | 4 |
-| ≥ 1 700 | 3 |
-| ≥ 1 100 | 2 |
+| ≥ 40 200 | 4 par départ |
+| ≥ 32 100 | 3 par départ |
+| ≥ 22 900 | 2 par départ |
 | En dessous | 1 |
 
 Ces seuils se règlent dans `beamWidthFor`. Le beam choisi reste constant pendant
 la décision ; `BFS_BEAM_WIDTH > 0` impose encore une largeur manuelle. **La cible
 n'est pas une limite** : une recherche peut la dépasser et finir sa profondeur.
 La décision suivante repart des PT et opérations réellement restants. Si le coût
-froid estimé dépasse le disponible, on essaie une largeur 1 au lieu d'interdire
-toute recherche. Les coûts restent des estimations, pas des bornes universelles.
+froid absorbe le disponible, les racines déjà scorées restent candidates et la
+priorité va à leur validation avec danger ; l'expansion peut s'arrêter avant de
+prolonger les départs. La largeur 1 n'est donc pas une garantie de parcours complet.
+Les coûts restent des estimations, pas des bornes universelles.
 
 Le danger est calculé **uniquement au classement terminal**. Sa limite utilise la
 partie autorisée de la réserve de fin de tour ; les 300 000 opérations du placement
@@ -662,6 +666,7 @@ normales ne présente aucune erreur ni tour avorté ; il ne mesure pas la winrat
 | `ScoringDebug.ENABLED` | Actuellement `false` : coefficients non affichés. `true` active l'affichage au début du tour, sans pause. |
 | `Best: … bases, … steps` | Première action du plan retenu et delta terminal. Les bases sont les entrées de racine ; les steps sont les successeurs ajoutés aux suites, pas toutes les simulations effectuées. |
 | `[BFS] group scores: …` | Scores calculés, estimations reprises, tris servis et estimations conservées depuis les casts précédents. |
+| `[BFS] expansion target: … beam width per start: … starts: …` | Cible indicative, largeur indépendante par première action et nombre de départs positifs conservés. |
 | `[BFS] danger not taken into account: no affordable terminal plan, stop actions` | Aucun candidat complètement évalué avec danger ; arrêt des actions, sans repli brut. |
 | `[VIDANGE] danger not taken into account: raw-score plan` | La suite exécutée sans nouvelle recherche venait d'un plan non validé avec danger. |
 | `[placement] danger not taken into account: spatial cost only` | Le placement réel n'a pas pu financer le danger ; seuls les coûts spatiaux sont pris en compte. |
@@ -907,7 +912,7 @@ Les troncatures restantes et les coûts indivisibles ne permettent pas de rempla
 ces protections par le seul choix de largeur. Scoring, simulation, placement et
 budgets de production restent inchangés.
 
-## Garde commune et beam selon les PT — 19 octobre 2026
+## Historique : garde commune et beam global selon les PT — 19 octobre 2026
 
 Cette évolution remplace les anciens paliers ci-dessus ; son fonctionnement et les
 réglages actuels sont dans la section budget. Calibration : **24 états** (8 points
@@ -949,7 +954,7 @@ seulement des géométries complètes et les LoS déjà calculées. Le cas régr
 fonctionnels passent, dont l'égalité des géométries et le choix terminal contre un
 oracle exhaustif. Scoring, simulation, projections et réserves restent inchangés.
 
-## Répartition du beam dans le tour — 19 octobre 2026
+## Historique : répartition du beam global dans le tour — 19 octobre 2026
 
 La double division par `PT / coût moyen` est remplacée par une seule, avec une cible
 indicative de 50 % du disponible estimé. Les seuils de largeur, les réserves et les
@@ -983,6 +988,49 @@ Dix-huit contrôles passent, dont les scores comparés à l'oracle complet aux
 profondeurs 1 et 2 et le danger terminal. Trois combats courts supplémentaires sans
 instrumentation ne présentent aucune erreur ni interruption moteur. Les mesures
 restent hors de l'IA de production.
+
+## Beam indépendant par première action — 19 octobre 2026
+
+Le beam global est remplacé par un beam pour chaque départ positif. Les états
+d'un départ ne peuvent plus éliminer ceux d'un autre. La largeur automatique va
+de 1 à 4 ; les constantes se règlent dans `beamWidthFor`. Les autres méthodes de
+simulation, de scoring, de sélection d'origine et de classement terminal sont
+conservées.
+
+La calibration compare **18 mêmes états × 4 largeurs = 72 expansions complètes**,
+avec PT virtuels plafonnés à 8, 16 ou non plafonnés dans les seules sondes. Les seuils
+prennent le quantile 90 % du coût normalisé, augmenté de 20 %. Un contrôle sur
+12 autres états, auto contre fixe1 avec les limites natives, donne 10 expansions
+automatiques complètes et 9 sous la cible indicative, sans erreur moteur. Les
+coupures sont conservées dans le résultat ; les seuils ne sont pas réajustés dessus.
+
+Un premier prototype consommait trop de budget avant le danger, même en largeur 1.
+Le coût froid déjà estimé est donc protégé pendant l'expansion, puis la limite de
+tour est restaurée avant le classement terminal. Cela n'ajoute ni quota de 20 % ni
+validation anticipée du danger. Les constantes de réserve restent identiques.
+
+Sur trois scénarios fixes en self-play pendant huit rounds :
+
+| Mesure | Beam global | Par départ, fixe1 | Par départ, automatique |
+| --- | ---: | ---: | ---: |
+| Départs examinés pour prolongement avec ≥20 TP | 40,4 % | 82,8 % | 83,5 % |
+| Largeur moyenne | 9,64 globale | 1 par départ | 2,22 par départ |
+| Steps retenus | 73 098 | 45 115 | 67 239 |
+| Parents examinés | 20 960 | 58 717 | 67 985 |
+| Opérations des décisions | 1,16 milliard | 1,49 milliard | 1,52 milliard |
+| Arrêts sans plan terminal finançable | 2 | 2 | 0 |
+
+Face au fixe1, l'automatique retient 49,0 % de steps en plus pour 1,9 % d'opérations
+de décision en plus sur ces trajectoires. Les choix et combats diffèrent : ces
+mesures ne prouvent ni une économie à déroulement égal ni une meilleure winrate.
+
+**26 contrôles natifs passent**, dont 88 départs tous conservés aux largeurs 1 et 2,
+séparation des beams à chaque profondeur et scores contre l'oracle complet
+(écart maximal 3,64e−12). Trois autres combats sans instrumentation ne présentent
+aucune erreur ni interruption moteur ; ils comptent encore 5 arrêts sans plan
+terminal et 7 placements spatiaux seuls, contre 4 et 5 dans la réception figée du
+beam global sur ces mêmes scénarios. Ces limites restent explicites. Aucune
+instrumentation de mesure n'entre dans l'IA de production.
 
 ## Documentation et outils
 
