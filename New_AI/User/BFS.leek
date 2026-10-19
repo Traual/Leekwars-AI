@@ -27,11 +27,6 @@ include("../includes.leek")
 // Nombre de steps d'expansion déroulés par le getBestAction courant (affiché dans "Best:").
 global BFS_CHAIN_STEPS = 0
 
-// Marge laissée sous la part stricte du placement quand le reclassement terminal cesse d'ouvrir
-// des candidats : une évaluation commencée juste avant la limite doit encore y tenir. Elle couvre
-// le plus cher bloc de fin de tour mesuré (82 861 opérations sur 49 tours d'entité).
-global TERMINAL_EVAL_MARGIN = 100000
-
 /*
  * Politique de choix du successeur à dérouler.
  *   true  : par RENDEMENT, priority = Δscore / coût RÉEL de l'action dans cet état — coût de
@@ -63,8 +58,6 @@ global BFS_SCORE_PER_ACTION_COST = false
 // Largeur choisie par décision puis maintenue à toutes ses profondeurs.
 // 0 : largeur automatique ; une valeur positive impose une largeur fixe.
 global BFS_BEAM_WIDTH = 0
-global BFS_DECISION_BUDGET_RATIO = 0.2
-global BFS_DECISION_MIN_EXPANSION = 250000
 
 class ActionSuite {
 
@@ -72,16 +65,13 @@ class ActionSuite {
 	 * Renvoie la meilleure action à jouer dans l'état donné (null = ne rien jouer).
 	 */
 	static getBestAction(State) {
-		// Le plafond de tour appartient à Play. Une décision utilise seulement
-		// une part de ce qui reste après sa préparation, pour pouvoir replanifier
-		// après un vrai cast (critique, morts et effets réels compris).
-		var turnDeadline = OPS_DEADLINE
-		var action = searchBestAction(State)
-		OPS_DEADLINE = turnDeadline
-		return action
+		// Une seule limite pour la recherche. La sortie du tour reste réservée par Play.
+		// Les estimations de coût règlent le beam ; elles ne déplacent pas cette limite.
+		BFS_CHAIN_STEPS = 0
+		var terminalLimit = OPS_DEADLINE + OPS_RESERVE_TURN - OPS_RESERVE_PLACEMENT
+		return searchBestAction(State, terminalLimit)
 	}
-
-	static searchBestAction(State) {
+	static searchBestAction(State, terminalLimit) {
 		BenchOps.Start("BFS")
 		var MyStats = State[Me]
 		var MySide = MyStats.SIDE
@@ -99,25 +89,21 @@ class ActionSuite {
 		var RootHfp = HealClass.buildHfpBySide(State)
 		var rootCombinedHfp = 0
 		for (var s: var h in RootHfp) rootCombinedHfp ^= h
-		// Fast-path racine : sous le coût du moindre item jouable du tour (même garde que
-		// findBestNextNodes), aucune action de base n'existe — rien à chercher. Le tour se termine
-		// donc ici, et le placement suit : on lui prépare ses structures avant de rendre la main.
 		if (MyStats.TP < MINIMUM_COST_ITEM) {
-			prewarmIfAffordable(State, BaseHash, RootContext, rootCombinedHfp, RootHfp[MySide])
 			BenchOps.Stop("BFS")
 			return null
 		}
 		var RootResurrectId = resurrectIdOf(State)
-		prewarmIfAffordable(State, BaseHash, RootContext, rootCombinedHfp, RootHfp[MySide])
+		// Coût indicatif du froid pour dimensionner le beam, sans bloquer les petits budgets.
+		var coldEstimate = FinalCell.coldCost(State, rootCombinedHfp, RootHfp[MySide])
 		// Empreinte de mobilité de Me à la racine : construite UNE fois par getBestAction
 		// effectif, portée par noPlay et héritée par ses enfants. Elle sert aux caches de
 		// géométrie et de placement — aucune valeur de scoring n'en dépend.
 		var RootWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MyStats)
-		// La racine s'interrompt entre deux entités quand elle entame la part stricte du placement
-		// final : le moteur qui la coupait emportait aussi le placement. Sans racine, aucune
-		// décision : le placement prend la main.
+		// La racine utilise la même limite que la génération et l'expansion.
+		// Sans score initial complet, le placement reprend la main.
 		var rootValues = [:]
-		var initialScore = ScoringClass.stateValue(State, MySide, OPS_CAP - OPS_RESERVE_PLACEMENT, rootValues)
+		var initialScore = ScoringClass.stateValue(State, MySide, OPS_DEADLINE, rootValues)
 		if (initialScore == null) {
 			BenchOps.Stop("BFS")
 			return null
@@ -150,8 +136,7 @@ class ActionSuite {
 		// géométrie offensive. Une extension froide ne peut plus effacer leurs nœuds.
 		var localPairs = getBaseActions(State, BaseHash, RootResurrectId, MyWalkCells, true)
 		var rootEntries = enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, MyWalkCells, localPairs, SearchCache)
-		validateEarly(rootEntries, noPlay, SearchCache)
-		if (getOperations() <= OPS_DEADLINE) {
+		if (getOperations() + OPS_SEARCH_MARGIN <= OPS_DEADLINE) {
 			var otherPairs = getBaseActions(State, BaseHash, RootResurrectId, MyWalkCells, false, true)
 			var known = [:]
 			for (var entry in rootEntries) known[estimateKeyOf(entry.PLAYABLE)] = true
@@ -162,34 +147,36 @@ class ActionSuite {
 			pushAll(rootEntries, enumerateAndSort(State, BaseHash, initialScore, MySide, RootContext, RootHfp, noPlay, MyWalkCells, freshPairs, SearchCache, false, false))
 			rootEntries = arraySort(rootEntries, function(a, b) { return b.PRIORITY - a.PRIORITY })
 		}
-		BFS_CHAIN_STEPS = 0
 		debugC("--- " + count(rootEntries) + " base actions ---", COLOR_BLUE)
 		var expansionStart = getOperations()
-		var remaining = max(0, OPS_DEADLINE - expansionStart)
-		var allowance = max(BFS_DECISION_MIN_EXPANSION, floor(remaining * BFS_DECISION_BUDGET_RATIO))
-		OPS_DEADLINE = min(OPS_DEADLINE, expansionStart + allowance)
-		var beamWidth = beamWidthFor(count(rootEntries), min(remaining, allowance))
-		debug("[BFS] expansion budget: " + min(remaining, allowance) + " operations (" + remaining + " remaining this turn)" + " | beam width: " + beamWidth)
+		var remaining = max(0, OPS_DEADLINE - expansionStart - coldEstimate)
 
 		// TOUT nœud retenu est une suite où l'on peut
 		// s'arrêter : le plancher, chaque action racine retenue, et chaque nœud intermédiaire
 		// du déroulé — pas seulement le dernier de chaque chaîne.
 		var candidates = [noPlay]
 		var roots = []
+		var totalActionCost = 0
 		for (var entry in rootEntries) {
 			if (entry.DEFERRED) continue
 			var baseNode = entry.NODE
 			baseNode.SCORE = entry.SCORE
 			push(candidates, baseNode)
 			push(roots, baseNode)
+			totalActionCost += entry.PLAYABLE.COST
 		}
+		var averageCost = totalActionCost / max(1, count(roots))
+		var expectedPlays = max(1, MyStats.TP / max(1, averageCost))
+		// Une cible de dépense pour dimensionner le beam, jamais une date de coupure.
+		var allowance = remaining / expectedPlays
+		var beamWidth = beamWidthFor(count(rootEntries), MyStats.TP, averageCost, allowance)
+		debug("[BFS] expansion target: " + floor(allowance) + " operations | beam width: " + beamWidth + " | TP: " + MyStats.TP + " | mean action cost: " + averageCost)
 		var frontier = selectBeam(roots, beamWidth)
-		while (count(frontier) > 0 && getOperations() <= OPS_DEADLINE) {
+		while (count(frontier) > 0) {
 			var nextWave = []
 			for (var parent in frontier) {
-				if (getOperations() > OPS_DEADLINE) break
+				if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) break
 				var successors = findBestNextNodes(parent, SearchCache, MySide, beamWidth)
-				if (count(successors) == 0) validateChain(parent, SearchCache)
 				for (var next in successors) {
 					push(candidates, next)
 					BFS_CHAIN_STEPS++
@@ -201,61 +188,7 @@ class ActionSuite {
 		BenchOps.Stop("BFS")
 		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " reused, " + SearchCache.ORDER_HITS + " cached orders, " + SearchCache.RETAINED_ESTIMATES + " retained across casts")
 
-		return pickTerminal(candidates, initialScore, count(rootEntries), SearchCache)
-	}
-
-	/* Garder UNE suite entièrement validée pendant que le budget est encore
-	 * disponible. Même si la géométrie ou l'expansion consomme ensuite le reste,
-	 * pickTerminal ne revient pas au brut ni au seul plan « ne rien jouer ».
-	 * Aucun budget supplémentaire : mêmes limites et même évaluation terminale. */
-	static validateEarly(entries, noPlay, SearchCache) {
-		var limit = OPS_DEADLINE + OPS_RESERVE_TURN - OPS_RESERVE_PLACEMENT
-		var deadline = limit - TERMINAL_EVAL_MARGIN
-		for (var entry in entries) {
-			if (getOperations() > deadline) break
-			if (entry.DEFERRED || !canCloseNow(entry.NODE, limit)) continue
-			var close = closeOf(entry.NODE, limit)
-			if (count(close) != 3) break
-			SearchCache.VALIDATED_NODE = entry.NODE
-			SearchCache.VALIDATED_FINAL = entry.SCORE - close[1]
-			return;
-		}
-		if (getOperations() <= deadline && canCloseNow(noPlay, limit)) {
-			var close = closeOf(noPlay, limit)
-			if (count(close) == 3) {
-				SearchCache.VALIDATED_NODE = noPlay
-				SearchCache.VALIDATED_FINAL = noPlay.SCORE - close[1]
-			}
-		}
-	}
-
-	// Clore une chaîne prometteuse pendant qu'il reste du budget, avant d'ouvrir
-	// la suivante. Un plan déjà payé reste disponible si les branches froides
-	// suivantes épuisent la recherche. Les nœuds intermédiaires restent candidats.
-	static validateChain(node, SearchCache) {
-		if (SearchCache.VALIDATED_NODE != null && node.SCORE <= SearchCache.VALIDATED_FINAL) return;
-		var limit = OPS_DEADLINE
-		if (getOperations() + TERMINAL_EVAL_MARGIN > limit || !canCloseNow(node, limit)) return;
-		var close = closeOf(node, limit)
-		if (count(close) != 3) return;
-		var value = node.SCORE - close[1]
-		if (SearchCache.VALIDATED_NODE == null || value > SearchCache.VALIDATED_FINAL) {
-			SearchCache.VALIDATED_NODE = node
-			SearchCache.VALIDATED_FINAL = value
-		}
-	}
-
-	/*
-	 * Construit ce que la fin de tour lira — plan de danger, carte de soin — tant que le budget
-	 * couvre ce qui lui manque VRAIMENT (FinalCell.coldCost). Le score ne les lit plus : sans cet
-	 * appel, la première clôture terminale ou le placement les paierait à froid en fin de tour, et
-	 * le moteur couperait le tour dedans. En dessous, on s'abstient : le placement se rabattra sur
-	 * son coût spatial plutôt que de se faire couper.
-	 */
-	static prewarmIfAffordable(State, BaseHash, contextBySide, combinedHfp, sideHfp = null) {
-		if (getOperations() + FinalCell.coldCost(State, combinedHfp, sideHfp) <= OPS_CAP - OPS_RESERVE_PLACEMENT) {
-			FinalCell.prewarm(State, BaseHash, contextBySide, combinedHfp, sideHfp)
-		}
+		return pickTerminal(candidates, initialScore, count(rootEntries), terminalLimit)
 	}
 
 	/*
@@ -265,93 +198,32 @@ class ActionSuite {
 	 * COUPURE EXACTE, sans epsilon : la pénalité est >= 0 par construction, donc
 	 * finalScore <= rawScore. Les candidats étant parcourus par score BRUT décroissant, dès
 	 * qu'un score brut ne bat plus le meilleur score final, aucun de ceux qui restent ne le
-	 * pourra non plus. Une égalité parfaite de scores finaux garde le premier plan validé
-	 * rencontré, y compris celui qui a été conservé avant l'expansion.
+	 * pourra non plus. Une égalité parfaite de scores finaux garde le premier candidat évalué
+	 * dans le tri stable.
 	 *
 	 * @return l'action du premier ancêtre du meilleur candidat, null si le plancher gagne
 	 */
-	static pickTerminal(candidates, initialScore, nBases, SearchCache = null) {
+	static pickTerminal(candidates, initialScore, nBases, terminalLimit) {
 		BenchOps.Start("Terminal")
-		// Le meilleur score BRUT ouvre le parcours. Sa première clôture peut donner une
-		// borne avant le tri ; si elle est impossible, d'autres candidats restent évaluables.
-		var seed = candidates[0]
-		var bestRaw = seed.SCORE
-		for (var c in candidates) {
-			if (c.SCORE > bestRaw) {
-				bestRaw = c.SCORE
-				seed = c
-			}
+		var sorted = arraySort(candidates, function(a, b) { return b.SCORE - a.SCORE })
+		var best = null
+		var bestFinal = 0
+		for (var node in sorted) {
+			// Pénalité >= 0 : les candidats suivants ne peuvent plus gagner.
+			if (best != null && node.SCORE <= bestFinal) break
+			if (getOperations() + OPS_SEARCH_MARGIN > terminalLimit) break
+			var close = closeOf(node, terminalLimit, best != null)
+			if (close == null) continue // une autre géométrie peut être déjà chaude
+			if (count(close) > 3) break // résultat tronqué : ne jamais le traiter comme exact
+			var value = node.SCORE - close[1]
+			if (best == null || value > bestFinal) { best = node; bestFinal = value }
 		}
-		// Date limite des évaluations terminales. Chacune peut coûter un balayage de placement
-		// entier et aucune ne s'interrompt : on n'en ouvre plus une fois entamé ce que la suite du
-		// tour doit trouver intact — la part stricte du placement final, celle des bulbes qui
-		// jouent après moi, et la marge du plus cher balayage. Franchir le plafond moteur ici
-		// tuait le tour entier : ni l'action choisie, ni le placement.
-		// Une évaluation commencée avant cette date limite peut encore courir jusqu'à terminalLimit, où
-		// son balayage se tronque : elle rend alors un majorant de sa pénalité, et le budget est épuisé.
-		var terminalLimit = OPS_DEADLINE + OPS_RESERVE_TURN - OPS_RESERVE_PLACEMENT
-		var terminalDeadline = terminalLimit - TERMINAL_EVAL_MARGIN
-		var best = SearchCache == null ? null : SearchCache.VALIDATED_NODE
-		var bestFinal = best == null ? 0 : SearchCache.VALIDATED_FINAL
-		// Le même objet a déjà une clôture complète : son score final est connu.
-		// Éviter les gardes, la matérialisation et la consultation du placement à nouveau.
-		var seedValidated = best != null && seed == best
-		if (!seedValidated && getOperations() <= terminalDeadline && canCloseNow(seed, terminalLimit)) {
-			var seedClose = closeOf(seed, terminalLimit)
-			if (count(seedClose) == 3) {
-				seedValidated = true
-				var seedFinal = bestRaw - seedClose[1]
-				if (best == null || seedFinal > bestFinal) { best = seed; bestFinal = seedFinal }
-			}
-		}
-
-		if (getOperations() <= terminalDeadline) {
-			// Un candidat dont le score BRUT n'atteint pas déjà cette borne ne peut plus gagner : son
-			// score final lui est inférieur ou égal. Les écarter AVANT le tri est ce qui compte —
-			// le parcours n'en ouvre qu'une poignée, et trier des milliers de nœuds pour cela coûtait
-			// plus cher que toutes les évaluations réunies. Sans validation, aucune borne : on
-			// essaie les autres candidats tant que le budget le permet.
-			var live = []
-			for (var c in candidates) {
-				if (best == null || c.SCORE >= bestFinal) push(live, c)
-			}
-			var sorted = arraySort(live, function(a, b) { return b.SCORE - a.SCORE })
-			var n = count(sorted)
-			for (var i = 0; i < n; i++) {
-				// Même sans aucun plan clos, ne pas épuiser la réserve à tester des candidats.
-				if (getOperations() > terminalDeadline) break
-				var node = sorted[i]
-				if (seedValidated && node == seed) continue // déjà clos, aucune seconde facture
-				var raw = node.SCORE
-				if (best != null && raw <= bestFinal) {
-					break
-				}
-				// Reconstruction à froid non finançable : ce candidat reste non clos, les
-				// suivants peuvent encore l'être.
-				if (!canCloseNow(node, terminalLimit)) {
-					continue
-				}
-				var close = closeOf(node, terminalLimit)
-
-				// Balayage tronqué : le budget des évaluations est épuisé, on garde ce qui est déjà clos.
-				if (count(close) > 3) {
-					break
-				}
-				var finalScore = raw - close[1]
-				if (best == null || finalScore > bestFinal) {
-					best = node
-					bestFinal = finalScore
-				}
-			}
-		}
-		// Une validation avec danger prime toujours sur les scores bruts non vérifiés.
-		// La provenance suit la chaîne jusqu'à la vidange, sans recalculer le danger.
 		BFS_LAST_CHAIN_DANGER_VALIDATED = best != null
-		// Aucun candidat clos : ultime repli, annoncé explicitement.
 		if (best == null) {
-			debugW("[BFS] danger not taken into account: raw-score fallback")
-			best = seed
-			bestFinal = bestRaw
+			debugW("[BFS] danger not taken into account: no affordable terminal plan, stop actions")
+			BFS_LAST_CHAIN = []
+			BenchOps.Stop("Terminal")
+			return null
 		}
 		BenchOps.Stop("Terminal")
 
@@ -381,12 +253,19 @@ class ActionSuite {
 	 * s'il est réellement évalué (matérialisation paresseuse, puis cachée sur le nœud — la graine
 	 * repasse ici sans rien recalculer).
 	 */
-	static closeOf(node, truncateAt) {
-		var NodeState = StateClass.materializeNodeState(node)
-		// Toujours avec le danger : canCloseNow a deja verifie qu'il est finançable.
-		return FinalCell.evaluate(NodeState, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, combinedHfpOf(node), node.ME_WALK_FINGERPRINT, truncateAt, true)
+	static closeOf(node, truncateAt, alreadyValidated = false) {
+		var State = StateClass.materializeNodeState(node)
+		var combinedHfp = combinedHfpOf(node)
+		// Au large, même le coût froid entier tient. Sinon préparer item par item,
+		// avec la même garde, au lieu de refuser un bloc estimé à plusieurs millions.
+		if (!alreadyValidated || getOperations() + OPS_COLD_HEAL + OPS_COLD_PLAN + OPS_SEARCH_MARGIN > truncateAt) {
+			var sideHfp = node.HFP_BY_SIDE[State[Me].SIDE]
+			if (!FinalCell.prepareGeometry(State, truncateAt)) return null
+			if (getOperations() + OPS_SEARCH_MARGIN > truncateAt) return null
+			FinalCell.prewarm(State, node.BASE_HASH, node.CONTEXT_BY_SIDE, combinedHfp, sideHfp)
+		}
+		return FinalCell.evaluate(State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, combinedHfp, node.ME_WALK_FINGERPRINT, truncateAt, true)
 	}
-
 	/*
 	 * Fold des empreintes de soigneurs du nœud : clé de la carte de soin que FinalCell consomme.
 	 * Le scoring ne la lit plus, elle n'est donc repliée que sur les nœuds qu'on envisage de clore.
@@ -400,38 +279,25 @@ class ActionSuite {
 		return node.COMBINED_HFP
 	}
 
-	/*
-	 * Peut-on ouvrir la clôture de ce candidat ? Une clôture qui doit reconstruire À FROID le
-	 * plan de danger ou la carte de soin coûte des millions d'opérations et ne s'interrompt pas
-	 * en route : sous cette marge, on laisse le candidat non clos plutôt que de faire tuer le
-	 * tour par le moteur. Le test de chaleur n'est payé que quand le budget est déjà court.
-	 */
-	static canCloseNow(node, truncateAt) {
-		// Au large, rien à vérifier : même le pire des constructions tient.
-		if (getOperations() + OPS_COLD_HEAL + OPS_COLD_PLAN <= truncateAt) return true
-		var State = StateClass.materializeNodeState(node)
-		return getOperations() + FinalCell.coldCost(State, combinedHfpOf(node), node.HFP_BY_SIDE[State[Me].SIDE]) <= truncateAt
-	}
-
-	// Classement global des états à la même profondeur, sur leur score absolu.
-	// Le tri stable conserve l'ordre de génération en cas d'égalité.
-	// Paliers calibrés sur le coût COMPLET des expansions, depuis les mêmes états.
-	// Peu d'actions / beaucoup de budget : élargir ; une géométrie chargée : réduire.
-	// Le plancher évite de financer un très grand beam sur une racine minuscule.
-	static beamWidthFor(actionCount, budget) {
+	// Coût d'une expansion complète, normalisé par actions initiales et longueur TP/coût.
+	// Paliers : q90 +20%, 24 états × 7 largeurs ; prévision, jamais borne de sécurité.
+	// La cible ajuste seulement la largeur : aucune coupure au budget indicatif.
+	static beamWidthFor(actionCount, tp, averageCost, budget) {
 		if (BFS_BEAM_WIDTH > 0) return BFS_BEAM_WIDTH
-		var perAction = budget / max(16, actionCount)
+		var depth = max(1, tp / max(1, averageCost))
+		var perAction = budget / (max(16, actionCount) * depth)
 		switch (true) {
-			case perAction >= 43200: return 12
-			case perAction >= 30300: return 8
-			case perAction >= 20400: return 6
-			case perAction >= 10300: return 4
-			case perAction >= 6500: return 3
-			case perAction >= 3500: return 2
+			case perAction >= 10700: return 12
+			case perAction >= 5400: return 8
+			case perAction >= 3900: return 6
+			case perAction >= 2200: return 4
+			case perAction >= 1700: return 3
+			case perAction >= 1100: return 2
 			default: return 1
 		}
 	}
 
+	// Classement global des états par score absolu, stable en cas d'égalité.
 	static selectBeam(nodes, width = 3) {
 		var sorted = arraySort(nodes, function(a, b) { return b.SCORE - a.SCORE })
 		var beam = []
@@ -469,7 +335,7 @@ class ActionSuite {
 		for (var actual in frame.FRESH) keepBeamSuccessor(best, actual, width)
 		var Workspace = null
 		for (var hint in frame.ORDER) {
-			if (getOperations() > OPS_DEADLINE) break
+			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) break
 			// Aucun second passage sur les anciennes estimations non positives.
 			if (hint.GAIN <= BFS_DELTA_EPSILON) break
 			// Coupure APPROXIMATIVE : les anciens gains guident les essais, sans
@@ -526,7 +392,7 @@ class ActionSuite {
 				if (!(key in frame.GROUPS) || group.IS_LOCAL) frame.GROUPS[key] = group
 			}
 			set = new ActionGroupSetClass(frame.GROUPS)
-			if (getOperations() <= OPS_DEADLINE) SearchCache.GROUP_SETS[setKey] = set // jamais une préparation tronquée
+			if (getOperations() + OPS_SEARCH_MARGIN <= OPS_DEADLINE) SearchCache.GROUP_SETS[setKey] = set // jamais une préparation tronquée
 		} else {
 			frame.GROUPS = set.GROUPS
 			SearchCache.SET_HITS++
@@ -543,7 +409,7 @@ class ActionSuite {
 			keys = set.KEYS
 			SearchCache.REUSED_SCORES += count(keys)
 		} else for (var key in set.KEYS) {
-			if (getOperations() > OPS_DEADLINE) { incomplete = true; break }
+			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) { incomplete = true; break }
 			if (!(key in SearchCache.ESTIMATES)) {
 				var playable = framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
 				if (playable == null) { incomplete = true; continue }
@@ -659,7 +525,7 @@ class ActionSuite {
 		var entries = []
 		var Workspace = null
 		for (var playable in pairs) {
-			if (getOperations() > OPS_DEADLINE) break
+			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) break
 			var key = estimateKeyOf(playable)
 			var entry
 			if (reuseEstimates && key in SearchCache.ESTIMATES) {

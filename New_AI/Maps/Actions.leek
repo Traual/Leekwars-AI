@@ -394,7 +394,7 @@ class ActionsClass {
 		var availability = availabilityOf(State[Me])
 		var costs = availability.COSTS
 		for (var item in Inventory) {
-			if (getOperations() > OPS_DEADLINE) break // arrêter entre deux extensions, jamais cacher un domaine partiel
+			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) break // arrêter entre deux extensions, jamais cacher un domaine partiel
 			var info = ITEMINFO[item]
 			var cost = costs[item]
 			if (cost == null) cost = ActionSuite.baseCostOf(State[Me], item, costs, availability.USES, availability.STOCKS)

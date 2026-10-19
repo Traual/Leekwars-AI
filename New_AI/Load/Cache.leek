@@ -457,6 +457,9 @@ global CELL_BY_LSB          = []
 // OPS_CAP survit au tour : le bulbe lit celui de son invocateur (getCores() rendrait le sien).
 global OPS_CAP = null
 global OPS_DEADLINE = 0
+// Marge commune, calibrée initialement sur des préparations de ~195k.
+// Les grosses géométries froides se contrôlent entre origines, pas en un bloc.
+global OPS_SEARCH_MARGIN = 250000
 // Reserve de fin de tour : choisir la cellule finale et s'y rendre. MESURE sur bench_4v4_full,
 // 49 tours d'entite : mediane 12 882 operations, p90 32 234, maximum 82 861. La reserve vaut
 // donc 1,8 fois le pire cas observe, pas cinq fois comme la premiere version qui rendait la

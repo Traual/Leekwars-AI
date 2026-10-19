@@ -290,6 +290,26 @@ class ItemCoverageClass {
 		return _final
 	}
 
+	// Même union que getMapHittableCellsTotal, interruptible entre origines.
+	// Une géométrie incomplète n'est jamais publiée ; les LoS complètes déjà
+	// calculées restent dans leur cache habituel et accélèrent un nouvel essai.
+	static warmGeometryBefore(Item, walkCellsMap, movementKey, limit) {
+		var info = ITEMINFO[Item]
+		var launchKey = (movementKey << 25) | info.LAUNCH_GEOMETRY_KEY
+		if (!(launchKey in ITEM_LAUNCH_GEOMETRY_CACHE)) {
+			var direct = [:]
+			var launch = info.NEEDLOS ? ActionsClass.LaunchWithLos[info.LAUNCHTYPE] : ActionsClass.LaunchWithoutLos[info.LAUNCHTYPE]
+			for (var origin: var mp in walkCellsMap) {
+				if (getOperations() + OPS_SEARCH_MARGIN > limit) return false
+				direct += launch(origin, info.MINRANGE, info.MAXRANGE)
+			}
+			ITEM_LAUNCH_GEOMETRY_CACHE[launchKey] = direct
+		}
+		if (getOperations() + OPS_SEARCH_MARGIN > limit) return false
+		geometryOfItem(Item, walkCellsMap, movementKey)
+		return true
+	}
+
 	/*
 	 * [cellule -> true] : toutes les cellules touchables en direct par l'item depuis
 	 * n'importe quelle cellule accessible du caster.

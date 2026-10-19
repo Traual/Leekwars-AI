@@ -44,7 +44,7 @@ class Play {
 			// moins d'avortements. Replanifier apres chaque action vaut donc plus que jouer
 			// des actions estimees sur un etat perime. La vidange ne sert que quand aucun plan
 			// n'est plus finançable du tout.
-			if (getOperations() > OPS_DEADLINE) {
+			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) {
 				drainChain(StateClass.countSummonsAfterMe(State))
 				break
 			}

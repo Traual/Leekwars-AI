@@ -359,7 +359,13 @@ Le **danger de placement** utilise la fraction des PV courants menacée : les 10
 
 Le soin atténue ce risque : **pénalité = importance × (0,4 × risque brut + 0,6 × risque net)**. `Placement.HEAL_ATTENUATION = 0.6` règle la part effaçable par les soins. Le danger brut est pris après les protections et avant les soins ; le net réutilise l'ordre de jeu, le plafond de vie et l'impossibilité de soigner un mort. Aucun soin ne donne de bonus autonome : même avec un net nul, 40 % du risque brut reste compté. Pour 3 000 PV et une importance de 3 000, 1 000 dégâts coûtent 700 sans soin, 340 avec 600 soins utilisables et 280 s'ils sont entièrement compensés. La somme brute est mise en cache par clé de danger, sans reconstruire la carte. Le soutien allié et le potentiel offensif forment le coût spatial décrit ci-dessous.
 
-Le **choix terminal du BFS** conserve immédiatement toute première suite entièrement évaluée avec danger. Si le meilleur score brut ne peut pas être évalué, les autres candidats restent examinés tant que le budget le permet. Un candidat non évalué ne remplace jamais un plan validé. Sans aucune évaluation complète, le repli brut reste possible et affiche `[BFS] danger not taken into account: raw-score fallback` ; une vidange de cette suite rappelle `[VIDANGE] danger not taken into account: raw-score plan`. Cela signale une absence d'évaluation, pas un danger estimé nul. Ces règles ne garantissent pas l'absence de dégâts : les suites validées restent départagées par leur score après pénalité de placement.
+Le **choix terminal du BFS** intervient après l'expansion, sans validation de danger
+à la racine ni aux fins de branches. Les candidats sont triés par score brut décroissant,
+puis évalués avec le placement jusqu'à ce que leur score brut ne puisse plus battre le
+meilleur score final, ou que la garde du tour arrête le travail. Seules les évaluations
+complètes participent au choix. Sans candidat entièrement évalué, la recherche rend
+`null`, vide sa suite et affiche `[BFS] danger not taken into account: no affordable
+terminal plan, stop actions`. Elle ne lance plus une action choisie au score brut seul.
 
 Au placement final, le vrai repli sans danger affiche `[placement] danger not taken into account: spatial cost only`. Un résultat complet déjà en cache reste utilisé et ne produit pas cet avertissement. Ce repli n'ajoute aucune estimation de danger par nœud ; les réserves sont détaillées dans la section budget.
 
@@ -391,7 +397,8 @@ Un filtre ciblé empêche **Saut + Régénération sans soin** de se qualifier u
 
 La branche expérimentale **`search-beam`** utilise un beam search de largeur
 **automatique, de 1 à 12**. Cette largeur est choisie après la préparation de racine,
-selon le nombre d'actions scorées et le budget d'expansion restant, puis reste la même
+selon le nombre d'actions scorées, les PT restants, leur coût moyen et les opérations
+disponibles, puis reste la même
 à toutes les profondeurs de cette décision. Chaque parent propose au plus ce nombre
 de successeurs réellement jouables et de gain positif ; les meilleurs états de cette
 nouvelle vague continuent dans la même limite. Le classement entre parents
@@ -469,10 +476,9 @@ sont comparés exactement. Le contexte de scoring doit être le même. Les objet
 sont immuables ; les conséquences écrivent leurs clones. Tout nouvel input ajouté au
 scoring doit aussi entrer dans `sameEntityScoreInputs`.
 
-À la racine, les actions locales sont scorées avant la génération offensive. Une première
-suite entièrement évaluée avec danger est conservée avant l'expansion, dans les limites
-existantes, lorsque son coût est finançable. Une préparation ou une expansion qui épuise
-ensuite le budget ne peut pas effacer ce plan validé. Les catalogues d'origines et leurs choix sont vidés
+À la racine, les actions locales sont scorées avant la génération offensive. Le danger
+reste absent de ces simulations et de l'expansion ; il est appliqué au classement final.
+Les catalogues d'origines et leurs choix sont vidés
 au changement de tour/acteur. `TURN_ACTION_SEARCH_CACHE` conserve les ensembles de groupes
 et les estimations entre les casts réels. À chaque nouvelle capture, les modifications
 de stats, cellule ou registre d'effets invalident les estimations qui en dépendent ;
@@ -488,47 +494,72 @@ estimations positives ordonnent les essais, avec une coupure approximative lorsq
 assez de successeurs actuels dépassent les estimations restantes pour remplir le beam. Chaque successeur
 proposé a été simulé et rescorré dans son parent, déplacements réels inclus. Une
 inversion, un kill ou une invocation modifie donc le plateau de sa branche normalement.
-La validation finale du danger, les réserves et le plan déjà validé restent identiques
-à main. Les feuilles sans continuation peuvent aussi être validées pendant l'expansion.
+Les valeurs de scoring et les projections restent celles de main. La validation du
+danger se fait seulement après les branches ; aucun candidat brut ne remplace une
+évaluation terminale complète. Les réserves de fin de tour et des invocations restent inchangées.
 
 ## Budget d'opérations
 
-Les limites se règlent dans `User/BFS.leek` et `Load/Cache.leek`. La génération,
-le scoring de racine, la projection et l'expansion ont des coûts distincts : le quota
-ci-dessous ne limite pas tout le coût de la décision à 20 % du budget du tour.
+Le plafond absolu de recherche est fixé par `Play`, à partir du plafond moteur,
+des **500 000 opérations de fin de tour** et des **1 000 000 par bulbe** encore à
+jouer. Il ne change plus pendant une décision. Génération et expansion consultent
+la même limite avec `OPS_SEARCH_MARGIN = 250000`. Le contrôle en double dans la
+boucle extérieure du beam a été retiré ; les boucles qui peuvent durer gardent
+leur interruption entre éléments. L'entrée de chaque décision utilise aussi cette
+marge et reprend la vidange existante quand la recherche doit s'arrêter.
+Une préparation interrompue n'est jamais publiée
+dans un cache qui promet un résultat complet.
 
-| Réglage | Valeur actuelle | Usage |
-| --- | ---: | --- |
-| `BFS_DECISION_BUDGET_RATIO` | 0,2 | Part du budget restant après préparation consacrée à l'expansion. |
-| `BFS_DECISION_MIN_EXPANSION` | 250 000 | Minimum demandé pour l'expansion, toujours borné par le plafond restant. |
-| `BFS_BEAM_WIDTH` | 0 | 0 = automatique ; une valeur positive impose une largeur fixe. |
-| `OPS_RESERVE_TURN` | 500 000 | Marge retirée du plafond de planification du joueur. |
-| `OPS_RESERVE_PLACEMENT` | 300 000 | Marge conservée pour le placement réel. |
-| `OPS_RESERVE_PER_BULB` | 1 000 000 | Part réservée à chaque bulbe du propriétaire qui doit encore jouer. |
-| `TERMINAL_EVAL_MARGIN` | 100 000 | Marge avant de commencer une évaluation terminale. |
-| `OPS_MOVE_MARGIN` | 25 000 | Marge du dernier déplacement réel. |
+La **largeur** remplace le quota strict de 20 % et le minimum de 250 000. Après les
+racines, on calcule le coût moyen **en PT** des actions positives, déplacement et
+équipement compris. La règle est :
 
-Les coûts froids de danger/soin sont estimés avant de commencer une clôture et
-réévalués d'après les constructions observées. Une boucle peut s'arrêter entre
-deux candidats ou cellules ; certaines constructions restent indivisibles.
-Ces réserves réduisent les risques de dépassement, sans garantir que toute recherche
-ou toute cellule de placement pourra être entièrement évaluée.
+```text
+longueur estimée = max(1, PT restants / max(1, coût moyen))
+disponible estimé = max(0, limite du tour − opérations utilisées − coût froid estimé)
+cible d'expansion = disponible estimé / longueur estimée
+unité de coût = cible d'expansion / (max(16, actions initiales) × longueur estimée)
+```
 
-Une décision consacre **20 % du budget restant après sa préparation** à l'expansion
-(`BFS_DECISION_BUDGET_RATIO`, minimum 250 000 opérations, borné par le plafond restant).
-Le plafond du tour est restauré à la sortie : le reste permet de replanifier après les
-effets réels du premier cast, au lieu de dépenser presque tout sur une longue suite
-projetée puis de la vider sans nouvelle recherche. Ce quota ne réduit pas le budget
-global du tour et ne change pas les cœurs des builds.
+| Unité de coût, en opérations | Largeur |
+| --- | ---: |
+| ≥ 10 700 | 12 |
+| ≥ 5 400 | 8 |
+| ≥ 3 900 | 6 |
+| ≥ 2 200 | 4 |
+| ≥ 1 700 | 3 |
+| ≥ 1 100 | 2 |
+| En dessous | 1 |
 
-Après une action réelle, l'arbre est abandonné ; la recherche suivante repart de la
-capture moteur. Les estimations encore pertinentes et les caches géométriques restent
-utilisables sous leurs clés. Les candidats examinés sont toujours resimulés.
-Le danger demeure évalué à la clôture des plans, et le meilleur plan déjà validé reste
-prioritaire sur un score brut non évalué. La réserve stricte de placement vaut
-300 000 opérations, à l'intérieur de la réserve globale de tour de 500 000.
-L'écart finance notamment la vidange et la clôture terminale, en conservant une
-part pour la capture et le placement réels.
+Ces seuils se règlent dans `beamWidthFor`. Le beam choisi reste constant pendant
+la décision ; `BFS_BEAM_WIDTH > 0` impose encore une largeur manuelle. **La cible
+n'est pas une limite** : une recherche peut la dépasser et finir sa profondeur.
+La décision suivante repart des PT et opérations réellement restants. Si le coût
+froid estimé dépasse le disponible, on essaie une largeur 1 au lieu d'interdire
+toute recherche. Les coûts restent des estimations, pas des bornes universelles.
+
+Le danger est calculé **uniquement au classement terminal**. Sa limite utilise la
+partie autorisée de la réserve de fin de tour ; les 300 000 opérations du placement
+réel restent protégées. Si les structures sont froides, `prepareGeometry` construit
+leurs géométries **item par item**, avec un contrôle **entre les origines de lancement**
+dans les items coûteux. C'est la même garde et les mêmes caches existants.
+Chaque item et chaque couverture publiés sont complets. Une interruption conserve
+les items déjà construits et les LoS complètes, sans publier une couverture tronquée. Les constructeurs
+et les formules de danger/soin restent inchangés. Au large, une clôture dont le coût
+froid estimé tient entièrement peut emprunter directement le chemin habituel.
+
+La réserve globale de 500 000 inclut la part stricte de placement de 300 000 : elles
+ne s'additionnent pas. La vidange garde son contrôle du coût d'exécution observé ;
+le placement réel garde ses 25 000 pour le dernier déplacement. Le plafond propre
+à la préparation d'`EnemyOffense` reste inchangé. Ces protections d'exécution ne
+sont pas des quotas supplémentaires dans l'expansion du beam.
+
+Après un cast réel, les nœuds sont abandonnés ; la capture suivante réutilise les
+catalogues et les estimations encore valides, puis resimule les candidats examinés.
+Si aucune clôture complète avec danger ne tient, on finit les actions et passe au
+placement, au lieu d'exécuter un plan brut. Les replis de placement sans danger
+restent annoncés. Une garde entre blocs ne garantit pas le coût de tout bloc
+indivisible ; les interruptions et plafonds natifs restent mesurés en réception.
 
 La couverture offensive de danger assemble maintenant les items **à la demande pour
 chaque cellule consultée**, en partageant leurs géométries. Le placement de Me ne
@@ -626,7 +657,7 @@ normales ne présente aucune erreur ni tour avorté ; il ne mesure pas la winrat
 | `ScoringDebug.ENABLED` | Actuellement `true` : affichage au début du tour, puis **une** `pause()` après la liste complète. `false` désactive logs et pause. |
 | `Best: … bases, … steps` | Première action du plan retenu et delta terminal. Les bases sont les entrées de racine ; les steps sont les successeurs ajoutés aux suites, pas toutes les simulations effectuées. |
 | `[BFS] group scores: …` | Scores calculés, estimations reprises, tris servis et estimations conservées depuis les casts précédents. |
-| `[BFS] danger not taken into account: raw-score fallback` | Aucun candidat n'a pu être complètement évalué avec danger ; le choix repose sur le score brut. |
+| `[BFS] danger not taken into account: no affordable terminal plan, stop actions` | Aucun candidat complètement évalué avec danger ; arrêt des actions, sans repli brut. |
 | `[VIDANGE] danger not taken into account: raw-score plan` | La suite exécutée sans nouvelle recherche venait d'un plan non validé avec danger. |
 | `[placement] danger not taken into account: spatial cost only` | Le placement réel n'a pas pu financer le danger ; seuls les coûts spatiaux sont pris en compte. |
 | `[placement] offensive potential truncated: operation budget` | Le profil offensif de placement est partiel ; il ne devient pas une entrée de cache complète. |
@@ -809,7 +840,10 @@ sa supériorité sur main. Les trajectoires diffèrent : les totaux d'opération
 steps de ce duel ne mesurent pas une économie à déroulement identique. Main reste
 inchangée et cette branche demeure expérimentale.
 
-## Beam adaptatif — calibration du 19 octobre 2026
+## Historique : première calibration adaptative du 19 octobre 2026
+
+Les réglages de cette section correspondent au commit **797ae24**, avant la garde
+commune et la prise en compte des PT décrites dans la section budget actuelle.
 
 Les 100 combats ci-dessus concernaient la largeur fixe 3, avant cette évolution.
 `beamWidthFor` utilise le budget d'expansion divisé par `max(16, nombre d'actions)`.
@@ -867,6 +901,48 @@ observé n'est que **0,18 %** du coût des décisions de calibration en largeur 
 Les troncatures restantes et les coûts indivisibles ne permettent pas de remplacer
 ces protections par le seul choix de largeur. Scoring, simulation, placement et
 budgets de production restent inchangés.
+
+## Garde commune et beam selon les PT — 19 octobre 2026
+
+Cette évolution remplace les anciens paliers ci-dessus ; son fonctionnement et les
+réglages actuels sont dans la section budget. Calibration : **24 états** (8 points
+de combat × 3 niveaux de PT) × 7 largeurs, soit 168 expansions utiles. Même état initial
+entre largeurs ; aucune modification de build. Les paliers utilisent q90 +20% du
+coût normalisé par actions et longueur estimée. Un corpus distinct de 24 états
+(48 essais auto/fixe3) termine toutes ses expansions automatiques sous les vrais
+plafonds ; largeur moyenne7.96. Les3 cibles nulles font encore
+une petite recherche de largeur 1. Les seuils ne sont pas réajustés sur ce corpus.
+
+Quatre états à largeur fixe 3 donnent 375 simulations exactement identiques :
+items, origines, cibles, coûts, scores, ordre et plateau. Coût de décision agrégé :
+**16,320,282→16,044,214 opérations, soit−1.69%**.
+Ce petit échantillon ne mesure pas tous les tours ; deux états ont un léger surcoût.
+
+Réception finale :20 combats courts 4v4,10 paires miroir de 8 rounds, contre le beam
+précédent 797ae24, avec les budgets natifs et les builds sauvegardés :
+
+|Mesure|Nouveau|Précédent|
+|---|---:|---:|
+|Décisions avec actions de racine|2303|2569|
+|Largeur moyenne|8.49|7.27|
+|Profondeur maximale moyenne|2.963|2.821|
+|Profondeur du plan choisi|2.182|2.299|
+|Steps retenus|148545|125575|
+|Opérations de décision cumulées|2863688756|2504088723|
+|Erreurs LeekScript/coupures moteur,deux camps|0/0|0/0|
+
+Les trajectoires diffèrent :+18.3% de steps et+14.4% d'opérations sont des
+observations de réception, pas une économie à combat identique ni une preuve de
+force contre main. Le danger n'est calculé qu'après l'arbre. La réception compte
+encore25 arrêts d'actions faute de clôture complète et27 placements sans danger
+dans le camp nouveau : les replis sont explicites. Main reste inchangée.
+
+Une coupure du premier prototype à 4 cœurs a révélé un item géométrique de845563
+opérations. Le correctif interrompt sa préparation **entre origines**, en conservant
+seulement des géométries complètes et les LoS déjà calculées. Le cas régressif, les
+48 essais indépendants et les 20 combats natifs passent ensuite. Dix-huit contrôles
+fonctionnels passent, dont l'égalité des géométries et le choix terminal contre un
+oracle exhaustif. Scoring, simulation, projections et réserves restent inchangés.
 
 ## Documentation et outils
 

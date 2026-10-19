@@ -67,6 +67,35 @@ class FinalCell {
         return res[0]
     }
 
+    // Préparation interruptible des seules géométries, sans changer les projections.
+    // Chaque item et chaque couverture publiés dans les caches sont complets ; une
+    // interruption garde les items déjà construits, jamais une couverture partielle.
+    static prepareGeometry(State, limit) {
+        var side = State[Me].SIDE
+        for (var id: var stat in State) {
+            if (id == Me || stat.LIFE <= 0) continue
+            var ally = stat.SIDE == side
+            var items = ally ? HealClass.getHealItemsList(stat) : EntityDangerClass.getItemsList(stat)
+            if (count(items) == 0) continue
+            var cache = ally ? HEAL_CELL_ITEM_AOE_CACHE : MAP_CELL_ITEM_AOE_CACHE
+            for (var tier = 0; tier < 4; tier++) {
+                if (!WalkCellsClass.dangerTierAvailable(stat, tier)) continue
+                var key = DangerPlanClass.mapCellItemAoeKeyForLayer(stat, tier)
+                if (key in cache) continue
+                var movementKey = key & DangerPlanClass.MOVEMENT_KEY_MASK
+                var walk = null
+                for (var item in items) {
+                    if (ItemCoverageClass.geometriesReady([item], movementKey)) continue
+                    if (getOperations() + OPS_SEARCH_MARGIN > limit) return false
+                    if (walk == null) walk = WalkCellsClass.getDangerLayerCells(stat, tier)
+                    if (!ItemCoverageClass.warmGeometryBefore(item, walk, movementKey, limit)) return false
+                }
+                cache[key] = ItemCoverageClass.buildLazyCellItemAoe(items, walk, movementKey)
+            }
+        }
+        return true
+    }
+
     /*
      * Construit les objets que le balayage lira : la carte de soin et le plan de danger de mon
      * camp, avec les deux séquences de Me. Le score de la recherche ne lit plus ni danger ni

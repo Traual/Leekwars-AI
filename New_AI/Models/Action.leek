@@ -88,8 +88,6 @@ class ActionSearchCacheClass {
 	SET_HITS = 0
 	RETAINED_ESTIMATES = 0
 	ESTIMATE_VERSION = 0
-	VALIDATED_NODE
-	VALIDATED_FINAL
 	constructor() {
 		this.ESTIMATES = [:]
 		this.DEPENDENCIES = [:]
@@ -135,8 +133,6 @@ class ActionSearchCacheClass {
 		this.REUSED_SCORES = 0
 		this.ORDER_HITS = 0
 		this.SET_HITS = 0
-		this.VALIDATED_NODE = null
-		this.VALIDATED_FINAL = null
 	}
 
 	// Collisions d'ids modulo 64 : elles invalident TROP, jamais pas assez.
