@@ -4,8 +4,8 @@
  * 1. EXPANSION, sur les scores BRUTS (aucun danger positionnel de Me) :
  *  - Profondeur 1 : chaque action jouable est clonée + appliquée + scorée, puis triée
  *    par PRIORITÉ décroissante (BFS_SCORE_PER_ACTION_COST : rendement par TP, ou Δscore).
- *  - À chaque profondeur, chaque parent propose jusqu'à BFS_BEAM_WIDTH successeurs
- *    jouables et positifs. Seuls les BFS_BEAM_WIDTH meilleurs états continuent.
+ *  - À chaque profondeur, chaque parent propose jusqu'à la largeur choisie de successeurs
+ *    jouables et positifs. Seuls les meilleurs états de cette largeur continuent.
  *    Les priorités cachées guident les essais ; chaque état retenu a un score courant.
  *  - Les gains de groupes sont partagés par signature de cibles pendant le tour,
  *    avec invalidation des dépendances après chaque vrai cast.
@@ -60,8 +60,9 @@ global TERMINAL_EVAL_MARGIN = 100000
 // pris en compte, mais par la chaine elle-meme, qui s'arrete quand les TP manquent.
 global BFS_SCORE_PER_ACTION_COST = false
 
-// Largeur maintenue à TOUTES les profondeurs, pour les parents et leurs successeurs.
-global BFS_BEAM_WIDTH = 3
+// Largeur choisie par décision puis maintenue à toutes ses profondeurs.
+// 0 : largeur automatique ; une valeur positive impose une largeur fixe.
+global BFS_BEAM_WIDTH = 0
 global BFS_DECISION_BUDGET_RATIO = 0.2
 global BFS_DECISION_MIN_EXPANSION = 250000
 
@@ -167,28 +168,27 @@ class ActionSuite {
 		var remaining = max(0, OPS_DEADLINE - expansionStart)
 		var allowance = max(BFS_DECISION_MIN_EXPANSION, floor(remaining * BFS_DECISION_BUDGET_RATIO))
 		OPS_DEADLINE = min(OPS_DEADLINE, expansionStart + allowance)
-		debug("[BFS] expansion budget: " + min(remaining, allowance) + " operations (" + remaining + " remaining this turn)")
+		var beamWidth = beamWidthFor(count(rootEntries), min(remaining, allowance))
+		debug("[BFS] expansion budget: " + min(remaining, allowance) + " operations (" + remaining + " remaining this turn)" + " | beam width: " + beamWidth)
 
 		// TOUT nœud retenu est une suite où l'on peut
 		// s'arrêter : le plancher, chaque action racine retenue, et chaque nœud intermédiaire
 		// du déroulé — pas seulement le dernier de chaque chaîne.
 		var candidates = [noPlay]
-
+		var roots = []
 		for (var entry in rootEntries) {
-			// Une différée ne vaut rien dans CET état : ni candidat terminal, ni tête de chaîne.
 			if (entry.DEFERRED) continue
 			var baseNode = entry.NODE
 			baseNode.SCORE = entry.SCORE
 			push(candidates, baseNode)
+			push(roots, baseNode)
 		}
-		var roots = []
-		for (var entry in rootEntries) if (!entry.DEFERRED) push(roots, entry.NODE)
-		var frontier = selectBeam(roots)
+		var frontier = selectBeam(roots, beamWidth)
 		while (count(frontier) > 0 && getOperations() <= OPS_DEADLINE) {
 			var nextWave = []
 			for (var parent in frontier) {
 				if (getOperations() > OPS_DEADLINE) break
-				var successors = findBestNextNodes(parent, SearchCache, MySide)
+				var successors = findBestNextNodes(parent, SearchCache, MySide, beamWidth)
 				if (count(successors) == 0) validateChain(parent, SearchCache)
 				for (var next in successors) {
 					push(candidates, next)
@@ -196,7 +196,7 @@ class ActionSuite {
 					push(nextWave, next)
 				}
 			}
-			frontier = selectBeam(nextWave)
+			frontier = selectBeam(nextWave, beamWidth)
 		}
 		BenchOps.Stop("BFS")
 		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " reused, " + SearchCache.ORDER_HITS + " cached orders, " + SearchCache.RETAINED_ESTIMATES + " retained across casts")
@@ -415,27 +415,47 @@ class ActionSuite {
 
 	// Classement global des états à la même profondeur, sur leur score absolu.
 	// Le tri stable conserve l'ordre de génération en cas d'égalité.
-	static selectBeam(nodes) {
+	// Paliers calibrés sur le coût COMPLET des expansions, depuis les mêmes états.
+	// Peu d'actions / beaucoup de budget : élargir ; une géométrie chargée : réduire.
+	// Le plancher évite de financer un très grand beam sur une racine minuscule.
+	static beamWidthFor(actionCount, budget) {
+		if (BFS_BEAM_WIDTH > 0) return BFS_BEAM_WIDTH
+		var perAction = budget / max(16, actionCount)
+		switch (true) {
+			case perAction >= 43200: return 12
+			case perAction >= 30300: return 8
+			case perAction >= 20400: return 6
+			case perAction >= 10300: return 4
+			case perAction >= 6500: return 3
+			case perAction >= 3500: return 2
+			default: return 1
+		}
+	}
+
+	static selectBeam(nodes, width = 3) {
 		var sorted = arraySort(nodes, function(a, b) { return b.SCORE - a.SCORE })
 		var beam = []
-		for (var i = 0; i < min(BFS_BEAM_WIDTH, count(sorted)); i++) push(beam, sorted[i])
+		for (var i = 0; i < min(width, count(sorted)); i++) push(beam, sorted[i])
 		return beam
 	}
 
 	// Petite liste triée des meilleurs gains réellement simulés pour UN parent.
-	static keepBeamSuccessor(best, entry) {
+	static keepBeamSuccessor(best, entry, width = 3) {
 		if (entry.DEFERRED) return;
+		var size = count(best)
+		// Le dernier est le plus faible ; égalité = garder le plus ancien.
+		if (size == width && entry.PRIORITY <= best[size - 1].PRIORITY) return;
 		var slot = 0
-		while (slot < count(best) && best[slot].PRIORITY >= entry.PRIORITY) slot++
-		if (slot >= BFS_BEAM_WIDTH) return;
-		if (count(best) < BFS_BEAM_WIDTH) push(best, entry)
+		while (slot < size && best[slot].PRIORITY >= entry.PRIORITY) slot++
+		if (slot >= width) return;
+		if (size < width) push(best, entry)
 		for (var j = count(best) - 1; j > slot; j--) best[j] = best[j - 1]
 		best[slot] = entry
 	}
 
 	/* Les priorités sont triées sans résoudre toutes les origines. Les hits
 	 * partagent un ordre de CLÉS, jamais les actions concrètes d'un autre parent. */
-	static findBestNextNodes(Parent, SearchCache, MySide) {
+	static findBestNextNodes(Parent, SearchCache, MySide, width = 3) {
 		var State = StateClass.materializeNodeState(Parent)
 		var mine = State[Me]
 		if (mine.LIFE <= 0 || mine.TP < MINIMUM_COST_ITEM) return []
@@ -446,7 +466,7 @@ class ActionSuite {
 		var best = []
 		// Les nouveaux groupes sont déjà simulés par prepareGroups. Les garder même
 		// si cette préparation a épuisé le budget, sans les simuler une seconde fois.
-		for (var actual in frame.FRESH) keepBeamSuccessor(best, actual)
+		for (var actual in frame.FRESH) keepBeamSuccessor(best, actual, width)
 		var Workspace = null
 		for (var hint in frame.ORDER) {
 			if (getOperations() > OPS_DEADLINE) break
@@ -454,7 +474,7 @@ class ActionSuite {
 			if (hint.GAIN <= BFS_DELTA_EPSILON) break
 			// Coupure APPROXIMATIVE : les anciens gains guident les essais, sans
 			// garantir qu'une action plus bas n'a pas augmenté depuis son estimation.
-			if (count(best) == BFS_BEAM_WIDTH && best[BFS_BEAM_WIDTH - 1].PRIORITY >= hint.PRIORITY) break
+			if (count(best) == width && best[width - 1].PRIORITY >= hint.PRIORITY) break
 			if (hint.KEY in frame.FRESH) continue
 			var playable = framePlayable(frame, hint.KEY, mine, walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
 			if (playable == null) continue
@@ -462,7 +482,7 @@ class ActionSuite {
 			var actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
 				MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, walk)
 			rememberScored(SearchCache, hint.KEY, actual)
-			keepBeamSuccessor(best, actual)
+			keepBeamSuccessor(best, actual, width)
 		}
 		var successors = []
 		for (var entry in best) {
@@ -499,7 +519,9 @@ class ActionSuite {
 			var groups = ActionsClass.getEveryActionsInAState(State, Walk, mine.CELL, BaseHash)
 			for (var group in groups) {
 				if (group.Item == CHIP_RESURRECTION && resurrectionTargetId == null) continue
-				if (baseCostOf(mine, group.Item, frame.COSTS, frame.USES, availability.STOCKS) < 0) continue
+				var cost = frame.COSTS[group.Item]
+				if (cost == null) cost = baseCostOf(mine, group.Item, frame.COSTS, frame.USES, availability.STOCKS)
+				if (cost < 0) continue
 				var key = groupEstimateKey(group, resurrectionTargetId)
 				if (!(key in frame.GROUPS) || group.IS_LOCAL) frame.GROUPS[key] = group
 			}

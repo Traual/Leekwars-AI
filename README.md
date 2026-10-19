@@ -389,10 +389,12 @@ Un filtre ciblé empêche **Saut + Régénération sans soin** de se qualifier u
 
 ## Recherche de suites d'actions
 
-La branche expérimentale **`search-beam`** utilise un beam search de largeur **3**.
-Après le scoring de racine, elle conserve les trois meilleurs états. À chaque profondeur,
-chacun propose jusqu'à trois successeurs réellement jouables et de gain positif ; les
-trois meilleurs états de cette nouvelle vague continuent. Le classement entre parents
+La branche expérimentale **`search-beam`** utilise un beam search de largeur
+**automatique, de 1 à 12**. Cette largeur est choisie après la préparation de racine,
+selon le nombre d'actions scorées et le budget d'expansion restant, puis reste la même
+à toutes les profondeurs de cette décision. Chaque parent propose au plus ce nombre
+de successeurs réellement jouables et de gain positif ; les meilleurs états de cette
+nouvelle vague continuent dans la même limite. Le classement entre parents
 compare le score absolu des états, pas seulement le gain de la dernière action.
 La recherche ne développe pas exhaustivement toutes les combinaisons. L'état « ne rien
 jouer », toutes les racines positives et tous les successeurs proposés restent des
@@ -480,10 +482,10 @@ Les nœuds et validations de danger ne survivent jamais à une recherche. La rac
 resimule tous ses candidats ; dans les branches, les gains conservés restent des
 indications gloutonnes, jamais des bornes ni des scores exacts pour un autre état.
 
-La largeur **3** reste la même à chaque profondeur ; il n'y a plus de déroulé séparé
+La largeur choisie reste la même à chaque profondeur ; il n'y a plus de déroulé séparé
 des autres racines ni de deuxième boucle sur les estimations nulles/négatives. Les
 estimations positives ordonnent les essais, avec une coupure approximative lorsque
-trois successeurs actuels dépassent les estimations restantes. Chaque successeur
+assez de successeurs actuels dépassent les estimations restantes pour remplir le beam. Chaque successeur
 proposé a été simulé et rescorré dans son parent, déplacements réels inclus. Une
 inversion, un kill ou une invocation modifie donc le plateau de sa branche normalement.
 La validation finale du danger, les réserves et le plan déjà validé restent identiques
@@ -499,7 +501,7 @@ ci-dessous ne limite pas tout le coût de la décision à 20 % du budget du tour
 | --- | ---: | --- |
 | `BFS_DECISION_BUDGET_RATIO` | 0,2 | Part du budget restant après préparation consacrée à l'expansion. |
 | `BFS_DECISION_MIN_EXPANSION` | 250 000 | Minimum demandé pour l'expansion, toujours borné par le plafond restant. |
-| `BFS_BEAM_WIDTH` | 3 | Parents conservés à chaque profondeur et successeurs proposés par parent. |
+| `BFS_BEAM_WIDTH` | 0 | 0 = automatique ; une valeur positive impose une largeur fixe. |
 | `OPS_RESERVE_TURN` | 500 000 | Marge retirée du plafond de planification du joueur. |
 | `OPS_RESERVE_PLACEMENT` | 300 000 | Marge conservée pour le placement réel. |
 | `OPS_RESERVE_PER_BULB` | 1 000 000 | Part réservée à chaque bulbe du propriétaire qui doit encore jouer. |
@@ -806,6 +808,65 @@ réels précèdent le gel. Le beam fonctionne, mais ces 100 combats ne démontre
 sa supériorité sur main. Les trajectoires diffèrent : les totaux d'opérations et de
 steps de ce duel ne mesurent pas une économie à déroulement identique. Main reste
 inchangée et cette branche demeure expérimentale.
+
+## Beam adaptatif — calibration du 19 octobre 2026
+
+Les 100 combats ci-dessus concernaient la largeur fixe 3, avant cette évolution.
+`beamWidthFor` utilise le budget d'expansion divisé par `max(16, nombre d'actions)`.
+Les paliers se règlent directement dans `User/BFS.leek` :
+
+| Opérations disponibles par action | Largeur |
+| --- | ---: |
+| ≥ 43 200 | 12 |
+| ≥ 30 300 | 8 |
+| ≥ 20 400 | 6 |
+| ≥ 10 300 | 4 |
+| ≥ 6 500 | 3 |
+| ≥ 3 500 | 2 |
+| En dessous | 1 |
+
+La calibration compare 7 largeurs depuis **12 mêmes états** de combat : 84 mesures,
+avec les mêmes inputs, le même contrôleur avant la décision et le vrai budget de danger.
+Seule l'expansion diagnostique est libérée pour en mesurer le coût complet. Les seuils
+prennent le quantile 90 % du coût par action, augmenté de 20 %, puis arrondi par 100.
+Un corpus distinct prévoit 12 points de contrôle ; 11 sont atteints dans les deux
+variantes. Les **11 expansions adaptatives terminent dans leur budget**, avec une
+largeur moyenne de **8,64**, contre 3 pour le témoin. Ce modèle empirique n'est pas
+une borne sur tous les combats : invocations, nouvelle géométrie et clôtures froides
+peuvent encore provoquer un surcoût.
+
+La réception comporte **20 combats courts 4v4**, dix paires miroir de huit rounds,
+avec les budgets natifs et les builds sauvegardés. Aucun changement de cœurs ni de
+réserve n'est livré. Les compteurs légers donnent :
+
+| Mesure, décisions de poireaux avec actions de racine | Adaptatif | Fixe 3 |
+| --- | ---: | ---: |
+| Décisions observées | 2 593 | 2 537 |
+| Largeur moyenne choisie | 7,05 | 3 |
+| Expansions sans troncature | 2 549 (98,3 %) | 2 467 (97,2 %) |
+| Successeurs retenus dans les recherches | 122 414 | 33 351 |
+| Opérations d'expansion cumulées | 615 717 620 | 307 254 020 |
+| Erreurs LeekScript / coupures moteur, deux camps réunis | 0 / 0 | 0 / 0 |
+
+L'adaptatif dépense davantage pour élargir les tours qui le permettent et se réduit
+sur les décisions chargées. Les trajectoires diffèrent : ces totaux décrivent la
+réception, sans prouver un gain de force contre main ni une économie à jeu identique.
+
+Les simplifications exactes retenues fusionnent les parcours de racine, écartent
+directement les candidats sous le dernier successeur retenu et lisent les coûts
+déjà mémorisés avant d'appeler leur calcul. Sur 12 contrôles, les traces de toutes
+les actions simulées, origines et scores restent identiques : 47 289 612 → 47 267 959
+opérations de décision, soit **0,046 %** seulement (0,20 % sur l'expansion).
+Le remplacement du tri natif et un cache supplémentaire de priorités ont été écartés :
+gain trop faible pour le premier, léger surcoût pour le second.
+
+Les gardes d'opérations sont conservées. Un micro-benchmark de 100 000 itérations
+mesure environ **3 opérations par garde complète**. Même en comptant toutes les
+lectures du compteur du BFS et de la génération comme supprimables, le plafond
+observé n'est que **0,18 %** du coût des décisions de calibration en largeur 3.
+Les troncatures restantes et les coûts indivisibles ne permettent pas de remplacer
+ces protections par le seul choix de largeur. Scoring, simulation, placement et
+budgets de production restent inchangés.
 
 ## Documentation et outils
 
