@@ -355,6 +355,11 @@ class StateClass {
 			tpBuffChanged = EntityDangerClass.selfTpHeldOf(parentStat) != EntityDangerClass.selfTpHeldOf(childStat)
 		}
 		var contextStatsChanged = tpBuffChanged
+		// Même état mais durée renouvelée : comparer aussi le blocage au prochain tour.
+		if ((parentStat.STATES | childStat.STATES) & (1 << STATE_AMPUTATED)) {
+			contextStatsChanged = contextStatsChanged
+				|| EntityStateClass.hasStateNextTurn(parentStat, STATE_AMPUTATED) != EntityStateClass.hasStateNextTurn(childStat, STATE_AMPUTATED)
+		}
 		var healStatsChanged = tpBuffChanged
 		if (capChanged) {
 			// La MEME classe que celle des empreintes (critClassOf, source unique) : elle porte

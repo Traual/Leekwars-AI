@@ -176,11 +176,13 @@ class ActionAvailabilityClass {
 	STOCKS = [:] // usages avant financement PT / équipement
 	TP
 	WEAPON
+	STATES
 	COSTS
 	USES
-	constructor(tp, weapon) {
+	constructor(tp, weapon, states) {
 		this.TP = tp
 		this.WEAPON = weapon
+		this.STATES = states
 		this.COSTS = [:]
 		this.USES = [:]
 	}

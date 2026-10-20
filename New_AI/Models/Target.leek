@@ -79,7 +79,8 @@ class Target {
 		STATE_INVINCIBLE: Target.ALLY,
 		STATE_ROOTED: Target.ENEMY,
 		STATE_STATIC: Target.ENEMY,
-		STATE_STERILE: Target.ENEMY
+		STATE_STERILE: Target.ENEMY,
+		STATE_AMPUTATED: Target.ENEMY
 	]
 
 	static TargetType = [

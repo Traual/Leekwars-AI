@@ -91,7 +91,7 @@ class EntityStateClass extends EntityClass {
 	SHIELD_EXPIRY_HASH   // digest de la liste, exactement 0 quand elle est vide
 	// ETATS DU MOTEUR, en MASQUE DE BITS : le bit i vaut l'ordinal i de attack/EntityState.java
 	// (NONE 0, RESURRECTED 1, UNHEALABLE 2, INVINCIBLE 3, PACIFIST 4, HEAVY 5, DENSE 6,
-	// MAGNETIZED 7, CHAINED 8, ROOTED 9, PETRIFIED 10, STATIC 11).
+	// MAGNETIZED 7, CHAINED 8, ROOTED 9, PETRIFIED 10, STATIC 11, STERILE 12, AMPUTATED 13).
 	//
 	// Lu par getStates(id), qui rend l'ensemble des ordinaux : source AUTORITAIRE, et surtout
 	// GENERIQUE — un etat ajoute au moteur entre dans le masque sans toucher a ce code, seule
@@ -102,6 +102,7 @@ class EntityStateClass extends EntityClass {
 	//   INVINCIBLE : degats a ZERO dans les cinq familles, et le porteur ne subit AUCUN retour
 	//   UNHEALABLE : bloque soin, soin brut, vol de vie, et le lifesteal credite au lanceur
 	//   STATIC     : l'entite ne peut pas se deplacer (State.java:775, 796, 817)
+	//   AMPUTATED  : lâche l'arme équipée, ne peut plus utiliser ni équiper d'arme
 	//   PACIFIST   : declare mais teste NULLE PART — il ne fait rien
 	STATES
 	MP
@@ -163,6 +164,8 @@ class EntityStateClass extends EntityClass {
 		var myOrder = MY_TURN_ORDER
 		var thisOrder = this.TURN_ORDER
 		for (var eff in rawEffects) {
+			// Les expirations de buffs/états gardent besoin du créneau du lanceur.
+			if (!(eff[2] in TURN_ORDER_BY_ID)) TURN_ORDER_BY_ID[eff[2]] = getEntityTurnOrder(eff[2])
 			push(datedEffects, [eff[0], eff[1], eff[2], eff[3], eff[4], eff[5], eff[6], eff[7],
 				EntityStateClass.countedTicks(eff, thisOrder, myOrder)])
 		}
@@ -204,13 +207,8 @@ class EntityStateClass extends EntityClass {
 			STAT_TP:         this.TOTAL_TP
 		]
 
-		// TICKS RESTANTS D'UN FLUX PÉRIODIQUE — le moteur ne les compte pas comme on le croyait.
-		// Le tick tombe au tour du PORTEUR (Entity.startTurn:768-774) mais la durée n'est
-		// décrémentée qu'au tour du LANCEUR (:776-790, seul site de setTurns). Quand l'IA
-		// s'exécute, son propre tick de la ronde est déjà tombé et le compteur n'a pas bougé :
-		// eff[3] surestime donc d'UN tick toute ligne dont le prochain tour du lanceur précède
-		// celui du porteur. Une ligne auto-lancée garde bien eff[3], le tick précédant la
-		// décrémentation dans le même startTurn.
+		// PeriodicEffect : la durée restante compte les ticks à venir chez le PORTEUR.
+		// L'ordre du lanceur n'en retire plus un ; son tour ne décrémente que ses buffs.
 		// Colosse : le moteur MULTIPLIE les caracteristiques de base par un facteur
 		// (EffectMultiplyStats), donc la valeur lue les porte deja multipliees. Le facteur est
 		// retenu ici et deplie APRES la passe : les buffs additifs doivent avoir ete retires
@@ -367,34 +365,10 @@ class EntityStateClass extends EntityClass {
 	 * À rappeler après TOUTE réécriture d'EFFECTS qui peut retirer ou réduire un bouclier
 	 * ou une vulnérabilité.
 	 */
-	/*
-	 * Ticks qu'une ligne périodique fera ENCORE tomber sur son porteur.
-	 *
-	 * Le moteur applique le tick au début du tour du PORTEUR puis décrémente, au début du tour
-	 * du LANCEUR, les durées des lignes que CELUI-CI a posées (Entity.java:762-790). Il reste
-	 * donc eff[3] − 1 ticks quand le prochain tour du lanceur précède celui du porteur, et
-	 * eff[3] sinon — l'auto-lancé restant à eff[3] puisque, dans un même startTurn, le tick
-	 * (:768) précède la décrémentation (:776).
-	 *
-	 * Lanceur mort ou absent de l'ordre de tour : plus personne ne décrémente sa ligne, elle
-	 * ne tombera jamais d'elle-même. On garde eff[3], qui la sous-estime alors — jamais
-	 * l'inverse.
-	 */
-	/*
-	 * Appele une fois par ligne importee, jamais dans un nœud : le resultat part en index 8.
-	 * L'ordre du lanceur passe par un memo de tour, plusieurs lignes le partageant souvent.
-	 */
+	// PeriodicEffect décrémente après chaque tick : N tours restants = N ticks à venir.
+	// Même signature pour les lecteurs du ledger ; les buffs gardent leur horloge de lanceur.
 	static countedTicks(eff, bearerOrder, myTurnOrder) {
-		var casterId = eff[2]
-		var casterOrder = 0
-		if (casterId in TURN_ORDER_BY_ID) {
-			casterOrder = TURN_ORDER_BY_ID[casterId]
-		} else {
-			casterOrder = getEntityTurnOrder(casterId)
-			TURN_ORDER_BY_ID[casterId] = casterOrder
-		}
-		if (casterOrder <= 0) return eff[3]
-		return nextTurnBefore(casterOrder, bearerOrder, myTurnOrder) ? eff[3] - 1 : eff[3]
+		return eff[3]
 	}
 
 	/*
@@ -413,6 +387,27 @@ class EntityStateClass extends EntityClass {
 	/* L'entite porte-t-elle cet etat ? `state` est l'ordinal moteur. */
 	static hasState(stats, state) {
 		return (stats.STATES >> state) & 1
+	}
+
+	// Les états vieillissent chez leur lanceur AVANT son action. Amputé peut donc tomber
+	// avant le prochain tour du porteur : le danger doit alors conserver ses armes.
+	static hasStateNextTurn(stats, state) {
+		if (!hasState(stats, state)) return false
+		var found = false
+		for (var eff in stats.EFFECTS) {
+			if (eff[0] != EFFECT_ADD_STATE || eff[1] != state) continue
+			found = true
+			if (eff[3] < 0 || eff[3] > 1) return true
+			var casterOrder = TURN_ORDER_BY_ID[eff[2]]
+			if (casterOrder == null) {
+				casterOrder = getEntityTurnOrder(eff[2])
+				TURN_ORDER_BY_ID[eff[2]] = casterOrder
+			}
+			if (casterOrder <= 0) return true
+			if (casterOrder != stats.TURN_ORDER && !nextTurnBefore(casterOrder, stats.TURN_ORDER, MY_TURN_ORDER)) return true
+		}
+		// Un état sans ligne datée n'a pas d'expiration connue : le conserver.
+		return !found
 	}
 
 	/*

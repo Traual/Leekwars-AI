@@ -59,6 +59,7 @@ class EnemyOffense {
     }
 
     static usesNextTurn(stat, info) {
+        if (info.IS_WEAPON && EntityStateClass.hasStateNextTurn(stat, STATE_AMPUTATED)) return 0
         var cd = StateClass.cooldownOf(stat, info.ID)
         if (cd == null || cd > 1 || info.COST <= 0 || info.MAX_USES <= 0) return 0
         var equipCost = info.IS_WEAPON && stat.WEAPON != info.ID ? 1 : 0

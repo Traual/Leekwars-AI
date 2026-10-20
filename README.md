@@ -10,7 +10,7 @@ Le point d’entrée est [`New_AI/Main.leek`](New_AI/Main.leek). Importer le dos
 
 Les modifications courantes du scoring se font sur **`main`**.
 
-Ce document décrit le code de `main` au **13 octobre 2026**. Les valeurs indiquées
+Ce document décrit le code de `main` au **20 octobre 2026**. Les valeurs indiquées
 sont les réglages actuels, pas des paramètres validés pour tous les builds.
 
 ## Sommaire
@@ -18,6 +18,7 @@ sont les réglages actuels, pas des paramètres validés pour tous les builds.
 - [Déroulement d'un tour](#déroulement-dun-tour)
 - [Organisation du code](#organisation-du-code)
 - [État virtuel et simulation](#état-virtuel-et-simulation)
+- [Compatibilité avec le générateur actuel](#compatibilité-avec-le-générateur-actuel)
 - [Modifier le scoring](#modifier-le-scoring)
 - [Projection du danger et des soins](#projection-du-danger-et-des-soins)
 - [Placement final](#placement-final)
@@ -1031,6 +1032,52 @@ aucune erreur ni interruption moteur ; ils comptent encore 5 arrêts sans plan
 terminal et 7 placements spatiaux seuls, contre 4 et 5 dans la réception figée du
 beam global sur ces mêmes scénarios. Ces limites restent explicites. Aucune
 instrumentation de mesure n'entre dans l'IA de production.
+
+## Compatibilité avec le générateur actuel
+
+La mise à jour du 20 octobre suit le générateur officiel
+[`052a5d4`](https://github.com/leek-wars/leek-wars-generator/commit/052a5d463ace1304c67590f873a81d9e30344479)
+et LeekScript `0deeb7a`. Le catalogue chargé depuis le moteur fournit les nouveaux
+objets et paramètres ; les builds sauvegardés ne sont pas rééquipés automatiquement.
+
+- **Amputé (`STATE_AMPUTATED`, 13)** fait lâcher l'arme équipée et bloque les armes,
+  équipement compris. Les puces restent disponibles. Le mémo de jouabilité inclut
+  désormais les états. La projection du prochain tour vérifie l'expiration de
+  l'état avant de retirer les armes du danger et du potentiel offensif ; les clés
+  de cache distinguent aussi cette situation.
+- **Effets périodiques** : leur durée restante correspond aux ticks à venir chez
+  le porteur. Le tour du lanceur ne retire plus un tick de poison/soin continu.
+  Les buffs, boucliers et états conservent leur datation au tour du lanceur.
+- **Surinfection** : la fraction de la somme des valeurs par tick des poisons finis
+  est arrondie une seule fois pour les dégâts immédiats. Chaque poison concerné
+  perd un tick entier, sans réduction de sa valeur par tick. L'invincibilité
+  annule les dégâts immédiats, pas la consommation du tick ; les lignes infinies
+  sont ignorées et l'irréductibilité ne protège pas de cette consommation.
+- **Réduction des états** : 50 % conserve un état réductible ; au-delà de 50 %, il
+  disparaît. Libération normale à 40 % le conserve, Libération critique à 52 %
+  peut donc le retirer. Le filtre des effets irréductibles reste appliqué.
+
+Deux corrections de clés accompagnent cette compatibilité : la géométrie réserve
+32 bits à l'identifiant d'objet (le sabre lumineux vaut 609), et le cache du net
+chaîne séparément les empreintes, les PV et le profil du porteur. L'ancien mélange
+pouvait confondre une variation simultanée de PV et de bouclier, puis lire une
+entrée de danger brut absente. Cette absence n'est jamais remplacée par un danger nul.
+
+### Comparaison sur 200 combats du 20 octobre
+
+Le snapshot du beam par première action, avec les adaptations de règles mais
+**avant ces deux corrections finales de cache**, a affronté l'ancien main
+`1cbeb61` sur 100 paires miroir nouvelles, aux budgets natifs : **60 victoires,
+62 nuls, 78 défaites**, soit **45,5 % des points**. L'intervalle bootstrap à 95 %
+par paire est **[41 % ; 50 %]** : aucune supériorité du candidat n'est démontrée.
+Les erreurs restent comptées : huit diagnostics de cache dans le candidat,
+un dépassement d'opérations dans l'ancien main. Aucune interruption native n'est
+émise côté candidat ; ces huit diagnostics empêchent néanmoins de présenter
+ce duel comme une validation sans erreur.
+
+Les sources, scénarios, builds et résultats bruts du duel sont figés séparément.
+Les corrections finales sont validées par des cas de régression et des combats
+de contrôle ; leur taux de victoire n'est pas mesuré par cette série de 200.
 
 ## Documentation et outils
 

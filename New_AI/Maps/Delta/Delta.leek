@@ -127,13 +127,16 @@ class DeltaClass {
      * Graine du net de Me à une cellule : tout ce qui le fixe SAUF la cellule — contexte
      * ennemi + mes shields et mon antidote (targetSeed), mes soigneurs (hfp), ma vie courante
      * et max (cap du heal, coupure à 0), et mon PROFIL de cible heal (id, IS_SUMMON).
-     * UN seul chaînage : les champs locaux sont packés dans des slots DISJOINTS, avec les dix
-     * bits bas laissés libres pour la cellule. Invariants : cellule <= 612 (bits 0-9),
-     * id < 64 (bits 11-16), TOTAL_LIFE et LIFE sur leurs slots de 16 bits (17-32 et 33-48).
+     * Chaînage non linéaire de chaque entrée : une variation de bouclier ne doit pas pouvoir
+     * annuler une variation de PV (REL +32 et LIFE +1 collisionnaient avec les rotations).
+     * Pas de packing des PV ou de l'identité : ils ne sont pas bornés à 16 et 6 bits.
      */
     static fleeSeedOf(MeStats, targetSeed, hfp) {
-        return addValueToBinHash(targetSeed ^ hfp,
-            (MeStats.LIFE << 33) | (MeStats.TOTAL_LIFE << 17) | (Me << 11) | (MeStats.IS_SUMMON ? 1024 : 0))
+        var h = (OFFSET_BASIS ^ targetSeed) * MIX_A
+        h = (h ^ hfp) * MIX_A
+        h = (h ^ MeStats.LIFE) * MIX_A
+        h = (h ^ MeStats.TOTAL_LIFE) * MIX_A
+        return (h ^ MeStats.TYPE_TAG) * MIX_A
     }
 
     /*
@@ -287,6 +290,7 @@ class DeltaClass {
         // déjà posée ne se relance pas, un autre buff de même valeur si. Sans ce terme, deux
         // branches de même total partagent plan et danger, et la première lue sert la seconde.
         // Nul — donc empreinte inchangée au bit près — pour qui ne porte aucun de ces items.
-        return mix64(mix64Memo((id << 10) | stat.CELL) ^ EntityDangerClass.selfTpHeldTermOf(stat) ^ ((critClass << 60) | (max(0, stat.STRENGTH) << 48) | (max(0, stat.MAGIC) << 36) | (max(0, stat.TOTAL_MP) << 24) | (max(0, stat.TOTAL_TP) << 12) | stat.POWER))
+        var weaponState = EntityStateClass.hasStateNextTurn(stat, STATE_AMPUTATED) ? MIX_B : 0
+        return mix64(mix64Memo((id << 10) | stat.CELL) ^ weaponState ^ EntityDangerClass.selfTpHeldTermOf(stat) ^ ((critClass << 60) | (max(0, stat.STRENGTH) << 48) | (max(0, stat.MAGIC) << 36) | (max(0, stat.TOTAL_MP) << 24) | (max(0, stat.TOTAL_TP) << 12) | stat.POWER))
     }
 }

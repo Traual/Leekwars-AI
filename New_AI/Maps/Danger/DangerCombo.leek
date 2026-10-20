@@ -89,11 +89,12 @@ class DangerComboClass {
 	 * COMPROMIS ASSUMÉ (README) : la LIFE courante du caster n'entre PAS dans le pack — la
 	 * projection d'un LIFE_DAMAGE peut rester celle cachée avant des dégâts non létaux ce tour
 	 * (une mort reste immédiatement visible via vivant/mort) ; l'exactitude coûtait +6,31 %.
-	 * Slots : POWER 0-14, TOTAL_TP 15-29, MAGIC 30-44, STRENGTH 45-59, crit 62.
+	 * Slots : POWER 0-14, TOTAL_TP 15-29, MAGIC 30-44, STRENGTH 45-59, Amputé 61, crit 62.
 	 */
 	static casterOffensivePack(CasterStats, CritFactor) {
 		var critBit = (CritFactor > 1) ? 1 : 0
-		return (critBit << 62) | (max(0, CasterStats.STRENGTH) << 45) | (max(0, CasterStats.MAGIC) << 30) | (max(0, CasterStats.TOTAL_TP) << 15) | CasterStats.POWER
+		var amputatedBit = EntityStateClass.hasStateNextTurn(CasterStats, STATE_AMPUTATED) ? 1 : 0
+		return (critBit << 62) | (amputatedBit << 61) | (max(0, CasterStats.STRENGTH) << 45) | (max(0, CasterStats.MAGIC) << 30) | (max(0, CasterStats.TOTAL_TP) << 15) | CasterStats.POWER
 	}
 
 	/*

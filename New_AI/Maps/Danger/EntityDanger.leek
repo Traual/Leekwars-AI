@@ -321,10 +321,12 @@ class EntityDangerClass {
 	}
 
 	static getItemsList(EntityStats) {
-		var Hash = EntityStats.ID
+		var amputated = EntityStateClass.hasStateNextTurn(EntityStats, STATE_AMPUTATED)
+		var Hash = (EntityStats.ID << 1) | (amputated ? 1 : 0)
 		if (Hash in DANGER_ENTITY_INVENTORY) return DANGER_ENTITY_INVENTORY[Hash]
 		var _final = []
 		for (var i in EntityStats.INVENTORY) {
+			if (amputated && ITEMINFO[i].IS_WEAPON) continue
 			if (StateClass.cooldownOf(EntityStats, i) > 1) continue
 			if (ITEMINFO[i].IS_DANGER_ITEM) {
 				push(_final, i)

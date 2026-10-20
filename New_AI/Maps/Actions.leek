@@ -152,7 +152,7 @@ class ActionsClass {
 
 	static availabilityOf(stat) {
         var memo = stat.AVAILABILITY_MEMO
-        if (memo != null && memo.TP == stat.TP && memo.WEAPON == stat.WEAPON) return memo
+        if (memo != null && memo.TP == stat.TP && memo.WEAPON == stat.WEAPON && memo.STATES == stat.STATES) return memo
         var parent = stat.ITEM_STATE_PARENT
         var previous = parent == null ? null : parent.AVAILABILITY_MEMO
         var children = previous == null ? null : previous.CHILDREN
@@ -163,6 +163,7 @@ class ActionsClass {
             // Le vecteur capture les valeurs, pas les maps qui seront invalidées.
             inputs = []
             key = addValueToBinHash(OFFSET_BASIS ^ stat.TP, stat.WEAPON)
+            key = addValueToBinHash(key, stat.STATES)
             for (var item: var cd in stat.COOLDOWNS) {
                 push(inputs,item); push(inputs,cd)
                 key = addValueToBinHash(addValueToBinHash(key,item),cd)
@@ -174,12 +175,12 @@ class ActionsClass {
                 key = addValueToBinHash(addValueToBinHash(key,item),uses)
             }
             var cached = children == null ? null : children[key]
-            if (cached != null && cached.TP == stat.TP && cached.WEAPON == stat.WEAPON && cached.PATCH_INPUTS == inputs) {
+            if (cached != null && cached.TP == stat.TP && cached.WEAPON == stat.WEAPON && cached.STATES == stat.STATES && cached.PATCH_INPUTS == inputs) {
                 stat.AVAILABILITY_MEMO = cached
                 return cached
             }
         }
-        memo = new ActionAvailabilityClass(stat.TP,stat.WEAPON)
+        memo = new ActionAvailabilityClass(stat.TP,stat.WEAPON,stat.STATES)
         if (previous != null) {
             memo.STOCKS = clone(previous.STOCKS,1)
             for (var item: var _cd in stat.COOLDOWNS) mapRemove(memo.STOCKS,item)
@@ -801,7 +802,8 @@ class ActionsClass {
 	}
 
 	static LoadMapFromAoeForAnEntity(Item, EntityCell, Infos, LaunchFunction) {
-		var Hash = (EntityCell << 9) | Item   // cellule < 613, item < 512 -> injectif
+		// IDs objets entiers 32 bits : le sabre lumineux (609) dépasse l'ancien slot de 9.
+		var Hash = (EntityCell << 32) | Item
 		if (Hash in COEFFED_MAP_ENTITY_CACHE) return COEFFED_MAP_ENTITY_CACHE[Hash]
 		var MinRange = Infos.MINRANGE
 		var MaxRange = Infos.MAXRANGE

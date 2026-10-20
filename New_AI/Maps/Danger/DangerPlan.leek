@@ -21,6 +21,7 @@ class DangerPlanClass {
 	 * d'entrée. La COUCHE (dangerLayerOf, source unique) tient sur deux bits : un buff ou un
 	 * shackle de TP franchissant le coût de Saut ou de Télépo la change sans toucher
 	 * ID/cellule/MP, et ils garantissent que la map reçue et la clé décrivent la même.
+	 * Le bit 22 porte le blocage d'armes au prochain tour ; les bits d'identité commencent à 23.
 	 * Pack direct injectif : cellule <= 612 (10 bits), MP < 1024 (10 bits), mp clampé
 	 * (shacklé négatif == 0). */
 	static mapCellItemAoeKeyOf(EntityStats) {
@@ -30,7 +31,8 @@ class DangerPlanClass {
 	/* La meme clé pour une couche IMPOSEE. Sert a la couverture de marche seule, qui partage
 	 * ainsi son entree avec celle d'un caster reellement immobile. */
 	static mapCellItemAoeKeyForLayer(EntityStats, layer) {
-		return (EntityStats.ID << 22) | (layer << 20) | (EntityStats.CELL << 10) | WalkCellsClass.dangerMpOf(EntityStats)
+		var inventory = (EntityStats.ID << 1) | (EntityStateClass.hasStateNextTurn(EntityStats, STATE_AMPUTATED) ? 1 : 0)
+		return (inventory << 22) | (layer << 20) | (EntityStats.CELL << 10) | WalkCellsClass.dangerMpOf(EntityStats)
 	}
 
 	/* Couverture paresseuse : les géométries d'items sont partagées, mais la

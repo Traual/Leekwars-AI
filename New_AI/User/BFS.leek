@@ -612,7 +612,8 @@ class ActionSuite {
             if (stocks != null) stocks[item] = stock
         }
         cost = -1
-        if (stock >= 0) {
+        // Amputé interdit aussi de rééquiper une arme. Les puces restent jouables.
+        if (stock >= 0 && !(info.IS_WEAPON && EntityStateClass.hasState(mine, STATE_AMPUTATED))) {
             usesByItem[item] = stock
             cost = info.COST + ((info.IS_WEAPON && mine.WEAPON != item) ? 1 : 0)
             if (cost > mine.TP) cost = -1

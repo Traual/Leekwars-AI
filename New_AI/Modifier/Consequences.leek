@@ -163,6 +163,7 @@ class ConsequencesClass {
 					var targetStats = State[targetId]
 					ReplacementChangeStats(Item, Effect, targetStats)
 					targetStats.STATES |= stateBit
+					if (Effect[1] == STATE_AMPUTATED) targetStats.WEAPON = null
 					if (stateLingers) targetStats.EFFECTS = targetStats.EFFECTS + [[EffectType, Effect[1], Caster, Effect[3], CAST_IS_CRITICAL, Item, targetId, Effect[5], Effect[3]]]
 				}
 				break
@@ -643,14 +644,10 @@ class ConsequencesClass {
 				if (!mapIsEmpty(PLANT_ZONE_BY_ID)) AwakeningClass.onStep(State, Caster, teleStart, To, clonedIds)
 				break
 			case EFFECT_SUPERINFECTION:
-				// EffectSuperinfection.java : chaque ligne de POISON a duree positive est reduite
-				// A PART (Effect.reduce, arrondi de la ligne), et la part retiree fois sa duree
-				// brute tombe tout de suite en degats de poison. La somme des arrondis par ligne
-				// n'est pas l'arrondi d'un agregat. Le filtre d'irreductibilite ne s'applique pas
-				// (reduce est appele directement), les poisons infinis sont ignores, et
-				// l'invincibilite n'annule que les degats : la reduction a deja eu lieu.
+				// EffectSuperinfection : une fraction de la SOMME des ticks, arrondie une fois.
+				// Chaque poison fini perd un tick entier, sans réduire sa valeur par tick.
+				// Invincible annule les dégâts, pas ce tick consommé ; irréductible ne le protège pas.
 				var ratio = min(1, (Effect[1] / 100) * (CAST_IS_CRITICAL ? CRITICAL_FACTOR : 1))
-				var keep = max(0, 1 - ratio)
 				var superErosionRate = CAST_IS_CRITICAL ? EROSION_POISON + EROSION_CRITICAL_BONUS : EROSION_POISON
 				for (var targetId: var aoeDistance in RealTargets) {
 					var targetStats = State[targetId]
@@ -669,15 +666,17 @@ class ConsequencesClass {
 								push(reducedEffects, eff)
 								continue
 							}
-							var kept = round(eff[1] * keep)
-							var removed = eff[1] - kept
-							converted += removed * eff[3]
-							if (removed != 0) removeCastedEffect(EFFECT_POISON, targetStats, removed, eff[8], eff[3])
-							if (kept > 0) push(reducedEffects, (kept == eff[1]) ? eff : [eff[0], kept, eff[2], eff[3], eff[4], eff[5], eff[6], eff[7], eff[8]])
+							converted += eff[1]
+							if (eff[3] == 1) {
+								removeCastedEffect(EFFECT_POISON, targetStats, eff[1], eff[8], eff[3])
+							} else {
+								targetStats.POISON_OVER_TIME -= eff[1]
+								push(reducedEffects, [eff[0], eff[1], eff[2], eff[3] - 1, eff[4], eff[5], eff[6], eff[7], eff[8] - 1])
+							}
 						}
 						targetStats.EFFECTS = reducedEffects
 					}
-					var superDamage = min(converted, targetStats.LIFE)
+					var superDamage = min(round(converted * ratio), targetStats.LIFE)
 					if (EntityStateClass.hasState(targetStats, STATE_INVINCIBLE)) superDamage = 0
 					if (superDamage > 0) {
 						// removeLife puis onPoisonDamage et onNovaDamage, sans boucliers ni
@@ -927,15 +926,9 @@ class ConsequencesClass {
 		RecordCastedEffectDated(TarStats, EffectType, AppliedValue, CasterId, Duration, Critical, Item, Modifiers, Duration)
 	}
 
-	/*
-	 * Ticks qu'une ligne périodique posée maintenant fera tomber sur son porteur. Me rejoue en
-	 * fin de fenêtre : sa ligne garde toute sa durée. Un autre lanceur (plante réveillée pendant
-	 * mon tour) décrémente ses lignes à son propre début de tour, comme à l'import
-	 * (EntityStateClass.countedTicks).
-	 */
+	// PeriodicEffect : même nombre de ticks quel que soit l'ordre du lanceur ou du porteur.
 	static datedTicks(State, CasterId, TarStats, Duration) {
-		if (CasterId == Me) return Duration
-		return EntityStateClass.nextTurnBefore(State[CasterId].TURN_ORDER, TarStats.TURN_ORDER, MY_TURN_ORDER) ? Duration - 1 : Duration
+		return Duration
 	}
 
 	/* RecordCastedEffect, ticks datés fournis par l'appelant (index 8 de la ligne). */
@@ -1370,17 +1363,11 @@ class ConsequencesClass {
 				push(newEffects, eff)
 				continue
 			}
-			// Un etat est BINAIRE : sa valeur est un ORDINAL, pas une quantite. Mise a l'echelle,
-			// une Liberation a 40 % changeait Sterile (12) en Magnetise (7) — c'est pourquoi
-			// EffectAddState surcharge reduce, et sa regle tient en une ligne :
-			//     if (percent >= 1) value = 0
-			// La valeur ne bouge donc JAMAIS sauf a 100 %, ou elle tombe a zero et la ligne
-			// disparait. DebuffPower == 0 est exactement ce seuil de l'autre cote.
-			// Consequence pour le debuff TOTAL : lui ne saute pas les lignes irreductibles, donc
-			// une ligne d'etat irreductible arrive ici et se fait retirer, la ou une Liberation
-			// ne l'aurait meme pas regardee.
+			// Un état vaut UNE unité : round(fraction conservée) == 0 le retire.
+			// 50 % garde l'état ; Libération critique à 52 % peut le retirer.
+			// L'ordinal n'est jamais mis à l'échelle. Le filtre irréductible reste ci-dessus.
 			if (eff[0] == EFFECT_ADD_STATE) {
-				if (DebuffPower > 0) {
+				if (DebuffPower >= 0.5) {
 					push(newEffects, eff)
 				} else {
 					statesDirty = true
