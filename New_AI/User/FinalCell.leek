@@ -80,7 +80,7 @@ class FinalCell {
             var cache = ally ? HEAL_CELL_ITEM_AOE_CACHE : MAP_CELL_ITEM_AOE_CACHE
             for (var tier = 0; tier < 4; tier++) {
                 if (!WalkCellsClass.dangerTierAvailable(stat, tier)) continue
-                var key = DangerPlanClass.mapCellItemAoeKeyForLayer(stat, tier)
+                var key = ally ? HealClass.geometryKeyForLayer(stat, tier) : DangerPlanClass.mapCellItemAoeKeyForLayer(stat, tier)
                 if (key in cache) continue
                 var movementKey = key & DangerPlanClass.MOVEMENT_KEY_MASK
                 var walk = null

@@ -1063,6 +1063,14 @@ chaîne séparément les empreintes, les PV et le profil du porteur. L'ancien m�
 pouvait confondre une variation simultanée de PV et de bouclier, puis lire une
 entrée de danger brut absente. Cette absence n'est jamais remplacée par un danger nul.
 
+La préparation interruptible des soins utilise `HealClass.geometryKeyForLayer`,
+comme le constructeur normal des couvertures de soin. La clé de l'inventaire
+offensif comporte désormais le bit Amputé ; la réutiliser pour les soigneurs
+créait des entrées différentes de celles recherchées par `HealClass`. Le contrôle
+de géométrie vérifie l'égalité des données et des clés entre les deux chemins,
+y compris après une préparation interrompue. Les 26 contrôles du beam passent
+avec cette correction.
+
 ### Comparaison sur 200 combats du 20 octobre
 
 Le snapshot du beam par première action, avec les adaptations de règles mais

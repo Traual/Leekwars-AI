@@ -35,6 +35,12 @@ global HEAL_PROFILE_ALLY_SUMMON = 2
 
 class HealClass {
 
+    // Healing inventory has its own geometry key; weapon-block state belongs
+    // to the danger inventory key, not to this unchanged healing domain.
+    static geometryKeyForLayer(stat, tier) {
+        return (stat.ID << 22) | (tier << 20) | (stat.CELL << 10) | WalkCellsClass.dangerMpOf(stat)
+    }
+
     static sideFingerprint(State, side) {
         var fp = 0
         for (var id: var stat in State) if (stat.SIDE == side) fp ^= healerContributionOf(stat, id)
@@ -45,7 +51,7 @@ class HealClass {
         var movement = (stat.CELL << 10) | WalkCellsClass.dangerMpOf(stat)
         for (var tier = 0; tier < 4; tier++) {
             if (!WalkCellsClass.dangerTierAvailable(stat, tier)) continue
-            if (!(((stat.ID << 22) | (tier << 20) | movement) in HEAL_CELL_ITEM_AOE_CACHE)) return false
+            if (!(geometryKeyForLayer(stat, tier) in HEAL_CELL_ITEM_AOE_CACHE)) return false
         }
         return true
     }
@@ -194,7 +200,7 @@ class HealClass {
         for (var t = 0; t < 4; t++) {
             if ((availMask & (1 << t)) == 0) continue
             var movementKey = (t << 20) | (casterStats.CELL << 10) | mp
-            var geomKey = (casterStats.ID << 22) | movementKey
+            var geomKey = geometryKeyForLayer(casterStats, t)
             if (geomKey in HEAL_CELL_ITEM_AOE_CACHE) {
                 geoms[t] = HEAL_CELL_ITEM_AOE_CACHE[geomKey]
             } else {
