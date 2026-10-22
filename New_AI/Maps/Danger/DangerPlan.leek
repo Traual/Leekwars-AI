@@ -98,9 +98,11 @@ class DangerPlanClass {
 	 * fingerprints déjà portés par le Node.
 	 * Elle ne contient NI les shields, NI l'antidote, NI la LIFE, NI l'id de la cible : deux
 	 * cibles du même camp partagent leur plan, seul leur point de départ dans l'ordre diffère. */
-	static dangerTeamPlanKeyOf(BaseHash, OffensiveContextHash, TargetSide) {
-		return planDigestOf(BaseHash, OffensiveContextHash, TargetSide)
-	}
+	static dangerTeamPlanKeyOf(BaseHash, OffensiveContextHash, TargetSide, OrderHash = 0) {
+        var domain = (OFFSET_BASIS ^ BaseHash) * MIX_A
+        domain = (domain ^ OrderHash) * MIX_A
+        return planDigestOf(domain, OffensiveContextHash, TargetSide)
+    }
 
 	/*
 	 * LA PARTITION, écrite deux fois ci-dessous parce qu'elle n'a que deux consommateurs et
@@ -193,8 +195,24 @@ class DangerPlanClass {
 	 * la cible d'abord, cible exclue, puis ceux <), exactement comme le séquenceur historique.
 	 * Le plan porte donc les TURN_ORDER alignés sur l'ordre.
 	 */
+	static sequenceKeyOf(Plan, TargetSide) {
+        // Every sequence reader is represented without truncating a wide digest
+        // or wrapping an activity bit after the 64th entry.
+        var hash = (OFFSET_BASIS ^ TargetSide) * MIX_A
+        for (var i: var id in Plan.ORDER) {
+            hash = (hash ^ id) * MIX_A
+            hash = (hash ^ mix64Memo(realBits(Plan.TURN_ORDERS[i]))) * MIX_A
+            var flags = (Plan.ACTIVE[i] ? 1 : 0)
+                | (Plan.OFFENSIVE_MAPS[i] != null ? 2 : 0)
+                | (Plan.SAME_SIDE[i] ? 4 : 0)
+            hash = (hash ^ flags) * MIX_A
+        }
+        return mix64(hash)
+    }
+
 	static getTeamPlan(State, BaseHash, OffensiveContextHash, TargetSide) {
-		var key = dangerTeamPlanKeyOf(BaseHash, OffensiveContextHash, TargetSide)
+		var orderHash = StateClass.turnOrderFingerprint(State)
+		var key = dangerTeamPlanKeyOf(BaseHash, OffensiveContextHash, TargetSide, orderHash)
 		if (key in DANGER_TEAM_PLAN_CACHE) return DANGER_TEAM_PLAN_CACHE[key]
 		// MISS de la clé rapide. Or un plan ne dépend PAS du BaseHash : des alliés de la cible qui
 		// se déplacent en fabriquent un neuf, identique. Ce dont il dépend vraiment : le set des
@@ -202,13 +220,15 @@ class DangerPlanClass {
 		// la cible), le contexte offensif adverse (positions et stats des menaces) et le camp visé.
 		// La signature n'est calculée qu'ICI, sur le chemin lent. Même digest que la clé rapide,
 		// seul le DOMAINE change : le set des vivants au lieu du terrain complet.
-		var planSig = planDigestOf(StateClass.getHashedEntities(State), OffensiveContextHash, TargetSide)
+		var liveDomain = (OFFSET_BASIS ^ StateClass.getHashedEntities(State)) * MIX_A
+		liveDomain = (liveDomain ^ orderHash) * MIX_A
+		var planSig = planDigestOf(liveDomain, OffensiveContextHash, TargetSide)
 		if (planSig in PLAN_BY_SIG) {
 			var shared = PLAN_BY_SIG[planSig]
 			DANGER_TEAM_PLAN_CACHE[key] = shared
 			return shared
 		}
-		var order = StateClass.getSortedEntityByTurnOrder(State)
+		var order = StateClass.getSortedEntityByTurnOrder(State, orderHash)
 		var ordersById = [: ]
 		var orders = []
 		var maps = []
@@ -221,8 +241,7 @@ class DangerPlanClass {
 		var tierCrits = []
 		var tierPacks = []
 		var tierTps = []
-		var activeMask = 0
-		var mapsMask = 0
+
 		for (var i: var id in order) {
 			ordersById[id] = State[id] == null ? 0 : State[id].TURN_ORDER
 			push(orders, ordersById[id])
@@ -309,8 +328,7 @@ class DangerPlanClass {
 			var active = offMap != null || (id != Me && stat.LIFE > 0 && HealClass.hasHealItem(stat))
 			push(actives, active)
 			// Signature des séquences : ce dont elles dépendent RÉELLEMENT, et rien d'autre.
-			if (active) activeMask |= 1 << i
-			if (offMap != null) mapsMask |= 1 << i
+
 			// Le plan est TOUJOURS construit avec le camp de sa propre cible : « du même camp
 			// que la cible » est donc une constante du plan, pas une question à reposer à
 			// chaque cellule et à chaque nœud dans le déroulé du net.
@@ -322,7 +340,7 @@ class DangerPlanClass {
 		// elle, porte le BaseHash : un ennemi poussé fabrique un plan neuf dont les séquences
 		// seraient pourtant identiques. Deux plans de même signature partagent donc leurs trois
 		// mémos PAR RÉFÉRENCE — ce qu'un plan construit sert immédiatement à l'autre.
-		var sig = mix64(mix64((StateClass.getHashedEntities(State) << 8) | TargetSide) ^ (activeMask * MIX_A)) ^ mix64(mapsMask)
+		var sig = sequenceKeyOf(plan, TargetSide)
 		if (sig in SEQ_MEMO_BY_SIG) {
 			var shared = SEQ_MEMO_BY_SIG[sig]
 			plan.COV_SEQ_BY_ID = shared[0]

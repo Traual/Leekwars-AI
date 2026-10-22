@@ -31,8 +31,8 @@ class StateClass {
 	 * @param State [id -> stats]
 	 * @return Array<id>
 	 */
-	static getSortedEntityByTurnOrder(State) {
-		var Hash = getHashedEntities(State)
+	static getSortedEntityByTurnOrder(State, Hash = null) {
+		if (Hash == null) Hash = turnOrderFingerprint(State)
 		if (Hash in ENTITY_SORTED_BY_TURN_ORDER_CACHE) return ENTITY_SORTED_BY_TURN_ORDER_CACHE[Hash]
 		var tmp = []
 		for (var e: var stat in State) {
@@ -490,4 +490,15 @@ class StateClass {
 		AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE[ThisHash] = _final
 		return _final
 	}
+
+    static turnOrderFingerprint(State) {
+        // Sorting also reads dead entries and preserves insertion order for ties.
+        // The key must describe those inputs, not only the set of living ids.
+        var hash = OFFSET_BASIS
+        for (var id: var stat in State) {
+            hash = (hash ^ id) * MIX_A
+            hash = (hash ^ mix64Memo(realBits(stat.TURN_ORDER))) * MIX_A
+        }
+        return hash
+    }
 }

@@ -10,7 +10,7 @@ Le point d’entrée est [`New_AI/Main.leek`](New_AI/Main.leek). Importer le dos
 
 Les modifications courantes du scoring se font sur **`main`**.
 
-Ce document décrit le code de `main` au **20 octobre 2026**. Les valeurs indiquées
+Ce document décrit le code de `main` après la campagne du **22 octobre 2026**. Les valeurs indiquées
 sont les réglages actuels, pas des paramètres validés pour tous les builds.
 
 ## Sommaire
@@ -30,6 +30,7 @@ sont les réglages actuels, pas des paramètres validés pour tous les builds.
 - [TODO](#todo)
 - [Limites actuelles](#limites-actuelles)
 - [Mesures historiques](#mesures-historiques)
+- [Campagne de recherche du 22 octobre](#campagne-de-recherche-du-22-octobre-2026)
 - [Documentation et outils](#documentation-et-outils)
 
 ## Déroulement d'un tour
@@ -190,7 +191,7 @@ Une entité morte vaut zéro. Le bonus fixe de présence est remplacé par `Enti
 
 Les coefficients de **vie et de vie maximale** utilisent chacun des tranches de points : les 1 000 premiers valent ×2, les points de 1 000 à 3 000 ×1,75, de 3 000 à 5 000 ×1,5, de 5 000 à 7 000 ×1,25, et ceux au-delà de 7 000 ×1. Les contributions des tranches s'additionnent, puis la somme est multipliée par `EntityImportance.value(stat) / 3000` pour la vie, et par `EntityImportance.value(stat) / 2000` pour la vie maximale. Le score reste continu aux seuils : un poids ne s'applique jamais rétroactivement à tous les PV.
 
-`life` et `totalLife` rendent le coefficient moyen `importance / diviseur × points pondérés / points`, avec une garde pour les valeurs nulles ou négatives. Le scoring conserve ainsi son calcul avant/après. Pour une importance de 3 000, la perte de 9 000 à 8 000 PV rapporte 1 000 sur le terme de vie, celle de 2 000 à 1 000 rapporte 1 750, et celle de 1 000 à 0 rapporte 2 000, avant les autres contributions du kill. Les soins suivent la même courbe en sens inverse. La vie maximale utilise exclusivement `TOTAL_LIFE` pour ses tranches, sans dépendre des blessures courantes ; un gain de vitalité qui augmente à la fois vie et vie max valorise les deux deltas. Les deux fonctions ont les mêmes tranches, mais des diviseurs distincts (3 000 pour la vie, 1 500 pour la vie max), réglables séparément dans `Coefficients.leek`.
+`life` et `totalLife` rendent le coefficient moyen `importance / diviseur × points pondérés / points`, avec une garde pour les valeurs nulles ou négatives. Le scoring conserve ainsi son calcul avant/après. Pour une importance de 3 000, la perte de 9 000 à 8 000 PV rapporte 1 000 sur le terme de vie, celle de 2 000 à 1 000 rapporte 1 750, et celle de 1 000 à 0 rapporte 2 000, avant les autres contributions du kill. Les soins suivent la même courbe en sens inverse. La vie maximale utilise exclusivement `TOTAL_LIFE` pour ses tranches, sans dépendre des blessures courantes ; un gain de vitalité qui augmente à la fois vie et vie max valorise les deux deltas. Les deux fonctions ont les mêmes tranches, mais des diviseurs distincts (3 000 pour la vie, 2 000 pour la vie max), réglables séparément dans `Coefficients.leek`.
 
 Le terme de **caractéristiques et ressources** est unique : `ScoringClass.characteristicsPotential(stat) × Coefficients.tpMultiplier(stat) × Coefficients.mpMultiplier(stat)`. Le potentiel additionne les caractéristiques **courantes**, pondérées par leurs coefficients bruts et les durées existantes, puis les poids tactiques des puces. Il est planché à zéro pour qu'un potentiel négatif ne récompense pas une perte de PT/PM. Aucun terme direct `TOTAL_TP × coefficient` ou `TOTAL_MP × coefficient` ne s'ajoute. Buffs de caractéristiques et buffs de ressources renforcent donc la même contribution ; à état final identique, le gain cumulé reste le même quel que soit l'ordre des buffs.
 
@@ -591,6 +592,16 @@ contributions anciennes/nouvelles, sans recalculer tout le plateau. Les clés de
 cible ajoutent protections, immunités, échéances de boucliers et Antidote ; le net
 ajoute notamment PV/vie maximale et contexte de soin.
 
+Les caches d'ordre et de séquences sont corrigés après la campagne du 22 octobre.
+Le tri porte sur **toutes les entrées de l'état**, morts inclus, et conserve l'ordre
+d'insertion en cas d'égalité. Sa clé décrit les IDs et les bits exacts des ordres,
+mélangés avant chaînage ; les invocations virtuelles ne sont pas limitées aux quarts
+de tour. Les plans intègrent cette empreinte. La clé de séquence décrit les IDs,
+ordres, activité, camp et présence de couverture : aucun décalage ne perd les IDs
+hauts et aucun masque d'activité ne reboucle après 64 entrées. Un ancien cache pouvait
+ainsi demander le soin de l'entité 56 lorsque la carte contenait 57. Onze régressions
+natives passent ; un soin absent n'est pas remplacé artificiellement par zéro.
+
 | Durée de vie | Exemples | Règle |
 | --- | --- | --- |
 | Combat / VM | Catalogue `ITEMINFO`, coordonnées, obstacles, tables bitmap, géométries d'items sans occupants, `MIX64_MEMO` | Données statiques ou fonctions pures ; conservées tant que leur clé reste pertinente. |
@@ -762,6 +773,66 @@ pas automatiquement des correctifs à entreprendre.
   la clé de soin peut recouvrir la classe critique à partir de **3 996 sagesse**.
   Les builds habituels ne s'en approchent pas ; des stats extrêmes nécessiteraient
   de reprendre les packs concernés.
+
+## Campagne de recherche du 22 octobre 2026
+
+**Le beam actuel est conservé.** Les essais ne justifient pas de promouvoir la
+recherche à deltas exacts ou d'empiler de nouveaux réglages. Les corrections communes
+des caches d'ordre/séquence sont livrées ; coefficients, conséquences, projections,
+réserves et largeur du beam restent inchangés.
+
+1 800 combats de force à budgets natifs, en neuf comparaisons de 200, avec 100 blocs
+miroir par duel. Le moteur, les builds, les sources et les scénarios sont figés.
+Les cinq premières variantes ne changent qu'un composant de la même base exacte
+corrigée, sur les mêmes 100 scénarios ; elles ne sont pas directement comparées au beam.
+
+| Variante / base exacte | Points de la variante | p apparié ajusté Holm |
+| --- | ---: | ---: |
+| Budget de décision 35 % | 53 % | 0,208 |
+| Budget de décision 50 % | 48 % | 0,612 |
+| Sans validations intermédiaires | 48 % | 0,612 |
+| Deux successeurs, autres politiques conservées | 50,25 % | 1 |
+| Sans bifurcations économiques | 48,25 % | 0,612 |
+
+Le budget 35 % consomme environ 19,5 % d'opérations totales de plus et subit une
+interruption native contre zéro dans son témoin. Le beam exact à deux successeurs
+consomme environ 6,9 % de plus pour un score presque égal. Ces coûts sont descriptifs
+sur des trajectoires différentes, pas des gains/pertes byte-exacts. Aucun composant
+ne satisfait la règle de sélection et de sécurité préinscrite.
+
+La base exacte est ensuite reçue sur des graines nouvelles : **46 % contre le beam
+corrigé**, puis **50 % contre le main historique 1cbeb61 corrigé**. Le test apparié
+contre le beam donne p brut 0,02495, soit 0,04991 après correction des deux réceptions.
+L'ancien classement ne suffit donc pas pour la promouvoir.
+
+Un duel frais départage directement les références corrigées :
+
+| Beam corrigé / adversaire | V / N / D du beam | Points du beam |
+| --- | ---: | ---: |
+| Exact de base | 82 / 52 / 66 | 54 % |
+| Historique 1cbeb61 | 83 / 47 / 70 | 53,25 % |
+
+Le deuxième duel a p=0,059 : il ne prouve pas une supériorité universelle ; il ne
+justifie pas non plus de remplacer l'incumbent. **Aucun diagnostic ni tour interrompu
+n'est observé pour le beam sur ces 400 combats.** Un nul vaut 0,5 point : ces scores
+ne sont pas des pourcentages de victoires.
+
+Enfin, un seul essai ciblé sépare la fenêtre de danger terminale du budget d'expansion
+de l'exact : 51,75 % contre sa base, p=0,213, et deux interruptions natives contre une.
+Il est écarté sans nouveau réglage ni confirmation inutile. Toutes les interruptions
+restent comptées. Le premier lot incomplet, arrêté pour corriger les ordres fractionnaires
+avant lecture de son classement, est archivé séparément et exclu des 1 800 résultats.
+
+Les clés communes ont changé depuis le tournoi précédent : ses résultats ne sont
+pas agrégés à cette campagne. Les intervalles et tests portent sur les blocs miroir,
+pas sur 200 observations supposées indépendantes. Les résultats restent propres au
+snapshot local du méta et ne garantissent pas tous les builds adverses.
+
+Les sources, manifestes, sorties brutes, contrôles natifs, profils et rapport détaillé
+sont conservés localement dans `work/search-ablation-20261022/`. Les sondes ne sont
+pas livrées dans l'IA. Contrôles complémentaires : 88 règles, 105 invariants historiques,
+19 invariants du beam exact et plus de 60 000 gains réutilisés vérifiés sans écart
+supérieur à 1e−6. Le scoring et les budgets de production ne sont pas réglés sur les scores.
 
 ## Mesures historiques
 
