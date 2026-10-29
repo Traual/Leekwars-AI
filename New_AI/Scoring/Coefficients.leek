@@ -196,10 +196,12 @@ class Coefficients {
 
     // La mobilité augmente le potentiel sans annuler celui d'un porteur immobile.
     // Repères : 0 PM -> 0.75 ; 5 -> 1 ; 10 -> 1.125 ; 15 -> 1.175.
-    // Un porteur statique/enraciné garde le facteur de 0 PM : le buffer en PM ne rapporte rien.
+    // Statique : facteur fixe de 0.1. Enraciné : facteur de 0 PM (0.75).
+    // Dans les deux cas, un buff de PM ne rapporte rien.
     // TOTAL_MP, pas les PM restants ; la cellule réelle reste évaluée par le placement.
     static mpMultiplier(stat) {
-        var mp = stat.STATIC || EntityStateClass.hasState(stat, STATE_ROOTED) ? 0 : max(0, stat.TOTAL_MP)
+        if (stat.STATIC) return 0.1
+        var mp = EntityStateClass.hasState(stat, STATE_ROOTED) ? 0 : max(0, stat.TOTAL_MP)
         var factor = 0.75 + min(mp, 5) * 0.05
         if (mp > 5) factor += min(mp - 5, 5) * 0.025
         if (mp > 10) factor += (mp - 10) * 0.01

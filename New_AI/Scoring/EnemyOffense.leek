@@ -157,7 +157,8 @@ class EnemyOffense {
             ROOT_ENEMY_OFFENSE = disabled
             return disabled
         }
-        var limit = getOperations() + MAX_PREP_OPERATIONS
+        var prepStart = getOperations()
+        var limit = prepStart + MAX_PREP_OPERATIONS
         if (OPS_CAP != null) limit = min(limit, OPS_CAP - OPS_RESERVE_PLACEMENT)
         var key = inputHash(State, BaseHash)
         if (key in ENEMY_OFFENSE_CACHE) {
@@ -221,7 +222,10 @@ class EnemyOffense {
         }
         context.HASH = mix64(key ^ evaluated) // sépare une préparation partielle d'une complète.
         if (context.COMPLETE) ENEMY_OFFENSE_CACHE[key] = context
-        else debugW("[placement] offensive potential truncated: operation budget")
+        else debugW("[placement] offensive potential truncated: preparation budget"
+            + " | used: " + (getOperations() - prepStart) + " / " + (limit - prepStart)
+            + " | casts evaluated: " + evaluated
+            + " | planning remaining: " + max(0, OPS_DEADLINE - getOperations()))
         ROOT_ENEMY_OFFENSE = context
         return context
     }

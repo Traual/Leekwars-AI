@@ -45,6 +45,8 @@ class Play {
 			// des actions estimees sur un etat perime. La vidange ne sert que quand aucun plan
 			// n'est plus finançable du tout.
 			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) {
+				if (State[Me].TP >= MINIMUM_COST_ITEM) debugW("[BFS] stop actions: planning budget exhausted"
+					+ " | used: " + getOperations() + " | limit: " + OPS_DEADLINE + " | TP: " + State[Me].TP)
 				drainChain(StateClass.countSummonsAfterMe(State))
 				break
 			}

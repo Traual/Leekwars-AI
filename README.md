@@ -10,7 +10,7 @@ Le point d’entrée est [`New_AI/Main.leek`](New_AI/Main.leek). Importer le dos
 
 Les modifications courantes du scoring se font sur **`main`**.
 
-Ce document décrit le code de `main` après la campagne du **22 octobre 2026**. Les valeurs indiquées
+Ce document décrit le code de `main` après la campagne du **22 octobre 2026**, avec les réglages des statiques et le placement Covid du **23 octobre**. Les valeurs indiquées
 sont les réglages actuels, pas des paramètres validés pour tous les builds.
 
 ## Sommaire
@@ -150,7 +150,7 @@ plus pessimiste, détaillée dans la section danger.
 
 ### Fichiers de réglage
 
-Quatorze fichiers :
+Quinze fichiers :
 
 - [`Coefficients.leek`](New_AI/Scoring/Coefficients.leek) : coefficients bruts par statistique et deux multiplicateurs communs PT/PM.
 - [`Importance.leek`](New_AI/Scoring/Importance.leek) : bonus de présence selon les caractéristiques utiles, les puces tactiques et les multiplicateurs de PT/PM.
@@ -161,6 +161,7 @@ Quatorze fichiers :
 - [`Shackles.leek`](New_AI/Scoring/Shackles.leek) : décote des six entraves selon Manumission, synergies PT/PM comprises.
 - [`ShieldProfile.leek`](New_AI/Scoring/ShieldProfile.leek) : profil offensif adverse grossier, calculé par camp et conservé dans le contexte de racine.
 - [`PeriodicEffects.leek`](New_AI/Scoring/PeriodicEffects.leek) : avenir du poison/contrecoup, plafond de PV commun et décote Antidote du porteur, sans parcours des lignes d'effets.
+- [`Covid.leek`](New_AI/Scoring/Covid.leek) : transmissions liées à la cellule finale, valeur marginale du poison et borne du bonus pour le classement terminal.
 - [`Debug.leek`](New_AI/Scoring/Debug.leek) : affichage optionnel des coefficients de chaque vivant au début du tour, désactivé par défaut et sans pause. `ScoringDebug.ENABLED = true` active l'affichage ; coefficients bruts avant durée/PT/PM, potentiel courant, facteurs communs et leur produit sont affichés séparément.
 - [`Placement.leek`](New_AI/Scoring/Placement.leek) : distances et exposition au danger, soustraites à la fin des suites d’actions.
 - [`AllySupport.leek`](New_AI/Scoring/AllySupport.leek) : potentiel de buffs/boucliers alliés et coût de l'éloignement.
@@ -198,7 +199,7 @@ Le terme de **caractéristiques et ressources** est unique : `ScoringClass.chara
 Les facteurs suivent `TOTAL_TP` et `TOTAL_MP`, **avec buffs/entraves, sans les dépenses du tour**. Ils sont continus par tranches, sans plateau final : chaque point positif supplémentaire garde une valeur. Réglages de départ dans `Coefficients.leek` :
 
 - PT : chaque point jusqu'à 16 ajoute `1/16`, de 16 à 32 `1/32`, puis `1/64`. Facteurs : 0 PT → 0 ; 16 → 1 ; 32 → 1,5 ; 48 → 1,75.
-- PM : socle `0,75`, puis chaque point jusqu'à 5 ajoute `0,05`, de 5 à 10 `0,025`, puis `0,01`. Facteurs : 0 PM → 0,75 ; 5 → 1 ; 10 → 1,125. Statique ou enraciné utilise toujours 0 PM : son potentiel reste valorisé, mais un buff de PM ne rapporte rien.
+- PM : socle `0,75`, puis chaque point jusqu'à 5 ajoute `0,05`, de 5 à 10 `0,025`, puis `0,01`. Facteurs : 0 PM → 0,75 ; 5 → 1 ; 10 → 1,125. Une statique utilise un facteur fixe de **0,1** sur les caractéristiques et leurs buffs. Une entité seulement enracinée utilise toujours 0 PM, soit `0,75`. Dans les deux cas, un buff de PM ne rapporte rien.
 
 Ces facteurs s'appliquent une seule fois, **critique et tactique inclus**. Présence, vie, vie maximale, boucliers, renvoi déjà posé et flux périodiques restent hors du produit. Les caches d'équipement et de tactique sont réutilisés ; le potentiel courant est recalculé pour l'entité scorée, car il dépend des buffs. La décote Manumission compare ce même terme avec et sans les entraves. Les PT/PM ne sont toujours pas pondérés par la durée de leurs buffs ; les distances restent traitées par le placement.
 
@@ -210,7 +211,7 @@ Les autres contributions de `ScoringClass.entityValue` restent basées sur l'ét
 
 La partie tactique additionne les **poids fixes des puces possédées** : Inversion 70, Téléportation 120, Libération 120, Manumission 50, Gant de boxe 10, Grappin 10, Saut 60, Rempotage 20 et Hémorragie 60. Chaque poids se règle séparément dans `tacticalChipScore`, avant application des multiplicateurs de PT/PM. Elle concerne tous les porteurs ; elle ignore cooldowns et portées. Sa somme est mise en cache par ID et classe réelle/virtuelle, puis invalidée à chaque tour. L'importance complète est mémorisée dans un scalaire `IMPORTANCE_MEMO` de l'état, copié avec ses clones : bases, inventaire et caractère statique ne changent pas pendant la simulation. Une nouvelle capture réelle ou une nouvelle invocation virtuelle repart avec un mémo vide.
 
-Les PT et PM multiplient toute cette importance et n'y ajoutent aucun terme fixe. Les paliers utilisent `BASE_STATS[STAT_TP]` et `BASE_STATS[STAT_MP]`, sans buffs/entraves ni dépenses. Le facteur PT vaut 0,5 sous 8, 0,8 dès 8, 1,2 dès 16, 1,6 dès 24 et 1,9 dès 32. Le facteur PM vaut 0,6 sous 2, 0,9 dès 2, 1,2 dès 4, 1,4 dès 6 et 1,5 dès 8 ; une entité statique utilise le palier de 0 PM, sans perdre toute son importance. L'enracinement courant n'intervient plus dans cette importance de base. Le debug affiche les deux composantes et les deux multiplicateurs de base en plus de la présence finale.
+Les PT et PM multiplient toute cette importance et n'y ajoutent aucun terme fixe. Les paliers utilisent `BASE_STATS[STAT_TP]` et `BASE_STATS[STAT_MP]`, sans buffs/entraves ni dépenses. Le facteur PT vaut 0,5 sous 8, 0,8 dès 8, 1,2 dès 16, 1,6 dès 24 et 1,9 dès 32. Le facteur PM vaut 0,6 sous 2, 0,9 dès 2, 1,2 dès 4, 1,4 dès 6 et 1,5 dès 8 ; une entité statique utilise un facteur fixe de **0,2**, répercuté sur la présence, la vie et la vie maximale. L'enracinement courant n'intervient plus dans cette importance de base. Le debug affiche les deux composantes et les deux multiplicateurs de base en plus de la présence finale.
 
 ### Coefficients de caractéristiques et durée
 
@@ -244,7 +245,7 @@ Les poids sont les proportions exactes parmi les adversaires vivants : 60 % d'in
 
 Ce rendement considère une cible au centre de la zone, au coût nominal de l'item ; il ignore cooldowns, limites d'usage, portée, équipement de l'arme, protections et multiplicateurs du porteur. Les lignes d'un même cast s'additionnent, mais pas les armes entre elles. Puces et armes sont couvertes ; Châtiment, poison, nova et dégâts sur soi sont exclus. C'est une estimation simple du potentiel futur, pas une prévision de dégâts réalisables au tour courant.
 
-Les fonctions de coefficient ne doivent dépendre que de leur état `stat`, du catalogue immuable et du contexte figé à la racine pour conserver le calcul incrémental. Les caches d'équipement stockent des `EquipmentYield` sans pondération, par ID et classe réelle/virtuelle, et supposent l'inventaire constant au sein d'une recherche. Le contexte `ScoringStateConstants` contient un `TargetWeights` adverse et allié par camp ; rendements et poids exposent les champs nommés `LEEKS` et `SUMMONS`. Son cache par `BaseHash` s'utilise sur les racines réelles, où Me est vivant, et est vidé au début du tour de chaque joueur. Les caches de scores restent locaux à la recherche. Les pénalités de placement doivent rester positives ou nulles ; si leurs entrées changent, adapter aussi les clés de cache.
+Les fonctions de coefficient ne doivent dépendre que de leur état `stat`, du catalogue immuable et du contexte figé à la racine pour conserver le calcul incrémental. Les caches d'équipement stockent des `EquipmentYield` sans pondération, par ID et classe réelle/virtuelle, et supposent l'inventaire constant au sein d'une recherche. Le contexte `ScoringStateConstants` contient un `TargetWeights` adverse et allié par camp ; rendements et poids exposent les champs nommés `LEEKS` et `SUMMONS`. Son cache par `BaseHash` s'utilise sur les racines réelles, où Me est vivant, et est vidé au début du tour de chaque joueur. Les caches de scores restent locaux à la recherche. Les coûts de soutien, d'offense et de danger restent positifs ou nuls. Un bonus spatial, tel que Covid, doit porter une borne supérieure pour le classement terminal et ses entrées doivent figurer dans les clés de cache.
 
 ### Protections et renvoi
 
@@ -343,14 +344,16 @@ accessibles dans sa mobilité courante et minimise :
 Pénalité(cellule) = coût du soutien allié perdu
                  + coût du potentiel offensif perdu
                  + risque brut/net pondéré par mon importance de base
+                 − score Covid (transmission ennemie − alliée − réception future)
 ```
 
-Le score de la suite devient son score brut moins cette pénalité minimale. Les
-pénalités restent positives ou nulles : un candidat dont le score brut ne dépasse
-plus le meilleur score terminal validé peut être écarté sans calculer son danger.
-Pendant le balayage, le coût spatial seul permet aussi d'écarter une cellule déjà
-plus chère que le meilleur total trouvé. Ces deux coupures utilisent cette
-non-négativité ; elles sont distinctes de la coupure gloutonne approximative des actions.
+Le score de la suite devient son score brut moins cette pénalité minimale, qui peut
+devenir négative grâce au Covid. Le classement utilise `score brut + borne du bonus
+Covid` : la borne compte le stock brut transmis, plafonné aux PV ennemis, pondéré
+par leur importance. Elle ne choisit pas la cellule et ne remplace pas le score
+réel. Pendant le balayage, le spatial incluant Covid reste un plancher, car le danger
+ne peut que s'y ajouter. L'arrêt à zéro est remplacé par la borne négative du bonus.
+Ces coupures restent distinctes de la coupure gloutonne approximative des actions.
 
 Un balayage interrompu retourne un résultat marqué **tronqué**. Il n'entre pas dans
 le cache des placements complets et ne qualifie pas un nouveau plan comme pleinement
@@ -370,6 +373,24 @@ complètes participent au choix. Sans candidat entièrement évalué, la recherc
 terminal plan, stop actions`. Elle ne lance plus une action choisie au score brut seul.
 
 Au placement final, le vrai repli sans danger affiche `[placement] danger not taken into account: spatial cost only`. Un résultat complet déjà en cache reste utilisé et ne produit pas cet avertissement. Ce repli n'ajoute aucune estimation de danger par nœud ; les réserves sont détaillées dans la section budget.
+
+Le **Covid de placement** utilise `Scoring/Covid.leek`. Me infecté transmet aux
+vivants non infectés à deux cases, sans LoS : bonus pour un ennemi, malus pour un
+allié, poids `TRANSMISSION_WEIGHT = 1`. Me sain reçoit un malus de poids
+`RECEPTION_WEIGHT = 0.5` pour le premier porteur à portée dans l'ordre de jeu, aux
+positions actuelles. Un porteur dont le dernier tick expire avant sa prochaine fin
+de tour est exclu. Aucune chaîne épidémique ni déplacement adverse n'est projeté.
+
+Chaque nouvelle infection dure sept ticks ; sa valeur basse utilise magie/puissance
+actuelles du lanceur original et son critique d'origine. Le gain est le delta du
+coût périodique existant, avec importance, plafond partagé de PV, poids des ticks
+et Antidote. Le premier tick d'une infection reçue après ma phase précède Antidote,
+y compris sur Me. Une infection déjà présente ne rapporte rien. Les contributions
+sont préparées une fois par nœud évalué et leur empreinte entre dans le cache de
+placement. Sans danger évalué ni résultat complet réutilisable, le bonus ennemi est
+désactivé ; les malus de contamination restent actifs. Le danger conserve son poids
+habituel, sans obligation de rejoindre une cible infectable. `CovidPlacement.DEBUG`
+affiche le score Covid, le coût du danger et le coût spatial du placement final choisi.
 
 Le **placement près des alliés** dépend du soutien qu'ils peuvent apporter à Me, dans `Scoring/AllySupport.leek`. Aucun soin n'y est ajouté : la heal map le compte déjà. Les buffs utiles sont filtrés selon l'équipement de Me et les masques de cible ; les effets réservés au lanceur sont exclus. Une famille scientifique vaut 20, puis +20 à 200 science de base, +20 à 400 et +10 à 600. Les boucliers suivent les mêmes seuils en résistance de base. Les buffs bruts ont leurs propres poids fixes, sans science ; force 20, agilité 15, sagesse/résistance/magie/science 20, puissance/PT 30, PM 15. Les boucliers bruts valent 20 sans résistance.
 
@@ -679,10 +700,16 @@ normales ne présente aucune erreur ni tour avorté ; il ne mesure pas la winrat
 | `Best: … bases, … steps` | Première action du plan retenu et delta terminal. Les bases sont les entrées de racine ; les steps sont les successeurs ajoutés aux suites, pas toutes les simulations effectuées. |
 | `[BFS] group scores: …` | Scores calculés, estimations reprises, tris servis et estimations conservées depuis les casts précédents. |
 | `[BFS] expansion target: … beam width per start: … starts: …` | Cible indicative, largeur indépendante par première action et nombre de départs positifs conservés. |
+| `[BFS] expansion completed …` / `expansion truncated: operation budget …` | Bilan systématique de l'expansion : `depth` est la profondeur maximale réellement atteinte (nombre d'actions), `beam width` la largeur conservée par départ. `beams processed` compte les beams entièrement traités dans la dernière vague parmi ses beams actifs ; `parents processed` précise l'avancement du dernier beam, y compris une coupure dans un successeur. `wave depth` est la profondeur que cette vague tentait de produire ; elle peut dépasser `depth` si aucun successeur n'existe. `starts` est le nombre initial de départs positifs, `steps` le total des successeurs ajoutés et `operations` le coût de l'expansion depuis la fin de la préparation racine. `completed` signifie terminé selon les règles du beam, pas exploration exhaustive de tous les combos. |
+| `[BFS] expansion skipped: …` | Aucune expansion lancée, faute de PT ou de score initial complet ; profondeur, largeur et compteurs à zéro. |
 | `[BFS] danger not taken into account: no affordable terminal plan, stop actions` | Aucun candidat complètement évalué avec danger ; arrêt des actions, sans repli brut. |
 | `[VIDANGE] danger not taken into account: raw-score plan` | La suite exécutée sans nouvelle recherche venait d'un plan non validé avec danger. |
 | `[placement] danger not taken into account: spatial cost only` | Le placement réel n'a pas pu financer le danger ; seuls les coûts spatiaux sont pris en compte. |
-| `[placement] offensive potential truncated: operation budget` | Le profil offensif de placement est partiel ; il ne devient pas une entrée de cache complète. |
+| `[placement] offensive potential truncated: preparation budget` | Préparation du profil offensif limitée localement à 200 000 opérations (ou à la réserve de fin de tour). Affiche coût, casts évalués et budget de planification restant. Ce message n'arrête pas le BFS et ne prouve pas que le tour manque d'opérations. |
+| `[BFS] stop actions: planning budget exhausted` | Le budget de planification du tour est épuisé ; tentative de vidange du dernier plan avant placement. |
+| `[BFS] stop actions: initial scoring exceeded planning budget` | Le score initial n'a pas pu être terminé avant le plafond de planification. |
+| `[BFS] no action selected: idle plan wins terminal scoring` | Le candidat sans action gagne le classement terminal ; ce n'est pas une erreur d'exécution. |
+| `[placement] covid score: … danger cost: … spatial cost: …` | Contributions en unités de score pour le placement final réellement choisi ; désactivable avec `CovidPlacement.DEBUG = false`. |
 | `[FAIL]`, `[FAIL x2]` | Échec réel et replanification, puis arrêt sur le deuxième échec identique. |
 | `BenchOps.ENABLED` | Actuellement `false`. Le passer temporairement à `true` pour profiler les opérations ; les catégories imbriquées se recouvrent et ne doivent pas être additionnées comme des coûts exclusifs. |
 
@@ -694,10 +721,9 @@ casts de déplacement et les chemins spéciaux d'invocation/résurrection.
 
 ### Prochaines modifications de scoring
 
-- [ ] **Covid au placement final** : ajouter la valeur de transmission/propagation
-  liée à la cellule de fin de tour. Les conséquences d'un item et la valeur actuelle
-  des effets ne remplacent pas ce terme spatial ; préciser son périmètre avant de
-  fixer les poids et adapter les clés de placement.
+- [x] **Covid au placement final** : transmissions immédiates de Me et réception
+  future estimée, en unités du scoring périodique ; poids 1 et 0,5, clés et bornes
+  adaptées. Réglage sur les décisions réelles à poursuivre.
 - [ ] **Lock au placement final** : valoriser ou pénaliser les situations de tacle
   créées par la cellule finale. Ce terme n'existe pas encore dans `Placement` ;
   définir des paliers simples et éviter de compter deux fois un danger déjà projeté.

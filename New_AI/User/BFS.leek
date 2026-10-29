@@ -91,6 +91,7 @@ class ActionSuite {
 		var rootCombinedHfp = 0
 		for (var s: var h in RootHfp) rootCombinedHfp ^= h
 		if (MyStats.TP < MINIMUM_COST_ITEM) {
+			debug("[BFS] expansion skipped: insufficient TP | depth: 0 | beam width: 0 | beams processed: 0/0 | starts: 0 | steps: 0")
 			BenchOps.Stop("BFS")
 			return null
 		}
@@ -106,6 +107,8 @@ class ActionSuite {
 		var rootValues = [:]
 		var initialScore = ScoringClass.stateValue(State, MySide, OPS_DEADLINE, rootValues)
 		if (initialScore == null) {
+			debugW("[BFS] stop actions: initial scoring exceeded planning budget | TP: " + MyStats.TP)
+			debug("[BFS] expansion skipped: initial scoring budget | depth: 0 | beam width: 0 | beams processed: 0/0 | starts: 0 | steps: 0")
 			BenchOps.Stop("BFS")
 			return null
 		}
@@ -122,6 +125,7 @@ class ActionSuite {
 		// noPlay = plancher "ne rien jouer" ET racine de la chaîne d'états.
 		var noPlay = new NodeClass(null, State, null)
 		noPlay.SCORE = initialScore
+		noPlay.COVID_BONUS_BOUND = CovidPlacement.bonusBound(State)
 		noPlay.SCORE_VALUES = rootValues
 		noPlay.BASE_HASH = BaseHash
 		noPlay.ME_WALK_FINGERPRINT = RootWalkFingerprint
@@ -180,24 +184,49 @@ class ActionSuite {
 		// leurs descendants. La limite commune peut interrompre une vague.
 		var frontiers = []
 		for (var root in roots) push(frontiers, [root])
+		var maxDepth = count(roots) > 0 ? 1 : 0
+		var waveDepth = 1
+		var waveBeams = count(frontiers)
+		var beamsProcessed = 0
+		var parentsProcessed = 0
+		var beamParents = 0
+		SearchCache.EXPANSION_TRUNCATED = false
 		while (count(frontiers) > 0) {
+			waveDepth++
+			waveBeams = count(frontiers)
+			beamsProcessed = 0
 			var nextFrontiers = []
 			for (var frontier in frontiers) {
-				if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) break
+				parentsProcessed = 0
+				beamParents = count(frontier)
+				if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) { SearchCache.EXPANSION_TRUNCATED = true; break }
 				var nextWave = []
 				for (var parent in frontier) {
-					if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) break
+					if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) { SearchCache.EXPANSION_TRUNCATED = true; break }
 					var successors = findBestNextNodes(parent, SearchCache, MySide, beamWidth)
 					for (var next in successors) {
 						push(candidates, next)
 						BFS_CHAIN_STEPS++
 						push(nextWave, next)
+						maxDepth = waveDepth
 					}
+					if (SearchCache.EXPANSION_TRUNCATED) break
+					parentsProcessed++
 				}
 				if (count(nextWave) > 0) push(nextFrontiers, selectBeam(nextWave, beamWidth))
+				if (SearchCache.EXPANSION_TRUNCATED) break
+				beamsProcessed++
 			}
 			frontiers = nextFrontiers
+			if (SearchCache.EXPANSION_TRUNCATED) break
 		}
+		var expansionOps = getOperations() - expansionStart
+		debug("[BFS] expansion " + (SearchCache.EXPANSION_TRUNCATED ? "truncated: operation budget" : "completed")
+			+ " | depth: " + maxDepth + " | beam width: " + beamWidth
+			+ " | beams processed: " + beamsProcessed + "/" + waveBeams
+			+ " | parents processed: " + parentsProcessed + "/" + beamParents
+			+ " | wave depth: " + (waveBeams > 0 ? waveDepth : 0) + " | starts: " + count(roots)
+			+ " | steps: " + BFS_CHAIN_STEPS + " | operations: " + expansionOps)
 		OPS_DEADLINE = searchDeadline
 		BenchOps.Stop("BFS")
 		debug("[BFS] group scores: " + SearchCache.NEW_SCORES + " computed, " + SearchCache.REUSED_SCORES + " reused, " + SearchCache.ORDER_HITS + " cached orders, " + SearchCache.RETAINED_ESTIMATES + " retained across casts")
@@ -209,9 +238,9 @@ class ActionSuite {
 	 * Reclassement terminal : chaque candidat est clos par FinalCell, qui rend la pénalité de
 	 * son meilleur placement, et vaut finalScore = rawScore − placementPenalty.
 	 *
-	 * COUPURE EXACTE, sans epsilon : la pénalité est >= 0 par construction, donc
-	 * finalScore <= rawScore. Les candidats étant parcourus par score BRUT décroissant, dès
-	 * qu'un score brut ne bat plus le meilleur score final, aucun de ceux qui restent ne le
+	 * COUPURE EXACTE : finalScore <= rawScore + borne du bonus Covid. Les candidats
+	 * sont parcourus par cette borne décroissante ; dès qu'elle ne bat plus le meilleur,
+	 * aucun de ceux qui restent ne le
 	 * pourra non plus. Une égalité parfaite de scores finaux garde le premier candidat évalué
 	 * dans le tri stable.
 	 *
@@ -219,12 +248,15 @@ class ActionSuite {
 	 */
 	static pickTerminal(candidates, initialScore, nBases, terminalLimit) {
 		BenchOps.Start("Terminal")
-		var sorted = arraySort(candidates, function(a, b) { return b.SCORE - a.SCORE })
+		var sorted = arraySort(candidates, function(a, b) {
+			return (b.SCORE + b.COVID_BONUS_BOUND) - (a.SCORE + a.COVID_BONUS_BOUND)
+		})
 		var best = null
 		var bestFinal = 0
 		for (var node in sorted) {
-			// Pénalité >= 0 : les candidats suivants ne peuvent plus gagner.
-			if (best != null && node.SCORE <= bestFinal) break
+			// Le Covid peut procurer un bonus. Couper seulement sur une vraie borne
+			// supérieure, pas sur le seul score brut d'une branche contagieuse.
+			if (best != null && node.SCORE + node.COVID_BONUS_BOUND <= bestFinal) break
 			if (getOperations() + OPS_SEARCH_MARGIN > terminalLimit) break
 			var close = closeOf(node, terminalLimit, best != null)
 			if (close == null) continue // une autre géométrie peut être déjà chaude
@@ -243,6 +275,7 @@ class ActionSuite {
 
 		if (best.ACTION == null) {
 			BFS_LAST_CHAIN = []
+			debug("[BFS] no action selected: idle plan wins terminal scoring | scored roots: " + nBases)
 			return null
 		}
 		// Chaine complete du meilleur candidat, de la racine vers la feuille. Play n'en joue
@@ -270,6 +303,11 @@ class ActionSuite {
 	static closeOf(node, truncateAt, alreadyValidated = false) {
 		var State = StateClass.materializeNodeState(node)
 		var combinedHfp = combinedHfpOf(node)
+		var covid = node.COVID_CONTEXT
+		if (covid == null) {
+			covid = CovidPlacement.prepare(State)
+			node.COVID_CONTEXT = covid
+		}
 		// Au large, même le coût froid entier tient. Sinon préparer item par item,
 		// avec la même garde, au lieu de refuser un bloc estimé à plusieurs millions.
 		if (!alreadyValidated || getOperations() + OPS_COLD_HEAL + OPS_COLD_PLAN + OPS_SEARCH_MARGIN > truncateAt) {
@@ -278,7 +316,7 @@ class ActionSuite {
 			if (getOperations() + OPS_SEARCH_MARGIN > truncateAt) return null
 			FinalCell.prewarm(State, node.BASE_HASH, node.CONTEXT_BY_SIDE, combinedHfp, sideHfp)
 		}
-		return FinalCell.evaluate(State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, combinedHfp, node.ME_WALK_FINGERPRINT, truncateAt, true)
+		return FinalCell.evaluate(State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, combinedHfp, node.ME_WALK_FINGERPRINT, truncateAt, true, covid)
 	}
 	/*
 	 * Fold des empreintes de soigneurs du nœud : clé de la carte de soin que FinalCell consomme.
@@ -346,7 +384,7 @@ class ActionSuite {
 		for (var actual in frame.FRESH) keepBeamSuccessor(best, actual, width)
 		var Workspace = null
 		for (var hint in frame.ORDER) {
-			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) break
+			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) { SearchCache.EXPANSION_TRUNCATED = true; break }
 			// Aucun second passage sur les anciennes estimations non positives.
 			if (hint.GAIN <= BFS_DELTA_EPSILON) break
 			// Coupure APPROXIMATIVE : les anciens gains guident les essais, sans
@@ -404,6 +442,7 @@ class ActionSuite {
 			}
 			set = new ActionGroupSetClass(frame.GROUPS)
 			if (getOperations() + OPS_SEARCH_MARGIN <= OPS_DEADLINE) SearchCache.GROUP_SETS[setKey] = set // jamais une préparation tronquée
+			else SearchCache.EXPANSION_TRUNCATED = true
 		} else {
 			frame.GROUPS = set.GROUPS
 			SearchCache.SET_HITS++
@@ -420,7 +459,7 @@ class ActionSuite {
 			keys = set.KEYS
 			SearchCache.REUSED_SCORES += count(keys)
 		} else for (var key in set.KEYS) {
-			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) { incomplete = true; break }
+			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) { incomplete = true; SearchCache.EXPANSION_TRUNCATED = true; break }
 			if (!(key in SearchCache.ESTIMATES)) {
 				var playable = framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
 				if (playable == null) { incomplete = true; continue }
@@ -521,6 +560,7 @@ class ActionSuite {
 			}
 		}
 		var score = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, MySide, parentValues)
+		node.COVID_BONUS_BOUND = CovidPlacement.bonusBound(Workspace)
 		StateClass.restoreWorkspace(Workspace, node.CLONED)
 		node.CLONED = null
 		node.SCORE = score

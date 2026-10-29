@@ -88,6 +88,7 @@ class ActionSearchCacheClass {
 	SET_HITS = 0
 	RETAINED_ESTIMATES = 0
 	ESTIMATE_VERSION = 0
+	EXPANSION_TRUNCATED = false // diagnostic : un parcours de successeurs a atteint le budget
 	constructor() {
 		this.ESTIMATES = [:]
 		this.DEPENDENCIES = [:]

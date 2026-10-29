@@ -73,9 +73,10 @@ class EntityImportance {
     }
 
     static mpMultiplier(stat) {
-        // Une entité immobile garde une importance : le facteur ne tombe pas à zéro.
+        // Facteur propre aux statiques, aussi utilisé pour la vie et la vie maximale.
+        if (stat.STATIC) return 0.2
         // Ignorer l'enracinement courant : cet effet ne modifie pas la mobilité de base.
-        var mp = stat.STATIC ? 0 : stat.BASE_STATS[STAT_MP]
+        var mp = stat.BASE_STATS[STAT_MP]
         if (mp >= 8) return 1.5
         if (mp >= 6) return 1.4
         if (mp >= 4) return 1.2

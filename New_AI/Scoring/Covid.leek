@@ -1,0 +1,153 @@
+// Transmissions nouvelles liées à ma cellule finale ; pas de chaîne épidémique projetée.
+include("../includes.leek")
+
+class CovidPlacementContext {
+    HASH = 0
+    OUTGOING = [] // [cellule du receveur, gain signé, id] : positif = ennemi contaminé
+    INCOMING = [] // [cellule du porteur, coût, id], dans l'ordre de leur prochaine fin de tour
+    MAX_BONUS = 0
+    ACTIVE = false
+}
+
+class CovidPlacement {
+    static TRANSMISSION_WEIGHT = 1
+    static RECEPTION_WEIGHT = 0.5
+    static DEBUG = true // Une ligne pour le placement réellement choisi, pas par cellule.
+
+    static lineOf(stat) {
+        for (var eff in stat.EFFECTS) {
+            if (eff[5] == CHIP_COVID && eff[0] == EFFECT_POISON && eff[3] != 0 && eff[1] > 0) return eff
+        }
+        return null
+    }
+
+    static poisonEffect() {
+        for (var eff in ITEMINFO[CHIP_COVID].EFFECTS) if (eff[0] == EFFECT_POISON) return eff
+        return null
+    }
+
+    static radius() {
+        for (var eff in ITEMINFO[CHIP_COVID].EFFECTS) if (eff[0] == EFFECT_PROPAGATION) return eff[1]
+        return 0
+    }
+
+    // Nouveau jet estimé au minimum, comme les casts du BFS. Le porteur n'est pas le
+    // lanceur : magie/puissance COURANTES de l'original, critique de la ligne existante.
+    static transmittedTick(State, line) {
+        if (!(line[2] in State) || State[line[2]].LIFE <= 0) return 0
+        var source = State[line[2]]
+        var effect = poisonEffect()
+        return max(0, round(effect[1] * (1 + max(0, source.MAGIC) / 100)
+            * (1 + source.POWER / 100) * (line[4] ? CRITICAL_FACTOR : 1)))
+    }
+
+    static periodicCost(stat, values) {
+        if (values == null) return 0
+        // Même coefficient et mêmes effets que le score de branche ; les deux canaux
+        // partagent déjà le plafond de PV dans PeriodicScoring.
+        return -stat.POISON_OVER_TIME * Coefficients.poison(stat, values)
+            - stat.AFTEREFFECT_OVER_TIME * Coefficients.aftereffect(stat, values)
+    }
+
+    static infectionValue(target, tick) {
+        if (tick <= 0 || target.LIFE <= 0 || lineOf(target) != null) return 0
+        var before = periodicCost(target, PeriodicScoring.damageValues(target, true))
+        var infected = clone(target, 1)
+        infected.POISON += tick
+        infected.POISON_OVER_TIME += tick * poisonEffect()[3]
+        var after = periodicCost(infected, PeriodicScoring.damageValues(infected, true))
+        return max(0, after - before)
+    }
+
+    // Borne bon marché, calculée pendant que le workspace du nœud est disponible.
+    // Une infection ne peut ajouter plus que son stock brut, plafonné aux PV.
+    // Ne pas déplacer tous les états ni scorer leurs infections pour trier les feuilles.
+    static bonusBound(State) {
+        var mine = State[Me]
+        var line = lineOf(mine)
+        if (line == null || mine.LIFE <= 0 || TRANSMISSION_WEIGHT <= 0) return 0
+        var stock = transmittedTick(State, line) * poisonEffect()[3]
+        if (stock <= 0) return 0
+        var bound = 0
+        for (var id: var stat in State) {
+            if (stat.SIDE == mine.SIDE || stat.LIFE <= 0 || lineOf(stat) != null) continue
+            bound += EntityImportance.value(stat) / 3000 * min(stat.LIFE, stock)
+        }
+        return bound * TRANSMISSION_WEIGHT + 0.000001
+    }
+
+    static prepare(State) {
+        var context = new CovidPlacementContext()
+        var mine = State[Me]
+        if (mine.LIFE <= 0) return context
+        var ownLine = lineOf(mine)
+        if (ownLine != null) {
+            var tick = transmittedTick(State, ownLine)
+            for (var id: var target in State) {
+                if (id == Me || target.LIFE <= 0) continue
+                var value = infectionValue(target, tick) * TRANSMISSION_WEIGHT
+                if (value <= 0) continue
+                var gain = target.SIDE == mine.SIDE ? -value : value
+                push(context.OUTGOING, [target.CELL, gain, id])
+                if (gain > 0) context.MAX_BONUS += gain
+            }
+        } else {
+            // Me ne sera contaminé qu'une fois : le premier porteur à portée gagne.
+            // Un tick unique chez l'autre expire avant sa prochaine fin de tour.
+            var carriers = [:]
+            for (var id: var source in State) {
+                if (id == Me || source.LIFE <= 0) continue
+                var line = lineOf(source)
+                if (line == null || line[3] == 1) continue
+                var tick = transmittedTick(State, line)
+                if (tick <= 0) continue
+                carriers[id] = [source.CELL, infectionValue(mine, tick) * RECEPTION_WEIGHT, id]
+            }
+            if (!mapIsEmpty(carriers)) {
+                var order = StateClass.getSortedEntityByTurnOrder(State)
+                for (var later in [true, false]) for (var id in order) {
+                    if (id in carriers && ((State[id].TURN_ORDER > mine.TURN_ORDER) == later)) {
+                        push(context.INCOMING, carriers[id])
+                    }
+                }
+            }
+        }
+        context.ACTIVE = count(context.OUTGOING) > 0 || count(context.INCOMING) > 0
+        if (!context.ACTIVE) return context
+        // Clé fonctionnelle : mêmes contributions, cellules et ordre => même résultat.
+        // Inclut ainsi les nettoyages, stocks, PV et buffs de l'original sans BaseHash seul.
+        var hash = addValueToBinHash(OFFSET_BASIS, radius())
+        for (var rows in [context.OUTGOING, context.INCOMING]) {
+            hash = addValueToBinHash(hash, count(rows))
+            for (var row in rows) {
+                hash = addValueToBinHash(hash, row[0])
+                hash = addValueToBinHash(hash, mix64Memo(realBits(row[1])))
+                hash = addValueToBinHash(hash, row[2])
+            }
+        }
+        context.HASH = hash
+        return context
+    }
+
+    static scoreAt(context, cell, allowBonus = true) {
+        var score = 0
+        var reach = radius()
+        for (var row in context.OUTGOING) {
+            if ((allowBonus || row[1] < 0) && CellClass.getDist(cell, row[0]) <= reach) score += row[1]
+        }
+        for (var row in context.INCOMING) if (CellClass.getDist(cell, row[0]) <= reach) return score - row[1]
+        return score
+    }
+
+    static debugChoice(State, cell, penalty, net, withDanger) {
+        if (!DEBUG) return;
+        var context = prepare(State)
+        if (!context.ACTIVE) return;
+        var score = scoreAt(context, cell, withDanger)
+        var spatial = Placement.spatial(State, StateClass.getBaseHash(State), cell)
+        var exposure = withDanger ? penalty - spatial + score : 0
+        debug("[placement] covid score: " + score + " | danger cost: " + exposure
+            + " | spatial cost: " + spatial + " | total penalty: " + penalty
+            + " | cell: " + cell + (withDanger ? "" : " | covid bonus disabled: danger unavailable"))
+    }
+}

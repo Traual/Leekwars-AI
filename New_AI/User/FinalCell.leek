@@ -5,8 +5,8 @@
  *
  *   placementPenalty = coût spatial (Placement) + coût du danger à la cellule
  *
- * Les deux composantes sont des COÛTS : plus bas = mieux, jamais négatives. C'est ce qui
- * rend la coupure du reclassement terminal exacte — finalScore <= rawScore, toujours.
+ * Le Covid ajoute un gain spatial signé. Le coût total peut donc être négatif ;
+ * les coupures utilisent une borne explicite du bonus de transmission.
  *
  * SOURCE UNIQUE : la même fonction sert au reclassement des branches (BFS) et au placement
  * réellement joué en fin de tour (Play). Un état identique évalué deux fois rend le même
@@ -27,6 +27,7 @@ global OPS_REBUILD_HEAL = 500000
 global OPS_COLD_PLAN = 3000000
 
 class FinalCell {
+    static LAST_WITH_DANGER = false // Inclut un résultat complet réutilisé depuis le cache.
 
     /*
      * Cellule de fin de tour réellement jouée. Reconstruit le contexte depuis l'état — appelée
@@ -64,6 +65,7 @@ class FinalCell {
         var withDanger = getOperations() + coldCost(State, combinedHfp, hfpBySide[State[Me].SIDE]) <= budget
         var res = evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, budget, withDanger)
         debug("Best final cell: " + res[0] + " (pénalité: " + res[1] + ", net: " + res[2] + ")")
+        CovidPlacement.debugChoice(State, res[0], res[1], res[2], LAST_WITH_DANGER)
         return res[0]
     }
 
@@ -188,15 +190,16 @@ class FinalCell {
      *        trouvé : près du plafond pour le placement réel, plus tôt pour le reclassement du BFS
      * @param withDanger faux quand le budget ne finance plus le danger des cellules : la pénalité
      *        se réduit alors au coût spatial, et le résultat n'entre pas dans le mémo
-     * @return [meilleure cellule, pénalité (>= 0), net à cette cellule], suivi de true si le
+     * @return [meilleure cellule, pénalité signée, net à cette cellule], suivi de true si le
      *        balayage a été tronqué — sa pénalité n'est alors qu'un majorant du minimum
      */
-    static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, truncateAt, withDanger) {
+    static evaluate(State, BaseHash, contextBySide, hfpBySide, combinedHfp, meWalkFp, truncateAt, withDanger, covid = null) {
         BenchOps.Start("FinalCell")
         if (ROOT_ALLY_SUPPORT == null) AllySupport.prepare(State)
         if (ROOT_ENEMY_OFFENSE == null) EnemyOffense.prepare(State, BaseHash)
         var MyState = State[Me]
         var mySide = MyState.SIDE
+        if (covid == null) covid = CovidPlacement.prepare(State)
 
         // MÊMES primitives, MÊMES clés, MÊMES caches que le reste de l'IA : le placement
         // hérite des caches chauffés par la recherche au lieu d'entretenir un quatrième
@@ -216,10 +219,13 @@ class FinalCell {
         // La préparation racine porte les cooldowns, PT/PM, équipement et utilité des buffs.
         // BaseHash seul n'encode pas ces inputs du soutien de placement.
         var memoKey = mix64(mix64(BaseHash ^ seed) ^ mix64(meWalkFp) ^ ROOT_ALLY_SUPPORT.HASH ^ ROOT_ENEMY_OFFENSE.HASH)
+        if (covid.ACTIVE) memoKey = addValueToBinHash(memoKey, covid.HASH)
         if (memoKey in FINAL_PLACEMENT_CACHE) {
+            LAST_WITH_DANGER = true
             BenchOps.Stop("FinalCell")
             return FINAL_PLACEMENT_CACHE[memoKey]
         }
+        LAST_WITH_DANGER = withDanger
         // Un résultat complet en cache tient déjà compte du danger, même quand le budget
         // n'en finance plus une reconstruction. Avertir uniquement pour le vrai repli.
         if (!withDanger) debugW("[placement] danger not taken into account: spatial cost only")
@@ -248,6 +254,7 @@ class FinalCell {
         // Vrai seulement si le budget a coupe le balayage : le resultat n'est alors PAS
         // l'optimum du set, il ne doit pas entrer dans le memo qui promet le contraire.
         var truncated = false
+        var lowerBound = withDanger ? -covid.MAX_BONUS : 0
         for (var cell: var mp in possibleCells) {
             // Budget epuise : on garde le meilleur trouve jusqu'ici. Le seuil vient de l'appelant —
             // le reclassement du BFS doit laisser intacte la part du placement reel, celui-ci ne
@@ -261,6 +268,9 @@ class FinalCell {
             // meilleur total ne peut pas gagner — coupure EXACTE, et elle épargne le net,
             // de loin le calcul le plus cher des deux.
             var spatial = Placement.spatialWithSeed(State, cell, spatialSeed, support, offense)
+            // Sans danger, ne pas poursuivre un ennemi pour le bonus de contagion.
+            // Les malus de contamination alliée/réception restent pris en compte.
+            if (covid.ACTIVE) spatial -= CovidPlacement.scoreAt(covid, cell, withDanger)
             if (spatial >= bestPenalty) continue
 
             var net = withDanger ? DeltaClass.netAtFleeCell(cell, seed, dangerCellSeed, MyState, State, BaseHash, offensiveContextHash, mySide, antidoteCd, healMap, lazy, false) : 0
@@ -275,7 +285,7 @@ class FinalCell {
                 bestPenalty = penalty
                 bestCell = cell
                 bestNet = net
-                if (penalty == 0) break   // borne parfaite : rien ne peut faire mieux
+                if (penalty <= lowerBound) break // borne parfaite, bonus Covid compris
             }
         }
 
