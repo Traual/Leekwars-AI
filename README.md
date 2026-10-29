@@ -477,6 +477,10 @@ Son cache porte le plateau, la mobilité et les seuils de PT restant **après** 
 cast/équipement : un ancien échec faute de PT ne bloque pas une origine devenue payable.
 Le mode rendement ajoute aussi les coûts courants à la clé du tri.
 
+Le mélange d'une signature de groupe est calculé une fois dans `SIGNATURE_MIX`,
+puis partagé par les empreintes d'ensembles complets ou partiels. Une résurrection
+dont la clé inclut le candidat conserve son mélange spécifique.
+
 En mode gain brut, les priorités inférieures ou égales à epsilon sont exclues du tri,
 car la sélection s'arrête déjà à ce seuil. Leurs estimations restent mémorisées et les
 nouveaux groupes simulés restent examinés. Dès qu'une estimation change, le cache des
@@ -484,12 +488,21 @@ classements est vidé : il conserve uniquement les tris compatibles avec les pri
 courantes, sans accumuler des versions périmées. Les estimations et la géométrie restent
 réutilisées.
 
+Chaque estimation porte une entrée `ActionPriorityClass` immuable : les classements
+en gain brut partagent directement cette entrée. Un gain modifié la remplace ; les
+classements déjà ouverts gardent leur instantané. En mode rendement, une entrée
+distincte utilise le coût courant du parent.
+
 Les coûts et usages disponibles sont mémorisés sur l'entité simulée. Le mémo est
 invalidé au clone et aux écritures de cooldown/usages ; un changement de PT ou d'arme
 le remplace également. Le stock brut d'usages jouables est repris depuis le parent
 immuable, en retirant les items écrits dans les patches locaux ; coût d'équipement et
 financement par les PT restent courants. Chaque phase géométrique retrouve ce mémo
 une fois avant sa boucle d'items.
+
+Les générateurs filtrent les items indisponibles ou trop chers avant la géométrie,
+et remplissent leurs coûts/usages dans ce mémo. Le BFS consomme ce résultat sans
+refaire le même filtrage. Tout nouveau générateur doit respecter ce contrat.
 
 Deux branches sœurs peuvent partager ce mémo seulement depuis le même mémo parent,
 avec les mêmes PT, arme et vecteurs locaux de cooldown/usages. Le hash présélectionne,
@@ -527,6 +540,10 @@ estimations positives ordonnent les essais, avec une coupure approximative lorsq
 assez de successeurs actuels dépassent les estimations restantes pour remplir le beam. Chaque successeur
 proposé a été simulé et rescorré dans son parent, déplacements réels inclus. Une
 inversion, un kill ou une invocation modifie donc le plateau de sa branche normalement.
+
+Le patch de toute action simulée contient Me. La recherche y lit d'abord ses PT et
+sa vie : une feuille morte ou sans assez de PT ne matérialise pas son état complet
+pour constater qu'elle ne peut plus être développée.
 Les valeurs de scoring et les projections restent celles de main. La validation du
 danger se fait seulement après les branches ; aucun candidat brut ne remplace une
 évaluation terminale complète. Les réserves de fin de tour et des invocations restent inchangées.
@@ -1190,6 +1207,23 @@ ce duel comme une validation sans erreur.
 Les sources, scénarios, builds et résultats bruts du duel sont figés séparément.
 Les corrections finales sont validées par des cas de régression et des combats
 de contrôle ; leur taux de victoire n'est pas mesuré par cette série de 200.
+
+### Optimisations exactes du 29 octobre 2026
+
+Après `5544fdc`, les signatures mélangées et les entrées de priorité immuables sont
+réutilisées, les contrôles de disponibilité redondants sont retirés et les feuilles
+sans suite sont reconnues avant matérialisation. Les règles de sélection, formules
+de scoring et budgets de production restent inchangés.
+
+Sur quatre témoins 4v4 de deux rounds, à largeurs fixes 1 et 2 et sans coupure de
+recherche dans le seul banc : **64 tours de poireaux**, **1 424 840 374 → 1 360 681 950
+opérations**, soit **−4,50 %**, avec les actions natives strictement identiques.
+Les 128 recherches isolées à différents PT et sur quatre plateaux conservent aussi
+leurs simulations, scores et suites. Les **325 contrôles ciblés** passent, ainsi
+qu'une recherche en mode rendement avec résurrection. Deux combats courts aux
+budgets réels terminent sans erreur ni interruption native. Le profil final confirme
+la baisse du travail de préparation des groupes ; ces mesures de coût ne mesurent
+pas un gain de taux de victoire.
 
 ## Documentation et outils
 

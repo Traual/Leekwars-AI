@@ -371,9 +371,10 @@ class ActionSuite {
 	/* Les priorités sont triées sans résoudre toutes les origines. Les hits
 	 * partagent un ordre de CLÉS, jamais les actions concrètes d'un autre parent. */
 	static findBestNextNodes(Parent, SearchCache, MySide, width = 3) {
-		var State = StateClass.materializeNodeState(Parent)
-		var mine = State[Me]
+		// Tout parent développé vient d’une action : son patch contient toujours Me.
+		var mine = Parent.STATE_PATCH[Me]
 		if (mine.LIFE <= 0 || mine.TP < MINIMUM_COST_ITEM) return []
+		var State = StateClass.materializeNodeState(Parent)
 		var BaseHash = Parent.BASE_HASH
 		var walk = WalkCellsClass.getAllLayers(State, Me, BaseHash, Parent.ME_WALK_FINGERPRINT)
 		var resurrectionTargetId = resurrectIdOf(State)
@@ -432,11 +433,9 @@ class ActionSuite {
 		var set = SearchCache.GROUP_SETS[setKey]
 		if (set == null) {
 			var groups = ActionsClass.getEveryActionsInAState(State, Walk, mine.CELL, BaseHash)
+			// La génération a déjà filtré les items et rempli leurs coûts/usages courants.
 			for (var group in groups) {
 				if (group.Item == CHIP_RESURRECTION && resurrectionTargetId == null) continue
-				var cost = frame.COSTS[group.Item]
-				if (cost == null) cost = baseCostOf(mine, group.Item, frame.COSTS, frame.USES, availability.STOCKS)
-				if (cost < 0) continue
 				var key = groupEstimateKey(group, resurrectionTargetId)
 				if (!(key in frame.GROUPS) || group.IS_LOCAL) frame.GROUPS[key] = group
 			}
@@ -484,18 +483,21 @@ class ActionSuite {
 				fingerprint = set.FINGERPRINT
 				SearchCache.KNOWN_GROUP_SETS[setKey] = true
 			}
-			else for (var key in keys) fingerprint ^= mix64(key)
+			else for (var key in keys) {
+				var group = frame.GROUPS[key]
+				fingerprint ^= key == group.SIGNATURE ? group.SIGNATURE_MIX : mix64(key)
+			}
 		}
 		var orderKey = addValueToBinHash(OFFSET_BASIS ^ fingerprint, (count(keys) << 1) | (BFS_SCORE_PER_ACTION_COST ? 1 : 0))
 		var order = SearchCache.ORDERED_GROUPS[orderKey]
 		if (order == null) {
 			order = []
 			for (var key in keys) {
-				var gain = SearchCache.ESTIMATES[key]
-				// En gain brut, la sélection s'arrête déjà à epsilon.
-				if (!BFS_SCORE_PER_ACTION_COST && gain <= BFS_DELTA_EPSILON) continue
-				var priority = BFS_SCORE_PER_ACTION_COST ? priorityOf(gain, frame.PLAYABLES[key].COST) : gain
-				push(order, new ActionPriorityClass(key, gain, priority))
+				// Entrée immuable partagée ; le rendement dépend encore du coût de ce parent.
+				var hint = SearchCache.ESTIMATES[key]
+				if (!BFS_SCORE_PER_ACTION_COST && hint.GAIN <= BFS_DELTA_EPSILON) continue
+				if (BFS_SCORE_PER_ACTION_COST) hint = new ActionPriorityClass(key, hint.GAIN, priorityOf(hint.GAIN, frame.PLAYABLES[key].COST))
+				push(order, hint)
 			}
 			order = arraySort(order, function(a, b) { return b.PRIORITY - a.PRIORITY })
 			SearchCache.ORDERED_GROUPS[orderKey] = order
@@ -509,8 +511,10 @@ class ActionSuite {
 	// Une revalidation apprend le gain courant. Ne pas garder un tri qui date
 	// d'avant ce changement ; les estimations restent des indications gloutonnes.
 	static rememberEstimate(SearchCache, key, gain) {
-		if (SearchCache.ESTIMATES[key] == gain) return;
-		SearchCache.ESTIMATES[key] = gain
+		var before = SearchCache.ESTIMATES[key]
+		if (before != null && before.GAIN == gain) return;
+		// Remplacer l’entrée : les classements déjà ouverts gardent leur instantané.
+		SearchCache.ESTIMATES[key] = new ActionPriorityClass(key, gain, gain)
 		// Les anciens classements ne peuvent plus servir ; les estimations restent en cache.
 		SearchCache.ORDERED_GROUPS = [:]
 	}
@@ -583,7 +587,7 @@ class ActionSuite {
 			var key = estimateKeyOf(playable)
 			var entry
 			if (reuseEstimates && key in SearchCache.ESTIMATES) {
-				var gain = SearchCache.ESTIMATES[key]
+				var gain = SearchCache.ESTIMATES[key].GAIN
 				entry = new ScoredActionClass(playable, gain, priorityOf(gain, playable.COST), null, null)
 				SearchCache.REUSED_SCORES++
 			} else {
@@ -631,8 +635,7 @@ class ActionSuite {
 		for (var group in groups) {
 			var item = group.Item
 			var cost = baseCosts[item]
-			if (cost == null) cost = baseCostOf(mine, item, baseCosts, usesByItem, availability.STOCKS)
-			if (cost < 0 || (item == CHIP_RESURRECTION && ResurrectId == null)) continue
+			if (item == CHIP_RESURRECTION && ResurrectId == null) continue
 			var playable = resolveGroup(group, mine, Walk, cost, usesByItem[item], ResurrectId, BaseHash, walkFingerprint)
 			if (playable == null) continue
 			var old = result[group.SIGNATURE]

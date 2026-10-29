@@ -25,11 +25,13 @@ class ActionClass {
 class ActionGroupClass extends ActionClass {
 	SIGNATURE
 	TARGET_HASH
+	SIGNATURE_MIX // mix64(SIGNATURE), immuable et partagé par les ensembles de groupes.
 	ORIGINS
 	IS_LOCAL
 	constructor(item, from, to, signature, targetHash, local = false) {
 		super(item, from, to)
 		this.SIGNATURE = signature
+		this.SIGNATURE_MIX = mix64(signature)
 		this.TARGET_HASH = targetHash
 		this.IS_LOCAL = local
 		this.ORIGINS = local ? null : [from: to]
@@ -75,7 +77,7 @@ class ScoredActionClass {
  * mémorisés ordonnent les candidats ; ils ne sont PAS des majorants. Les candidats
  * réutilisés sont toujours simulés depuis leur parent avant d'entrer dans l'arbre. */
 class ActionSearchCacheClass {
-	ESTIMATES
+	ESTIMATES // [clé -> ActionPriorityClass immuable], priorité brute = gain.
 	DEPENDENCIES
 	ROOT_STATE
 	SCORING_CONTEXT
@@ -197,6 +199,7 @@ class ActionOriginChoiceClass {
 }
 
 // Le tri partage seulement des clés et des priorités, jamais un nœud ou un From.
+// Une entrée partagée ne se modifie pas : rememberEstimate la remplace si le gain change.
 class ActionPriorityClass {
 	KEY
 	GAIN
@@ -236,7 +239,8 @@ class ActionGroupSetClass {
 		this.FINGERPRINT = 0
 		for (var key: var _group in groups) {
 			push(this.KEYS, key)
-			this.FINGERPRINT ^= mix64(key)
+			// Une clé de résurrection peut ajouter un candidat à la signature du groupe.
+			this.FINGERPRINT ^= key == _group.SIGNATURE ? _group.SIGNATURE_MIX : mix64(key)
 		}
 	}
 }
