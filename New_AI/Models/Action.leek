@@ -87,7 +87,6 @@ class ActionSearchCacheClass {
 	ORDER_HITS = 0
 	SET_HITS = 0
 	RETAINED_ESTIMATES = 0
-	ESTIMATE_VERSION = 0
 	EXPANSION_TRUNCATED = false // diagnostic : un parcours de successeurs a atteint le budget
 	constructor() {
 		this.ESTIMATES = [:]
@@ -104,14 +103,12 @@ class ActionSearchCacheClass {
 		if (this.SCORING_CONTEXT != context) {
 			this.ESTIMATES = [:]
 			this.DEPENDENCIES = [:]
-			this.ESTIMATE_VERSION++
 		} else if (this.ROOT_STATE != null) {
 			// Toute estimation dépend de Me : si ses inputs ont changé, inutile de
 			// comparer les registres de tous les autres porteurs avant de tout vider.
 			if (!sameRootInputs(State[Me], this.ROOT_STATE[Me])) {
 				this.ESTIMATES = [:]
 				this.DEPENDENCIES = [:]
-				this.ESTIMATE_VERSION++
 			} else {
 				var dirty = 0
 				for (var id: var stat in State) {
@@ -121,7 +118,6 @@ class ActionSearchCacheClass {
 					var stale = []
 					for (var key: var mask in this.DEPENDENCIES) if ((mask & dirty) != 0) push(stale, key)
 					for (var key in stale) { mapRemove(this.ESTIMATES, key); mapRemove(this.DEPENDENCIES, key) }
-					if (count(stale) > 0) this.ESTIMATE_VERSION++
 				}
 			}
 		}

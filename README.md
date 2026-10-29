@@ -477,6 +477,13 @@ Son cache porte le plateau, la mobilité et les seuils de PT restant **après** 
 cast/équipement : un ancien échec faute de PT ne bloque pas une origine devenue payable.
 Le mode rendement ajoute aussi les coûts courants à la clé du tri.
 
+En mode gain brut, les priorités inférieures ou égales à epsilon sont exclues du tri,
+car la sélection s'arrête déjà à ce seuil. Leurs estimations restent mémorisées et les
+nouveaux groupes simulés restent examinés. Dès qu'une estimation change, le cache des
+classements est vidé : il conserve uniquement les tris compatibles avec les priorités
+courantes, sans accumuler des versions périmées. Les estimations et la géométrie restent
+réutilisées.
+
 Les coûts et usages disponibles sont mémorisés sur l'entité simulée. Le mémo est
 invalidé au clone et aux écritures de cooldown/usages ; un changement de PT ou d'arme
 le remplace également. Le stock brut d'usages jouables est repris depuis le parent

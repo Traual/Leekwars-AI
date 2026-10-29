@@ -486,12 +486,14 @@ class ActionSuite {
 			}
 			else for (var key in keys) fingerprint ^= mix64(key)
 		}
-		var orderKey = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ fingerprint, (count(keys) << 1) | (BFS_SCORE_PER_ACTION_COST ? 1 : 0)), SearchCache.ESTIMATE_VERSION)
+		var orderKey = addValueToBinHash(OFFSET_BASIS ^ fingerprint, (count(keys) << 1) | (BFS_SCORE_PER_ACTION_COST ? 1 : 0))
 		var order = SearchCache.ORDERED_GROUPS[orderKey]
 		if (order == null) {
 			order = []
 			for (var key in keys) {
 				var gain = SearchCache.ESTIMATES[key]
+				// En gain brut, la sélection s'arrête déjà à epsilon.
+				if (!BFS_SCORE_PER_ACTION_COST && gain <= BFS_DELTA_EPSILON) continue
 				var priority = BFS_SCORE_PER_ACTION_COST ? priorityOf(gain, frame.PLAYABLES[key].COST) : gain
 				push(order, new ActionPriorityClass(key, gain, priority))
 			}
@@ -509,7 +511,8 @@ class ActionSuite {
 	static rememberEstimate(SearchCache, key, gain) {
 		if (SearchCache.ESTIMATES[key] == gain) return;
 		SearchCache.ESTIMATES[key] = gain
-		SearchCache.ESTIMATE_VERSION++
+		// Les anciens classements ne peuvent plus servir ; les estimations restent en cache.
+		SearchCache.ORDERED_GROUPS = [:]
 	}
 
 	static rememberScored(SearchCache, key, entry) {
