@@ -57,7 +57,7 @@ global BFS_CHAIN_STEPS = 0
 global BFS_SCORE_PER_ACTION_COST = false
 
 // Largeur PAR DÉPART, choisie par décision puis maintenue à toutes ses profondeurs.
-// 0 : largeur automatique ; une valeur positive impose une largeur fixe.
+// 0 : largeur automatique ; un entier positif impose une largeur fixe.
 global BFS_BEAM_WIDTH = 0
 
 class ActionSuite {
@@ -348,10 +348,10 @@ class ActionSuite {
 
 	// Classement des états d'un même départ par score absolu, stable à égalité.
 	static selectBeam(nodes, width = 3) {
+		// Les frontières sont ensuite parcourues sans modifier cette liste.
+		if (count(nodes) <= 1) return nodes
 		var sorted = arraySort(nodes, function(a, b) { return b.SCORE - a.SCORE })
-		var beam = []
-		for (var i = 0; i < min(width, count(sorted)); i++) push(beam, sorted[i])
-		return beam
+		return arraySlice(sorted, 0, width)
 	}
 
 	// Petite liste triée des meilleurs gains réellement simulés pour UN parent.
@@ -363,9 +363,8 @@ class ActionSuite {
 		var slot = 0
 		while (slot < size && best[slot].PRIORITY >= entry.PRIORITY) slot++
 		if (slot >= width) return;
-		if (size < width) push(best, entry)
-		for (var j = count(best) - 1; j > slot; j--) best[j] = best[j - 1]
-		best[slot] = entry
+		insert(best, entry, slot)
+		if (size == width) pop(best)
 	}
 
 	/* Les priorités sont triées sans résoudre toutes les origines. Les hits
@@ -461,7 +460,15 @@ class ActionSuite {
 			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) { incomplete = true; SearchCache.EXPANSION_TRUNCATED = true; break }
 			if (!(key in SearchCache.ESTIMATES)) {
 				var playable = framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, Parent.ME_WALK_FINGERPRINT)
-				if (playable == null) { incomplete = true; continue }
+				if (playable == null) {
+					if (!BFS_SCORE_PER_ACTION_COST) {
+						var group = frame.GROUPS[key]
+						// Accumuler les clés écartées, puis les retirer du fold complet.
+					fingerprint ^= key == group.SIGNATURE ? group.SIGNATURE_MIX : mix64(key)
+					}
+					incomplete = true
+					continue
+				}
 				if (Workspace == null) Workspace = clone(State, 1)
 				var actual = simulatePlayable(playable, Workspace, BaseHash, Parent.SCORE,
 					MySide, Parent.CONTEXT_BY_SIDE, Parent.HFP_BY_SIDE, Parent, Walk)
@@ -478,15 +485,14 @@ class ActionSuite {
 			}
 			push(keys, key)
 		}
+		// FRESH garde ses nœuds valides ; le tri ne sera plus lu après la coupure.
+		if (SearchCache.EXPANSION_TRUNCATED) { frame.ORDER = []; return frame }
 		if (!BFS_SCORE_PER_ACTION_COST) {
 			if (!incomplete) {
 				fingerprint = set.FINGERPRINT
 				SearchCache.KNOWN_GROUP_SETS[setKey] = true
 			}
-			else for (var key in keys) {
-				var group = frame.GROUPS[key]
-				fingerprint ^= key == group.SIGNATURE ? group.SIGNATURE_MIX : mix64(key)
-			}
+			else fingerprint ^= set.FINGERPRINT
 		}
 		var orderKey = addValueToBinHash(OFFSET_BASIS ^ fingerprint, (count(keys) << 1) | (BFS_SCORE_PER_ACTION_COST ? 1 : 0))
 		var order = SearchCache.ORDERED_GROUPS[orderKey]

@@ -480,6 +480,10 @@ Le mode rendement ajoute aussi les coûts courants à la clé du tri.
 Le mélange d'une signature de groupe est calculé une fois dans `SIGNATURE_MIX`,
 puis partagé par les empreintes d'ensembles complets ou partiels. Une résurrection
 dont la clé inclut le candidat conserve son mélange spécifique.
+En gain brut, un ensemble partiel reprend le XOR complet et retire les seules clés
+écartées : il n'a plus besoin de reparcourir toutes les clés conservées. Après une
+coupure de budget, les nœuds déjà simulés restent disponibles mais le tri devenu
+inutilisable n'est pas construit.
 
 En mode gain brut, les priorités inférieures ou égales à epsilon sont exclues du tri,
 car la sélection s'arrête déjà à ce seuil. Leurs estimations restent mémorisées et les
@@ -492,6 +496,10 @@ Chaque estimation porte une entrée `ActionPriorityClass` immuable : les classem
 en gain brut partagent directement cette entrée. Un gain modifié la remplace ; les
 classements déjà ouverts gardent leur instantané. En mode rendement, une entrée
 distincte utilise le coût courant du parent.
+Les petits tableaux du beam utilisent l'insertion et la découpe natives ; une
+frontière de zéro ou un nœud est réutilisée sans tri. Les appelants la parcourent
+sans la modifier et la largeur fixe doit être un entier positif. Lors du jeu réel,
+`MoveTo` réussit immédiatement si l'acteur est déjà sur la cellule demandée.
 
 Les coûts et usages disponibles sont mémorisés sur l'entité simulée. Le mémo est
 invalidé au clone et aux écritures de cooldown/usages ; un changement de PT ou d'arme
@@ -785,6 +793,10 @@ casts de déplacement et les chemins spéciaux d'invocation/résurrection.
   dans le témoin `db474b4`, dans `Delta.rawAtFleeCell` sur le lot `3-right`. Vérifier
   pourquoi le danger net peut être disponible sans `CELL_DANGER_GET_CACHE[dangerKey]`,
   avant de sommer ce dernier ; aucun tour avorté associé dans ce lot.
+- [ ] **Réserve pendant le déplacement final** : un dépassement natif d'opérations
+  observé le 29 octobre sur la référence `680069c`, dans `MoveTo`, lors de
+  `useChipOnCell` (graine 721134444, affectation droite, acteur 2). Déterminer
+  le coût indivisible du déplacement ; l'origine exacte reste à établir.
 
 Les TODO ci-dessus ne sont pas implémentés par cette mise à jour documentaire.
 Les autres approximations ci-dessous décrivent l'état actuel ; elles ne constituent
@@ -1224,6 +1236,24 @@ qu'une recherche en mode rendement avec résurrection. Deux combats courts aux
 budgets réels terminent sans erreur ni interruption native. Le profil final confirme
 la baisse du travail de préparation des groupes ; ces mesures de coût ne mesurent
 pas un gain de taux de victoire.
+
+Une deuxième passe, depuis `680069c`, simplifie les empreintes partielles, évite
+un tri après coupure, utilise les primitives natives pour les petits beams et
+court-circuite un déplacement vers la cellule actuelle. Sur les mêmes **64 tours**,
+**1 360 681 950 → 1 354 750 082 opérations**, soit **−0,44 % supplémentaires**, avec
+les actions natives identiques. Les 128 recherches isolées conservent **175 845
+simulations** identiques ; le contrôle rendement/résurrection en ajoute 895, dont
+19 résurrections. Les 325 contrôles passent, ainsi que deux combats courts aux
+budgets réels sans erreur ni interruption. Les témoins de référence sont réutilisés
+après vérification des sources et d'un coût de recherche identique.
+
+Un essai séparé réserve les places du beam aux états encore développables, les
+fins de suites restant candidates à la validation terminale. Aux budgets réels,
+sur 75 états comparables, il améliore dix scores et en conserve 65 ; 21 autres
+états n'ont de terminal validé dans aucune des deux versions. Sans coupure, deux
+scores régressent sur 96 états. Les dix combats miroir donnent **4 victoires,
+2 nuls, 4 défaites**, avec un dépassement d'opérations côté référence. Cet essai
+reste hors du code publié : ces mesures ne démontrent aucune supériorité.
 
 ## Documentation et outils
 

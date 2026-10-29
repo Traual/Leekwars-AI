@@ -388,6 +388,7 @@ class WalkCellsClass {
 	 * premier échec, aucune étape suivante n'est exécutée.
 	 */
 	static MoveTo(cell, State, BaseHash) {
+		if (cell == getCell()) return [true, null, 0]
 		var layers = WalkCellsClass.getAllLayers(State, Me, BaseHash)
 		var ActionsToGet = getActionsToGet(State[Me].CELL, cell, layers.TELEPORTATION_AND_JUMP, layers.TELEPORTATION, layers.JUMP, layers.WALK)
 		// Plantes à zone en jeu : la marche suit le chemin canonique, celui dont la simulation a
