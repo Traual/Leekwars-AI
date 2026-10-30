@@ -82,6 +82,9 @@ class ActionSearchCacheClass {
 	ROOT_STATE
 	SCORING_CONTEXT
 	ORDERED_GROUPS
+	LAST_ORDER // un seul instantané de tri à réparer ; remis à zéro au replan réel
+	LAST_ORDER_KEY
+	LAST_ORDER_SET_KEY
 	GROUP_SETS
 	KNOWN_GROUP_SETS
 	NEW_SCORES = 0
@@ -123,6 +126,7 @@ class ActionSearchCacheClass {
 				}
 			}
 		}
+		this.LAST_ORDER = null
 		this.ROOT_STATE = State // capture immuable, jamais le workspace de simulation
 		this.SCORING_CONTEXT = context
 		this.RETAINED_ESTIMATES = mapSize(this.ESTIMATES)
@@ -221,9 +225,6 @@ class ActionSearchFrameClass {
 	constructor() {
 		this.GROUPS = [:]
 		this.FRESH = [:]
-		this.PLAYABLES = [:]
-		this.COSTS = [:]
-		this.USES = [:]
 	}
 }
 

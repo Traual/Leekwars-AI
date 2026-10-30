@@ -247,10 +247,10 @@ class ActionsClass {
 		var sterile = EntityStateClass.hasState(State[Me], STATE_STERILE)
 		var TmpHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), MyCell)
 		if (sterile) TmpHash = TmpHash ^ STERILE_KEY_SALT
-		// Summons vivants du camp, comptés UNE fois par build (bulbes virtuels de la branche
+		// Summons vivants du camp, comptés si une invocation disponible en a besoin (bulbes virtuels de la branche
 		// inclus — ils sont dans State). Sain sous le cache : le compte est une fonction du
 		// set des vivants, que BaseHash pinne (summon/mort en branche -> nouvelle clé).
-		var livingSummons = StateClass.countLivingSummons(State, State[Me].SIDE)
+		var livingSummons = null
 		var _final = []
 		var availability = availabilityOf(State[Me])
 		var costs = availability.COSTS
@@ -264,6 +264,7 @@ class ActionsClass {
 			// ce cache est partagé par BaseHash, qui n'encode PAS un summon virtuel MORT
 			// ressuscitable (contributions LIFE-gated), un candidat dépendant du State ici
 			// servirait des listes fausses.
+			if (item != CHIP_RESURRECTION && !sterile && livingSummons == null) livingSummons = StateClass.countLivingSummons(State, State[Me].SIDE)
 			var castable = (item == CHIP_RESURRECTION) || (!sterile && livingSummons < SUMMON_LIMIT)
 			if (castable) {
 				var key = addValueToBinHash(TmpHash, item)
@@ -389,7 +390,7 @@ class ActionsClass {
 	 * Les disponibilités sont filtrées ici sans être mémorisées dans la géométrie. */
 	static getEveryActionsOnEveryOne(MyCell, Inventory, State, WalkCells, BaseHash, LeekCells) {
 		var mine = State[Me]
-		var domain = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(mine)
+		var domain = WalkCells.ME_FINGERPRINT
 		var sorted = null
 		var result = []
 		var availability = availabilityOf(State[Me])
@@ -510,7 +511,9 @@ class ActionsClass {
 	 * Les items qui déplacent gardent une signature distincte pour chaque origine. */
 	static getPointActions(State, item, BaseHash, origins) {
 		var info = ITEMINFO[item]
-		var launch = info.NEEDLOS ? LaunchWithLos[info.LAUNCHTYPE] : LaunchWithoutLos[info.LAUNCHTYPE]
+		var needLos = info.NEEDLOS
+		var originSensitive = info.ORIGIN_SENSITIVE
+		var launch = needLos ? LaunchWithLos[info.LAUNCHTYPE] : LaunchWithoutLos[info.LAUNCHTYPE]
 		var caster = State[Me]
 		var prefix = CellClass.losKeyPrefix(BaseHash)
 		var result = []
@@ -522,7 +525,7 @@ class ActionsClass {
 			// Sans LoS et sans déplacement de cible, le domaine de portée ne dépend
 			// d'aucun autre occupant du plateau. Le partager même après une invocation.
 			// Un groupe à cible réelle unique n'est jamais fusionné avec un autre To.
-			if (!info.NEEDLOS && !info.ORIGIN_SENSITIVE && targetHash != 0) {
+			if (!needLos && !originSensitive && targetHash != 0) {
 				var active = false
 				for (var from in origins) if (from in reachable) { active = true; break }
 				if (!active) continue
@@ -538,10 +541,18 @@ class ActionsClass {
 				push(result, complete)
 				continue
 			}
+			// Sans déplacement de cible, toutes les origines partagent cette signature.
+			var signature = originSensitive ? null : groupSignature(item, targetHash, 0, target.CELL)
+			var known = signature == null ? null : groups[signature]
 			for (var from in origins) {
 				if (!(from in reachable)) continue
-				if (info.NEEDLOS && !CellClass.getLosWithPrefix(from, target.CELL, State, BaseHash, prefix)) continue
-				appendGroup(result, groups, item, from, target.CELL, targetHash)
+				if (needLos && !CellClass.getLosWithPrefix(from, target.CELL, State, BaseHash, prefix)) continue
+				if (originSensitive) appendGroup(result, groups, item, from, target.CELL, targetHash)
+				else if (known == null) {
+					known = new ActionGroupClass(item, from, target.CELL, signature, targetHash)
+					groups[signature] = known
+					push(result, known)
+				} else known.addOrigin(from, target.CELL)
 			}
 		}
 		return result
@@ -553,6 +564,8 @@ class ActionsClass {
 	 * Les formes traitées ici sont symétriques, comme LoadMapFromAoeForAnEntity. */
 	static getAreaActions(State, item, BaseHash, origins) {
 		var info = ITEMINFO[item]
+		var needLos = info.NEEDLOS
+		var originSensitive = info.ORIGIN_SENSITIVE
 		var caster = State[Me]
 		var centers = [:]
 		var affected = [:]
@@ -563,7 +576,7 @@ class ActionsClass {
 		}
 		var includeMe = affectsSignature(item, caster, caster)
 		var selfHashes = [:]
-		var launch = info.NEEDLOS ? LaunchWithLos[info.LAUNCHTYPE] : LaunchWithoutLos[info.LAUNCHTYPE]
+		var launch = needLos ? LaunchWithLos[info.LAUNCHTYPE] : LaunchWithoutLos[info.LAUNCHTYPE]
 		var losPrefix = CellClass.losKeyPrefix(BaseHash)
 		var groups = [:]
 		var result = []
@@ -583,15 +596,15 @@ class ActionsClass {
 					if (!(selfDistance in selfHashes)) selfHashes[selfDistance] = targetContribution(Me, selfDistance)
 					hash ^= selfHashes[selfDistance]
 				}
-				var known = info.ORIGIN_SENSITIVE ? null : groups[hash]
+				var known = originSensitive ? null : groups[hash]
 				if (known != null && from in known.ORIGINS) continue
-				if (info.NEEDLOS && !CellClass.getLosWithPrefix(from, to, State, BaseHash, losPrefix)) continue
-				if (info.ORIGIN_SENSITIVE) appendGroup(result, groups, item, from, to, hash)
+				if (needLos && !CellClass.getLosWithPrefix(from, to, State, BaseHash, losPrefix)) continue
+				if (originSensitive) appendGroup(result, groups, item, from, to, hash)
 				else if (known == null) {
 					known = new ActionGroupClass(item, from, to, groupSignature(item, hash, from, to), hash)
 					groups[hash] = known
 					push(result, known)
-				} else known.addOrigin(from, to)
+				} else known.ORIGINS[from] = to
 			}
 		}
 		return result

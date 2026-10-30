@@ -101,7 +101,7 @@ class ActionSuite {
 		// Empreinte de mobilité de Me à la racine : construite UNE fois par getBestAction
 		// effectif, portée par noPlay et héritée par ses enfants. Elle sert aux caches de
 		// géométrie et de placement — aucune valeur de scoring n'en dépend.
-		var RootWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(MyStats)
+		var RootWalkFingerprint = MyWalkCells.ME_FINGERPRINT
 		// La racine utilise la même limite que la génération et l'expansion.
 		// Sans score initial complet, le placement reprend la main.
 		var rootValues = [:]
@@ -125,7 +125,7 @@ class ActionSuite {
 		// noPlay = plancher "ne rien jouer" ET racine de la chaîne d'états.
 		var noPlay = new NodeClass(null, State, null)
 		noPlay.SCORE = initialScore
-		noPlay.COVID_BONUS_BOUND = CovidPlacement.bonusBound(State)
+		noPlay.TERMINAL_BOUND = initialScore + CovidPlacement.bonusBound(State)
 		noPlay.SCORE_VALUES = rootValues
 		noPlay.BASE_HASH = BaseHash
 		noPlay.ME_WALK_FINGERPRINT = RootWalkFingerprint
@@ -249,14 +249,14 @@ class ActionSuite {
 	static pickTerminal(candidates, initialScore, nBases, terminalLimit) {
 		BenchOps.Start("Terminal")
 		var sorted = arraySort(candidates, function(a, b) {
-			return (b.SCORE + b.COVID_BONUS_BOUND) - (a.SCORE + a.COVID_BONUS_BOUND)
+			return b.TERMINAL_BOUND - a.TERMINAL_BOUND
 		})
 		var best = null
 		var bestFinal = 0
 		for (var node in sorted) {
 			// Le Covid peut procurer un bonus. Couper seulement sur une vraie borne
 			// supérieure, pas sur le seul score brut d'une branche contagieuse.
-			if (best != null && node.SCORE + node.COVID_BONUS_BOUND <= bestFinal) break
+			if (best != null && node.TERMINAL_BOUND <= bestFinal) break
 			if (getOperations() + OPS_SEARCH_MARGIN > terminalLimit) break
 			var close = closeOf(node, terminalLimit, best != null)
 			if (close == null) continue // une autre géométrie peut être déjà chaude
@@ -414,6 +414,7 @@ class ActionSuite {
 	static prepareGroups(State, BaseHash, Parent, MySide, Walk, resurrectionTargetId, SearchCache) {
 		var mine = State[Me]
 		var frame = new ActionSearchFrameClass()
+		if (BFS_SCORE_PER_ACTION_COST) frame.PLAYABLES = [:]
 		var availability = ActionsClass.availabilityOf(mine)
 		frame.COSTS = availability.COSTS
 		frame.USES = availability.USES
@@ -497,15 +498,23 @@ class ActionSuite {
 		var orderKey = addValueToBinHash(OFFSET_BASIS ^ fingerprint, (count(keys) << 1) | (BFS_SCORE_PER_ACTION_COST ? 1 : 0))
 		var order = SearchCache.ORDERED_GROUPS[orderKey]
 		if (order == null) {
-			order = []
-			for (var key in keys) {
-				// Entrée immuable partagée ; le rendement dépend encore du coût de ce parent.
-				var hint = SearchCache.ESTIMATES[key]
-				if (!BFS_SCORE_PER_ACTION_COST && hint.GAIN <= BFS_DELTA_EPSILON) continue
-				if (BFS_SCORE_PER_ACTION_COST) hint = new ActionPriorityClass(key, hint.GAIN, priorityOf(hint.GAIN, frame.PLAYABLES[key].COST))
-				push(order, hint)
+			if (!BFS_SCORE_PER_ACTION_COST && orderKey == SearchCache.LAST_ORDER_KEY
+				&& setKey == SearchCache.LAST_ORDER_SET_KEY && SearchCache.LAST_ORDER != null)
+				order = repairLastOrder(SearchCache.LAST_ORDER, SearchCache)
+			if (order == null) {
+				order = []
+				for (var key in keys) {
+					// Entrée immuable partagée ; le rendement dépend encore du coût de ce parent.
+					var hint = SearchCache.ESTIMATES[key]
+					if (!BFS_SCORE_PER_ACTION_COST && hint.GAIN <= BFS_DELTA_EPSILON) continue
+					if (BFS_SCORE_PER_ACTION_COST) hint = new ActionPriorityClass(key, hint.GAIN, priorityOf(hint.GAIN, frame.PLAYABLES[key].COST))
+					push(order, hint)
+				}
+				order = arraySort(order, function(a, b) { return b.PRIORITY - a.PRIORITY })
 			}
-			order = arraySort(order, function(a, b) { return b.PRIORITY - a.PRIORITY })
+			SearchCache.LAST_ORDER = order
+			SearchCache.LAST_ORDER_KEY = orderKey
+			SearchCache.LAST_ORDER_SET_KEY = setKey
 			SearchCache.ORDERED_GROUPS[orderKey] = order
 		} else {
 			SearchCache.ORDER_HITS++
@@ -514,12 +523,41 @@ class ActionSuite {
 		return frame
 	}
 
-	// Une revalidation apprend le gain courant. Ne pas garder un tri qui date
-	// d'avant ce changement ; les estimations restent des indications gloutonnes.
+	// Même ensemble et même géométrie : réinsérer les seules priorités modifiées.
+	// Toute égalité ambiguë rend la main au tri stable depuis les clés du groupe.
+	static repairLastOrder(previous, cache) {
+		var kept = []
+		var changed = []
+		for (var hint in previous) {
+			var current = cache.ESTIMATES[hint.KEY]
+			if (current.GAIN <= BFS_DELTA_EPSILON) return null
+			if (current == hint) push(kept, hint)
+			else push(changed, current)
+		}
+		if (count(changed) == 0) return previous
+		for (var hint in changed) {
+			var lo = 0
+			var hi = count(kept)
+			while (lo < hi) {
+				var mid = (lo + hi) >> 1
+				var priority = kept[mid].PRIORITY
+				if (hint.PRIORITY == priority) return null
+				if (hint.PRIORITY > priority) hi = mid
+				else lo = mid + 1
+			}
+			insert(kept, hint, lo)
+		}
+		return kept
+	}
+
+	// Une revalidation apprend le gain courant ; les tris ouverts gardent leur instantané.
+
 	static rememberEstimate(SearchCache, key, gain) {
 		var before = SearchCache.ESTIMATES[key]
 		if (before != null && before.GAIN == gain) return;
 		// Remplacer l’entrée : les classements déjà ouverts gardent leur instantané.
+		// Une nouvelle priorité positive pouvait manquer dans le dernier classement.
+		if (gain > BFS_DELTA_EPSILON && (before == null || before.GAIN <= BFS_DELTA_EPSILON)) SearchCache.LAST_ORDER = null
 		SearchCache.ESTIMATES[key] = new ActionPriorityClass(key, gain, gain)
 		// Les anciens classements ne peuvent plus servir ; les estimations restent en cache.
 		SearchCache.ORDERED_GROUPS = [:]
@@ -527,16 +565,19 @@ class ActionSuite {
 
 	static rememberScored(SearchCache, key, entry) {
 		rememberEstimate(SearchCache, key, entry.GAIN)
-		var mask = (SearchCache.DEPENDENCIES[key] ?? 0) | ActionSearchCacheClass.dependencyBit(Me)
+		// Me est toujours pré-cloné : il figure déjà dans le patch de chaque action.
+		var mask = SearchCache.DEPENDENCIES[key] ?? 0
 		for (var id: var _stat in entry.NODE.STATE_PATCH) mask |= ActionSearchCacheClass.dependencyBit(id)
 		SearchCache.DEPENDENCIES[key] = mask
 	}
 
+	// En gain brut, chaque clé est résolue une seule fois dans ce parent.
+	// Seul le mode rendement relit cette résolution pour son coût de classement.
 	static framePlayable(frame, key, mine, Walk, resurrectionTargetId, BaseHash, WalkFingerprint) {
-		if (key in frame.PLAYABLES) return frame.PLAYABLES[key]
+		if (BFS_SCORE_PER_ACTION_COST && key in frame.PLAYABLES) return frame.PLAYABLES[key]
 		var group = frame.GROUPS[key]
 		var playable = resolveGroup(group, mine, Walk, frame.COSTS[group.Item], frame.USES[group.Item], resurrectionTargetId, BaseHash, WalkFingerprint)
-		frame.PLAYABLES[key] = playable
+		if (BFS_SCORE_PER_ACTION_COST) frame.PLAYABLES[key] = playable
 		return playable
 	}
 
@@ -573,7 +614,7 @@ class ActionSuite {
 			}
 		}
 		var score = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, MySide, parentValues)
-		node.COVID_BONUS_BOUND = CovidPlacement.bonusBound(Workspace)
+		node.TERMINAL_BOUND = score + CovidPlacement.bonusBound(Workspace)
 		StateClass.restoreWorkspace(Workspace, node.CLONED)
 		node.CLONED = null
 		node.SCORE = score
@@ -634,7 +675,7 @@ class ActionSuite {
 		var result = [:]
 		var mine = State[Me]
 		var groups = ActionsClass.getEveryActionsInAState(State, Walk, mine.CELL, BaseHash, localOnly, othersOnly)
-		var walkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(mine)
+		var walkFingerprint = Walk.ME_FINGERPRINT
 		var availability = ActionsClass.availabilityOf(mine)
 		var baseCosts = availability.COSTS
 		var usesByItem = availability.USES

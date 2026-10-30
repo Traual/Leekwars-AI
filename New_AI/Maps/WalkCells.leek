@@ -24,6 +24,7 @@ class LayersClass {
 	// WalkCellsClass.lastStepIsJump. Porte par les couches : il ne peut pas survivre aux
 	// cartes dont il derive.
 	LAST_IS_JUMP
+	ME_FINGERPRINT // clé déjà calculée par getAllLayers pour Me ; null pour les autres
 	constructor(w, j, t, tj, m) {
 		this.WALK = w
 		this.JUMP = j
@@ -306,6 +307,7 @@ class WalkCellsClass {
 		var tpj  = cTJ ? getTPJ(state, entity, base_hash, stats, hashWalk)  : [:]
 		var maxLayer = cTJ ? tpj : (cT ? tele : (cJ ? jump : walk))
 		var layers = new LayersClass(walk, jump, tele, tpj, maxLayer)
+		layers.ME_FINGERPRINT = meFingerprint
 		if (layerKey != null) LEEK_LAYERS_CACHE[layerKey] = layers
 		return layers
 	}

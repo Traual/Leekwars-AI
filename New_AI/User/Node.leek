@@ -17,7 +17,7 @@ class NodeClass {
 	                  // (les ids de CLONED), seule représentation persistante du nœud
 	PARENT            // nœud d'origine (null pour une action de base)
 	SCORE             // score de l'état moins les frais cumulés du plan (rempli par le BFS)
-	COVID_BONUS_BOUND = 0 // borne du bonus spatial, distincte du score brut
+	TERMINAL_BOUND = 0 // score brut + borne du bonus spatial, calculés par le BFS
 	COVID_CONTEXT     // contributions calculées seulement si ce nœud est évalué au placement
 	SCORE_VALUES      // valeurs exactes des entités de CE nœud, sous le contexte de sa recherche
 	COOLDOWN_COST = 0 // frais de CETTE action ; les précédents sont déjà dans Parent.SCORE

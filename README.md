@@ -492,6 +492,13 @@ classements est vidé : il conserve uniquement les tris compatibles avec les pri
 courantes, sans accumuler des versions périmées. Les estimations et la géométrie restent
 réutilisées.
 
+Un seul ancien classement est conservé séparément pour sa réparation, avec sa clé
+d'ensemble et sa géométrie. Si les deux correspondent, seules les priorités modifiées
+sont réinsérées ; une égalité ambiguë ou un ancien candidat devenu non positif rend
+la main au tri stable habituel. Une nouvelle priorité positive invalide cet instantané,
+car elle pouvait en être absente. Le replan réel le remet à zéro. Aucun nœud ancien
+n'est repris et aucun gain ancien n'est accepté comme score courant.
+
 Chaque estimation porte une entrée `ActionPriorityClass` immuable : les classements
 en gain brut partagent directement cette entrée. Un gain modifié la remplace ; les
 classements déjà ouverts gardent leur instantané. En mode rendement, une entrée
@@ -500,6 +507,11 @@ Les petits tableaux du beam utilisent l'insertion et la découpe natives ; une
 frontière de zéro ou un nœud est réutilisée sans tri. Les appelants la parcourent
 sans la modifier et la largeur fixe doit être un entier positif. Lors du jeu réel,
 `MoveTo` réussit immédiatement si l'acteur est déjà sur la cellule demandée.
+La borne terminale `TERMINAL_BOUND` contient directement le score brut plus la borne
+du bonus Covid : elle est remplie lors du scoring du nœud, sans changer `SCORE`.
+Les empreintes de mobilité déjà calculées sont relues depuis les couches de Me.
+En gain brut, le mémo des résolutions d'origines n'est plus construit : chaque clé
+n'y est résolue qu'une fois ; le mode rendement le conserve pour ses lectures du coût.
 
 Les coûts et usages disponibles sont mémorisés sur l'entité simulée. Le mémo est
 invalidé au clone et aux écritures de cooldown/usages ; un changement de PT ou d'arme
@@ -1254,6 +1266,32 @@ sur 75 états comparables, il améliore dix scores et en conserve 65 ; 21 autres
 scores régressent sur 96 états. Les dix combats miroir donnent **4 victoires,
 2 nuls, 4 défaites**, avec un dépassement d'opérations côté référence. Cet essai
 reste hors du code publié : ces mesures ne démontrent aucune supériorité.
+
+### Optimisations du 30 octobre 2026
+
+Depuis `27be191`, le BFS répare son dernier classement compatible par réinsertion,
+réutilise l'empreinte des couches et évite les mémos d'origines à usage unique. La
+génération calcule une signature par cible ponctuelle, sort les attributs immuables
+des boucles et ne compte les invocations que lorsqu'un cast disponible le demande.
+La borne terminale est précomposée. Les formules, simulations d'effets, gardes d'opérations,
+réserves, largeur du beam et politique de sélection restent inchangées.
+
+Les **112 tours de poireaux** sur quatre plateaux, à largeurs fixes et sans coupure
+dans le banc, passent de **2 589 360 464 à 2 542 108 157 opérations (−1,82 %)**,
+avec les actions natives strictement identiques. Les **128 recherches isolées**
+gardent leurs **175 845 simulations** et suites ; le contrôle rendement/résurrection
+en ajoute 895, dont 19 résurrections. Les **325 contrôles habituels** et **512 contrôles
+du classement** passent. La géométrie de **148 objets** et les extensions successives
+de leur catalogue restent identiques. Deux combats courts aux budgets natifs réels
+terminent sans erreur ni interruption.
+
+Sur 96 états fixes avec les budgets souples réels et largeurs 1/2/4, 75 ont un terminal
+comparable : **5 scores améliorés, 70 identiques, aucun moins bon**. Les 21 autres
+n'ont de terminal validé dans aucune version. Le banc observe **31 609 → 32 081 steps**
+et **46 019 → 46 516 simulations**, pour **−0,81 % d'opérations**. Le plafond natif est
+désactivé uniquement pour cette observation ; aucune mesure ne le dépasse. Ce contrôle
+de décisions ne mesure pas un taux de victoire et ne garantit pas ces gains sur tous
+les combats. Les témoins de référence réutilisés sont vérifiés contre les sources figées.
 
 ## Documentation et outils
 
