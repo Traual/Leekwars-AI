@@ -82,9 +82,7 @@ class ActionSearchCacheClass {
 	ROOT_STATE
 	SCORING_CONTEXT
 	ORDERED_GROUPS
-	LAST_ORDER // un seul instantané de tri à réparer ; remis à zéro au replan réel
-	LAST_ORDER_KEY
-	LAST_ORDER_SET_KEY
+	POSITIVE_VERSION = 0 // apparition d’une priorité positive dans la recherche courante
 	GROUP_SETS
 	KNOWN_GROUP_SETS
 	NEW_SCORES = 0
@@ -126,7 +124,9 @@ class ActionSearchCacheClass {
 				}
 			}
 		}
-		this.LAST_ORDER = null
+		// Libérer les ordres du plan précédent ; les catalogues géométriques restent valides.
+		for (var key: var set in this.GROUP_SETS) set.LAST_ORDER = null
+		this.POSITIVE_VERSION = 0
 		this.ROOT_STATE = State // capture immuable, jamais le workspace de simulation
 		this.SCORING_CONTEXT = context
 		this.RETAINED_ESTIMATES = mapSize(this.ESTIMATES)
@@ -228,9 +228,13 @@ class ActionSearchFrameClass {
 	}
 }
 
-// Ensemble géométrique immuable pour un plateau, une mobilité et les items disponibles.
+// GROUPS, KEYS et FINGERPRINT sont immuables après publication de l’ensemble.
+// Le dernier ordre est un mémo de la recherche courante, effacé au replan réel.
 // Les origines et coûts concrets restent résolus dans le parent courant.
 class ActionGroupSetClass {
+	LAST_ORDER // priorités immuables, jamais des nœuds ni des états
+	LAST_ORDER_KEY
+	ORDER_MEMBERSHIP
 	GROUPS
 	KEYS
 	FINGERPRINT

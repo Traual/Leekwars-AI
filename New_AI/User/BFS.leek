@@ -433,13 +433,18 @@ class ActionSuite {
 		var set = SearchCache.GROUP_SETS[setKey]
 		if (set == null) {
 			var groups = ActionsClass.getEveryActionsInAState(State, Walk, mine.CELL, BaseHash)
+			// La map est encore vide : remplir son index pendant le dédoublonnage.
+			set = new ActionGroupSetClass(frame.GROUPS)
 			// La génération a déjà filtré les items et rempli leurs coûts/usages courants.
 			for (var group in groups) {
 				if (group.Item == CHIP_RESURRECTION && resurrectionTargetId == null) continue
 				var key = groupEstimateKey(group, resurrectionTargetId)
-				if (!(key in frame.GROUPS) || group.IS_LOCAL) frame.GROUPS[key] = group
+				if (!(key in frame.GROUPS)) {
+					frame.GROUPS[key] = group
+					push(set.KEYS, key)
+					set.FINGERPRINT ^= key == group.SIGNATURE ? group.SIGNATURE_MIX : mix64(key)
+				} else if (group.IS_LOCAL) frame.GROUPS[key] = group
 			}
-			set = new ActionGroupSetClass(frame.GROUPS)
 			if (getOperations() + OPS_SEARCH_MARGIN <= OPS_DEADLINE) SearchCache.GROUP_SETS[setKey] = set // jamais une préparation tronquée
 			else SearchCache.EXPANSION_TRUNCATED = true
 		} else {
@@ -498,9 +503,10 @@ class ActionSuite {
 		var orderKey = addValueToBinHash(OFFSET_BASIS ^ fingerprint, (count(keys) << 1) | (BFS_SCORE_PER_ACTION_COST ? 1 : 0))
 		var order = SearchCache.ORDERED_GROUPS[orderKey]
 		if (order == null) {
-			if (!BFS_SCORE_PER_ACTION_COST && orderKey == SearchCache.LAST_ORDER_KEY
-				&& setKey == SearchCache.LAST_ORDER_SET_KEY && SearchCache.LAST_ORDER != null)
-				order = repairLastOrder(SearchCache.LAST_ORDER, SearchCache)
+			if (!BFS_SCORE_PER_ACTION_COST && set.LAST_ORDER != null
+				&& set.ORDER_MEMBERSHIP == SearchCache.POSITIVE_VERSION
+				&& set.LAST_ORDER_KEY == orderKey)
+				order = repairLastOrder(set.LAST_ORDER, SearchCache, keys)
 			if (order == null) {
 				order = []
 				for (var key in keys) {
@@ -512,9 +518,9 @@ class ActionSuite {
 				}
 				order = arraySort(order, function(a, b) { return b.PRIORITY - a.PRIORITY })
 			}
-			SearchCache.LAST_ORDER = order
-			SearchCache.LAST_ORDER_KEY = orderKey
-			SearchCache.LAST_ORDER_SET_KEY = setKey
+			set.LAST_ORDER = order
+			set.LAST_ORDER_KEY = orderKey
+			set.ORDER_MEMBERSHIP = SearchCache.POSITIVE_VERSION
 			SearchCache.ORDERED_GROUPS[orderKey] = order
 		} else {
 			SearchCache.ORDER_HITS++
@@ -523,9 +529,9 @@ class ActionSuite {
 		return frame
 	}
 
-	// Même ensemble et même géométrie : réinsérer les seules priorités modifiées.
-	// Toute égalité ambiguë rend la main au tri stable depuis les clés du groupe.
-	static repairLastOrder(previous, cache) {
+	// Réinsérer les priorités modifiées dans le dernier tri de cet ensemble.
+	// À égalité, retrouver l’ordre initial des clés, comme le tri stable complet.
+	static repairLastOrder(previous, cache, canonicalKeys = null) {
 		var kept = []
 		var changed = []
 		for (var hint in previous) {
@@ -541,8 +547,11 @@ class ActionSuite {
 			while (lo < hi) {
 				var mid = (lo + hi) >> 1
 				var priority = kept[mid].PRIORITY
-				if (hint.PRIORITY == priority) return null
-				if (hint.PRIORITY > priority) hi = mid
+				if (hint.PRIORITY == priority) {
+					if (canonicalKeys == null) return null
+					if (search(canonicalKeys, hint.KEY) < search(canonicalKeys, kept[mid].KEY)) hi = mid
+					else lo = mid + 1
+				} else if (hint.PRIORITY > priority) hi = mid
 				else lo = mid + 1
 			}
 			insert(kept, hint, lo)
@@ -556,8 +565,8 @@ class ActionSuite {
 		var before = SearchCache.ESTIMATES[key]
 		if (before != null && before.GAIN == gain) return;
 		// Remplacer l’entrée : les classements déjà ouverts gardent leur instantané.
-		// Une nouvelle priorité positive pouvait manquer dans le dernier classement.
-		if (gain > BFS_DELTA_EPSILON && (before == null || before.GAIN <= BFS_DELTA_EPSILON)) SearchCache.LAST_ORDER = null
+		// Une nouvelle priorité positive pouvait manquer dans les instantanés conservés.
+		if (gain > BFS_DELTA_EPSILON && (before == null || before.GAIN <= BFS_DELTA_EPSILON)) SearchCache.POSITIVE_VERSION++
 		SearchCache.ESTIMATES[key] = new ActionPriorityClass(key, gain, gain)
 		// Les anciens classements ne peuvent plus servir ; les estimations restent en cache.
 		SearchCache.ORDERED_GROUPS = [:]

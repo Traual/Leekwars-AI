@@ -492,12 +492,16 @@ classements est vidé : il conserve uniquement les tris compatibles avec les pri
 courantes, sans accumuler des versions périmées. Les estimations et la géométrie restent
 réutilisées.
 
-Un seul ancien classement est conservé séparément pour sa réparation, avec sa clé
-d'ensemble et sa géométrie. Si les deux correspondent, seules les priorités modifiées
-sont réinsérées ; une égalité ambiguë ou un ancien candidat devenu non positif rend
-la main au tri stable habituel. Une nouvelle priorité positive invalide cet instantané,
-car elle pouvait en être absente. Le replan réel le remet à zéro. Aucun nœud ancien
-n'est repris et aucun gain ancien n'est accepté comme score courant.
+Chaque ensemble géométrique conserve son dernier classement positif pendant la
+recherche. Si les clés correspondent, seules les priorités modifiées sont réinsérées ;
+les égalités reprennent l'ordre canonique des clés, comme le tri stable complet.
+Un ancien candidat devenu non positif rend la main au tri habituel. L'apparition
+d'une priorité positive fait avancer un compteur : les instantanés plus anciens
+deviennent inéligibles à la réparation, car ils pouvaient manquer cette clé.
+Chaque replan réel libère tous ces classements, en conservant la géométrie. Aucun
+nœud ancien n'est repris et aucun gain ancien n'est accepté comme score courant.
+Lors de la création d'un ensemble, le dédoublonnage remplit directement `KEYS` et
+`FINGERPRINT`, avec les mêmes clés et le même fold que le constructeur de référence.
 
 Chaque estimation porte une entrée `ActionPriorityClass` immuable : les classements
 en gain brut partagent directement cette entrée. Un gain modifié la remplace ; les
@@ -1292,6 +1296,25 @@ et **46 019 → 46 516 simulations**, pour **−0,81 % d'opérations**. Le plafo
 désactivé uniquement pour cette observation ; aucune mesure ne le dépasse. Ce contrôle
 de décisions ne mesure pas un taux de victoire et ne garantit pas ces gains sur tous
 les combats. Les témoins de référence réutilisés sont vérifiés contre les sources figées.
+
+La passe suivante, depuis `f2d52dc`, déplace les instantanés de tri dans leurs ensembles,
+les libère aux replans, traite les égalités selon les clés et fusionne les parcours de
+construction d'index. Sur les mêmes **112 tours**, **2 542 108 157 → 2 469 170 665
+opérations (−2,87 % supplémentaires)**, avec les actions natives identiques. Les
+128 recherches isolées conservent leurs 175 845 simulations ; le contrôle de rendement
+avec résurrection en ajoute 895. Les 325 contrôles habituels et les propriétés de
+classement avec clés signées de 64 bits passent. **6 077 ensembles** construits en un
+passage retrouvent les clés et l'empreinte du constructeur de référence. Deux combats
+courts aux plafonds natifs réels terminent sans erreur ni interruption.
+
+Sous budgets souples réels : **3 scores améliorés, 72 identiques**, et 21 états sans
+terminal validé dans les deux versions ; **32 081 → 32 905 steps**, pour **−0,58 %
+d'opérations**. Les mesures de mémoire sur 96 tours à largeur 2 restent sous 13 %
+du plafond moteur observé ; aucun instantané d'un ancien replan n'est conservé.
+Les variantes de LoS, de borne de distance et de file de priorité ont été écartées,
+ainsi qu'un index supplémentaire des égalités. Les formules, simulations d'effets,
+réserves, gardes d'opérations et politique de beam ne changent pas. Ces mesures de
+coût et de qualité de décision ne mesurent pas un gain de taux de victoire.
 
 ## Documentation et outils
 
