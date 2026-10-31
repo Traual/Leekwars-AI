@@ -5,6 +5,24 @@ include("../includes.leek")
 global SEARCH_USE_EVOLUTION = true
 global EVOLUTION_POPULATION = 8
 global EVOLUTION_MAX_ATTEMPTS = 128 // Générations stationnaires, sous le plafond d'opérations commun.
+global EVOLUTION_REUSE_PLAN_COUNT = 1 // 0 = témoin ; 1 = meilleure suite ; >1 = plusieurs compatibles.
+global TURN_EVOLUTION_CONTINUATION = null
+
+// Seules des intentions passent le cast réel, jamais les états ni leurs scores.
+// READY n'est confirmé que par Play après succès de l'action effectivement choisie.
+class EvolutionContinuation {
+    OWNER
+    TURN
+    ACTION
+    GENOMES
+    READY = false
+    constructor(action, genomes) {
+        this.OWNER = Me
+        this.TURN = getTurn()
+        this.ACTION = action
+        this.GENOMES = genomes
+    }
+}
 
 // Intention immuable : les cibles sont des identités/distances de zone, pas une
 // ancienne cellule. Les déplacements d'entités (inversion incluse) sont donc relus.
@@ -81,6 +99,8 @@ class EvolutionContext {
     UNFINANCED = 0
     SIMULATIONS = 0
     PREFIX_HITS = 0
+    REUSED_PLANS = 0
+    VALID_REUSED_PLANS = 0
     EXHAUSTED = false
     SEEN = [:]
     SEED = 1
@@ -93,11 +113,47 @@ class EvolutionContext {
     // RNG privé : chercher ne doit pas déplacer les jets critiques du vrai moteur.
     draw(size) {
         this.SEED = (this.SEED * 1664525 + 1013904223) & 2147483647
-        return this.SEED % max(1, size)
+        // Les bits faibles d'un LCG sont périodiques : deux tirages consécutifs
+        // (option puis exploration) pouvaient exclure toute exploration aléatoire.
+        return (this.SEED >> 8) % max(1, size)
     }
 }
 
 class OnlineEvolution {
+    static sameAction(a, b) {
+        return a != null && b != null && a.Item == b.Item && a.From == b.From
+            && a.To == b.To && a.RESURRECT_ID == b.RESURRECT_ID
+    }
+
+    static actionPlayed(action, success) {
+        var saved = TURN_EVOLUTION_CONTINUATION
+        if (saved == null) return;
+        if (!success || saved.OWNER != Me || saved.TURN != getTurn()
+            || !sameAction(saved.ACTION, action)) TURN_EVOLUTION_CONTINUATION = null
+        else saved.READY = true
+    }
+
+    static takeContinuation() {
+        var saved = TURN_EVOLUTION_CONTINUATION
+        TURN_EVOLUTION_CONTINUATION = null // chaque transmission est consommée une seule fois
+        if (EVOLUTION_REUSE_PLAN_COUNT <= 0 || saved == null || !saved.READY
+            || saved.OWNER != Me || saved.TURN != getTurn()) return []
+        return arraySlice(saved.GENOMES, 0, EVOLUTION_REUSE_PLAN_COUNT)
+    }
+
+    static saveContinuation(context, best, action) {
+        TURN_EVOLUTION_CONTINUATION = null
+        if (EVOLUTION_REUSE_PLAN_COUNT <= 0) return;
+        var genomes = []
+        if (count(best.GENES) > 1) push(genomes,arraySlice(best.GENES,1))
+        for (var plan in context.POPULATION) {
+            if (count(genomes) >= EVOLUTION_REUSE_PLAN_COUNT) break
+            if (plan == best || count(plan.GENES) <= 1) continue
+            if (sameAction(plan.PREFIXES[1].NODE.ACTION, action)) push(genomes,arraySlice(plan.GENES,1))
+        }
+        if (count(genomes) > 0) TURN_EVOLUTION_CONTINUATION = new EvolutionContinuation(action, genomes)
+    }
+
     static room(context) {
         if (getOperations() + OPS_SEARCH_MARGIN <= OPS_DEADLINE) return true
         context.EXHAUSTED = true
@@ -248,6 +304,7 @@ class OnlineEvolution {
     }
 
     static getBestAction(State) {
+        var continuations = takeContinuation()
         BFS_CHAIN_STEPS = 0
         BFS_LAST_CHAIN = []
         BFS_LAST_CHAIN_DANGER_VALIDATED = false
@@ -297,8 +354,18 @@ class OnlineEvolution {
                 context.HINTS[ActionSuite.estimateKeyOf(entry.PLAYABLE)] = entry.GAIN
                 context.SIMULATIONS++
             }
+            context.REUSED_PLANS = count(continuations)
+            for (var genes in continuations) {
+                if (!room(context)) break
+                var resumed = evaluate(genes, context)
+                if (resumed.VALID) context.VALID_REUSED_PLANS++
+                keep(resumed, context)
+            }
             // Des départs distincts, puis une population entretenue par son fitness final.
-            for (var i = 0; i < min(EVOLUTION_POPULATION - 1, count(entries)); i++) {
+            // Les suites reprises remplacent des graines froides, au lieu de s'y ajouter.
+            // Garder au moins un nouveau départ pour les occasions apparues au cast réel.
+            var seedCount = max(1, EVOLUTION_POPULATION - count(context.POPULATION))
+            for (var i = 0; i < min(seedCount, count(entries)); i++) {
                 if (!room(context)) break
                 var gene = new EvolutionGene(entries[i].PLAYABLE, State)
                 // Arrêter son tour après une action est aussi un plan complet légal.
@@ -318,6 +385,7 @@ class OnlineEvolution {
             + " | attempts: " + context.ATTEMPTS + " | plans: " + context.EVALUATIONS + " | population: " + count(context.POPULATION)
             + " | invalid: " + context.INVALID + " | duplicates: " + context.DUPLICATES
             + " | unfinanced: " + context.UNFINANCED
+            + " | resumed plans: " + context.VALID_REUSED_PLANS + "/" + context.REUSED_PLANS
             + " | simulations: " + context.SIMULATIONS + " | cached prefixes: " + context.PREFIX_HITS)
         if (best == null) { debugW("[OEP] danger not taken into account: no affordable terminal plan, stop actions"); return null }
         BFS_LAST_CHAIN_DANGER_VALIDATED = true
@@ -326,6 +394,7 @@ class OnlineEvolution {
         for (var i = 1; i < count(best.PREFIXES); i++) push(chain, best.PREFIXES[i].NODE.ACTION)
         var action = shift(chain)
         BFS_LAST_CHAIN = chain
+        saveContinuation(context, best, action)
         debug("Best: " + ITEMINFO[action.Item].NAME + " | From: " + action.From + " | To: " + action.To
             + " | Delta: " + best.VALUE + " | " + context.EVALUATIONS + " plans, " + context.SIMULATIONS + " steps")
         return action

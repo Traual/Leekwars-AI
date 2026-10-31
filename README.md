@@ -24,9 +24,9 @@ Son fitness est `scoreÉtatFinal − scoreÉtatInitial − pénalitéPlacementFi
 terme est signé et peut donc ajouter un gain. La sélection ne repose pas sur le score brut
 des préfixes. Les gains estimés servent seulement à proposer des actions.
 
-1. Construire un plan « arrêter le tour » évalué avec danger, puis des plans courts et
-   des suites provenant de départs prometteurs. Les actions locales sont scorées avant
-   la préparation géométrique des autres actions.
+1. Construire un plan « arrêter le tour » évalué avec danger, revalider les intentions
+   restantes du meilleur plan précédent, puis compléter avec des plans courts et de
+   nouveaux départs. Les actions locales sont scorées avant la géométrie froide.
 2. Conserver une population de huit plans, classés par fitness final exact. Un tournoi
    entre deux plans choisit le parent. La meilleure suite validée est toujours conservée.
 3. Proposer un déplacement d’action dans la suite, une suppression, un remplacement,
@@ -50,15 +50,28 @@ produit par chaque préfixe ; un changement de zone/cibles peut invalider l’in
 
 Un cache de préfixes immuables évite de répéter leur simulation entre plans ; un autre mémo
 reprend directement le fitness d’une suite déjà évaluée. Ces caches vivent **une décision**,
-jamais au-delà d’une action réelle. Le générateur pseudo-aléatoire est privé à la recherche :
-il ne consomme pas les jets du moteur de combat.
+jamais au-delà d’une action réelle. Seules les **intentions** de la meilleure suite peuvent
+passer au cast suivant : `Play` doit confirmer le succès de la même action concrète
+(item, origine, visée et mort à ressusciter). L’acteur et le tour doivent correspondre.
+Un échec, une autre action, un nouveau tour ou un autre poireau annulent la transmission.
+Chaque intention est resimulée et le danger rescorré dans la capture réelle ; aucun
+état ou fitness ancien n’est repris. Les graines revalidées remplacent des graines
+froides, avec au moins un nouveau départ conservé. Les queues vides ne sont pas stockées.
+
+Le générateur pseudo-aléatoire est privé à la recherche : il ne consomme pas les jets
+du moteur de combat. Il utilise les bits supérieurs de son LCG : les bits faibles
+avaient une corrélation entre le choix d’option et le tirage d’exploration qui pouvait
+supprimer l’exploration dans certains motifs de tirages successifs.
 
 Deux réglages de départ, encore expérimentaux : `EVOLUTION_POPULATION = 8` et
 `EVOLUTION_MAX_ATTEMPTS = 128`. Ce dernier borne les tentatives de mutation, y compris
 doublons et rejets ; le plafond d’opérations commun peut arrêter la recherche avant.
+`EVOLUTION_REUSE_PLAN_COUNT = 1` reprend seulement le meilleur plan ; `0` désactive cette
+reprise pour le témoin. Les valeurs supérieures à 1 permettent d’expérimenter plusieurs
+queues compatibles ; elles n’ont pas fait mieux que la meilleure seule dans les sondes.
 Les PT/usages/cooldowns bornent la longueur des suites, sans horizon fixe en actions.
 Le debug `[OEP]` donne les tentatives, plans évalués, rejets, doublons, évaluations non
-finançables, simulations et réutilisations de préfixes.
+finançables, simulations, réutilisations de préfixes et suites reprises/validées.
 
 L’approche s’inspire de la recherche de suites avec vérification des actions de
 [Justesen et al.](https://njustesen.github.io/njustesen/publications/justesen2017playing.pdf).
@@ -66,7 +79,7 @@ La replanification après le premier cast est notre adaptation aux jets réels d
 L’étude de [Gaina et al.](https://arxiv.org/abs/1704.07075) motive la nécessité de mesurer
 les paramètres ; elle ne garantit pas que cette variante soit supérieure à notre beam.
 
-Contrôles du 31 octobre : 23 vérifications ciblées réussies, dont une séquence native
+Premier prototype `d756451` : 23 vérifications ciblées réussies, dont une séquence native
 Inversion → Armure sur soi → Pistolet. Le cas contrôlé de Solidification à 400 résistance
 et 18 PT retrouve le meilleur ordre, sans règle spécifique à cette puce.
 Sur 32 états fixes aux budgets souples réels : 13 scores finaux meilleurs, 12 moins bons,
@@ -75,6 +88,21 @@ Sur 32 états fixes aux budgets souples réels : 13 scores finaux meilleurs, 12 
 Le pilote final de 20 combats complets, dix paires miroir 4v4 avec vrais budgets,
 donne **5 victoires, 11 nuls et 4 défaites** contre le main `3cb1123`, sans erreur ni
 avortement moteur. Cet échantillon ne démontre pas une supériorité de l'évolution.
+
+Suite du 31 octobre : 38 contrôles ciblés passent, dont la confirmation du cast réel,
+la revalidation après inversion, la mise à jour des scores/boucliers avec les stats réelles,
+le rejet d’une cible morte et la couverture des 16 options dans un test de tirages successifs.
+Dans les sondes après cast, avec le RNG corrigé, reprendre la meilleure suite donne 8 scores
+meilleurs, 4 identiques et 2 moins bons ; 10 autres états restent sans terminal dans les deux
+modes et 8 cas n’avaient pas de première action. Les flux d’actions natifs avant la seconde
+décision sont identiques entre les modes. Ce contrôle n’est pas un taux de victoire.
+
+La comparaison suivante utilise de nouvelles graines : **100 combats contre main
+`3cb1123` donnent 39 victoires, 22 nuls et 39 défaites**, soit 50 % des points
+(intervalle bootstrap par paires : 46,5–53,5 %). Sur 20 combats supplémentaires contre
+le premier prototype `d756451` : 5 victoires, 9 nuls, 6 défaites. Aucune erreur ni aucun
+avortement moteur dans les 120 combats. La correction du RNG et la reprise sont évaluées
+ensemble ici : aucun gain de force n’est démontré et la branche reste expérimentale.
 
 Ce document décrit le code de `main` après la campagne du **22 octobre 2026**, avec les réglages des statiques et le placement Covid du **23 octobre**. Les valeurs indiquées
 sont les réglages actuels, pas des paramètres validés pour tous les builds.

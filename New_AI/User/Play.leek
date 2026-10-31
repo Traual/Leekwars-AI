@@ -61,6 +61,7 @@ class Play {
 			// Déplacement raté -> l'item n'est PAS lancé.
 			var opsBeforeExec = getOperations()
 			var res = moveRes[0] ? executeAction(Action) : moveRes
+			if (SEARCH_USE_EVOLUTION) OnlineEvolution.actionPlayed(Action, res[0])
 			// Le plus cher deplacement-puis-lancer du combat : c'est la marge que la vidange
 			// exige avant de tenter une action de plus.
 			var execCost = getOperations() - opsBeforeExec
