@@ -24,9 +24,10 @@ Son fitness est `scoreÉtatFinal − scoreÉtatInitial − pénalitéPlacementFi
 terme est signé et peut donc ajouter un gain. La sélection ne repose pas sur le score brut
 des préfixes. Les gains estimés servent seulement à proposer des actions.
 
-1. Construire un plan « arrêter le tour » évalué avec danger, revalider les intentions
-   restantes du meilleur plan précédent, puis compléter avec des plans courts et de
-   nouveaux départs. Les actions locales sont scorées avant la géométrie froide.
+1. Construire un plan « arrêter le tour » évalué avec danger, puis revalider les intentions
+   restantes du meilleur plan précédent depuis la capture réelle, avant la géométrie froide.
+   Scorer les actions locales et valider le meilleur cast local avant l’extension offensive.
+   Compléter ensuite avec des plans courts et jusqu’à sept nouveaux départs.
 2. Conserver une population de huit plans, classés par fitness final exact. Un tournoi
    entre deux plans choisit le parent. La meilleure suite validée est toujours conservée.
 3. Proposer un déplacement d’action dans la suite, une suppression, un remplacement,
@@ -54,9 +55,22 @@ jamais au-delà d’une action réelle. Seules les **intentions** de la meilleur
 passer au cast suivant : `Play` doit confirmer le succès de la même action concrète
 (item, origine, visée et mort à ressusciter). L’acteur et le tour doivent correspondre.
 Un échec, une autre action, un nouveau tour ou un autre poireau annulent la transmission.
+Les identités virtuelles sont réservées au-delà des naissances réelles possibles du tour :
+`SUMMON_ID_BASE = maxRealId + count(MY_INVENTORY_SUMMON)`, puis un offset par type.
+Cette réservation empêche une invocation projetée d’écraser le bulbe qui vient réellement
+apparaître. Les calculs des effets et les formules de valeur restent inchangés.
+
+Après un cast d’invocation confirmé, les seules métadonnées transmises sont des identités,
+les distances utiles dans les signatures et les gènes. La capture suivante identifie l’unique
+nouvel enfant du lanceur et traduit sa signature, sa visée spatiale et son éventuelle cible de
+résurrection. Les gènes parents sont conservés. Une naissance absente ou ambiguë annule cette
+reprise. Cette traduction appartient à la replanification ; la vidange garde son comportement
+historique et ses limites lorsque le budget ne permet plus de chercher.
+
 Chaque intention est resimulée et le danger rescorré dans la capture réelle ; aucun
-état ou fitness ancien n’est repris. Les graines revalidées remplacent des graines
-froides, avec au moins un nouveau départ conservé. Les queues vides ne sont pas stockées.
+état ou fitness ancien n’est repris. Une suite revalidée ne retire plus de départ frais :
+avec une population de huit, jusqu’à sept nouveaux départs restent essayés, puis la sélection
+conserve les huit meilleurs plans. Les queues vides ne sont pas stockées.
 
 Le générateur pseudo-aléatoire est privé à la recherche : il ne consomme pas les jets
 du moteur de combat. Il utilise les bits supérieurs de son LCG : les bits faibles
@@ -1433,3 +1447,28 @@ Lorsqu'une intention connaît déjà sa puce ou son arme, le rejeu prépare seul
 Témoins sans plafond de banc : 80 tours complets, 983 124 198 → 862 222 922 opérations (−12,30 %), mêmes flux d'actions natifs. 32 recherches isolées ont également les mêmes suites et toutes les mêmes traces de simulation (−10,92 %). 50 contrôles ciblés passent. Ces économies ne démontrent pas à elles seules un gain de victoire contre main.
 
 La recherche tente aussi de valider son meilleur cast local avec le danger avant de préparer la géométrie offensive. Une extension coûteuse ne peut ainsi plus effacer ce choix déjà financé. Régression reproduite sur un poireau à 8 cœurs : un bouclier jouable était perdu au profit du plan inactif ; la correction le conserve, avec un coût global pratiquement identique sur 32 situations. 50 contrats, 25 recalculs indépendants de plans et 20 combats natifs passent sans erreur ni arrêt forcé.
+
+
+### Candidat figé pour la confirmation du 31 octobre
+
+Le candidat conserve huit plans, 128 tentatives et une seule queue reprise. Les essais à
+256/512 tentatives ont augmenté le coût sans gain de force démontré dans le triage. La
+réparation systématique des fins illégales a également été écartée : 50 % sur 40 combats,
+avec environ 15 % d’opérations supplémentaires par tour de poireau.
+
+Le correctif d’identités passe 50 contrats généraux, 22 contrats natifs de naissance et de
+transmission et 25 recalculs indépendants de plans. Sur 32 recherches initiales, réserver et
+traduire les identités garde les mêmes suites, simulations et fitness. Le témoin natif
+reproduisait deux bulbes réels mais un seul bulbe restant dans la projection ; le correctif
+conserve bien les deux. Le pilote de 40 combats de ce seul correctif a donné 47,5 % des points :
+il valide le fonctionnement, sans démontrer un gain de victoire.
+
+Conserver les nouveaux départs malgré une suite reprise donne ensuite 16 victoires, 11 nuls
+et 13 défaites sur 40 nouveaux combats, soit 53,75 % des points (intervalle apparié à 95 % :
+47,5–61,25 %). Son coût par tour de poireau augmente d’environ 1 %. Ce petit échantillon ne
+prouve toujours pas une supériorité.
+
+La confirmation est figée avant ses résultats : 200 nouveaux combats miroir contre le main
+`3cb1123`, puis 100 contre une copie de ce main dont seule la réservation des identités est
+corrigée. Ce deuxième témoin distingue le correctif commun de l’architecture de recherche.
+Aucun réglage n’est changé entre ces comparaisons. **Main reste inchangé pendant les tests.**

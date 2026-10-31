@@ -16,11 +16,15 @@ class EvolutionContinuation {
     ACTION
     GENOMES
     READY = false
-    constructor(action, genomes) {
+    BIRTH_ID
+    KNOWN_IDS
+    constructor(action, genomes, birthId = null) {
         this.OWNER = Me
         this.TURN = getTurn()
         this.ACTION = action
         this.GENOMES = genomes
+        this.BIRTH_ID = birthId
+        this.KNOWN_IDS = birthId == null ? null : clone(EVERYONE,1)
     }
 }
 
@@ -30,6 +34,7 @@ class EvolutionContinuation {
 class EvolutionGene {
     ITEM
     TARGET_HASH
+    BIRTH_DISTANCE // contribution de la première invocation, seulement lors de la transmission
     FROM
     AIM_ID
     AIM_CELL
@@ -50,6 +55,20 @@ class EvolutionGene {
         }
         this.KEY = this.ITEM + "|" + this.TARGET_HASH + "|" + this.FROM
             + "|" + this.AIM_ID + "|" + this.AIM_CELL + "|" + this.RESURRECT_ID
+    }
+
+    mappedBirth(virtualId, nativeId) {
+        var distance = this.BIRTH_DISTANCE
+        if (distance == null && this.AIM_ID != virtualId && this.RESURRECT_ID != virtualId) return this
+        var gene = clone(this,1)
+        if (distance != null) gene.TARGET_HASH ^= ActionsClass.targetContribution(virtualId,distance)
+            ^ ActionsClass.targetContribution(nativeId,distance)
+        if (gene.AIM_ID == virtualId) gene.AIM_ID = nativeId
+        if (gene.RESURRECT_ID == virtualId) gene.RESURRECT_ID = nativeId
+        gene.BIRTH_DISTANCE = null
+        gene.KEY = gene.ITEM + "|" + gene.TARGET_HASH + "|" + gene.FROM
+            + "|" + gene.AIM_ID + "|" + gene.AIM_CELL + "|" + gene.RESURRECT_ID
+        return gene
     }
 
     matches(playable, State) {
@@ -134,25 +153,63 @@ class OnlineEvolution {
         else saved.READY = true
     }
 
-    static takeContinuation() {
+    static takeContinuation(State = null) {
         var saved = TURN_EVOLUTION_CONTINUATION
         TURN_EVOLUTION_CONTINUATION = null // chaque transmission est consommée une seule fois
         if (EVOLUTION_REUSE_PLAN_COUNT <= 0 || saved == null || !saved.READY
             || saved.OWNER != Me || saved.TURN != getTurn()) return []
-        return arraySlice(saved.GENOMES, 0, EVOLUTION_REUSE_PLAN_COUNT)
+        var genomes = arraySlice(saved.GENOMES,0,EVOLUTION_REUSE_PLAN_COUNT)
+        var birthId = saved.BIRTH_ID
+        if (birthId == null) return genomes
+        if (State == null) return []
+        var nativeId = null
+        for (var id: var stat in State) {
+            if (!stat.IS_SUMMON || stat.SUMMONER != Me || search(saved.KNOWN_IDS,id)>=0) continue
+            if (nativeId != null) return [] // une naissance ambiguë ne se devine pas
+            nativeId = id
+        }
+        if (nativeId == null) return []
+        var mapped = []
+        for (var genome in genomes) {
+            var genes = []
+            for (var gene in genome) push(genes,gene.mappedBirth(birthId,nativeId))
+            push(mapped,genes)
+        }
+        return mapped
+    }
+
+    static continuationGenes(plan, birthId) {
+        var genes = arraySlice(plan.GENES,1)
+        if (birthId == null) return genes
+        for (var i=0;i<count(genes);i++) {
+            var before = plan.PREFIXES[i+1].NODE
+            var State = StateClass.materializeNodeState(before)
+            var born = State[birthId]
+            if (born == null || born.LIFE<=0 || !ActionsClass.affectsSignature(genes[i].ITEM,born,State[Me])) continue
+            var action = plan.PREFIXES[i+2].NODE.ACTION
+            var targets = ConsequencesClass.ConsequenceTargets(action.Item,action.From,action.To,State,Me,before.BASE_HASH)
+            var distance = targets[birthId]
+            if (distance == null) continue
+            var gene = clone(genes[i],1)
+            gene.BIRTH_DISTANCE = distance
+            genes[i] = gene
+        }
+        return genes
     }
 
     static saveContinuation(context, best, action) {
         TURN_EVOLUTION_CONTINUATION = null
         if (EVOLUTION_REUSE_PLAN_COUNT <= 0) return;
         var genomes = []
-        if (count(best.GENES) > 1) push(genomes,arraySlice(best.GENES,1))
+        var birthId = ITEMINFO[action.Item].EFFECTS[0][0] == EFFECT_SUMMON
+            ? SUMMON_ID_BASE + BulbState.getTypeOffset(action.Item) : null
+        if (count(best.GENES) > 1) push(genomes,continuationGenes(best,birthId))
         for (var plan in context.POPULATION) {
             if (count(genomes) >= EVOLUTION_REUSE_PLAN_COUNT) break
             if (plan == best || count(plan.GENES) <= 1) continue
-            if (sameAction(plan.PREFIXES[1].NODE.ACTION, action)) push(genomes,arraySlice(plan.GENES,1))
+            if (sameAction(plan.PREFIXES[1].NODE.ACTION, action)) push(genomes,continuationGenes(plan,birthId))
         }
-        if (count(genomes) > 0) TURN_EVOLUTION_CONTINUATION = new EvolutionContinuation(action, genomes)
+        if (count(genomes) > 0) TURN_EVOLUTION_CONTINUATION = new EvolutionContinuation(action, genomes, birthId)
     }
 
     static room(context) {
@@ -312,7 +369,7 @@ class OnlineEvolution {
     }
 
     static getBestAction(State) {
-        var continuations = takeContinuation()
+        var continuations = takeContinuation(State)
         BFS_CHAIN_STEPS = 0
         BFS_LAST_CHAIN = []
         BFS_LAST_CHAIN_DANGER_VALIDATED = false
@@ -337,6 +394,13 @@ class OnlineEvolution {
         var context = new EvolutionContext(root, mine.SIDE, initial)
         // Un plancher validé avec danger existe avant toute évolution.
         keep(evaluate([], context), context)
+        context.REUSED_PLANS = count(continuations)
+        for (var genes in continuations) {
+            if (!room(context)) break
+            var resumed = evaluate(genes, context)
+            if (resumed.VALID) context.VALID_REUSED_PLANS++
+            keep(resumed, context)
+        }
         if (!context.EXHAUSTED) {
             // Comme le témoin : scorer les actions locales avant la géométrie froide.
             var resurrection = ActionSuite.resurrectIdOf(State)
@@ -350,9 +414,9 @@ class OnlineEvolution {
                 var entry = entries[0]
                 var gene = new EvolutionGene(entry.PLAYABLE, State)
                 entry.NODE.PARENT = root
-                context.ROOT.NEXT[gene.KEY] = new EvolutionPrefix(entry.NODE)
-                context.HINTS[ActionSuite.estimateKeyOf(entry.PLAYABLE)] = entry.GAIN
-                context.SIMULATIONS++
+                if (!(gene.KEY in context.ROOT.NEXT)) context.ROOT.NEXT[gene.KEY] = new EvolutionPrefix(entry.NODE)
+                var hintKey = ActionSuite.estimateKeyOf(entry.PLAYABLE)
+                if (!(hintKey in context.HINTS)) context.HINTS[hintKey] = entry.GAIN
                 evaluate([gene],context)
             }
             if (room(context)) {
@@ -370,23 +434,15 @@ class OnlineEvolution {
             for (var entry in entries) {
                 var gene = new EvolutionGene(entry.PLAYABLE, State)
                 entry.NODE.PARENT = root
-                if (!(gene.KEY in context.ROOT.NEXT)) {
-                    context.ROOT.NEXT[gene.KEY] = new EvolutionPrefix(entry.NODE)
-                    context.SIMULATIONS++
-                }
-                context.HINTS[ActionSuite.estimateKeyOf(entry.PLAYABLE)] = entry.GAIN
-            }
-            context.REUSED_PLANS = count(continuations)
-            for (var genes in continuations) {
-                if (!room(context)) break
-                var resumed = evaluate(genes, context)
-                if (resumed.VALID) context.VALID_REUSED_PLANS++
-                keep(resumed, context)
+                if (!(gene.KEY in context.ROOT.NEXT)) context.ROOT.NEXT[gene.KEY] = new EvolutionPrefix(entry.NODE)
+                context.SIMULATIONS++
+                var hintKey = ActionSuite.estimateKeyOf(entry.PLAYABLE)
+                if (!(hintKey in context.HINTS)) context.HINTS[hintKey] = entry.GAIN
             }
             // Des départs distincts, puis une population entretenue par son fitness final.
-            // Les suites reprises remplacent des graines froides, au lieu de s'y ajouter.
-            // Garder au moins un nouveau départ pour les occasions apparues au cast réel.
-            var seedCount = max(1, EVOLUTION_POPULATION - count(context.POPULATION))
+            // Une queue reprise ne retire pas de départ frais : la population reste
+            // bornée à huit après sélection, quel que soit le nombre de propositions.
+            var seedCount = max(1, EVOLUTION_POPULATION - 1) // la queue reprise ne retire pas de départ frais
             for (var i = 0; i < min(seedCount, count(entries)); i++) {
                 if (!room(context)) break
                 var gene = new EvolutionGene(entries[i].PLAYABLE, State)
