@@ -1424,3 +1424,10 @@ Le dépôt séparé **[Leekwars-AI-tools](https://github.com/Traual/Leekwars-AI-
 - les [validations du scoring simple](https://github.com/Traual/Leekwars-AI-tools/tree/main/validation/scoring_simple).
 
 Ces outils restent hors de l’import LeekWars. Leur README explique comment préparer un espace de tests séparé.
+
+
+### Optimisation du rejeu évolutif (31 octobre)
+
+Lorsqu'une intention connaît déjà sa puce ou son arme, le rejeu prépare seulement les actions de cet item. Chaque préfixe garde un petit cache par item ; le catalogue complet reste disponible pour proposer de nouvelles intentions. Les états et les scores ne traversent toujours pas une action réelle. Aucun scoring ni filtre de légalité ne change.
+
+Témoins sans plafond de banc : 80 tours complets, 983 124 198 → 862 222 922 opérations (−12,30 %), mêmes flux d'actions natifs. 32 recherches isolées ont également les mêmes suites et toutes les mêmes traces de simulation (−10,92 %). 50 contrôles ciblés passent. Ces économies ne démontrent pas à elles seules un gain de victoire contre main.

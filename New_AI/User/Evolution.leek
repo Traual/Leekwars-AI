@@ -73,6 +73,7 @@ class EvolutionGene {
 class EvolutionPrefix {
     NODE
     OPTIONS
+    ITEM_OPTIONS
     NEXT = [:]
     constructor(node) { this.NODE = node }
 }
@@ -160,16 +161,23 @@ class OnlineEvolution {
         return false
     }
 
-    static options(prefix, context) {
+    static options(prefix, context, onlyItem = null) {
         if (prefix.OPTIONS != null) return prefix.OPTIONS
+        var itemOptions = prefix.ITEM_OPTIONS
+        if (onlyItem != null && itemOptions != null && onlyItem in itemOptions) return itemOptions[onlyItem]
         if (!room(context)) return []
         var node = prefix.NODE
         var State = StateClass.materializeNodeState(node)
         var mine = State[Me]
         if (mine.LIFE <= 0 || mine.TP < MINIMUM_COST_ITEM) { prefix.OPTIONS = []; return [] }
         var walk = WalkCellsClass.getAllLayers(State, Me, node.BASE_HASH, node.ME_WALK_FINGERPRINT)
-        var pairs = ActionSuite.getBaseActions(State, node.BASE_HASH, ActionSuite.resurrectIdOf(State), walk)
-        prefix.OPTIONS = pairs
+        var resurrectId = onlyItem == null || onlyItem == CHIP_RESURRECTION ? ActionSuite.resurrectIdOf(State) : null
+        var pairs = ActionSuite.getBaseActions(State,node.BASE_HASH,resurrectId,walk,false,false,onlyItem)
+        if (onlyItem == null) prefix.OPTIONS = pairs
+        else {
+            if (itemOptions == null) { itemOptions = [:]; prefix.ITEM_OPTIONS = itemOptions }
+            itemOptions[onlyItem] = pairs
+        }
         room(context)
         return pairs
     }
@@ -180,7 +188,7 @@ class OnlineEvolution {
         if (hit != null) { context.PREFIX_HITS++; return hit }
         var State = StateClass.materializeNodeState(prefix.NODE)
         var playable = null
-        for (var option in options(prefix, context)) {
+        for (var option in options(prefix, context, gene.ITEM)) {
             if (gene.matches(option, State)) { playable = option; break }
         }
         if (playable == null || !room(context)) return null

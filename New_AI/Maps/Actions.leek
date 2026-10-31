@@ -32,15 +32,26 @@ class ActionsClass {
 	/* Les actions locales sont recréées depuis MyCell à CHAQUE nœud. Leur origine
 	 * ne vient jamais d'une liste scorée dans une ancienne position. Les groupes sur
 	 * les autres conservent toutes les origines du domaine de mobilité courant. */
-	static getEveryActionsInAState(State, WalkCells, MyCell, BaseHash, localOnly = false, othersOnly = false) {
+	static getEveryActionsInAState(State, WalkCells, MyCell, BaseHash, localOnly = false, othersOnly = false, onlyItem = null) {
 		BenchOps.Start("Actions")
 		var _final = []
 		var LeekCells = StateClass.getEntityCellsMap(State, BaseHash)
 		var local = []
-		if (!othersOnly) {
-			pushAll(local, getEveryActionsOnMe(MyCell, MY_INVENTORY_ON_ME, State, BaseHash))
-			pushAll(local, getEveryActionsInVoid(MyCell, MY_INVENTORY_ON_VOID, State, LeekCells, BaseHash))
-			pushAll(local, getEverySummonActions(MyCell, MY_INVENTORY_SUMMON, State, LeekCells, BaseHash))
+        var onMe = MY_INVENTORY_ON_ME
+        var onVoid = MY_INVENTORY_ON_VOID
+        var summons = MY_INVENTORY_SUMMON
+        var onEveryone = MY_INVENTORY_ON_EVERYONE
+        if (onlyItem != null) {
+            var one = [onlyItem]
+            onMe = search(onMe,onlyItem)>=0 ? one : []
+            onVoid = search(onVoid,onlyItem)>=0 ? one : []
+            summons = search(summons,onlyItem)>=0 ? one : []
+            onEveryone = search(onEveryone,onlyItem)>=0 ? one : []
+        }
+        if (!othersOnly) {
+			pushAll(local, getEveryActionsOnMe(MyCell, onMe, State, BaseHash))
+			pushAll(local, getEveryActionsInVoid(MyCell, onVoid, State, LeekCells, BaseHash))
+			pushAll(local, getEverySummonActions(MyCell, summons, State, LeekCells, BaseHash))
 		}
 		var localKey = addValueToBinHash(OFFSET_BASIS ^ BaseHash, MyCell)
 		for (var action in local) {
@@ -57,7 +68,7 @@ class ActionsClass {
 			}
 			push(_final, group)
 		}
-		if (!localOnly) pushAll(_final, getEveryActionsOnEveryOne(MyCell, MY_INVENTORY_ON_EVERYONE, State, WalkCells, BaseHash, LeekCells))
+		if (!localOnly) pushAll(_final, getEveryActionsOnEveryOne(MyCell, onEveryone, State, WalkCells, BaseHash, LeekCells))
 		BenchOps.Stop("Actions")
 		return _final
 	}
