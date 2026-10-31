@@ -66,6 +66,7 @@ class ActionSuite {
 	 * Renvoie la meilleure action à jouer dans l'état donné (null = ne rien jouer).
 	 */
 	static getBestAction(State) {
+		if (SEARCH_USE_EVOLUTION) return OnlineEvolution.getBestAction(State)
 		// Play réserve la sortie du tour ; le coût froid est protégé pendant l'expansion.
 		// La même garde borne chaque phase ; le danger n'est évalué qu'au classement terminal.
 		BFS_CHAIN_STEPS = 0

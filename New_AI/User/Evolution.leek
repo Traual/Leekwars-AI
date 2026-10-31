@@ -1,0 +1,333 @@
+// Online evolutionary planning : la population contient des tours, pas des préfixes
+// classés par gain brut. Le scoring et le placement sont ceux du beam témoin.
+include("../includes.leek")
+
+global SEARCH_USE_EVOLUTION = true
+global EVOLUTION_POPULATION = 8
+global EVOLUTION_MAX_ATTEMPTS = 128 // Générations stationnaires, sous le plafond d'opérations commun.
+
+// Intention immuable : les cibles sont des identités/distances de zone, pas une
+// ancienne cellule. Les déplacements d'entités (inversion incluse) sont donc relus.
+// Les effets spatiaux gardent aussi leur origine et leur visée (ou identité visée).
+class EvolutionGene {
+    ITEM
+    TARGET_HASH
+    FROM
+    AIM_ID
+    AIM_CELL
+    RESURRECT_ID
+    KEY
+    constructor(playable, State) {
+        var action = playable.ACTION
+        var group = playable.GROUP
+        this.ITEM = action.Item
+        this.TARGET_HASH = group.TARGET_HASH
+        this.RESURRECT_ID = action.RESURRECT_ID
+        if (ITEMINFO[this.ITEM].ORIGIN_SENSITIVE) {
+            this.FROM = group.IS_LOCAL ? null : action.From
+            for (var id: var stat in State) {
+                if (stat.LIFE > 0 && stat.CELL == action.To) { this.AIM_ID = id; break }
+            }
+            if (this.AIM_ID == null) this.AIM_CELL = action.To
+        }
+        this.KEY = this.ITEM + "|" + this.TARGET_HASH + "|" + this.FROM
+            + "|" + this.AIM_ID + "|" + this.AIM_CELL + "|" + this.RESURRECT_ID
+    }
+
+    matches(playable, State) {
+        var group = playable.GROUP
+        if (group.Item != this.ITEM || group.TARGET_HASH != this.TARGET_HASH
+            || playable.ACTION.RESURRECT_ID != this.RESURRECT_ID) return false
+        if (!ITEMINFO[this.ITEM].ORIGIN_SENSITIVE) return true
+        if (this.FROM != null && playable.ACTION.From != this.FROM) return false
+        var aim = this.AIM_CELL
+        if (this.AIM_ID != null) {
+            var target = State[this.AIM_ID]
+            if (target == null || target.LIFE <= 0) return false
+            aim = target.CELL
+        }
+        return playable.ACTION.To == aim
+    }
+}
+
+// Préfixe immuable et mémo LOCAL à une décision. NEXT évite de resimuler un préfixe
+// partagé ; ce n'est pas une frontière de recherche et aucun score brut ne l'élague.
+class EvolutionPrefix {
+    NODE
+    OPTIONS
+    NEXT = [:]
+    constructor(node) { this.NODE = node }
+}
+
+class EvolutionPlan {
+    GENES
+    PREFIXES
+    VALID = false
+    VALUE = 0 // Une suite illégale est nulle, mais exclue de toute sélection.
+    constructor(genes) { this.GENES = genes; this.PREFIXES = [] }
+}
+
+class EvolutionContext {
+    ROOT
+    SIDE
+    INITIAL
+    HINTS = [:]
+    POPULATION = []
+    BEST
+    EVALUATIONS = 0
+    ATTEMPTS = 0
+    INVALID = 0
+    DUPLICATES = 0
+    UNFINANCED = 0
+    SIMULATIONS = 0
+    PREFIX_HITS = 0
+    EXHAUSTED = false
+    SEEN = [:]
+    SEED = 1
+    constructor(root, side, initial) {
+        this.ROOT = new EvolutionPrefix(root)
+        this.SIDE = side
+        this.INITIAL = initial
+        this.SEED = ((Me + 1) * 19349663 + getTurn() * 83492791 + root.END_STATS[Me].TP * 31) & 2147483647
+    }
+    // RNG privé : chercher ne doit pas déplacer les jets critiques du vrai moteur.
+    draw(size) {
+        this.SEED = (this.SEED * 1664525 + 1013904223) & 2147483647
+        return this.SEED % max(1, size)
+    }
+}
+
+class OnlineEvolution {
+    static room(context) {
+        if (getOperations() + OPS_SEARCH_MARGIN <= OPS_DEADLINE) return true
+        context.EXHAUSTED = true
+        return false
+    }
+
+    static options(prefix, context) {
+        if (prefix.OPTIONS != null) return prefix.OPTIONS
+        if (!room(context)) return []
+        var node = prefix.NODE
+        var State = StateClass.materializeNodeState(node)
+        var mine = State[Me]
+        if (mine.LIFE <= 0 || mine.TP < MINIMUM_COST_ITEM) { prefix.OPTIONS = []; return [] }
+        var walk = WalkCellsClass.getAllLayers(State, Me, node.BASE_HASH, node.ME_WALK_FINGERPRINT)
+        var pairs = ActionSuite.getBaseActions(State, node.BASE_HASH, ActionSuite.resurrectIdOf(State), walk)
+        prefix.OPTIONS = pairs
+        room(context)
+        return pairs
+    }
+
+    static advance(prefix, gene, context) {
+        if (gene == null) return null
+        var hit = prefix.NEXT[gene.KEY]
+        if (hit != null) { context.PREFIX_HITS++; return hit }
+        var State = StateClass.materializeNodeState(prefix.NODE)
+        var playable = null
+        for (var option in options(prefix, context)) {
+            if (gene.matches(option, State)) { playable = option; break }
+        }
+        if (playable == null || !room(context)) return null
+        var node = prefix.NODE
+        var walk = WalkCellsClass.getAllLayers(State, Me, node.BASE_HASH, node.ME_WALK_FINGERPRINT)
+        var workspace = clone(State, 1)
+        var actual = ActionSuite.simulatePlayable(playable, workspace, node.BASE_HASH,
+            node.SCORE, context.SIDE, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, node, walk)
+        actual.NODE.PARENT = node
+        context.HINTS[ActionSuite.estimateKeyOf(playable)] = actual.GAIN
+        context.SIMULATIONS++
+        var next = new EvolutionPrefix(actual.NODE)
+        prefix.NEXT[gene.KEY] = next
+        return next
+    }
+
+    // Les gains bruts ne sont qu'un biais de PROPOSITION. Toute option, y compris
+    // une action nulle/négative ou inconnue, peut être tirée ; seul le terminal sélectionne.
+    static proposal(prefix, context, randomChoice = false) {
+        var pairs = options(prefix, context)
+        if (count(pairs) == 0 || context.EXHAUSTED) return null
+        var chosen = pairs[context.draw(count(pairs))]
+        if (!randomChoice && context.draw(4) != 0) {
+            var bestGain = -MAX_VALUE
+            for (var pair in pairs) {
+                var gain = context.HINTS[ActionSuite.estimateKeyOf(pair)] ?? 0
+                if (gain > bestGain) { bestGain = gain; chosen = pair }
+            }
+        }
+        return new EvolutionGene(chosen, StateClass.materializeNodeState(prefix.NODE))
+    }
+
+    static evaluate(genes, context, extend = false) {
+        var plan = new EvolutionPlan([])
+        var prefix = context.ROOT
+        push(plan.PREFIXES, prefix)
+        for (var gene in genes) {
+            var next = advance(prefix, gene, context)
+            if (next == null) { if (!context.EXHAUSTED) context.INVALID++; return plan }
+            push(plan.GENES, gene)
+            push(plan.PREFIXES, next)
+            prefix = next
+        }
+        if (extend) {
+            // Les usages, cooldowns et PT réels bornent la suite, pas une longueur fixe.
+            while (room(context)) {
+                var gene = proposal(prefix, context)
+                if (gene == null) break
+                var next = advance(prefix, gene, context)
+                if (next == null) break
+                push(plan.GENES, gene)
+                push(plan.PREFIXES, next)
+                prefix = next
+            }
+        }
+        if (context.EXHAUSTED) return plan
+        var key = ""
+        for (var gene in plan.GENES) key += gene.KEY + ";"
+        if (key in context.SEEN) { context.DUPLICATES++; return context.SEEN[key] }
+        var close = ActionSuite.closeOf(prefix.NODE, OPS_DEADLINE, context.BEST != null)
+        if (close == null || count(close) > 3) {
+            // Une nouvelle géométrie peut être trop froide, alors qu'un autre plan
+            // est encore finançable dans les caches chauds. Ne pas arrêter tout ici.
+            context.UNFINANCED++
+            room(context)
+            return plan
+        }
+        plan.VALUE = prefix.NODE.SCORE - context.INITIAL - close[1]
+        plan.VALID = true
+        context.SEEN[key] = plan
+        context.EVALUATIONS++
+        if (context.BEST == null || plan.VALUE > context.BEST.VALUE) context.BEST = plan
+        return plan
+    }
+
+    static keep(plan, context) {
+        if (!plan.VALID) return;
+        for (var old in context.POPULATION) if (old == plan) return;
+        var slot = 0
+        while (slot < count(context.POPULATION) && context.POPULATION[slot].VALUE >= plan.VALUE) slot++
+        if (slot >= EVOLUTION_POPULATION) return;
+        insert(context.POPULATION, plan, slot)
+        if (count(context.POPULATION) > EVOLUTION_POPULATION) pop(context.POPULATION)
+    }
+
+    static parentOf(context) {
+        var a = context.POPULATION[context.draw(count(context.POPULATION))]
+        var b = context.POPULATION[context.draw(count(context.POPULATION))]
+        return a.VALUE >= b.VALUE ? a : b
+    }
+
+    static offspring(parent, context) {
+        var genes = clone(parent.GENES, 1)
+        var size = count(genes)
+        var op = context.draw(6)
+        if (size == 0) return evaluate([], context, true)
+        var index = context.draw(size)
+        var extend = false
+        if (op == 0) {
+            var other = context.draw(size)
+            var gene = genes[index]
+            remove(genes, index)
+            insert(genes, gene, other)
+        } else if (op == 1) {
+            remove(genes, index)
+        } else if (op == 2 || op == 3) {
+            if (op == 3) index = context.draw(size + 1)
+            var gene = proposal(parent.PREFIXES[index], context, true)
+            if (gene == null) return new EvolutionPlan([])
+            if (op == 2) genes[index] = gene
+            else insert(genes, gene, index)
+        } else if (op == 4) {
+            genes = arraySlice(genes, 0, index)
+            extend = true
+        } else {
+            var mate = parentOf(context)
+            genes = arraySlice(genes, 0, index)
+            pushAll(genes, arraySlice(mate.GENES, context.draw(count(mate.GENES) + 1)))
+        }
+        return evaluate(genes, context, extend)
+    }
+
+    static getBestAction(State) {
+        BFS_CHAIN_STEPS = 0
+        BFS_LAST_CHAIN = []
+        BFS_LAST_CHAIN_DANGER_VALIDATED = false
+        var mine = State[Me]
+        if (mine.TP < MINIMUM_COST_ITEM) return null
+        var bh = StateClass.getBaseHash(State)
+        ROOT_SCORING_CONSTANTS = ScoringStateConstants.get(State, bh)
+        AllySupport.prepare(State)
+        EnemyOffense.prepare(State, bh)
+        var walk = WalkCellsClass.getAllLayers(State, Me, bh)
+        var values = [:]
+        var initial = ScoringClass.stateValue(State, mine.SIDE, OPS_DEADLINE, values)
+        if (initial == null) { debugW("[OEP] stop actions: initial scoring exceeded planning budget"); return null }
+        var root = new NodeClass(null, State, null)
+        root.SCORE = initial
+        root.SCORE_VALUES = values
+        root.BASE_HASH = bh
+        root.ME_WALK_FINGERPRINT = walk.ME_FINGERPRINT
+        root.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(State)
+        root.HFP_BY_SIDE = HealClass.buildHfpBySide(State)
+        root.STATE_PATCH = [:]
+        var context = new EvolutionContext(root, mine.SIDE, initial)
+        // Un plancher validé avec danger existe avant toute évolution.
+        keep(evaluate([], context), context)
+        if (!context.EXHAUSTED) {
+            // Comme le témoin : scorer les actions locales avant la géométrie froide.
+            var resurrection = ActionSuite.resurrectIdOf(State)
+            var pairs = ActionSuite.getBaseActions(State, bh, resurrection, walk, true)
+            var entries = ActionSuite.enumerateAndSort(State, bh, initial, mine.SIDE,
+                root.CONTEXT_BY_SIDE, root.HFP_BY_SIDE, root, walk, pairs)
+            if (room(context)) {
+                var others = ActionSuite.getBaseActions(State, bh, resurrection, walk, false, true)
+                var known = [:]
+                for (var pair in pairs) known[ActionSuite.estimateKeyOf(pair)] = true
+                var fresh = []
+                for (var pair in others) if (!(ActionSuite.estimateKeyOf(pair) in known)) push(fresh,pair)
+                pushAll(pairs,fresh)
+                pushAll(entries,ActionSuite.enumerateAndSort(State,bh,initial,mine.SIDE,
+                    root.CONTEXT_BY_SIDE,root.HFP_BY_SIDE,root,walk,fresh,null,false,false))
+                entries = arraySort(entries,function(a,b) { return b.PRIORITY-a.PRIORITY })
+            }
+            context.ROOT.OPTIONS = pairs
+            for (var entry in entries) {
+                var gene = new EvolutionGene(entry.PLAYABLE, State)
+                entry.NODE.PARENT = root
+                context.ROOT.NEXT[gene.KEY] = new EvolutionPrefix(entry.NODE)
+                context.HINTS[ActionSuite.estimateKeyOf(entry.PLAYABLE)] = entry.GAIN
+                context.SIMULATIONS++
+            }
+            // Des départs distincts, puis une population entretenue par son fitness final.
+            for (var i = 0; i < min(EVOLUTION_POPULATION - 1, count(entries)); i++) {
+                if (!room(context)) break
+                var gene = new EvolutionGene(entries[i].PLAYABLE, State)
+                // Arrêter son tour après une action est aussi un plan complet légal.
+                keep(evaluate([gene], context), context)
+                keep(evaluate([gene], context, true), context)
+            }
+        }
+        while (!context.EXHAUSTED && room(context)
+            && context.ATTEMPTS < EVOLUTION_MAX_ATTEMPTS
+            && count(context.POPULATION) > 0 && count(context.ROOT.OPTIONS ?? []) > 0) {
+            context.ATTEMPTS++
+            keep(offspring(parentOf(context), context), context)
+        }
+        BFS_CHAIN_STEPS = context.SIMULATIONS
+        var best = context.BEST
+        debug("[OEP] " + (context.EXHAUSTED ? "budget reached" : "completed")
+            + " | attempts: " + context.ATTEMPTS + " | plans: " + context.EVALUATIONS + " | population: " + count(context.POPULATION)
+            + " | invalid: " + context.INVALID + " | duplicates: " + context.DUPLICATES
+            + " | unfinanced: " + context.UNFINANCED
+            + " | simulations: " + context.SIMULATIONS + " | cached prefixes: " + context.PREFIX_HITS)
+        if (best == null) { debugW("[OEP] danger not taken into account: no affordable terminal plan, stop actions"); return null }
+        BFS_LAST_CHAIN_DANGER_VALIDATED = true
+        if (count(best.GENES) == 0) { debug("[OEP] no action selected: idle plan wins terminal scoring"); return null }
+        var chain = []
+        for (var i = 1; i < count(best.PREFIXES); i++) push(chain, best.PREFIXES[i].NODE.ACTION)
+        var action = shift(chain)
+        BFS_LAST_CHAIN = chain
+        debug("Best: " + ITEMINFO[action.Item].NAME + " | From: " + action.From + " | To: " + action.To
+            + " | Delta: " + best.VALUE + " | " + context.EVALUATIONS + " plans, " + context.SIMULATIONS + " steps")
+        return action
+    }
+}

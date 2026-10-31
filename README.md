@@ -2,6 +2,10 @@
 
 IA orientée simulation : elle cherche une suite d’actions, joue la première, puis replanifie depuis l’état réel du combat.
 
+**Branche expérimentale `search-online-evolution` (31 octobre 2026)** : le sélecteur actif est
+[`OnlineEvolution`](New_AI/User/Evolution.leek), décrit ci-dessous. Le beam témoin reste disponible
+avec `SEARCH_USE_EVOLUTION = false`. Cette branche ne remplace pas `main`.
+
 Ce dépôt contient uniquement **`New_AI/`** et ce README, pour importer l’IA dans LeekWars sans embarquer les outils de développement.
 
 ## Utilisation
@@ -9,6 +13,68 @@ Ce dépôt contient uniquement **`New_AI/`** et ce README, pour importer l’IA 
 Le point d’entrée est [`New_AI/Main.leek`](New_AI/Main.leek). Importer le dossier `New_AI` en conservant son arborescence et les chemins des `include`.
 
 Les modifications courantes du scoring se font sur **`main`**.
+
+## Recherche expérimentale par online evolution
+
+Cette variante compare des **suites complètes**, arrêt anticipé du tour compris. Elle conserve
+le scoring, la simulation des conséquences, les cartes de danger/soin, le placement et les
+réserves de production de `main` (`3cb1123`). Aucun bonus particulier à Solidification.
+
+Son fitness est `scoreÉtatFinal − scoreÉtatInitial − pénalitéPlacementFinal` : le dernier
+terme est signé et peut donc ajouter un gain. La sélection ne repose pas sur le score brut
+des préfixes. Les gains estimés servent seulement à proposer des actions.
+
+1. Construire un plan « arrêter le tour » évalué avec danger, puis des plans courts et
+   des suites provenant de départs prometteurs. Les actions locales sont scorées avant
+   la préparation géométrique des autres actions.
+2. Conserver une population de huit plans, classés par fitness final exact. Un tournoi
+   entre deux plans choisit le parent. La meilleure suite validée est toujours conservée.
+3. Proposer un déplacement d’action dans la suite, une suppression, un remplacement,
+   une insertion, une nouvelle fin de suite ou un croisement entre deux plans.
+4. Simuler les nouvelles actions dans l’ordre, avec les coûts PT/PM, les cooldowns,
+   les usages, les changements d’arme et les effets de déplacement réels. Une suite
+   injouable est rejetée entière : `VALID = false`, `VALUE = 0`. Ce zéro ne participe
+   jamais au classement, car un plan valide peut avoir un fitness négatif.
+5. Évaluer le placement de l’état obtenu avec `ActionSuite.closeOf`. Un résultat tronqué
+   ou non finançable ne devient pas un fitness exact ; le meilleur plan validé reste acquis.
+6. Exécuter seulement la première action et replanifier depuis la capture réelle.
+   La vidange du plan reste celle de `Play` si le budget ne permet plus de recherche.
+
+Les gènes représentent un item et sa **signature de cibles/distances de zone**. Ils ne
+figent pas une cellule de lancer pour les effets ordinaires : après une inversion,
+un auto-buff suit la nouvelle position du lanceur et un tir retrouve l’entité déplacée.
+Les effets sensibles à la géométrie, dont inversion, poussées, invocations et résurrection,
+gardent aussi leur origine pertinente et leur visée ou identité visée. La résurrection
+conserve explicitement l’identité du mort. Les groupes et origines sont relus dans l’état
+produit par chaque préfixe ; un changement de zone/cibles peut invalider l’intention.
+
+Un cache de préfixes immuables évite de répéter leur simulation entre plans ; un autre mémo
+reprend directement le fitness d’une suite déjà évaluée. Ces caches vivent **une décision**,
+jamais au-delà d’une action réelle. Le générateur pseudo-aléatoire est privé à la recherche :
+il ne consomme pas les jets du moteur de combat.
+
+Deux réglages de départ, encore expérimentaux : `EVOLUTION_POPULATION = 8` et
+`EVOLUTION_MAX_ATTEMPTS = 128`. Ce dernier borne les tentatives de mutation, y compris
+doublons et rejets ; le plafond d’opérations commun peut arrêter la recherche avant.
+Les PT/usages/cooldowns bornent la longueur des suites, sans horizon fixe en actions.
+Le debug `[OEP]` donne les tentatives, plans évalués, rejets, doublons, évaluations non
+finançables, simulations et réutilisations de préfixes.
+
+L’approche s’inspire de la recherche de suites avec vérification des actions de
+[Justesen et al.](https://njustesen.github.io/njustesen/publications/justesen2017playing.pdf).
+La replanification après le premier cast est notre adaptation aux jets réels du jeu.
+L’étude de [Gaina et al.](https://arxiv.org/abs/1704.07075) motive la nécessité de mesurer
+les paramètres ; elle ne garantit pas que cette variante soit supérieure à notre beam.
+
+Contrôles du 31 octobre : 23 vérifications ciblées réussies, dont une séquence native
+Inversion → Armure sur soi → Pistolet. Le cas contrôlé de Solidification à 400 résistance
+et 18 PT retrouve le meilleur ordre, sans règle spécifique à cette puce.
+Sur 32 états fixes aux budgets souples réels : 13 scores finaux meilleurs, 12 moins bons,
+7 sans terminal validé dans les deux versions ; 228 712 511 → 203 121 317 opérations
+(−11,19 %, décisions différentes). Aucun dépassement du plafond natif observé.
+Le pilote final de 20 combats complets, dix paires miroir 4v4 avec vrais budgets,
+donne **5 victoires, 11 nuls et 4 défaites** contre le main `3cb1123`, sans erreur ni
+avortement moteur. Cet échantillon ne démontre pas une supériorité de l'évolution.
 
 Ce document décrit le code de `main` après la campagne du **22 octobre 2026**, avec les réglages des statiques et le placement Covid du **23 octobre**. Les valeurs indiquées
 sont les réglages actuels, pas des paramètres validés pour tous les builds.
