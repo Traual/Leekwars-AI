@@ -343,6 +343,18 @@ class OnlineEvolution {
             var pairs = ActionSuite.getBaseActions(State, bh, resurrection, walk, true)
             var entries = ActionSuite.enumerateAndSort(State, bh, initial, mine.SIDE,
                 root.CONTEXT_BY_SIDE, root.HFP_BY_SIDE, root, walk, pairs)
+            // Financer au moins le meilleur cast local AVANT la géométrie froide.
+            // Sans cela, ses nœuds existent mais aucun n'a de danger validé quand
+            // la génération offensive finit par consommer le budget restant.
+            if (count(entries) > 0 && room(context)) {
+                var entry = entries[0]
+                var gene = new EvolutionGene(entry.PLAYABLE, State)
+                entry.NODE.PARENT = root
+                context.ROOT.NEXT[gene.KEY] = new EvolutionPrefix(entry.NODE)
+                context.HINTS[ActionSuite.estimateKeyOf(entry.PLAYABLE)] = entry.GAIN
+                context.SIMULATIONS++
+                evaluate([gene],context)
+            }
             if (room(context)) {
                 var others = ActionSuite.getBaseActions(State, bh, resurrection, walk, false, true)
                 var known = [:]
@@ -358,9 +370,11 @@ class OnlineEvolution {
             for (var entry in entries) {
                 var gene = new EvolutionGene(entry.PLAYABLE, State)
                 entry.NODE.PARENT = root
-                context.ROOT.NEXT[gene.KEY] = new EvolutionPrefix(entry.NODE)
+                if (!(gene.KEY in context.ROOT.NEXT)) {
+                    context.ROOT.NEXT[gene.KEY] = new EvolutionPrefix(entry.NODE)
+                    context.SIMULATIONS++
+                }
                 context.HINTS[ActionSuite.estimateKeyOf(entry.PLAYABLE)] = entry.GAIN
-                context.SIMULATIONS++
             }
             context.REUSED_PLANS = count(continuations)
             for (var genes in continuations) {
