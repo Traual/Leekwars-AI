@@ -432,6 +432,7 @@ class OnlineEvolution {
             }
             context.ROOT.OPTIONS = pairs
             for (var entry in entries) {
+                if (!room(context)) break
                 var gene = new EvolutionGene(entry.PLAYABLE, State)
                 entry.NODE.PARENT = root
                 if (!(gene.KEY in context.ROOT.NEXT)) context.ROOT.NEXT[gene.KEY] = new EvolutionPrefix(entry.NODE)

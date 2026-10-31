@@ -1472,3 +1472,29 @@ La confirmation est figée avant ses résultats : 200 nouveaux combats miroir co
 `3cb1123`, puis 100 contre une copie de ce main dont seule la réservation des identités est
 corrigée. Ce deuxième témoin distingue le correctif commun de l’architecture de recherche.
 Aucun réglage n’est changé entre ces comparaisons. **Main reste inchangé pendant les tests.**
+
+### Résultats finaux du 31 octobre et limite de budget corrigée
+
+Le candidat figé `643c69b` termine les **200 combats contre main** avec **80 victoires,
+50 nuls et 70 défaites**, soit **52,5 % des points** (intervalle bootstrap des paires
+miroir à 95 % : **49,25–55,75 %**). Les **100 combats contre main avec identités corrigées**
+donnent **42 victoires, 26 nuls et 32 défaites**, soit **55 %** (intervalle **50–60 %**).
+Ces résultats ne démontrent pas une supériorité : **main reste `3cb1123`**.
+
+Sur les 100 mêmes scénarios, le premier témoin donne 54,5 % au prototype, contre 55 %
+avec le correctif commun ; un seul résultat change et 96 flux d’actions sont identiques.
+Comparer directement les 52,5 % et 55 % mélangerait deux échantillons différents.
+Face à main, le prototype utilise environ 3,17 % d’opérations en moins par tour de
+poireau, joue 4,28 casts contre 3,95 et reste sans cast dans 2,54 % des tours contre
+2,89 %. Les trajectoires diffèrent : ces chiffres ne prouvent pas une économie à
+actions identiques, ni que tous les tours sans cast soient des erreurs.
+
+Un dépassement natif d’opérations apparaît sur le scénario `034-left`, également dans
+le contrôle : c’est le même incident, pas deux cas indépendants. Après la fin complète
+des deux campagnes, la boucle d’enregistrement des racines reçoit le garde `room`
+déjà utilisé par les extensions. Aucun budget, réserve ou score ne change.
+Le rejeu du code figé reproduit exactement le flux fautif ; le même scénario corrigé
+termine sans erreur ni arrêt forcé. Les 32 recherches fixes conservent toutes leurs
+suites et fitness, pour environ 0,005 % d’opérations supplémentaires. 50 contrats et
+25 recalculs complets passent. Ce correctif est **postérieur aux 300 combats** : ceux-ci
+ne mesurent donc pas le taux de victoire du code corrigé.
