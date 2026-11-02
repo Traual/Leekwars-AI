@@ -14,7 +14,7 @@ class Play {
 		// Compteur local au tour des échecs d'exécution RÉELLE, clé descriptive : le PREMIER
 		// échec d'une clé replanifie normalement (debug conservé, auto-guérison si l'état
 		// réel a bougé — cellule/TP/MP/arme dans la clé), le DEUXIÈME échec identique arrête
-		// la boucle d'actions (pas de replans impossibles en boucle) sans toucher au BFS.
+		// la boucle d'actions (pas de replans impossibles en boucle) sans modifier la recherche.
 		var failCounts = [: ]
 		// Plafond du moteur, lu une seule fois par combat : getCores() vaut 15 operations et,
 		// dans un bulbe, rendrait SES coeurs alors que le compteur est celui de l'invocateur.
@@ -22,8 +22,8 @@ class Play {
 		// Chaine du dernier plan, remise a zero a chaque tour : la vidange ne doit jamais
 		// rejouer celle d'un autre tour ni celle d'une autre entite (poireau et bulbes
 		// partagent la VM, donc les globals).
-		BFS_LAST_CHAIN = []
-		BFS_LAST_CHAIN_DANGER_VALIDATED = false
+		SEARCH_LAST_CHAIN = []
+		SEARCH_LAST_CHAIN_DANGER_VALIDATED = false
 		var showCoefficients = ScoringDebug.ENABLED
 		while (true) {
 			var State = StateClass.Virtualize()
@@ -45,12 +45,12 @@ class Play {
 			// des actions estimees sur un etat perime. La vidange ne sert que quand aucun plan
 			// n'est plus finançable du tout.
 			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) {
-				if (State[Me].TP >= MINIMUM_COST_ITEM) debugW("[BFS] stop actions: planning budget exhausted"
+				if (State[Me].TP >= MINIMUM_COST_ITEM) debugW("[OEP] stop actions: planning budget exhausted"
 					+ " | used: " + getOperations() + " | limit: " + OPS_DEADLINE + " | TP: " + State[Me].TP)
 				drainChain(StateClass.countSummonsAfterMe(State))
 				break
 			}
-			var Action = ActionSuite.getBestAction(State)
+			var Action = OnlineEvolution.getBestAction(State)
 			if (Action == null) break
 			var From = Action.From
 			var Item = Action.Item
@@ -61,7 +61,7 @@ class Play {
 			// Déplacement raté -> l'item n'est PAS lancé.
 			var opsBeforeExec = getOperations()
 			var res = moveRes[0] ? executeAction(Action) : moveRes
-			if (SEARCH_USE_EVOLUTION) OnlineEvolution.actionPlayed(Action, res[0])
+			OnlineEvolution.actionPlayed(Action, res[0])
 			// Le plus cher deplacement-puis-lancer du combat : c'est la marge que la vidange
 			// exige avant de tenter une action de plus.
 			var execCost = getOperations() - opsBeforeExec
@@ -103,20 +103,17 @@ class Play {
 	 * cet ecart AVANT de virtualiser, avec la marge du pire pas deja mesure.
 	 */
 	drainChain(livingSummons) {
-		// La chaine ne contient QUE des actions non jouees : BFS l'arrete avant la racine
-		// (`while (ancestor.PARENT != null)`), et cette racine a deja ete executee par la
-		// boucle de Play au tour de planification precedent. L'indice 0 est donc la prochaine
-		// action a jouer, pas une action deja passee : partir de 1 en sautait une a chaque
-		// vidange, et s'arreter sous deux n'en jouait aucune quand il n'en restait qu'une.
-		var n = count(BFS_LAST_CHAIN)
+		// OnlineEvolution retire la première action avant de publier la suite.
+		// L'indice 0 est donc la prochaine action à jouer.
+		var n = count(SEARCH_LAST_CHAIN)
 		if (n < 1) return;
-		if (!BFS_LAST_CHAIN_DANGER_VALIDATED) debugW("[VIDANGE] danger not taken into account: raw-score plan")
+		if (!SEARCH_LAST_CHAIN_DANGER_VALIDATED) debugW("[VIDANGE] danger not taken into account: raw-score plan")
 		var limit = OPS_CAP - OPS_RESERVE_PLACEMENT - livingSummons * OPS_RESERVE_PER_BULB
 		for (var i = 0; i < n; i++) {
 			var opsBefore = getOperations()
 			if (opsBefore + OPS_EXEC_MAX > limit) return;
 			var State = StateClass.Virtualize()
-			var Action = BFS_LAST_CHAIN[i]
+			var Action = SEARCH_LAST_CHAIN[i]
 			var BaseHash = StateClass.getBaseHash(State)
 			var moveRes = WalkCellsClass.MoveTo(Action.From, State, BaseHash)
 			if (!moveRes[0]) return;

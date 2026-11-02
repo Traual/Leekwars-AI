@@ -1,8 +1,7 @@
 // Online evolutionary planning : la population contient des tours, pas des préfixes
-// classés par gain brut. Le scoring et le placement sont ceux du beam témoin.
+// classés par gain brut. Le scoring et le placement sont ceux des outils de suites.
 include("../includes.leek")
 
-global SEARCH_USE_EVOLUTION = true
 global EVOLUTION_POPULATION = 8
 global EVOLUTION_MAX_ATTEMPTS = 128 // Générations stationnaires, sous le plafond d'opérations commun.
 global EVOLUTION_REUSE_PLAN_COUNT = 1 // 0 = témoin ; 1 = meilleure suite ; >1 = plusieurs compatibles.
@@ -370,9 +369,8 @@ class OnlineEvolution {
 
     static getBestAction(State) {
         var continuations = takeContinuation(State)
-        BFS_CHAIN_STEPS = 0
-        BFS_LAST_CHAIN = []
-        BFS_LAST_CHAIN_DANGER_VALIDATED = false
+        SEARCH_LAST_CHAIN = []
+        SEARCH_LAST_CHAIN_DANGER_VALIDATED = false
         var mine = State[Me]
         if (mine.TP < MINIMUM_COST_ITEM) return null
         var bh = StateClass.getBaseHash(State)
@@ -405,7 +403,7 @@ class OnlineEvolution {
             // Comme le témoin : scorer les actions locales avant la géométrie froide.
             var resurrection = ActionSuite.resurrectIdOf(State)
             var pairs = ActionSuite.getBaseActions(State, bh, resurrection, walk, true)
-            var entries = ActionSuite.enumerateAndSort(State, bh, initial, mine.SIDE,
+            var entries = ActionSuite.scoreActions(State, bh, initial, mine.SIDE,
                 root.CONTEXT_BY_SIDE, root.HFP_BY_SIDE, root, walk, pairs)
             // Financer au moins le meilleur cast local AVANT la géométrie froide.
             // Sans cela, ses nœuds existent mais aucun n'a de danger validé quand
@@ -426,9 +424,9 @@ class OnlineEvolution {
                 var fresh = []
                 for (var pair in others) if (!(ActionSuite.estimateKeyOf(pair) in known)) push(fresh,pair)
                 pushAll(pairs,fresh)
-                pushAll(entries,ActionSuite.enumerateAndSort(State,bh,initial,mine.SIDE,
-                    root.CONTEXT_BY_SIDE,root.HFP_BY_SIDE,root,walk,fresh,null,false,false))
-                entries = arraySort(entries,function(a,b) { return b.PRIORITY-a.PRIORITY })
+                pushAll(entries,ActionSuite.scoreActions(State,bh,initial,mine.SIDE,
+                    root.CONTEXT_BY_SIDE,root.HFP_BY_SIDE,root,walk,fresh,false))
+                entries = arraySort(entries,function(a,b) { return b.GAIN-a.GAIN })
             }
             context.ROOT.OPTIONS = pairs
             for (var entry in entries) {
@@ -458,7 +456,6 @@ class OnlineEvolution {
             context.ATTEMPTS++
             keep(offspring(parentOf(context), context), context)
         }
-        BFS_CHAIN_STEPS = context.SIMULATIONS
         var best = context.BEST
         debug("[OEP] " + (context.EXHAUSTED ? "budget reached" : "completed")
             + " | attempts: " + context.ATTEMPTS + " | plans: " + context.EVALUATIONS + " | population: " + count(context.POPULATION)
@@ -467,12 +464,12 @@ class OnlineEvolution {
             + " | resumed plans: " + context.VALID_REUSED_PLANS + "/" + context.REUSED_PLANS
             + " | simulations: " + context.SIMULATIONS + " | cached prefixes: " + context.PREFIX_HITS)
         if (best == null) { debugW("[OEP] danger not taken into account: no affordable terminal plan, stop actions"); return null }
-        BFS_LAST_CHAIN_DANGER_VALIDATED = true
+        SEARCH_LAST_CHAIN_DANGER_VALIDATED = true
         if (count(best.GENES) == 0) { debug("[OEP] no action selected: idle plan wins terminal scoring"); return null }
         var chain = []
         for (var i = 1; i < count(best.PREFIXES); i++) push(chain, best.PREFIXES[i].NODE.ACTION)
         var action = shift(chain)
-        BFS_LAST_CHAIN = chain
+        SEARCH_LAST_CHAIN = chain
         saveContinuation(context, best, action)
         debug("Best: " + ITEMINFO[action.Item].NAME + " | From: " + action.From + " | To: " + action.To
             + " | Delta: " + best.VALUE + " | " + context.EVALUATIONS + " plans, " + context.SIMULATIONS + " steps")

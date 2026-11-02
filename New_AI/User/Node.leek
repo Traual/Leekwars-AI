@@ -1,5 +1,5 @@
 /*
- * Nœud de l'arbre de recherche : l'état complet après une action, avec les hashs
+ * Nœud d'un préfixe de suite : l'état complet après une action, avec les hashs
  * incrémentaux du scoring (patchés depuis le parent, jamais reconstruits).
  */
 
@@ -16,8 +16,7 @@ class NodeClass {
 	STATE_PATCH       // [id -> EntityState APRÈS l'action] : les seules entités que l'action a modifiées
 	                  // (les ids de CLONED), seule représentation persistante du nœud
 	PARENT            // nœud d'origine (null pour une action de base)
-	SCORE             // score de l'état moins les frais cumulés du plan (rempli par le BFS)
-	TERMINAL_BOUND = 0 // score brut + borne du bonus spatial, calculés par le BFS
+	SCORE             // score de l'état moins les frais cumulés du plan (rempli par la recherche)
 	COVID_CONTEXT     // contributions calculées seulement si ce nœud est évalué au placement
 	SCORE_VALUES      // valeurs exactes des entités de CE nœud, sous le contexte de sa recherche
 	COOLDOWN_COST = 0 // frais de CETTE action ; les précédents sont déjà dans Parent.SCORE
@@ -28,7 +27,7 @@ class NodeClass {
 	CLONED            // [id -> ANCIEN EntityState] : ensemble EXACT des entités possiblement mutées
 	                  // par l'action — la valeur est la référence read-only à l'état d'avant clonage
 	                  // (null pour un summon né en branche). Sert au clone-on-write, à la capture du
-	                  // patch et à la restauration du workspace, puis est libéré (null) par le BFS —
+	                  // patch et à la restauration du workspace, puis est libéré (null) par la recherche —
 	                  // STATE_PATCH reste la seule représentation persistante
 	COMBINED_HFP      // fold XOR des empreintes par camp : la clé de la heal map. Hérité tel quel
 	                  // du parent quand la map est partagée, recalculé sinon

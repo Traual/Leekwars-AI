@@ -232,12 +232,6 @@ global DIFF_CONTEXT = 2     // contribution contexte danger (inputs effectifs of
 global DIFF_HFP = 4         // contribution fingerprint heal (inputs effectifs de healer)
 global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
 
-// BFS :
-// Seuil de Δ sous lequel une action de base est traitée comme un no-op (skip de l'expansion
-// gloutonne + early-exit des chaînes). Attrape les résidus float des chips type Antidote /
-// Libération / Rémission quand aucun effet pertinent ne s'applique.
-global BFS_DELTA_EPSILON = 0.01
-
 // Les ordinaux d'etat (STATE_INVINCIBLE, STATE_UNHEALABLE, STATE_PACIFIST, STATE_STATIC) sont
 // des constantes du MOTEUR, exposees par FightConstants : rien a redeclarer ici.
 

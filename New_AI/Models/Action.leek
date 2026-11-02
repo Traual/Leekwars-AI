@@ -8,7 +8,7 @@ class ActionClass {
 	Item
 	From
 	To
-	// Payload résurrection : l'id du mort choisi pour CETTE évaluation (BFS.resurrectIdOf).
+	// Payload résurrection : l'id du mort choisi pour CETTE évaluation (ActionSuite.resurrectIdOf).
 	// null par défaut — les actions GÉOMÉTRIQUES de ACTIONS_SUMMON_CACHE le gardent null,
 	// getBaseActions recrée un objet neuf avec l'id (jamais de mutation de l'objet caché).
 	RESURRECT_ID
@@ -19,19 +19,17 @@ class ActionClass {
 	}
 }
 
-/* Géométrie partagée, jamais mutée par le BFS. Une seule visée représentative par
+/* Géométrie partagée, jamais mutée par la recherche. Une seule visée représentative par
  * origine suffit quand les cibles ET leurs distances sont identiques. Les actions
  * locales n'allouent pas de map : elles sont recréées depuis la cellule du nœud. */
 class ActionGroupClass extends ActionClass {
 	SIGNATURE
 	TARGET_HASH
-	SIGNATURE_MIX // mix64(SIGNATURE), immuable et partagé par les ensembles de groupes.
 	ORIGINS
 	IS_LOCAL
 	constructor(item, from, to, signature, targetHash, local = false) {
 		super(item, from, to)
 		this.SIGNATURE = signature
-		this.SIGNATURE_MIX = mix64(signature)
 		this.TARGET_HASH = targetHash
 		this.IS_LOCAL = local
 		this.ORIGINS = local ? null : [from: to]
@@ -56,105 +54,15 @@ class PlayableActionClass {
 	}
 }
 
+// Résultat exact d'une simulation ; le gain sert à proposer les premiers plans.
 class ScoredActionClass {
 	PLAYABLE
 	GAIN
-	PRIORITY
 	NODE
-	SCORE
-	DEFERRED
-	constructor(playable, gain, priority, node, score) {
+	constructor(playable, gain, node) {
 		this.PLAYABLE = playable
 		this.GAIN = gain
-		this.PRIORITY = priority
 		this.NODE = node
-		this.SCORE = score
-		this.DEFERRED = gain <= BFS_DELTA_EPSILON
-	}
-}
-
-/* Durée de vie : un TOUR d'entité. Les gains
- * mémorisés ordonnent les candidats ; ils ne sont PAS des majorants. Les candidats
- * réutilisés sont toujours simulés depuis leur parent avant d'entrer dans l'arbre. */
-class ActionSearchCacheClass {
-	ESTIMATES // [clé -> ActionPriorityClass immuable], priorité brute = gain.
-	DEPENDENCIES
-	ROOT_STATE
-	SCORING_CONTEXT
-	ORDERED_GROUPS
-	POSITIVE_VERSION = 0 // apparition d’une priorité positive dans la recherche courante
-	GROUP_SETS
-	KNOWN_GROUP_SETS
-	NEW_SCORES = 0
-	REUSED_SCORES = 0
-	ORDER_HITS = 0
-	SET_HITS = 0
-	RETAINED_ESTIMATES = 0
-	EXPANSION_TRUNCATED = false // diagnostic : un parcours de successeurs a atteint le budget
-	constructor() {
-		this.ESTIMATES = [:]
-		this.DEPENDENCIES = [:]
-		this.ORDERED_GROUPS = [:]
-		this.GROUP_SETS = [:]
-		this.KNOWN_GROUP_SETS = [:]
-	}
-
-	// Les nœuds/validations appartiennent à UNE recherche ; seuls les catalogues et
-	// indications de gain survivent à un vrai cast. Un buff de Me invalide tous les
-	// groupes dépendant du lanceur ; une blessure de cible seulement les groupes concernés.
-	beginSearch(State, context) {
-		if (this.SCORING_CONTEXT != context) {
-			this.ESTIMATES = [:]
-			this.DEPENDENCIES = [:]
-		} else if (this.ROOT_STATE != null) {
-			// Toute estimation dépend de Me : si ses inputs ont changé, inutile de
-			// comparer les registres de tous les autres porteurs avant de tout vider.
-			if (!sameRootInputs(State[Me], this.ROOT_STATE[Me])) {
-				this.ESTIMATES = [:]
-				this.DEPENDENCIES = [:]
-			} else {
-				var dirty = 0
-				for (var id: var stat in State) {
-					if (id != Me && !sameRootInputs(stat, this.ROOT_STATE[id])) dirty |= dependencyBit(id)
-				}
-				if (dirty != 0) {
-					var stale = []
-					for (var key: var mask in this.DEPENDENCIES) if ((mask & dirty) != 0) push(stale, key)
-					for (var key in stale) { mapRemove(this.ESTIMATES, key); mapRemove(this.DEPENDENCIES, key) }
-				}
-			}
-		}
-		// Libérer les ordres du plan précédent ; les catalogues géométriques restent valides.
-		for (var key: var set in this.GROUP_SETS) set.LAST_ORDER = null
-		this.POSITIVE_VERSION = 0
-		this.ROOT_STATE = State // capture immuable, jamais le workspace de simulation
-		this.SCORING_CONTEXT = context
-		this.RETAINED_ESTIMATES = mapSize(this.ESTIMATES)
-		this.ORDERED_GROUPS = [:] // priorités à retrier après les scores racine courants
-		this.KNOWN_GROUP_SETS = [:] // présence des estimations établie dans CETTE recherche
-		this.NEW_SCORES = 0
-		this.REUSED_SCORES = 0
-		this.ORDER_HITS = 0
-		this.SET_HITS = 0
-	}
-
-	// Collisions d'ids modulo 64 : elles invalident TROP, jamais pas assez.
-	static dependencyBit(id) { return 1 << (id & 63) }
-
-	static sameRootInputs(stat, before) {
-		return before != null && ScoringClass.sameEntityScoreInputs(stat, before)
-			&& stat.CELL == before.CELL && sameLedger(stat.EFFECTS, before.EFFECTS)
-	}
-
-	static sameLedger(a, b) {
-		if (a == b) return true
-		if (count(a) != count(b)) return false
-		for (var i: var line in a) {
-			var other = b[i]
-			if (count(line) != count(other)) return false
-			for (var j: var value in line) if (value != other[j]) return false
-		}
-		return true
 	}
 }
 
@@ -199,53 +107,5 @@ class ActionOriginChoiceClass {
 		this.FROM = from
 		this.TO = to
 		this.EXTRA_TP = extra
-	}
-}
-
-// Le tri partage seulement des clés et des priorités, jamais un nœud ou un From.
-// Une entrée partagée ne se modifie pas : rememberEstimate la remplace si le gain change.
-class ActionPriorityClass {
-	KEY
-	GAIN
-	PRIORITY
-	constructor(key, gain, priority) {
-		this.KEY = key
-		this.GAIN = gain
-		this.PRIORITY = priority
-	}
-}
-
-class ActionSearchFrameClass {
-	GROUPS
-	FRESH
-	PLAYABLES
-	COSTS
-	USES
-	ORDER
-	constructor() {
-		this.GROUPS = [:]
-		this.FRESH = [:]
-	}
-}
-
-// GROUPS, KEYS et FINGERPRINT sont immuables après publication de l’ensemble.
-// Le dernier ordre est un mémo de la recherche courante, effacé au replan réel.
-// Les origines et coûts concrets restent résolus dans le parent courant.
-class ActionGroupSetClass {
-	LAST_ORDER // priorités immuables, jamais des nœuds ni des états
-	LAST_ORDER_KEY
-	ORDER_MEMBERSHIP
-	GROUPS
-	KEYS
-	FINGERPRINT
-	constructor(groups) {
-		this.GROUPS = groups
-		this.KEYS = []
-		this.FINGERPRINT = 0
-		for (var key: var _group in groups) {
-			push(this.KEYS, key)
-			// Une clé de résurrection peut ajouter un candidat à la signature du groupe.
-			this.FINGERPRINT ^= key == _group.SIGNATURE ? _group.SIGNATURE_MIX : mix64(key)
-		}
 	}
 }

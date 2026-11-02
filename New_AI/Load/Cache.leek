@@ -46,7 +46,6 @@ function ReloadCacheNewTurn() {
     ENTITY_TACTICAL_IMPORTANCE_CACHE = [:]
     SCORING_STATE_CONSTANTS_CACHE = [:]
     ROOT_SCORING_CONSTANTS = null
-    TURN_ACTION_SEARCH_CACHE = null
     TURN_EVOLUTION_CONTINUATION = null
     ALLY_SUPPORT_PROFILE_CACHE = [:]
     ROOT_ALLY_SUPPORT = null
@@ -515,17 +514,13 @@ global OPS_EXEC_MAX = 20000
 // quand il ne reste plus que ca. Mesure : un deplacement-puis-lancer reel coute 3 682 operations
 // en mediane et 16 194 au pire sur 77 executions ; 25 000 couvre le pire cas vu.
 global OPS_MOVE_MARGIN = 25000
-// Chaine complete du meilleur candidat du dernier plan, racine comprise : quand le budget
+// Actions restantes du meilleur plan après retrait de son premier cast : quand le budget
 // ne finance plus un plan, ses actions suivantes se jouent telles quelles.
-global BFS_LAST_CHAIN = []
-
-// Catalogues de groupes et estimations, conservés entre les décisions réelles de Me.
-// Reset au tour/acteur ; beginSearch invalide les dépendances modifiées au vrai cast.
-global TURN_ACTION_SEARCH_CACHE = null
+global SEARCH_LAST_CHAIN = []
 
 // Vrai seulement si la suite retenue a une clôture terminale complète avec danger.
-// Copié par le choix du BFS et relu par la vidange ; reset par Play à chaque tour.
-global BFS_LAST_CHAIN_DANGER_VALIDATED = false
+// Copié par la recherche et relu par la vidange ; reset par Play à chaque tour.
+global SEARCH_LAST_CHAIN_DANGER_VALIDATED = false
 // Ordre de tour de Me, relu une fois par Virtualize. Sert a dater les ticks restants des
 // flux periodiques : un effet tombe au tour de son LANCEUR mais tique a celui du PORTEUR,
 // donc le compte depend de qui des deux rejoue en premier vu de MON tour.
