@@ -1,0 +1,277 @@
+/*
+ * Nœud d'un préfixe de suite : l'état complet après une action, avec les hashs
+ * incrémentaux du scoring (patchés depuis le parent, jamais reconstruits).
+ */
+
+include("../imports")
+
+class NodeClass {
+
+	ACTION
+	END_STATS         // CACHE PARESSEUX de l'état complet : rempli d'office sur la racine,
+	                  // null sur un candidat neuf, matérialisé (STATE_PARENT + STATE_PATCH)
+	                  // seulement si le nœud est réellement développé — StateClass.materializeNodeState
+	STATE_PARENT      // nœud portant l'état d'AVANT cette action — chaîne IMMUABLE, indépendante de
+	                  // PARENT (réassigné par le déroulé) ; null = racine
+	STATE_PATCH       // [id -> EntityState APRÈS l'action] : les seules entités que l'action a modifiées
+	                  // (les ids de CLONED), seule représentation persistante du nœud
+	PARENT            // nœud d'origine (null pour une action de base)
+	SCORE             // score de l'état moins les frais cumulés du plan (rempli par la recherche)
+	COVID_CONTEXT     // contributions calculées seulement si ce nœud est évalué au placement
+	SCORE_VALUES      // valeurs exactes des entités de CE nœud, sous le contexte de sa recherche
+	COOLDOWN_COST = 0 // frais de CETTE action ; les précédents sont déjà dans Parent.SCORE
+	ITEM_HAS_BENEFIT = true // filtre ciblé des Régénérations nulles après déplacement
+	BASE_HASH         // BaseHash de l'état du nœud
+	CONTEXT_BY_SIDE   // par side : hash de l'équipe adverse (clé des caches danger)
+	HFP_BY_SIDE       // par side : fingerprint des healers (clé de la heal map)
+	CLONED            // [id -> ANCIEN EntityState] : ensemble EXACT des entités possiblement mutées
+	                  // par l'action — la valeur est la référence read-only à l'état d'avant clonage
+	                  // (null pour un summon né en branche). Sert au clone-on-write, à la capture du
+	                  // patch et à la restauration du workspace, puis est libéré (null) par la recherche —
+	                  // STATE_PATCH reste la seule représentation persistante
+	COMBINED_HFP      // fold XOR des empreintes par camp : la clé de la heal map. Hérité tel quel
+	                  // du parent quand la map est partagée, recalculé sinon
+	ME_WALK_FINGERPRINT // empreinte de mobilité de Me pour l'état du nœud
+	                  // (HashWalkCellsWithItemsWithoutBaseHash). Sale la clé du filtre de
+	                  // géométrie et de placement — aucun terme de scoring n'en dépend.
+	constructor(Act, StatsAfterAction, Parent) {
+		this.ACTION = Act
+		this.END_STATS = StatsAfterAction
+		this.PARENT = Parent
+	}
+
+	/*
+	 * Fabrique LE nœud : applique les conséquences de l'action sur un état clone-on-write,
+	 * puis patche les hashs incrémentaux (base, contextes, healers) depuis le parent.
+	 *
+	 * Le nœud rendu ne porte QUE son patch : END_STATS reste null, le workspace est rendu à
+	 * l'appelant qui doit le scorer PUIS le restaurer (StateClass.restoreWorkspace).
+	 *
+	 * @param Act Action à transformer en nœud
+	 * @param Workspace map de travail — copie superficielle du State parent, partagée par tous
+	 *        les candidats du même parent et restaurée après chacun
+	 * @param From cellule de lancement (Act.From)
+	 * @param MyWalkCells layers de déplacement de Me (déjà calculés par l'appelant)
+	 * @param Cost coût TP total : item + swap d'arme + jump/télépo (déjà calculé par l'appelant)
+	 * @param Info ItemInfo de Item
+	 * @param Item item utilisé (Act.Item)
+	 * @param To cellule cible (Act.To)
+	 * @param BaseHash BaseHash de l'état parent
+	 * @param Parent nœud parent (null pour une action de base)
+	 * @param StateParent nœud portant l'état d'avant l'action (chaîne STATE_PARENT)
+	 * @param ParentContext CONTEXT_BY_SIDE du parent
+	 * @param ParentHfp HFP_BY_SIDE du parent
+	 *
+	 * @return le nouveau nœud, hashs et patch remplis
+	 */
+	/*
+	 * Le cast de la puce de saut, jouee comme couche de deplacement (chip 144).
+	 * Elle porte deux effets : un EFFECT_TELEPORT, que la couche vient de jouer en posant la
+	 * cellule d'arrivee, et une ligne ON_CASTER RAW_BUFF_AGILITY de 100 sur deux tours
+	 * (effet 41, modificateur 4). Seule la seconde est posee ici — repasser par
+	 * getConsequences redeplacerait l'entite.
+	 * Un cast critique declenche le passif de critique AVANT les effets (State.java:768) puis
+	 * multiplie la valeur par CRITICAL_FACTOR (EffectRawBuffAgility.java:11).
+	 * RecordCastedEffect inscrit la ligne au ledger : expiration, Liberation, reset de
+	 * resurrection et CAP_DIRTY suivent, et le retrait rendra exactement la valeur ajoutee.
+	 */
+	static applyJumpCast(meStat, isCritical) {
+		if (isCritical && meStat.SPECIAL_WEAPON != 0) ConsequencesClass.applyOnCriticalPassive(meStat)
+		var gain = isCritical ? round(JUMP_AGILITY_BUFF * CRITICAL_FACTOR) : JUMP_AGILITY_BUFF
+		meStat.AGILITY += gain
+		ConsequencesClass.RecordCastedEffect(meStat, EFFECT_RAW_BUFF_AGILITY, gain, Me, JUMP_AGILITY_TURNS, isCritical, CHIP_JUMP, EFFECT_MODIFIER_ON_CASTER)
+	}
+
+	/*
+	 * Le cast de la puce de teleportation, jouee comme couche de deplacement (chip 59).
+	 * Meme forme que le saut : un EFFECT_TELEPORT deja joue par la couche, et une ligne
+	 * ON_CASTER EFFECT_BOOST_MAX_LIFE de 15, instantanee (effet 12, modificateur 4).
+	 * Meme regle que le cas EFFECT_BOOST_MAX_LIFE de Consequences : la sagesse multiplie, le
+	 * moteur planche le RESULTAT, vie et vie max montent ensemble, et RIEN n'entre au ledger —
+	 * un gain de vie max n'est jamais defait cote moteur.
+	 * Le jet (value2 = 5) n'est pas simule ; le critique l'est : passif d'abord, puis
+	 * multiplication de la valeur (State.java:768, EffectVitality.java:11). Sous UNHEALABLE,
+	 * seule la vie max monte.
+	 */
+	static applyTeleportCast(meStat, isCritical) {
+		if (isCritical && meStat.SPECIAL_WEAPON != 0) ConsequencesClass.applyOnCriticalPassive(meStat)
+		var raw = TELE_VITALITY * max(0, 1 + meStat.WISDOM / 100)
+		if (isCritical) raw = raw * CRITICAL_FACTOR
+		var gain = round(raw)
+		if (!EntityStateClass.hasState(meStat, STATE_UNHEALABLE)) meStat.LIFE += gain
+		meStat.TOTAL_LIFE += gain
+	}
+
+	static ActionToNodeInTree(Act, Workspace, From, MyWalkCells, Cost, Info, Item, To, BaseHash, Parent, StateParent, ParentContext, ParentHfp, ItemUses) {
+		BenchOps.Start("Node")
+		// clonedIds = l'ensemble exact des entités effectivement mutables : Me pré-cloné ici ;
+		// cibles réellement touchées, victimes des cascades de kill et ressuscité (payload
+		// Act.RESURRECT_ID) clonés PARESSEUSEMENT (ensureCloned) dans getConsequences.
+		var clonedIds = [: ]
+		StateClass.beginActionOnWorkspace(Workspace, clonedIds)
+		var ThisActionStats = Workspace
+
+		// Déplacement : la couche empruntée pour arriver sur From retire ses MP et, quand elle
+		// passe par une puce, JOUE cette puce. Le moteur en fait un cast complet — critique tiré,
+		// passif de critique, puis effets, cooldown et TP (State.java:762-778) — et ce cast est
+		// ENTIÈREMENT antérieur à celui de l'action. L'agilité du saut est donc déjà en place
+		// quand getConsequences fige le critique de l'action, et la vitalité de la télépo déjà
+		// encaissée quand les seuils de kill et les caps de soin sont chiffrés sur Me.
+		// Le critique de chaque puce se lit sur l'agilité d'AVANT le buff du saut, qui est la même
+		// pour les deux : la reconstruction du chemin joue la télépo puis le saut
+		// (WalkCellsClass.getActionsToGet, downgrade['tpJump'] essaie 'jump' en premier, donc le
+		// saut est l'action la plus tardive).
+		var meStat = ThisActionStats[Me]
+		var moveStartCell = meStat.CELL
+		var moveStartMp = meStat.MP
+		var cooldownCost = 0
+		meStat.CELL = From
+		if (From in MyWalkCells.WALK) {
+			meStat.MP -= MyWalkCells.WALK[From]
+		} else if (From in MyWalkCells.JUMP) {
+			cooldownCost += CooldownScoring.costOf(CHIP_JUMP, meStat.SIDE)
+			meStat.MP -= MyWalkCells.JUMP[From]
+			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
+			applyJumpCast(meStat, meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)
+		} else if (From in MyWalkCells.TELEPORTATION) {
+			cooldownCost += CooldownScoring.costOf(CHIP_TELEPORTATION, meStat.SIDE)
+			meStat.MP -= MyWalkCells.TELEPORTATION[From]
+			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
+			applyTeleportCast(meStat, meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)
+		} else if (From in MyWalkCells.TELEPORTATION_AND_JUMP) {
+			cooldownCost += CooldownScoring.costOf(CHIP_JUMP, meStat.SIDE) + CooldownScoring.costOf(CHIP_TELEPORTATION, meStat.SIDE)
+			meStat.MP -= MyWalkCells.TELEPORTATION_AND_JUMP[From]
+			StateClass.setCooldown(meStat, CHIP_JUMP, JUMP_COOLDOWN)
+			StateClass.setCooldown(meStat, CHIP_TELEPORTATION, TELE_COOLDOWN)
+			// Les deux casts ne commutent pas : le saut pose 100 d'agilite, qui peut faire passer
+			// le cast SUIVANT en critique. L'ordre n'est donc pas devinable — il est DEMANDE a la
+			// reconstruction du chemin, qui seule connait ses trois issues, repli de marche compris.
+			// Chaque cast lit ensuite le seuil sur les stats que le precedent lui laisse.
+			if (WalkCellsClass.lastStepIsJump(MyWalkCells, From)) {
+				applyTeleportCast(meStat, meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)
+				applyJumpCast(meStat, meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)
+			} else {
+				applyJumpCast(meStat, meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)
+				applyTeleportCast(meStat, meStat.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT)
+			}
+		}
+		// Plantes à zone en jeu : la marche est rejouée case par case pour leurs réveils.
+		if (!mapIsEmpty(PLANT_ZONE_BY_ID) && moveStartCell != From) {
+			AwakeningClass.replayMeMove(ThisActionStats, moveStartCell, From, moveStartMp, MyWalkCells, BaseHash, clonedIds)
+			meStat = ThisActionStats[Me]
+		}
+		meStat.TP -= Cost
+		if (Info.IS_WEAPON) meStat.WEAPON = Item
+		var itemHasBenefit = CooldownScoring.regenerationCanHelp(ThisActionStats, Item, From, To, BaseHash)
+		if (meStat.LIFE > 0) cooldownCost += CooldownScoring.costOf(Item, meStat.SIDE)
+		ConsequencesClass.getConsequences(ThisActionStats, Item, From, To, Me, BaseHash, clonedIds, Act.RESURRECT_ID)
+		// Relu une fois après les conséquences, qui ont pu remplacer l'objet de Me.
+		meStat = ThisActionStats[Me]
+		// Écritures d'inventaire via les setters différentiels : elles ne touchent que le
+		// patch local du clone de Me, jamais un ancêtre.
+		StateClass.setCooldown(meStat, Item, Info.COOLDOWN)
+		// Le compte d'usages vient de l'appelant, qui l'a résolu pour son filtre de jouabilité :
+		// l'incrémenter ici rouvrait la chaîne d'inventaire, un niveau par nœud du chemin.
+		StateClass.setUses(meStat, Item, ItemUses + 1)
+		// Empreinte de mobilité de Me : calculée UNE fois, après TOUTES ses écritures
+		// (cellule, MP, TP, conséquences, cooldowns d'item et de déplacement). Elle sale le
+		// domaine d'origines du nœud et les caches de placement.
+		var meWalkFingerprint = WalkCellsClass.HashWalkCellsWithItemsWithoutBaseHash(meStat)
+		// END_STATS reste NULL : le nœud ne portera que son patch (matérialisation paresseuse).
+		var result = new NodeClass(Act, null, Parent)
+		result.COOLDOWN_COST = cooldownCost
+		result.ITEM_HAS_BENEFIT = itemHasBenefit
+		result.STATE_PARENT = StateParent
+
+		// Patch incrémental des trois hashs, piloté par le SEUL clonedIds : old ^ new pour une
+		// entité préexistante, ajout pur pour une entité née dans l'action (valeur null). Un
+		// ressuscité était mort dans le parent -> ses contributions old valent 0 (LIFE-gated).
+		var bh = BaseHash
+		// Les deux maps par side sont PARTAGées avec le parent tant que rien ne les écrit, et
+		// copiées à la première écriture seulement : une attaque ordinaire clone des entités
+		// sans toucher à leur menace ni à leur soin, et ne doit rien payer. Le parent n'est
+		// jamais muté, la copie précède toute écriture.
+		var ctx = ParentContext
+		var hfpMap = ParentHfp
+		var hfpOwned = false
+		// Le patch se remplit DANS la boucle ci-dessous : elle parcourt déjà clonedIds et lit
+		// déjà la référence produite dans le workspace. Le repasser ensuite refaisait le même
+		// parcours et la même lecture pour chaque entité touchée.
+		var patch = [: ]
+		// Copie du contexte seulement si une menace bouge vraiment : une attaque ordinaire non
+		// létale clone des entités sans rien changer à leur menace, et ne doit rien payer.
+		var contextOwned = false
+		for (var tar: var parentStat in clonedIds) {
+			var newStat = ThisActionStats[tar]
+			patch[tar] = newStat
+			// Entité NÉE dans l'action (summon) : aucune contribution ancienne à retirer, on
+			// AJOUTE simplement les siennes. clonedIds est enregistré à la source par
+			// Consequences, donc Node n'a plus à deviner la nature de l'action.
+			if (parentStat == null) {
+				if (tar == Me) continue      // impossible en pratique : Me préexiste toujours
+				bh ^= StateClass.baseContribution(newStat, tar)
+				var addCtx = DeltaClass.contextContribution(newStat, tar)
+				if (addCtx != 0) {
+					// Copie au premier changement du contexte.
+					if (!contextOwned) {
+						contextOwned = true
+						ctx = clone(ParentContext, 1)
+					}
+					// Itération directe : seules les VALEURS bougent, jamais les clés — pas
+					// besoin de matérialiser la liste des sides.
+					var bornSide = newStat.SIDE
+					for (var s: var _h in ctx) if (s != bornSide) ctx[s] ^= addCtx
+				}
+				var addHfp = HealClass.healerContributionOf(newStat, tar)
+				if (addHfp != 0) {
+					if (!hfpOwned) {
+						hfpMap = clone(ParentHfp, 1)
+						hfpOwned = true
+					}
+					hfpMap[newStat.SIDE] = ((newStat.SIDE in hfpMap) ? hfpMap[newStat.SIDE] : 0) ^ addHfp
+				}
+				continue
+			}
+			// Masque différentiel UNIQUE : une seule comparaison parent/clone pilote les
+			// trois patchs de hash et invalide les mémos dérivés
+			// (Me compris — il est seulement exclu des trois hashs).
+			var mask = StateClass.diffMaskOf(parentStat, newStat, tar == Me)
+			if (tar == Me) continue          // Me est exclu des trois hashs
+
+			if (mask & DIFF_BASE) bh ^= StateClass.baseContribution(parentStat, tar) ^ StateClass.baseContribution(newStat, tar)
+			if (mask & DIFF_CONTEXT) {
+				var deltaCtx = DeltaClass.contextContribution(parentStat, tar) ^ DeltaClass.contextContribution(newStat, tar)
+				if (deltaCtx != 0) {
+					if (!contextOwned) {
+						contextOwned = true
+						ctx = clone(ParentContext, 1)
+					}
+					var side = newStat.SIDE
+					for (var s: var _h in ctx) if (s != side) ctx[s] ^= deltaCtx   // contextes des sides ADVERSES
+				}
+			}
+			if (mask & DIFF_HFP) {
+				var deltaHfp = HealClass.healerContributionOf(parentStat, tar) ^ HealClass.healerContributionOf(newStat, tar)
+				if (deltaHfp != 0) {             // fingerprint du side de l'entité elle-même
+					if (!hfpOwned) {
+						hfpMap = clone(ParentHfp, 1)
+						hfpOwned = true
+					}
+					var hfpSide = newStat.SIDE
+					hfpMap[hfpSide] = ((hfpSide in hfpMap) ? hfpMap[hfpSide] : 0) ^ deltaHfp
+				}
+			}
+		}
+
+		result.CLONED = clonedIds
+		result.BASE_HASH = bh
+		result.ME_WALK_FINGERPRINT = meWalkFingerprint
+		result.CONTEXT_BY_SIDE = ctx
+		result.HFP_BY_SIDE = hfpMap
+		result.STATE_PATCH = patch
+
+		BenchOps.Stop("Node")
+		return result
+	}
+
+}

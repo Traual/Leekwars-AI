@@ -1,0 +1,119 @@
+// Valorisation des buffs par leur durée restante (eff[3], pas les ticks eff[8]).
+include("../imports")
+
+class BuffDuration {
+    // Sur Me, le BFS compte déjà les bénéfices réalisés pendant ce tour dans les deltas
+    // des actions suivantes (notamment les dégâts) : -1 évite de les valoriser deux fois.
+    // +0.01 garde une petite valeur au buff d'un tour, pour ne pas l'écarter avant
+    // d'explorer les actions qui en profitent. C'est un biais de recherche, pas une durée réelle.
+    static multiplier(turns, isMe) {
+        return isMe ? turns - 1 + 0.01 : turns
+    }
+
+    // Valeur signée : positive à la pose, négative au retrait ou à la réduction.
+    // Les effets permanents (-1) et instantanés (0) gardent leur valorisation ordinaire.
+    // Deux scalaires : clone(stat, 1) les copie sans partager de compteur mutable.
+    static updateStrength(stat, value, turns) {
+        if (turns <= 0) return;
+        stat.STRENGTH_BUFF += value
+        stat.STRENGTH_BUFF_WEIGHTED += value * multiplier(turns, stat.ID == Me)
+        if (stat.STRENGTH_BUFF == 0) stat.STRENGTH_BUFF_WEIGHTED = 0
+    }
+
+    static strengthValue(stat) {
+        if (stat.STRENGTH_BUFF <= 0) return max(0, stat.STRENGTH)
+        var withoutBuffs = stat.STRENGTH - stat.STRENGTH_BUFF
+        if (withoutBuffs >= 0) return withoutBuffs + stat.STRENGTH_BUFF_WEIGHTED
+        // Sous entrave, ne valoriser que la partie des buffs qui dépasse le zéro.
+        // Si plusieurs durées se recouvrent, répartir cette partie au prorata des valeurs.
+        if (stat.STRENGTH <= 0) return 0
+        return stat.STRENGTH_BUFF_WEIGHTED * stat.STRENGTH / stat.STRENGTH_BUFF
+    }
+
+    static updateAgility(stat, value, turns) {
+        if (turns <= 0) return;
+        stat.AGILITY_BUFF += value
+        stat.AGILITY_BUFF_WEIGHTED += value * multiplier(turns, stat.ID == Me)
+        if (stat.AGILITY_BUFF == 0) stat.AGILITY_BUFF_WEIGHTED = 0
+    }
+
+    // EffectDamageReturn utilise max(0, 1 + agilité / 100) : plancher à -100, pas à 0.
+    // Comme pour la force, seule la partie des buffs au-dessus du plancher est pondérée.
+    static agilityValue(stat) {
+        if (stat.AGILITY_BUFF <= 0) return max(-100, stat.AGILITY)
+        var withoutBuffs = stat.AGILITY - stat.AGILITY_BUFF
+        if (withoutBuffs >= -100) return withoutBuffs + stat.AGILITY_BUFF_WEIGHTED
+        if (stat.AGILITY <= -100) return -100
+        return -100 + stat.AGILITY_BUFF_WEIGHTED * (stat.AGILITY + 100) / stat.AGILITY_BUFF
+    }
+
+    static updateWisdom(stat, value, turns) {
+        if (turns <= 0) return;
+        stat.WISDOM_BUFF += value
+        stat.WISDOM_BUFF_WEIGHTED += value * multiplier(turns, stat.ID == Me)
+        if (stat.WISDOM_BUFF == 0) stat.WISDOM_BUFF_WEIGHTED = 0
+    }
+
+    // EffectHeal et EffectVitality utilisent max(0, 1 + sagesse / 100) : plancher à -100,
+    // comme l'agilité. Seule la partie des buffs au-dessus du plancher est pondérée.
+    static wisdomValue(stat) {
+        if (stat.WISDOM_BUFF <= 0) return max(-100, stat.WISDOM)
+        var withoutBuffs = stat.WISDOM - stat.WISDOM_BUFF
+        if (withoutBuffs >= -100) return withoutBuffs + stat.WISDOM_BUFF_WEIGHTED
+        if (stat.WISDOM <= -100) return -100
+        return -100 + stat.WISDOM_BUFF_WEIGHTED * (stat.WISDOM + 100) / stat.WISDOM_BUFF
+    }
+
+    static updateResistance(stat, value, turns) {
+        if (turns <= 0) return;
+        stat.RESISTANCE_BUFF += value
+        stat.RESISTANCE_BUFF_WEIGHTED += value * multiplier(turns, stat.ID == Me)
+        if (stat.RESISTANCE_BUFF == 0) stat.RESISTANCE_BUFF_WEIGHTED = 0
+    }
+
+    // Les boucliers utilisent 1 + résistance / 100 sans plancher : toute la résistance compte.
+    static resistanceValue(stat) {
+        if (stat.RESISTANCE_BUFF <= 0) return stat.RESISTANCE
+        return stat.RESISTANCE - stat.RESISTANCE_BUFF + stat.RESISTANCE_BUFF_WEIGHTED
+    }
+
+    static updateMagic(stat, value, turns) {
+        if (turns <= 0) return;
+        stat.MAGIC_BUFF += value
+        stat.MAGIC_BUFF_WEIGHTED += value * multiplier(turns, stat.ID == Me)
+        if (stat.MAGIC_BUFF == 0) stat.MAGIC_BUFF_WEIGHTED = 0
+    }
+
+    // Poison et entraves planchent la magie à 0 à l'usage, comme la force.
+    static magicValue(stat) {
+        if (stat.MAGIC_BUFF <= 0) return max(0, stat.MAGIC)
+        var withoutBuffs = stat.MAGIC - stat.MAGIC_BUFF
+        if (withoutBuffs >= 0) return withoutBuffs + stat.MAGIC_BUFF_WEIGHTED
+        if (stat.MAGIC <= 0) return 0
+        return stat.MAGIC_BUFF_WEIGHTED * stat.MAGIC / stat.MAGIC_BUFF
+    }
+
+    static updateScience(stat, value, turns) {
+        if (turns <= 0) return;
+        stat.SCIENCE_BUFF += value
+        stat.SCIENCE_BUFF_WEIGHTED += value * multiplier(turns, stat.ID == Me)
+        if (stat.SCIENCE_BUFF == 0) stat.SCIENCE_BUFF_WEIGHTED = 0
+    }
+
+    // Le moteur prend la science telle quelle, sans plancher : toute la science compte.
+    static scienceValue(stat) {
+        if (stat.SCIENCE_BUFF <= 0) return stat.SCIENCE
+        return stat.SCIENCE - stat.SCIENCE_BUFF + stat.SCIENCE_BUFF_WEIGHTED
+    }
+
+    // Le moteur tire le critique avec agilité / 1000 : seuls les points entre 0 et 1000
+    // augmentent cette probabilité. Le plafond ne concerne PAS le rendement du renvoi.
+    // Isoler les points utiles avant la durée. Si plusieurs buffs se recouvrent, la part
+    // retenue est répartie au prorata, comme pour la force entravée (approximation légère).
+    static criticalAgilityValue(stat) {
+        var current = min(1000, max(0, stat.AGILITY))
+        if (stat.AGILITY_BUFF <= 0) return current
+        var withoutBuffs = min(1000, max(0, stat.AGILITY - stat.AGILITY_BUFF))
+        return withoutBuffs + (current - withoutBuffs) * stat.AGILITY_BUFF_WEIGHTED / stat.AGILITY_BUFF
+    }
+}

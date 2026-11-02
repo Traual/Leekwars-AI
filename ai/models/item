@@ -1,0 +1,201 @@
+/*
+ * Item : toutes les caractéristiques d'un chip ou d'une arme, lues une fois du moteur
+ * (peuplé pour tout le catalogue moteur dans Preload.InitItemInfo -> ITEMINFO).
+ */
+
+
+include("../imports")
+
+class ItemClass {
+	ID
+	NAME
+	MINRANGE
+	MAXRANGE
+	LAUNCHTYPE
+	INLINE
+	COST
+	AREA
+	COOLDOWN
+	MAX_USES
+	EFFECTS
+	PASSIVE_EFFECTS
+	NEEDLOS
+	AREA_MAX
+	AOE_DIST_MAX    // plus grande distance d'AoE balayée par le déroulé des dégâts
+	AOE_DIST_STEP   // pas de ce balayage (2 pour les zones en X, 1 partout ailleurs)
+	IS_WEAPON
+	STACKABLE
+	IS_BOUNDABLE_DAMAGE                // tous ses effets sont des degats directs sur ennemi : majorable sans simuler
+	IS_VULNERABILITY
+	ORIGIN_SENSITIVE                  // déplacement de cible/caster : mêmes cibles != mêmes effets
+	SELF_TP_RAW                        // TP BRUTS qu'un auto-buff de TP plat pose, 0 sinon
+	SELF_TP_COST                       // ce que le caster doit avancer pour les obtenir
+	LAUNCH_GEOMETRY_KEY
+	FULL_GEOMETRY_KEY
+	// Vues d'effets PRÉCOMPILÉES (immuables, paresseuses : null = aucune ligne) — les LIGNES
+	// originales dans leur ordre d'EFFECTS, jamais sommées (mêmes additions et arrondis
+	// flottants qu'un filtrage à l'usage). Danger : le caster y est TOUJOURS adverse de la
+	// cible, isHitable s'y réduit à LIFE > 0 (gardé au call site) + ENEMIES + le bit summon.
+	IS_HEAL_ITEM                       // qualification historique d'isHealItem (sans exiger ALLIES)
+	IS_DANGER_ITEM                     // qualification historique de MapHittables (6 types, AUCUN filtre de masque/profil/ON_CASTER)
+	HEAL_EFFECTS_ALLY_LEEK             // heals/vitalités non ON_CASTER, ALLIES + NON_SUMMONS
+	HEAL_EFFECTS_ALLY_SUMMON           // idem, ALLIES + SUMMONS
+	DANGER_DAMAGE_EFFECTS_ENEMY_LEEK   // DAMAGE/LIFE_DAMAGE/POISON non ON_CASTER, ENEMIES + NON_SUMMONS
+	DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON // idem, ENEMIES + SUMMONS
+	DANGER_VULNE_EFFECTS_ENEMY_LEEK    // DEBUFF/VULNE/ABS_VULNE, ENEMIES + NON_SUMMONS (pas de filtre ON_CASTER)
+	DANGER_VULNE_EFFECTS_ENEMY_SUMMON  // idem, ENEMIES + SUMMONS
+	//SHOULD_CASTER_GET_HIT
+	constructor(id) {
+		if (isChip(id) || isWeapon(id)) {
+			this.ID = id
+			this.NAME = isChip(id) ? getChipName(id) : getWeaponName(id)
+			this.MINRANGE = isChip(id) ? getChipMinRange(id) : getWeaponMinRange(id)
+			this.MAXRANGE = isChip(id) ? getChipMaxRange(id) : getWeaponMaxRange(id)
+			this.LAUNCHTYPE = isChip(id) ? getChipLaunchType(id) : getWeaponLaunchType(id)
+			this.COST = isChip(id) ? getChipCost(id) : getWeaponCost(id)
+			this.AREA = isChip(id) ? getChipArea(id) : getWeaponArea(id)
+			this.COOLDOWN = isChip(id) ? getChipCooldown(id) : 0
+			if (id == CHIP_REGENERATION || id == CHIP_ELEVATION) this.COOLDOWN = 64
+			this.MAX_USES = MaxUses(id) < 0 ? 1 : MaxUses(id)
+			this.EFFECTS = isChip(id) ? getChipEffects(id) : getWeaponEffects(id)
+			this.PASSIVE_EFFECTS = isChip(id) ? [] : getWeaponPassiveEffects(id)
+			this.NEEDLOS = isChip(id) ? chipNeedLos(id) : weaponNeedLos(id)
+			this.AREA_MAX = AreaMax(id, this.AREA)
+			// Bornes du balayage de distance d'AoE, résolues ICI : le déroulé des dégâts par
+			// couple les relisait dans deux tables statiques à chaque construction de liste.
+			this.AOE_DIST_MAX = EntityDangerClass.MapDistPossibles[this.AREA]
+			this.AOE_DIST_STEP = EntityDangerClass.MapAdditionDist[this.AREA]
+			this.IS_WEAPON = isWeapon(id)
+			this.STACKABLE = this.EFFECTS[0][5] & EFFECT_MODIFIER_STACKABLE   // flag du premier effet
+			var allPureDamage = true
+			for (var e0 in this.EFFECTS) {
+				if (e0[0] != EFFECT_DAMAGE) allPureDamage = false
+				else if (e0[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) allPureDamage = false
+				else if (e0[5] & EFFECT_MODIFIER_ON_CASTER) allPureDamage = false
+				else if (!(e0[4] & EFFECT_TARGET_ENEMIES)) allPureDamage = false
+			}
+			this.IS_BOUNDABLE_DAMAGE = allPureDamage
+			// PARCOURS UNIQUE d'EFFECTS : classification vulné (inchangée) + construction des
+			// vues précompilées Heal/Danger — lignes ORIGINALES, ordre d'EFFECTS conservé,
+			// tableaux créés au premier ajout seulement (null = vide).
+			// Item dont TOUS les effets sont des dégâts directs sur ennemi, sans multiplicateur par
+			// nombre de cibles. Le BFS les conserve même si leur premier score est nul.
+			this.IS_VULNERABILITY = false
+			this.ORIGIN_SENSITIVE = false
+			var selfTpRaw = 0
+			this.IS_HEAL_ITEM = false
+			this.IS_DANGER_ITEM = false
+			this.HEAL_EFFECTS_ALLY_LEEK = null
+			this.HEAL_EFFECTS_ALLY_SUMMON = null
+			this.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK = null
+			this.DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON = null
+			this.DANGER_VULNE_EFFECTS_ENEMY_LEEK = null
+			this.DANGER_VULNE_EFFECTS_ENEMY_SUMMON = null
+			for (var eff in this.EFFECTS) {
+				var t = eff[0]
+				if (t == EFFECT_PUSH || t == EFFECT_ATTRACT || t == EFFECT_REPEL
+					|| t == EFFECT_INVERT || t == EFFECT_TELEPORT
+					|| t == EFFECT_SUMMON || t == EFFECT_RESURRECT) this.ORIGIN_SENSITIVE = true
+				var mask = eff[4]
+				var onCaster = eff[5] & EFFECT_MODIFIER_ON_CASTER
+				// Qualification "item menaçant" : volontairement GÉNÉRALE — aucun filtre de
+				// masque, de profil ni ON_CASTER. Elle répond à « cet item peut-il compter
+				// dans une danger map ? » ; le filtrage fin vit dans les vues ci-dessous.
+				if (t == EFFECT_DAMAGE || t == EFFECT_LIFE_DAMAGE || t == EFFECT_POISON
+					|| t == EFFECT_DEBUFF || t == EFFECT_TOTAL_DEBUFF || t == EFFECT_VULNERABILITY || t == EFFECT_ABSOLUTE_VULNERABILITY) {
+					this.IS_DANGER_ITEM = true
+				}
+				// Auto-buff de TP PLAT : l'effet doit pouvoir viser son propre lanceur, par le bit
+				// CASTER du masque ou par le modificateur ON_CASTER. Jet minimal (value1 seul) et
+				// aucun facteur critique, comme tous les jets du danger.
+				if (t == EFFECT_RAW_BUFF_TP && ((mask & EFFECT_TARGET_CASTER) || onCaster)) selfTpRaw += eff[1]
+				if (t == EFFECT_DEBUFF || t == EFFECT_TOTAL_DEBUFF || t == EFFECT_VULNERABILITY || t == EFFECT_ABSOLUTE_VULNERABILITY) {
+					this.IS_VULNERABILITY = true
+					// Vues vulné : PAS de filtre ON_CASTER — la chaîne de vulnés ne
+					// discrimine que par masque de cible.
+					if (mask & EFFECT_TARGET_ENEMIES) {
+						if (mask & EFFECT_TARGET_NON_SUMMONS) {
+							if (this.DANGER_VULNE_EFFECTS_ENEMY_LEEK == null) this.DANGER_VULNE_EFFECTS_ENEMY_LEEK = []
+							push(this.DANGER_VULNE_EFFECTS_ENEMY_LEEK, eff)
+						}
+						if (mask & EFFECT_TARGET_SUMMONS) {
+							if (this.DANGER_VULNE_EFFECTS_ENEMY_SUMMON == null) this.DANGER_VULNE_EFFECTS_ENEMY_SUMMON = []
+							push(this.DANGER_VULNE_EFFECTS_ENEMY_SUMMON, eff)
+						}
+					}
+				}
+				// Vues dégâts : mêmes exclusions que l'ancien getItemDanger (ON_CASTER exclu).
+				if (!onCaster && (t == EFFECT_DAMAGE || t == EFFECT_LIFE_DAMAGE || t == EFFECT_POISON) && (mask & EFFECT_TARGET_ENEMIES)) {
+					if (mask & EFFECT_TARGET_NON_SUMMONS) {
+						if (this.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK == null) this.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK = []
+						push(this.DANGER_DAMAGE_EFFECTS_ENEMY_LEEK, eff)
+					}
+					if (mask & EFFECT_TARGET_SUMMONS) {
+						if (this.DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON == null) this.DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON = []
+						push(this.DANGER_DAMAGE_EFFECTS_ENEMY_SUMMON, eff)
+					}
+				}
+				// Heal : qualification HISTORIQUE (sans exiger ALLIES — ne change pas la
+				// qualification d'un healer) + vues par profil (ALLIES + type requis).
+				if (!onCaster && ((t == EFFECT_HEAL && eff[3] == 0) || t == EFFECT_BOOST_MAX_LIFE)) {
+					this.IS_HEAL_ITEM = true
+					if (mask & EFFECT_TARGET_ALLIES) {
+						if (mask & EFFECT_TARGET_NON_SUMMONS) {
+							if (this.HEAL_EFFECTS_ALLY_LEEK == null) this.HEAL_EFFECTS_ALLY_LEEK = []
+							push(this.HEAL_EFFECTS_ALLY_LEEK, eff)
+						}
+						if (mask & EFFECT_TARGET_SUMMONS) {
+							if (this.HEAL_EFFECTS_ALLY_SUMMON == null) this.HEAL_EFFECTS_ALLY_SUMMON = []
+							push(this.HEAL_EFFECTS_ALLY_SUMMON, eff)
+						}
+					}
+				}
+			}
+			// Signatures immuables de géométrie (mutualisation des builds Danger/Heal) : même
+			// clé de lancement -> mêmes cellules directement lançables, même clé complète ->
+			// même expansion d'AoE. Packs injectifs : launch types 1..7 (4 bits), portées
+			// < 1024 (10 bits), AREA 1..15 (5 bits).
+			// L'item ne compte que s'il PEUT rendre plus de TP qu'il n'en coute, critique compris
+			// — le net reel, lui, depend du critique du caster et de ce qu'il porte deja, donc il
+			// se calcule au tour. Seule adrenaline (5 TP pour 1) passe aujourd'hui : manumission
+			// (2 pour 6) et convoitise (1 pour 2) restent perdantes meme critiques.
+			var selfTpMax = round(selfTpRaw * CRITICAL_FACTOR)
+			this.SELF_TP_RAW = (selfTpMax > this.COST) ? selfTpRaw : 0
+			this.SELF_TP_COST = (this.SELF_TP_RAW > 0) ? this.COST : 0
+			this.LAUNCH_GEOMETRY_KEY = ((this.NEEDLOS ? 1 : 0) << 24) | (this.LAUNCHTYPE << 20) | (this.MINRANGE << 10) | this.MAXRANGE
+			this.FULL_GEOMETRY_KEY = (this.LAUNCH_GEOMETRY_KEY << 5) | this.AREA
+		}
+	}
+
+	static MaxUses(id) {
+		return isChip(id) ? getChipMaxUses(id) : getWeaponMaxUses(id)
+	}
+	
+	static Cooldown(id, entity) {
+		// isChip est un appel moteur, refait pour chaque item de chaque entité à chaque
+		// construction d'état. ITEMINFO couvre getAllChips() + getAllWeapons(), donc tout
+		// inventaire possible : l'information y est déjà figée au préchargement.
+		return ITEMINFO[id].IS_WEAPON ? 0 : getCooldown(id, entity)
+	}
+    
+	/* Distance d'AoE maximale couverte par le type de zone (3 pour un cercle 3). */
+	AreaMax(item, Area) {
+		var MapReturn = [
+			AREA_CIRCLE_1: 1,
+			AREA_CIRCLE_2: 2,
+			AREA_CIRCLE_3: 3,
+			AREA_FIRST_INLINE: 0,
+			AREA_LASER_LINE: 0,
+			AREA_PLUS_1: 1,
+			AREA_PLUS_2: 2,
+			AREA_PLUS_3: 3,
+			AREA_POINT: 0,
+			AREA_SQUARE_1: 2,
+			AREA_SQUARE_2: 4,
+			AREA_X_1: 2,
+			AREA_X_2: 4,
+			AREA_X_3: 6
+		]
+		return MapReturn[Area]
+	}
+}

@@ -1,0 +1,114 @@
+// Importance d'un vivant sur la carte : caractéristiques utiles et équipement tactique.
+include("../imports")
+
+// Même clé que les rendements d'équipement : ID et classe réelle/virtuelle.
+// Inventaire immuable pendant la recherche, cache vidé au début de chaque tour.
+global ENTITY_TACTICAL_IMPORTANCE_CACHE = [:]
+
+class EntityImportance {
+    // Importance de BASE : buffs, entraves et états temporaires ne la modifient pas.
+    // Bases, inventaire et STATIC sont immuables pendant la recherche : le mémo scalaire
+    // reste valide au clone et à la résurrection. Un mort vaut toujours zéro.
+    static value(stat) {
+        if (stat.LIFE <= 0) return 0
+        if (stat.IMPORTANCE_MEMO != null) return stat.IMPORTANCE_MEMO
+        stat.IMPORTANCE_MEMO = potential(stat) * tpMultiplier(stat) * mpMultiplier(stat)
+        return stat.IMPORTANCE_MEMO
+    }
+
+    // Potentiel par équipement : caractéristiques de BASE utilisables + tactique.
+    // Sans multiplicateur PT/PM : composante de l'importance de présence/vie.
+    // Le potentiel courant du terme couplé vit dans ScoringClass.characteristicsPotential.
+    // Bases et inventaire immuables : le mémo reste valide sur les clones et au revive.
+    static potential(stat) {
+        if (stat.POTENTIAL_MEMO != null) return stat.POTENTIAL_MEMO
+        stat.POTENTIAL_MEMO = statsImportance(stat) + tacticalImportance(stat)
+        return stat.POTENTIAL_MEMO
+    }
+
+    // Score d'une caractéristique de base, par tranches cumulées et sans saut aux seuils.
+    // Mélange 50 % linéaire + 50 % coût de capital normalisé (capital x2 pour que les
+    // premiers points valent 1). Coûts inspirés de Leek Wars : 0.5 / 1 / 2 / 3,
+    // soit ici des poids 1 / 1.5 / 2.5 / 3.5, réglables directement ci-dessous.
+    // Ce n'est pas le capital dépensé : nos bases incluent aussi les composants.
+    static statScore(value) {
+        if (value <= 0) return 0
+        var score = min(value, 200) * 1
+        if (value > 200) score += min(value - 200, 200) * 1.5
+        if (value > 400) score += min(value - 400, 200) * 2.5
+        if (value > 600) score += (value - 600) * 3.5
+        return score
+    }
+
+    // Poids de départ à régler manuellement, indépendants de scoring/coefficients.
+    // Pas de vie, de bouclier posé, de renvoi posé, de poison ni de soin en cours.
+    // Sagesse/résistance décrivent la capacité à produire du soin/des protections.
+    static statsImportance(stat) {
+        var bases = stat.BASE_STATS
+        var score = 0
+        if (Equipment.canUseStrength(stat))   score += statScore(bases[STAT_STRENGTH]) * 1
+        if (Equipment.canUseWisdom(stat))     score += statScore(bases[STAT_WISDOM]) * 1
+        if (Equipment.canUseResistance(stat)) score += statScore(bases[STAT_RESISTANCE]) * 1
+        if (Equipment.canUseScience(stat))    score += statScore(bases[STAT_SCIENCE]) * 1
+        if (Equipment.canUseMagic(stat))      score += statScore(bases[STAT_MAGIC]) * 1
+        // La puissance n'a pas ce barème de capital : conserver son poids linéaire.
+        if (Equipment.canUsePower(stat))      score += max(0, bases[STAT_POWER]) * 5
+
+        // Critique pour tous ; part renvoi seulement si l'équipement peut en poser.
+        var agility = max(0, bases[STAT_AGILITY])
+        score += statScore(min(1000, agility)) * 0.3
+        if (Equipment.canUseDamageReturn(stat)) score += statScore(agility) * 0.7
+        return score
+    }
+
+    // PT/PM de BASE : ni les dépenses, ni les buffs/entraves ne changent l'importance.
+    // Paliers non cumulés, réglables indépendamment des coefficients de buffs.
+    static tpMultiplier(stat) {
+        var tp = stat.BASE_STATS[STAT_TP]
+        if (tp >= 32) return 1.9
+        if (tp >= 24) return 1.6
+        if (tp >= 16) return 1.2
+        if (tp >= 8) return 0.8
+        return 0.5
+    }
+
+    static mpMultiplier(stat) {
+        // Facteur propre aux statiques, aussi utilisé pour la vie et la vie maximale.
+        if (stat.STATIC) return 0.2
+        // Ignorer l'enracinement courant : cet effet ne modifie pas la mobilité de base.
+        var mp = stat.BASE_STATS[STAT_MP]
+        if (mp >= 8) return 1.5
+        if (mp >= 6) return 1.4
+        if (mp >= 4) return 1.2
+        if (mp >= 2) return 0.9
+        return 0.6
+    }
+
+    // Chaque puce possédée ajoute son poids, indépendamment du cooldown et de la portée.
+    // Tous les porteurs sont couverts, pas seulement le bulbe tacticien.
+    static tacticalImportance(stat) {
+        var key = stat.ID * 2 + (stat instanceof BulbState ? 1 : 0)
+        if (key in ENTITY_TACTICAL_IMPORTANCE_CACHE) return ENTITY_TACTICAL_IMPORTANCE_CACHE[key]
+        var score = 0
+        for (var item in stat.INVENTORY) score += tacticalChipScore(item)
+        ENTITY_TACTICAL_IMPORTANCE_CACHE[key] = score
+        return score
+    }
+
+    // Poids tactique fixe par puce possédée, réglable à la main.
+    // Les poids se cumulent avant les multiplicateurs de PT/PM de base.
+    static tacticalChipScore(item) {
+        switch (item) {
+            case CHIP_INVERSION:     return 70
+            case CHIP_TELEPORTATION:  return 120
+            case CHIP_LIBERATION:    return 120
+            case CHIP_MANUMISSION:   return 50
+            case CHIP_BOXING_GLOVE:  return 10
+            case CHIP_GRAPPLE:       return 10
+            case CHIP_JUMP:          return 60
+            case CHIP_REPOTTING:     return 20
+            case CHIP_HEMORRHAGE:    return 60
+            default:                 return 0
+        }
+    }
+}

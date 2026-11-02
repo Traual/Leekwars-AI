@@ -1,0 +1,76 @@
+// Informations du plateau réutilisées par les coefficients de scoring.
+include("../imports")
+
+global SCORING_STATE_CONSTANTS_CACHE = [:]
+global ROOT_SCORING_CONSTANTS = null
+
+class TargetWeights {
+    LEEKS = 0
+    SUMMONS = 0
+}
+
+class ScoringStateConstants {
+    TARGETS_BY_SIDE = [:]
+    ALLIES_BY_SIDE = [:]
+    SHIELD_FACTOR_BY_SIDE = [:]
+    COOLDOWN_PRESSURE_BY_SIDE = [:]
+
+    constructor(State) {
+        this.SHIELD_FACTOR_BY_SIDE = ShieldProfile.factorsBySide(State)
+        this.COOLDOWN_PRESSURE_BY_SIDE = CooldownScoring.pressuresBySide(State)
+        var totalLeeks = 0
+        var totalSummons = 0
+        // Compter d'abord les vivants de chaque camp dans les objets de résultat.
+        for (var id: var stat in State) {
+            if (!(stat.SIDE in this.TARGETS_BY_SIDE)) this.TARGETS_BY_SIDE[stat.SIDE] = new TargetWeights()
+            if (stat.LIFE <= 0) continue
+            var own = this.TARGETS_BY_SIDE[stat.SIDE]
+            if (stat.IS_SUMMON) {
+                own.SUMMONS++
+                totalSummons++
+            } else {
+                own.LEEKS++
+                totalLeeks++
+            }
+        }
+        // Même population pour les renvois sur alliés (porteur inclus) et les dégâts adverses.
+        for (var side: var weights in this.TARGETS_BY_SIDE) {
+            var allies = new TargetWeights()
+            var ownTotal = weights.LEEKS + weights.SUMMONS
+            allies.LEEKS = ownTotal > 0 ? weights.LEEKS / ownTotal : 0
+            allies.SUMMONS = ownTotal > 0 ? weights.SUMMONS / ownTotal : 0
+            this.ALLIES_BY_SIDE[side] = allies
+            // Adversaires : tous les autres camps, BR inclus.
+            var leeks = totalLeeks - weights.LEEKS
+            var summons = totalSummons - weights.SUMMONS
+            var total = leeks + summons
+            weights.LEEKS = total > 0 ? leeks / total : 0
+            weights.SUMMONS = total > 0 ? summons / total : 0
+        }
+    }
+
+    // Appelé sur l'état réel à la racine : Me est vivant, camp/type fixes au tour.
+    // BaseHash encode les autres vivants ; le cache est vidé au changement de joueur.
+    // Le profil de bouclier lit seulement inventaires et bases immuables, plus les vivants.
+    // Ni blessures, buffs, cooldowns ni dépenses : aucune clé de stats courantes à ajouter.
+    // Résultat immuable une fois construit, partagé par toutes les branches de l'arbre.
+    static get(State, BaseHash) {
+        if (BaseHash in SCORING_STATE_CONSTANTS_CACHE) return SCORING_STATE_CONSTANTS_CACHE[BaseHash]
+        var constants = new ScoringStateConstants(State)
+        SCORING_STATE_CONSTANTS_CACHE[BaseHash] = constants
+        return constants
+    }
+
+    // Petite échelle de potentiel critique : meilleure caractéristique de BASE utile.
+    // Force/magie pour l'attaque, sagesse/science/résistance pour le soutien.
+    // Ni vie ni agilité : pas de score d'importance, ni de coefficient qui se renforce lui-même.
+    // BASE_STATS est immuable en branche : mémo scalaire copié avec le porteur.
+    static criticalScale(stat) {
+        if (stat.CRITICAL_SCALE_MEMO != null) return stat.CRITICAL_SCALE_MEMO
+        var bases = stat.BASE_STATS
+        var highest = max(max(bases[STAT_STRENGTH], bases[STAT_MAGIC]),
+            max(bases[STAT_WISDOM], max(bases[STAT_SCIENCE], bases[STAT_RESISTANCE])))
+        stat.CRITICAL_SCALE_MEMO = 1 + max(0, highest) / 100
+        return stat.CRITICAL_SCALE_MEMO
+    }
+}

@@ -1,0 +1,1311 @@
+/*
+ * WalkCells : les cellules accessibles d'une entité, par "layer" de mobilité
+ * (marche / +jump / +télépo / +les deux), calculées par un BFS bitmap.
+ *
+ *   - getWalk / getJump / getTele / getTPJ : fetchers par layer (cache ou calcul)
+ *   - canJump / canTele                    : checks de capacité
+ *   - getMaxLayer(state, e, bh)            : la map d'accessibilité maximale
+ *   - getAllLayers(state, e, bh)           : les quatre layers + .MAX (LayersClass)
+ */
+
+include("../imports")
+
+/*
+ * Conteneur des quatre layers d'accessibilité + la layer max. Chaque layer est une
+ * map [cellule -> coût MP] ; une layer désactivée est [:].
+ */
+class LayersClass {
+	WALK
+	JUMP
+	TELEPORTATION
+	TELEPORTATION_AND_JUMP
+	MAX
+	// [cellule -> le dernier pas y est-il un saut ?], rempli paresseusement par
+	// WalkCellsClass.lastStepIsJump. Porte par les couches : il ne peut pas survivre aux
+	// cartes dont il derive.
+	LAST_IS_JUMP
+	ME_FINGERPRINT // clé déjà calculée par getAllLayers pour Me ; null pour les autres
+	constructor(w, j, t, tj, m) {
+		this.WALK = w
+		this.JUMP = j
+		this.TELEPORTATION = t
+		this.TELEPORTATION_AND_JUMP = tj
+		this.MAX = m
+		this.LAST_IS_JUMP = [: ]
+	}
+}
+
+class WalkCellsClass {
+
+	// ============================================================================
+	// Capacity checks
+	// ============================================================================
+
+	/* Cooldown effectif de Saut, -1 sans le chip. Mémorisé sur l'objet stat, même contrat que
+	 * CAP_MEMO : copié au clone, périmé par le seul setCooldown. Un clone de Me repart avec un
+	 * patch d'inventaire VIDE, la chaîne serait donc remontée entièrement à chaque nœud. */
+	static jumpCdOf(stats) {
+		var cd = stats.JCD_MEMO
+		if (cd != null) return cd
+		var eff = StateClass.cooldownOf(stats, CHIP_JUMP)
+		cd = (eff == null) ? -1 : eff
+		stats.JCD_MEMO = cd
+		return cd
+	}
+
+	/* Idem pour la Téléportation. */
+	static teleCdOf(stats) {
+		var cd = stats.TCD_MEMO
+		if (cd != null) return cd
+		var eff = StateClass.cooldownOf(stats, CHIP_TELEPORTATION)
+		cd = (eff == null) ? -1 : eff
+		stats.TCD_MEMO = cd
+		return cd
+	}
+
+	static canJump(stats) {
+		var cd = jumpCdOf(stats)
+		if (cd < 0) return false // pas de Jump équipé
+		return (cd == 0 || (stats.ID != Me && cd <= 1)) && stats.TP >= JUMP_COST
+	}
+
+	static canTele(stats) {
+		var cd = teleCdOf(stats)
+		if (cd < 0) return false // pas de Télépo équipée
+		return (cd == 0 || (stats.ID != Me && cd <= 1)) && stats.TP >= TELE_COST
+	}
+
+	// ============================================================================
+	// Per-layer fetchers : cache lookup, compute on miss, store and return.
+	// L'entité et sa clé (cellule, mp) sous BaseHash sont résolues UNE fois par les
+	// composeurs et transmises telles quelles : quatre layers demandées d'affilée les
+	// recalculaient à l'identique quatre fois.
+	// BenchOps wraps the MISS compute ONLY (key + hit stay outside the window):
+	// hits pay zero instrumentation, the "WalkCells" bucket = real pathfinding.
+	// The wrappers below (getMaxLayer & co) are pair-free for the same reason.
+	// ============================================================================
+
+	static getWalk(state, entity, base_hash, stats, hashWalk) {
+		if (hashWalk in WALKABLE_CACHE) return WALKABLE_CACHE[hashWalk]
+		BenchOps.Start("WalkCells")
+		var r = WalkableCells(stats.CELL, LoadObstacleBoard(state, entity, base_hash), stats.MP)
+		WALKABLE_CACHE[hashWalk] = r
+		BenchOps.Stop("WalkCells")
+		return r
+	}
+
+	static getJump(state, entity, base_hash, stats, hashWalk) {
+		if (hashWalk in JUMP_CACHE) return JUMP_CACHE[hashWalk]
+		BenchOps.Start("WalkCells")
+		var r = WalkableCellsWithJump(stats.CELL, LoadObstacleBoard(state, entity, base_hash), stats.MP)
+		JUMP_CACHE[hashWalk] = r
+		BenchOps.Stop("WalkCells")
+		return r
+	}
+
+	static getTele(state, entity, base_hash, stats, hashWalk) {
+		if (hashWalk in TELEPORTATION_CACHE) return TELEPORTATION_CACHE[hashWalk]
+		BenchOps.Start("WalkCells")
+		var r = WalkableCellsWithTeleportation(stats.CELL, LoadObstacleBoard(state, entity, base_hash), stats.MP)
+		TELEPORTATION_CACHE[hashWalk] = r
+		BenchOps.Stop("WalkCells")
+		return r
+	}
+
+	static getTPJ(state, entity, base_hash, stats, hashWalk) {
+		if (hashWalk in TELEPORTATION_AND_JUMP_CACHE) return TELEPORTATION_AND_JUMP_CACHE[hashWalk]
+		BenchOps.Start("WalkCells")
+		var r = WalkableCellsWithTeleportationAndJump(stats.CELL, LoadObstacleBoard(state, entity, base_hash), stats.MP)
+		TELEPORTATION_AND_JUMP_CACHE[hashWalk] = r
+		BenchOps.Stop("WalkCells")
+		return r
+	}
+
+	// ============================================================================
+	// Fetchers "NoEntities" + "Full" (pour le danger) : les entités ne comptent pas
+	// comme obstacles et le budget est TOTAL_MP — le danger représente la menace
+	// max du prochain tour, stable d'un step à l'autre, contre un cache persistant
+	// tout le combat clé (cellule, mp). Approximation assumée : un allié qui joue
+	// avant ne bloquera pas réellement le chemin.
+	// ============================================================================
+
+	static getWalkNoEntitiesFull(stats) {
+		// mp clampé à 0 : un shackle peut stocker TOTAL_MP négatif — non clampé, le signe
+		// s'étend et ÉCRASE le champ CELL de cette clé persistante. mp < 0 marche comme mp = 0.
+		var mp = dangerMpOf(stats)
+		var key = (stats.CELL << 32) | mp
+		if (key in WALKABLE_CACHE_NOENT) return WALKABLE_CACHE_NOENT[key]
+		BenchOps.Start("WalkCells")
+		var r = WalkableCells(stats.CELL, MAP_OBSTACLES_CACHE, mp)
+		WALKABLE_CACHE_NOENT[key] = r
+		BenchOps.Stop("WalkCells")
+		return r
+	}
+
+	static getJumpNoEntitiesFull(stats) {
+		var mp = dangerMpOf(stats) // clampé : voir getWalkNoEntitiesFull
+		var key = (stats.CELL << 32) | mp
+		if (key in JUMP_CACHE_NOENT) return JUMP_CACHE_NOENT[key]
+		BenchOps.Start("WalkCells")
+		var r = WalkableCellsWithJump(stats.CELL, MAP_OBSTACLES_CACHE, mp)
+		JUMP_CACHE_NOENT[key] = r
+		BenchOps.Stop("WalkCells")
+		return r
+	}
+
+	static getTeleNoEntitiesFull(stats) {
+		var mp = dangerMpOf(stats) // clampé : voir getWalkNoEntitiesFull
+		var key = (stats.CELL << 32) | mp
+		if (key in TELE_CACHE_NOENT) return TELE_CACHE_NOENT[key]
+		BenchOps.Start("WalkCells")
+		var r = WalkableCellsWithTeleportation(stats.CELL, MAP_OBSTACLES_CACHE, mp)
+		TELE_CACHE_NOENT[key] = r
+		BenchOps.Stop("WalkCells")
+		return r
+	}
+
+	static getTeleJumpNoEntitiesFull(stats) {
+		var mp = dangerMpOf(stats) // clampé : voir getWalkNoEntitiesFull
+		var key = (stats.CELL << 32) | mp
+		if (key in TELE_JUMP_CACHE_NOENT) return TELE_JUMP_CACHE_NOENT[key]
+		BenchOps.Start("WalkCells")
+		var r = WalkableCellsWithTeleportationAndJump(stats.CELL, MAP_OBSTACLES_CACHE, mp)
+		TELE_JUMP_CACHE_NOENT[key] = r
+		BenchOps.Stop("WalkCells")
+		return r
+	}
+
+	/* La TELEPORTATION sera-t-elle disponible au prochain tour d'une entite non-Me ? Ses TP
+	 * seront recharges -> TOTAL_TP, et son cooldown aura tourne d'ici la -> <= 1.
+	 * Elle a longtemps ete convertie en points de MARCHE, ce qui SOUS-estime son domaine :
+	 * la marche contourne les obstacles, la telepo les traverse (portee 12, sans ligne de
+	 * vue). Une cellule a douze cases derriere un mur etait declaree hors de portee alors
+	 * qu'elle est atteinte d'un pas. Elle a donc sa propre couche, comme pour Me. */
+	static teleNextTurn(stats) {
+		var cd = teleCdOf(stats)
+		return cd >= 0 && cd <= 1 && dangerTpOf(stats) >= TELE_COST
+	}
+
+	/* TP dont l'entite dispose pour SE DEPLACER au prochain tour : ses TP rechargés, plus ce
+	 * qu'un auto-buff de TP rentable lui rapporte net. Le buff se lance AVANT le
+	 * franchissement — le moteur ne l'interdit pas — donc il peut le financer : a 8 TP,
+	 * Adrenaline en rend 12 et la Teleportation devient jouable. Sans cela le palier etait
+	 * exclu ici, et aucun gain ajoute plus bas ne pouvait le rouvrir.
+	 * Facteur critique d'AVANT deplacement : c'est l'ordre qui maximise le budget de marche. */
+	static dangerTpOf(stats) {
+		// Sans cache, DELIBEREMENT : la seule cle exacte porterait le montant deja au ledger,
+		// qu'il faudrait lire pour la construire — le cache couterait alors sa propre cle plus
+		// une lecture de map. Ce qui est cher, la remontee des cooldowns, est cache un cran
+		// plus bas, et ce qui reste ici est nul pour qui ne porte aucun de ces items.
+		var prof = EntityDangerClass.selfTpProfileOf(stats)
+		if (prof == null) return stats.TOTAL_TP
+		// Ce qui TOMBE est encore dans le TP total capture et n'y sera plus quand il agira.
+		var tp = stats.TOTAL_TP - prof[3]
+		if (tp >= prof[1]) tp += EntityDangerClass.selfTpGainAt(prof, DangerComboClass.critFactorOf(stats))
+		return tp
+	}
+
+	/* Budget de MARCHE du prochain tour. Les capacites de franchissement n'y entrent plus :
+	 * elles choisissent la couche, elles n'allongent pas le pas. */
+	static dangerMpOf(stats) {
+		return max(0, stats.TOTAL_MP)
+	}
+
+	/* Couche de deplacement du prochain tour : 0 marche, 1 saut, 2 telepo, 3 les deux.
+	 * Meme cascade que getMaxLayer pour Me, avec les gardes du prochain tour. Elle entre
+	 * dans toutes les cles de geometrie : deux entites de meme cellule et meme MP mais de
+	 * couches differentes ne partagent jamais une entree. */
+	static dangerLayerOf(stats) {
+		var t = teleNextTurn(stats)
+		var j = canJumpNextTurn(stats)
+		if (t && j && dangerTpOf(stats) >= JUMP_TELE_COST) return 3
+		if (t) return 2
+		if (j) return 1
+		return 0
+	}
+
+	/* Jump FUTUR d'une entité non-Me (potentiel de déplacement à son prochain tour) : ses TP
+	 * seront rechargés -> TOTAL_TP, cooldown <= 1 (il aura tourné d'ici là). Ne pas confondre
+	 * avec canJump (TP réellement restants), qui reste le filtre du BFS de Me. */
+	static canJumpNextTurn(stats) {
+		var cd = jumpCdOf(stats)
+		return cd >= 0 && cd <= 1 && dangerTpOf(stats) >= JUMP_COST
+	}
+
+	static getMaxWalkOrJumpNoEntitiesFull(stats) {
+		return getDangerLayerCells(stats, dangerLayerOf(stats))
+	}
+
+	/* Cellules de la couche demandee. L'appelant qui a deja calcule la couche pour sa cle la
+	 * passe telle quelle, plutot que de refaire la cascade de cooldowns. */
+	/* Ce que la couche COUTE en TP a son porteur : il devra le depenser pour atteindre une
+	 * cellule que la marche seule ne donne pas, et ne l'aura plus pour attaquer. */
+	static dangerLayerTpCost(layer) {
+		if (layer == 3) return JUMP_TELE_COST
+		if (layer == 2) return TELE_COST
+		if (layer == 1) return JUMP_COST
+		return 0
+	}
+
+	/* Ce palier est-il jouable au prochain tour de cette entite ? Memes gardes que
+	 * dangerLayerOf, palier par palier. */
+	static dangerTierAvailable(stats, tier) {
+		if (tier == 0) return true
+		if (tier == 1) return canJumpNextTurn(stats)
+		if (tier == 2) return teleNextTurn(stats)
+		return teleNextTurn(stats) && canJumpNextTurn(stats) && dangerTpOf(stats) >= JUMP_TELE_COST
+	}
+
+	static getDangerLayerCells(stats, layer) {
+		if (layer == 3) return getTeleJumpNoEntitiesFull(stats)
+		if (layer == 2) return getTeleNoEntitiesFull(stats)
+		if (layer == 1) return getJumpNoEntitiesFull(stats)
+		return getWalkNoEntitiesFull(stats)
+	}
+
+	// ============================================================================
+	// Composeurs : choisissent le(s) bon(s) fetcher(s) selon les capacités.
+	// ============================================================================
+
+	/*
+	 * La map d'accessibilité maximale (TPJ > TELE > JUMP > WALK). Pour les appelants
+	 * qui ne veulent que l'ensemble des cellules, sans savoir par quelle layer.
+	 */
+	static getMaxLayer(state, entity, base_hash) {
+		var stats = state[entity]
+		// Les deux checks de capacité sont résolus UNE fois : la cascade d'origine relisait le
+		// cooldown de Saut et de Télépo jusqu'à trois fois chacun, en remontant à chaque fois la
+		// chaîne d'inventaire.
+		var cJ = canJump(stats)
+		var cT = canTele(stats)
+		var hashWalk = HashWalkCells(stats.CELL, stats.MP, base_hash)
+		if (cJ && cT && stats.TP >= JUMP_TELE_COST) return getTPJ(state, entity, base_hash, stats, hashWalk)
+		if (cT) return getTele(state, entity, base_hash, stats, hashWalk)
+		if (cJ) return getJump(state, entity, base_hash, stats, hashWalk)
+		return getWalk(state, entity, base_hash, stats, hashWalk)
+	}
+
+	/*
+	 * Les quatre layers + .MAX dans un LayersClass. Pour les appelants qui doivent savoir
+	 * de quelle layer vient chaque cellule (coût d'action du BFS, cooldowns du nœud, MoveTo).
+	 */
+	static getAllLayers(state, entity, base_hash, meFingerprint = null) {
+		var stats = state[entity]
+		var layerKey = null
+		if (entity == Me) {
+			if (meFingerprint == null) meFingerprint = HashWalkCellsWithItemsWithoutBaseHash(stats)
+			layerKey = addValueToBinHash(OFFSET_BASIS ^ base_hash, meFingerprint)
+			if (layerKey in LEEK_LAYERS_CACHE) return LEEK_LAYERS_CACHE[layerKey]
+		}
+		var cJ = canJump(stats)
+		var cT = canTele(stats)
+		var cTJ = cJ && cT && stats.TP >= JUMP_TELE_COST
+		var hashWalk = HashWalkCells(stats.CELL, stats.MP, base_hash)
+		var walk = getWalk(state, entity, base_hash, stats, hashWalk)
+		var jump = cJ  ? getJump(state, entity, base_hash, stats, hashWalk) : [:]
+		var tele = cT  ? getTele(state, entity, base_hash, stats, hashWalk) : [:]
+		var tpj  = cTJ ? getTPJ(state, entity, base_hash, stats, hashWalk)  : [:]
+		var maxLayer = cTJ ? tpj : (cT ? tele : (cJ ? jump : walk))
+		var layers = new LayersClass(walk, jump, tele, tpj, maxLayer)
+		layers.ME_FINGERPRINT = meFingerprint
+		if (layerKey != null) LEEK_LAYERS_CACHE[layerKey] = layers
+		return layers
+	}
+
+	// ============================================================================
+	// Hashing helpers
+	// ============================================================================
+
+	static HashWalkCells(Cell, Mp, BaseHash) {
+		// mp CLAMPÉ à 0, comme dans les fetchers sans entités : une entrave peut le rendre
+		// négatif, et un négatif non clampé étend son signe sur tous les bits hauts — il
+		// ÉCRASE alors le champ cellule, et deux cellules différentes partagent une entrée.
+		// Mesuré : 54 hits servant le domaine de marche d'une AUTRE cellule sur un combat.
+		// Clamper ne perd rien : le BFS traite tout mp <= 0 comme mp = 0.
+		return addValueToBinHash((OFFSET_BASIS ^ BaseHash), (Cell << 32) | max(0, Mp)) // clé (cellule, mp) sous BaseHash
+	}
+
+	/* Fingerprint (cellule, mp, capacités jump/télépo) d'une entité — SANS BaseHash. */
+	/*
+	 * CONTRAT : l'état reçu est TOUJOURS celui de Me — ses trois appelants passent State[Me] ou
+	 * son clone, dont l'identifiant est copié. La disjonction « et si ce n'était pas moi » qui
+	 * tolérait un cooldown de 1 est donc constamment fausse, et « A ou (faux et B) » vaut A, B
+	 * étant une comparaison pure. Les empreintes sortent bit pour bit identiques — condition
+	 * pour que le cache de scores, la clé d'accessibilité et celle de la fuite servent les
+	 * mêmes entrées.
+	 */
+	static HashWalkCellsWithItemsWithoutBaseHash(entity_state) {
+		var Tp = entity_state.TP
+		// Cooldowns pris au mémo, puis RENDUS à leur forme d'origine : -1 y code « chip absent »,
+		// que cette empreinte a toujours vu sous la forme null. Les deux comparaisons qui suivent
+		// restent donc mot pour mot celles qui ont produit toutes les clés existantes.
+		var JumpCooldown = jumpCdOf(entity_state)
+		if (JumpCooldown < 0) JumpCooldown = null
+		var TeleportationCooldown = teleCdOf(entity_state)
+		if (TeleportationCooldown < 0) TeleportationCooldown = null
+		var CanJump = JumpCooldown == 0 && Tp >= JUMP_COST
+		var CanTeleport = TeleportationCooldown == 0 && Tp >= TELE_COST
+		// 3e seuil : la layer TPJ exige le coût CUMULÉ des deux chips. Sans ce bit, deux états
+		// aux DOMAINES accessibles différents (TPJ vs TELE) partageaient une clé -> le cache de
+		// fuite servait un min sur des cellules inaccessibles.
+		var CanBoth = CanJump && CanTeleport && Tp >= JUMP_TELE_COST
+		var BaseValue = (CanJump ? 1 : 0) | (CanTeleport ? 2 : 0) | (CanBoth ? 4 : 0)
+		// mp clampé : même écrasement du champ cellule qu'en clé de marche sur un mp négatif.
+		return addValueToBinHash((OFFSET_BASIS ^ BaseValue), (entity_state.CELL << 32) | max(0, entity_state.MP))
+	}
+
+	// ============================================================================
+	// Helpers de tri / coefficients (consommés par le module Actions)
+	// ============================================================================
+
+	/* Cellules de MAX triées par coût croissant, layers pénalisées (walk < jump < télépo < les deux). */
+	static LoadSortedWalkCells(layers) {
+		var TmpArray = []
+		var TmpMapScoring = [: ]
+		var Walk = layers.WALK
+		var Jump = layers.JUMP
+		var Tele = layers.TELEPORTATION
+		var TeleAndJump = layers.TELEPORTATION_AND_JUMP
+		for (var c:var mp in layers.MAX) {
+			push(TmpArray, c)
+			TmpMapScoring[c] = (c in Walk) ? Walk[c] :
+            			 		(c in Jump) ? Jump[c] + 100 :
+            			 		(c in Tele) ? Tele[c] + 1000 :
+            			 		TeleAndJump[c] + 10000
+		}
+		return arraySort(TmpArray, function(a, b) {
+			return TmpMapScoring[a] - TmpMapScoring[b]
+		})
+	}
+
+	// ============================================================================
+	// Helpers d'exécution (une fois par action réelle, à l'émission)
+	// ============================================================================
+
+	/*
+	 * Se déplace réellement vers `cell`, en jouant les jump/télépos nécessaires.
+	 * Renvoie [succès, phase, code moteur] et CONTRÔLE chaque étape : moveTowardCell renvoie
+	 * les MP dépensés (0 n'est PAS un échec en soi — déjà sur place), la vérité est donc
+	 * getCell() ; une chip ne réussit que si son résultat est strictement positif. Au
+	 * premier échec, aucune étape suivante n'est exécutée.
+	 */
+	static MoveTo(cell, State, BaseHash) {
+		if (cell == getCell()) return [true, null, 0]
+		var layers = WalkCellsClass.getAllLayers(State, Me, BaseHash)
+		var ActionsToGet = getActionsToGet(State[Me].CELL, cell, layers.TELEPORTATION_AND_JUMP, layers.TELEPORTATION, layers.JUMP, layers.WALK)
+		// Plantes à zone en jeu : la marche suit le chemin canonique, celui dont la simulation a
+		// déroulé les réveils, au lieu du chemin choisi par le moteur.
+		var canonical = AwakeningClass.livingZones(State) != null
+		for (var Action in ActionsToGet) {
+			if (canonical) {
+				if (!walkCanonical(Action.From, State, BaseHash)) return [false, "move_step", getCell()]
+			} else {
+				moveTowardCell(Action.From)
+			}
+			if (getCell() != Action.From) return [false, "move_step", getCell()]
+			var start = getCell()
+			var r = useChipOnCell(Action.Item, Action.To)
+			if (r <= 0) return [false, "chip", r]
+			if (getCell() != Action.To) return [false, "chip_land", getCell()]
+			if (canonical) markRealEntries(State, start, Action.To)
+		}
+		if (canonical) {
+			if (!walkCanonical(cell, State, BaseHash)) return [false, "final_move", getCell()]
+		} else {
+			moveTowardCell(cell)
+		}
+		if (getCell() != cell) return [false, "final_move", getCell()]
+		return [true, null, 0]
+	}
+
+	/* Marche case par case sur le chemin canonique ; faux si un pas échoue ou si je meurs en route. */
+	static walkCanonical(target, State, BaseHash) {
+		var path = AwakeningClass.canonicalPath(State, BaseHash, getCell(), target, getMP(), getSide())
+		if (path == null) return false
+		for (var c in path) {
+			var from = getCell()
+			moveTowardCell(c, 1)
+			if (getCell() != c || getLife() <= 0) return false
+			markRealEntries(State, from, c)
+		}
+		return true
+	}
+
+	/* Note les zones que je viens d'entrer : le moteur ne me laissera plus les réveiller ce tour. */
+	static markRealEntries(State, fromCell, toCell) {
+		var zones = AwakeningClass.livingZones(State)
+		if (zones == null) return;
+		for (var z in zones) {
+			if (CellClass.getDist(toCell, z[1]) <= z[2] && CellClass.getDist(fromCell, z[1]) > z[2]) {
+				REAL_AWAKEN_MARKS[z[0] * 65536 + Me] = true
+			}
+		}
+	}
+
+	/*
+	 * Quelle puce pose le DERNIER cast du chemin vers `cell` ?
+	 * La reconstruction ci-dessous est la seule source de verite, et elle a TROIS issues, pas
+	 * deux : elle remonte le chemin a l'envers, essaie le saut puis la telepo, et RECULE D'UN
+	 * PAS DE MARCHE quand aucun des deux n'atterrit directement. Un chemin peut donc finir par
+	 * un saut suivi de marche, sans qu'aucun saut n'atteigne la cellule d'arrivee — deduire la
+	 * telepo de l'absence de saut immediat est faux. On appelle donc la reconstruction telle
+	 * quelle : les deux ne peuvent pas diverger.
+	 * Le premier argument ne sert qu'a un message de debug, le parcours etant purement arriere.
+	 * Memoise par cellule sur les couches, qui portent deja la reponse pour des centaines de
+	 * nœuds et meurent avec les cartes dont elle derive.
+	 */
+	static lastStepIsJump(layers, cell) {
+		if (cell in layers.LAST_IS_JUMP) return layers.LAST_IS_JUMP[cell]
+		var path = getActionsToGet(cell, cell, layers.TELEPORTATION_AND_JUMP, layers.TELEPORTATION, layers.JUMP, layers.WALK)
+		var n = count(path)
+		var isJump = n > 0 && path[n - 1].Item == CHIP_JUMP
+		layers.LAST_IS_JUMP[cell] = isJump
+		return isJump
+	}
+
+	static getActionsToGet(from, to, AccesMpTeleportationAndJump, AccesMpTeleportation, AccesMpJump, AccesMpWalk) {
+
+		// shortcut references
+		var maps = [
+			"walk": AccesMpWalk,
+			"jump": AccesMpJump,
+			"tp":   AccesMpTeleportation,
+			"tpJump": AccesMpTeleportationAndJump
+		]
+
+		// downgrade capabilities per layer
+		var downgrade = [
+			"tpJump": ['jump', 'tp'],
+			"tp":     ['tp'],
+			"jump":   ['jump']
+		]
+
+		var cur = to
+		var actions = []
+
+		// determine current layer
+		var layer = null
+		if (cur in maps["walk"]) layer = 'walk'
+		else if (cur in maps["jump"]) layer = 'jump'
+		else if (cur in maps["tp"]) layer = 'tp'
+		else if (cur in maps["tpJump"]) layer = 'tpJump'
+
+		while (true) {
+
+			if (!layer) {
+				debug(cur+" isn't reachable")
+				break
+			}
+
+			// once we're in walk-only layer, stop: walking handled separately
+			if (layer == 'walk') {
+				break
+			}
+
+			var progressed = false
+			var curCost = maps[layer][cur]
+
+			// 1) try each downgrade ability in order
+			for (var ability in downgrade[layer]) {
+				// compute neighbours for this ability
+				var neighs
+				if (ability == 'jump') {
+					neighs = CellClass.getAreaDist(AREA_CIRCLE_3, cur)
+				} else { // ability == 'tp'
+					var tpInfo = ITEMINFO[CHIP_TELEPORTATION]
+					neighs = CellClass.getDisc(cur, tpInfo.MINRANGE, tpInfo.MAXRANGE)
+				}
+
+				// compute next layer after using this ability
+				var nextLayer = (layer == 'tpJump')
+					? (ability == 'jump' ? 'tp' : 'jump')
+					: 'walk'
+				var nextCosts = maps[nextLayer]
+
+				// look for a valid landing cell
+				for (var neigh:var dist in neighs) {
+					if (neigh in nextCosts && nextCosts[neigh] <= curCost) {
+						// prepend action
+						var chip = (ability == 'jump' ? CHIP_JUMP : CHIP_TELEPORTATION)
+						unshift(actions, new ActionClass(chip, neigh, cur))
+						cur = neigh
+						progressed = true
+						layer = nextLayer
+						break
+					}
+				}
+				if (progressed) break
+			}
+			if (progressed) continue
+
+			// 2) fallback: walk one step in same layer (no Action recorded here)
+			for (var neigh:var dist in CellClass.getAreaDist(AREA_CIRCLE_1, cur)) {
+				if (neigh in maps[layer] && maps[layer][neigh] < curCost) {
+					cur = neigh
+					progressed = true
+					break
+				}
+			}
+			if (progressed) continue;
+
+			// 3) no way forward
+			debug("Cannot find path from "+from+" to "+to)
+			break
+		}
+
+		// now cur ∈ AccesMpWalk: caller should walk from 'from' to 'cur' automatically
+		return actions
+	}
+
+	// ============================================================================
+	// BFS bitmap (couples packés, 18 ints de 35 bits)
+	// ============================================================================
+	// Layout par couple : bits 0-17 = ligne paire, bits 24-40 = ligne impaire ; le trou
+	// 18-23 bloque la contamination inter-lignes (shift max utilisé : 6).
+	// Le plateau d'obstacles arrive PRÊT (LoadObstacleBoard) et se lit sans jamais s'écrire ;
+	// sans entité à retirer, c'est MAP_OBSTACLES_CACHE lui-même, sans copie.
+	// Les ACC* sont des tableaux locaux de 19 ints (18 couples + sentinelle pour lire
+	// ACC[c+1] sans garde), clonés d'ACC_TEMPLATE.
+	// Retour : map { cellule => mp requis }, cellule de départ incluse à 0.
+
+	/* Cellules accessibles en N pas de marche. */
+	static WalkableCells(from, OBS, mp) {
+		var _final = [from : 0]
+		if (mp == 0) return _final
+
+		var acc = clone(ACC_TEMPLATE)
+		var startCouple = MAP_CELL_TO_COUPLE[from]
+		acc[startCouple] = MAP_CELL_TO_BITMASK[from]
+
+		var lo = startCouple
+		var hi = startCouple
+
+		for (var m = 1; m <= mp; m++) {
+			if (lo) lo--
+			if (hi != 17) hi++
+			var iterEnd = hi
+			var cur = acc[lo]
+			var oSources = (lo > 0 ? acc[lo - 1] | cur : cur) >> 24
+			hi = lo - 1   // sentinel "no emit yet"
+
+			for (var c = lo; c <= iterEnd; c++) {
+				var next = acc[c + 1]
+				var eSources = cur | next
+				var d = ((oSources | (oSources << 1)) | ((eSources | (eSources >> 1)) << 24)) & OBS[c] & ~cur
+				if (d) {
+					acc[c] = cur | d
+					if (hi < lo) lo = c
+					hi = c
+					var ct = CELL_BY_LSB[c]
+					while (d) { var lsb = d & -d; _final[ct[lsb]] = m; d ^= lsb }
+				}
+				cur = next
+				oSources = eSources >> 24
+			}
+			if (hi < lo) break   // wave saturated
+		}
+		return _final
+	}
+
+	/* Cellules accessibles en N pas + au plus 1 jump (chebyshev <= 3) n'importe où sur le chemin. */
+	static WalkableCellsWithJump(from, OBS, mp) {
+		var _final = [from : 0]
+
+		var acc  = clone(ACC_TEMPLATE)
+		var accj = clone(ACC_TEMPLATE)
+		var startCouple = MAP_CELL_TO_COUPLE[from]
+		var startBit = MAP_CELL_TO_BITMASK[from]
+		acc[startCouple]  = startBit
+		accj[startCouple] = startBit
+
+		// === Initial jump (chebyshev ≤ 3 from start) — emitted at mp=0 ===
+		var srcE = startBit & 262143
+		var srcO = startBit >> 24
+		// Bornes en LIGNES et non en couples. Un couple porte DEUX lignes, or le saut initial
+		// ne franchit que trois lignes et un pas de marche une seule : borner en couples fait
+		// grandir la fenêtre deux fois trop vite. Ligne de départ = couple x 2, plus un si le
+		// bit tombe dans la moitié impaire.
+		// La borne retirée est exactement celle dont le masque est nul : sur une ligne PAIRE,
+		// srcO vaut zéro donc le couple le plus haut ne produit rien ; sur une ligne IMPAIRE,
+		// c'est srcE qui est nul et le couple le plus bas qui ne produit rien.
+		var rowBase = (startCouple << 1) | (startBit > 262143 ? 1 : 0)
+		var loRow = rowBase - 3
+		var lo_j = loRow > 0 ? loRow >> 1 : 0
+		var hiRow = rowBase + 3
+		var hi_j = hiRow < 35 ? hiRow >> 1 : 17
+		var srcE_3 = srcE | (srcE << 1) | (srcE >> 1)
+		var srcO_3 = srcO | (srcO << 1) | (srcO >> 1)
+		var srcO_4 = srcO_3 | (srcO << 2)
+		var srcE_4 = srcE_3 | (srcE >> 2)
+		var sumE_mid = srcE_3 | srcO_4
+		var sumO_mid = srcO_3 | srcE_4
+
+		for (var c = lo_j; c <= hi_j; c++) {
+			var dc0 = startCouple - c
+			var sumE = 0
+			var sumO = 0
+			if (dc0 >= -1 && dc0 <= 1) { sumE = sumE_mid; sumO = sumO_mid }
+			else if (dc0 <= 1) sumE = srcO_4
+			else sumO = srcE_4
+			var cur = accj[c]
+			var d = (sumE | (sumO << 24)) & OBS[c] & ~cur
+			if (d) {
+				accj[c] = cur | d
+				var ct = CELL_BY_LSB[c]
+				while (d) { var lsb = d & -d; _final[ct[lsb]] = 0; d ^= lsb }
+			}
+		}
+
+		if (mp == 0) return _final
+
+		var lo_a = startCouple
+		var hi_a = startCouple
+
+		for (var m = 1; m <= mp; m++) {
+			// Step 1: walk acc, build DELTA
+			if (lo_a) lo_a--
+			if (hi_a != 17) hi_a++
+			var iterEnd_a = hi_a
+			var cur_a = acc[lo_a]
+			var oSources_a = (lo_a > 0 ? acc[lo_a - 1] | cur_a : cur_a) >> 24
+			hi_a = lo_a - 1
+			var DELTA = [:]
+			for (var c = lo_a; c <= iterEnd_a; c++) {
+				var next_a = acc[c + 1]
+				var eSources_a = cur_a | next_a
+				var d_a = ((oSources_a | (oSources_a << 1)) | ((eSources_a | (eSources_a >> 1)) << 24)) & OBS[c] & ~cur_a
+				if (d_a) {
+					acc[c] = cur_a | d_a
+					DELTA[c] = d_a
+					if (hi_a < lo_a) lo_a = c
+					hi_a = c
+				}
+				cur_a = next_a
+				oSources_a = eSources_a >> 24
+			}
+
+			// Step 2: walk accj + emit
+			// Le front de saut avance d'une LIGNE par point de mouvement, donc d'un couple
+			// toutes les deux rondes : accj tient dans les lignes [départ-3-m, départ+3+m],
+			// le saut depuis DELTA compris (DELTA est à m lignes au plus, son saut à trois de
+			// plus). Les couples retirés sont entièrement nuls, la boucle n'y écrivait rien.
+			var loRow_j = rowBase - 3 - m
+			lo_j = loRow_j > 0 ? loRow_j >> 1 : 0
+			var hiRow_j = rowBase + 3 + m
+			hi_j = hiRow_j < 35 ? hiRow_j >> 1 : 17
+			var iterEnd_j = hi_j
+			var cur_j = accj[lo_j]
+			var oSources_j = (lo_j > 0 ? accj[lo_j - 1] | cur_j : cur_j) >> 24
+			for (var c = lo_j; c <= iterEnd_j; c++) {
+				var next_j = accj[c + 1]
+				var eSources_j = cur_j | next_j
+				var d_j = ((oSources_j | (oSources_j << 1)) | ((eSources_j | (eSources_j >> 1)) << 24)) & OBS[c] & ~cur_j
+				if (d_j) {
+					accj[c] = cur_j | d_j
+					var ct = CELL_BY_LSB[c]
+					while (d_j) { var lsb = d_j & -d_j; _final[ct[lsb]] = m; d_j ^= lsb }
+				}
+				cur_j = next_j
+				oSources_j = eSources_j >> 24
+			}
+
+			// Step 3: jump cheb==3 from DELTA → accj (factored kernel via shifted ke_*)
+			for (var sc: var v in DELTA) {
+				var e = v & 262143
+				var o = v >> 24
+				var e_2 = (e << 1) | (e >> 2)
+				var o_2 = (o << 2) | (o >> 1)
+				var e_4 = e_2 | e | (e >> 1)
+				var o_4 = o_2 | (o << 1) | o
+				var ke_2 = e_2 << 24
+				var ke_4 = e_4 << 24
+
+				if (sc >= 2) {
+					var c2 = sc - 2
+					var cur2 = accj[c2]
+					var d2 = ke_4 & OBS[c2] & ~cur2
+					if (d2) {
+						accj[c2] = cur2 | d2
+						var ct = CELL_BY_LSB[c2]
+						while (d2) { var lsb = d2 & -d2; _final[ct[lsb]] = m; d2 ^= lsb }
+					}
+					var c1 = sc - 1
+					var cur1 = accj[c1]
+					var d1 = (o_4 | ke_2) & OBS[c1] & ~cur1
+					if (d1) {
+						accj[c1] = cur1 | d1
+						var ct = CELL_BY_LSB[c1]
+						while (d1) { var lsb = d1 & -d1; _final[ct[lsb]] = m; d1 ^= lsb }
+					}
+				} else if (sc) {
+					var cur1 = accj[0]
+					var d1 = (o_4 | ke_2) & OBS[0] & ~cur1
+					if (d1) {
+						accj[0] = cur1 | d1
+						var ct = CELL_BY_LSB[0]
+						while (d1) { var lsb = d1 & -d1; _final[ct[lsb]] = m; d1 ^= lsb }
+					}
+				}
+
+				var cur_s = accj[sc]
+				var ds = (o_2 | ke_2) & OBS[sc] & ~cur_s
+				if (ds) {
+					accj[sc] = cur_s | ds
+					var ct = CELL_BY_LSB[sc]
+					while (ds) { var lsb = ds & -ds; _final[ct[lsb]] = m; ds ^= lsb }
+				}
+
+				if (sc <= 15) {
+					var c1 = sc + 1
+					var cur1 = accj[c1]
+					var d1 = (o_2 | ke_4) & OBS[c1] & ~cur1
+					if (d1) {
+						accj[c1] = cur1 | d1
+						var ct = CELL_BY_LSB[c1]
+						while (d1) { var lsb = d1 & -d1; _final[ct[lsb]] = m; d1 ^= lsb }
+					}
+					var c2 = sc + 2
+					var cur2 = accj[c2]
+					var d2 = o_4 & OBS[c2] & ~cur2
+					if (d2) {
+						accj[c2] = cur2 | d2
+						var ct = CELL_BY_LSB[c2]
+						while (d2) { var lsb = d2 & -d2; _final[ct[lsb]] = m; d2 ^= lsb }
+					}
+				} else if (sc <= 16) {
+					var cur1 = accj[17]
+					var d1 = (o_2 | ke_4) & OBS[17] & ~cur1
+					if (d1) {
+						accj[17] = cur1 | d1
+						var ct = CELL_BY_LSB[17]
+						while (d1) { var lsb = d1 & -d1; _final[ct[lsb]] = m; d1 ^= lsb }
+					}
+				}
+			}
+		}
+		return _final
+	}
+
+	/* Cellules accessibles en N pas + au plus 1 télépo (chebyshev <= 12). */
+	static WalkableCellsWithTeleportation(from, OBS, mp) {
+		var _final = [from : 0]
+
+		var acc  = clone(ACC_TEMPLATE)
+		var acct = clone(ACC_TEMPLATE)
+		var startCouple = MAP_CELL_TO_COUPLE[from]
+		var startBit = MAP_CELL_TO_BITMASK[from]
+		acc[startCouple]  = startBit
+		acct[startCouple] = startBit
+
+		// === Initial tele (chebyshev ≤ 12) — emitted at mp=0 ===
+		// Asymmetric same/diff kernel handles staggered-grid cross-row contributions.
+		var srcE = startBit & 262143
+		var srcO = startBit >> 24
+		var lo_t = startCouple > 6 ? startCouple - 6 : 0
+		var hi_t = startCouple < 11 ? startCouple + 6 : 17
+
+		var srcE_3 = srcE | (srcE << 1) | (srcE >> 1)
+		var srcE_7 = srcE_3 | (srcE_3 << 2) | (srcE_3 >> 2)
+		var srcE_11 = srcE_7 | (srcE_7 << 2) | (srcE_7 >> 2)
+		var diff_eS = srcE_11 | (srcE >> 6)
+		var same_eS = diff_eS | (srcE << 6)
+		var srcO_3 = srcO | (srcO << 1) | (srcO >> 1)
+		var srcO_7 = srcO_3 | (srcO_3 << 2) | (srcO_3 >> 2)
+		var srcO_11 = srcO_7 | (srcO_7 << 2) | (srcO_7 >> 2)
+		var diff_oS = srcO_11 | (srcO << 6)
+		var same_oS = diff_oS | (srcO >> 6)
+
+		for (var c = lo_t; c <= hi_t; c++) {
+			var dc = startCouple - c
+			var sumE = same_eS
+			if (dc <= 5) sumE |= diff_oS
+			var sumO = same_oS
+			if (dc >= -5) sumO |= diff_eS
+			var cur = acct[c]
+			var d = ((sumE | (sumO << 24)) & OBS[c]) & ~cur
+			if (d) {
+				acct[c] = cur | d
+				// chunk decode (d dense at init)
+				var t = BINARY_TO_CELL_BY_COUPLE[c]
+				if ((d & 262143) != 0) {
+					var ch = d & 63
+					if (ch != 0) for (var cell in t[0][ch]) _final[cell] = 0
+					ch = (d >> 6) & 63
+					if (ch != 0) for (var cell in t[1][ch]) _final[cell] = 0
+					ch = (d >> 12) & 63
+					if (ch != 0) for (var cell in t[2][ch]) _final[cell] = 0
+				}
+				if ((d >> 24) != 0) {
+					var ch = (d >> 24) & 63
+					if (ch != 0) for (var cell in t[3][ch]) _final[cell] = 0
+					ch = (d >> 30) & 63
+					if (ch != 0) for (var cell in t[4][ch]) _final[cell] = 0
+					ch = (d >> 36) & 31
+					if (ch != 0) for (var cell in t[5][ch]) _final[cell] = 0
+				}
+			}
+		}
+
+		if (mp == 0) return _final
+
+		var lo_a = startCouple
+		var hi_a = startCouple
+		var lo_tw = lo_t
+		var hi_tw = hi_t
+		var TGT = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+		for (var m = 1; m <= mp; m++) {
+			// Step 1: walk acc, fill DELTA
+			if (lo_a) lo_a--
+			if (hi_a != 17) hi_a++
+			var iterEnd_a = hi_a
+			var cur_a = acc[lo_a]
+			var oSources_a = (lo_a > 0 ? acc[lo_a - 1] | cur_a : cur_a) >> 24
+			hi_a = lo_a - 1
+			var DELTA = [:]
+			for (var c = lo_a; c <= iterEnd_a; c++) {
+				var next_a = acc[c + 1]
+				var eSources_a = cur_a | next_a
+				var d_a = ((oSources_a | (oSources_a << 1)) | ((eSources_a | (eSources_a >> 1)) << 24)) & OBS[c] & ~cur_a
+				if (d_a) {
+					acc[c] = cur_a | d_a
+					DELTA[c] = d_a
+					if (hi_a < lo_a) lo_a = c
+					hi_a = c
+				}
+				cur_a = next_a
+				oSources_a = eSources_a >> 24
+			}
+
+			// Step 2: walk acct, emit
+			if (lo_tw) lo_tw--
+			if (hi_tw != 17) hi_tw++
+			var iterEnd_t = hi_tw
+			var cur_t = acct[lo_tw]
+			var oSources_t = (lo_tw > 0 ? acct[lo_tw - 1] | cur_t : cur_t) >> 24
+			for (var c = lo_tw; c <= iterEnd_t; c++) {
+				var next_t = acct[c + 1]
+				var eSources_t = cur_t | next_t
+				var d_t = ((oSources_t | (oSources_t << 1)) | ((eSources_t | (eSources_t >> 1)) << 24)) & OBS[c] & ~cur_t
+				if (d_t) {
+					acct[c] = cur_t | d_t
+					var ct = CELL_BY_LSB[c]
+					while (d_t) { var lsb = d_t & -d_t; _final[ct[lsb]] = m; d_t ^= lsb }
+				}
+				cur_t = next_t
+				oSources_t = eSources_t >> 24
+			}
+
+			// Step 3: cheb==12 tele from DELTA → acct via v-direct TGT accumulator.
+			// Gap bits 18-23 block cross-row contamination for shifts ≤ 6.
+			for (var sc: var v in DELTA) {
+				var v_1 = v | (v << 1) | (v >> 1)
+				var v_3 = v_1 | (v_1 << 2) | (v_1 >> 2)
+				var full_combo = v_3 | (v_3 << 3) | (v_3 >> 3)
+				var shift_combo = (v << 6) | (v >> 6)
+				if (sc >= 6) TGT[sc - 6] |= full_combo
+				if (sc <= 11) TGT[sc + 6] |= full_combo
+				if (sc >= 5 && sc <= 12) {
+					TGT[sc - 5] |= shift_combo; TGT[sc - 4] |= shift_combo
+					TGT[sc - 3] |= shift_combo; TGT[sc - 2] |= shift_combo
+					TGT[sc - 1] |= shift_combo; TGT[sc]     |= shift_combo
+					TGT[sc + 1] |= shift_combo; TGT[sc + 2] |= shift_combo
+					TGT[sc + 3] |= shift_combo; TGT[sc + 4] |= shift_combo
+					TGT[sc + 5] |= shift_combo
+				} else {
+					var tlo_s = sc > 5 ? sc - 5 : 0
+					var thi_s = sc < 12 ? sc + 5 : 17
+					for (var tc = tlo_s; tc <= thi_s; tc++) TGT[tc] |= shift_combo
+				}
+			}
+			for (var c: var reachedBits in TGT) {
+				if (reachedBits == 0) continue
+				TGT[c] = 0
+				var cur = acct[c]
+				var d = reachedBits & OBS[c] & ~cur
+				if (d) {
+					acct[c] = cur | d
+					var ct = CELL_BY_LSB[c]
+					while (d) { var lsb = d & -d; _final[ct[lsb]] = m; d ^= lsb }
+					if (c < lo_tw) lo_tw = c
+					if (c > hi_tw) hi_tw = c
+				}
+			}
+		}
+		return _final
+	}
+
+	/* Cellules accessibles en N pas + au plus 1 jump + au plus 1 télépo, dans n'importe quel
+	 * ordre. Suit 4 ensembles (acc, acct, accj, acctj) ; seul acctj émet dans _final
+	 * (les 3 autres y sont inclus). */
+	static WalkableCellsWithTeleportationAndJump(from, OBS, mp) {
+		var _final = [from : 0]
+
+		var acc   = clone(ACC_TEMPLATE)
+		var accj  = clone(ACC_TEMPLATE)
+		var acct  = clone(ACC_TEMPLATE)
+		var acctj = clone(ACC_TEMPLATE)
+		var startCouple = MAP_CELL_TO_COUPLE[from]
+		var startBit = MAP_CELL_TO_BITMASK[from]
+		acc[startCouple]   = startBit
+		accj[startCouple]  = startBit
+		acct[startCouple]  = startBit
+		acctj[startCouple] = startBit
+
+		var srcE = startBit & 262143
+		var srcO = startBit >> 24
+
+		// Init Step A: TotalJump(start) → accj
+		var srcE_3j = srcE | (srcE << 1) | (srcE >> 1)
+		var srcO_3j = srcO | (srcO << 1) | (srcO >> 1)
+		var srcO_4j = srcO_3j | (srcO << 2)
+		var srcE_4j = srcE_3j | (srcE >> 2)
+		var sumE_midJ = srcE_3j | srcO_4j
+		var sumO_midJ = srcO_3j | srcE_4j
+		var lo_j = startCouple > 2 ? startCouple - 2 : 0
+		var hi_j = startCouple < 15 ? startCouple + 2 : 17
+		for (var c = lo_j; c <= hi_j; c++) {
+			var dc0 = startCouple - c
+			var sumE = 0, sumO = 0
+			if (dc0 >= -1 && dc0 <= 1) { sumE = sumE_midJ; sumO = sumO_midJ }
+			else if (dc0 <= 1) sumE = srcO_4j
+			else sumO = srcE_4j
+			accj[c] |= (sumE | (sumO << 24)) & OBS[c]
+		}
+
+		// Init Step B: TotalTele(start) → acct
+		var srcE_3t = srcE | (srcE << 1) | (srcE >> 1)
+		var srcE_7t = srcE_3t | (srcE_3t << 2) | (srcE_3t >> 2)
+		var srcE_11t = srcE_7t | (srcE_7t << 2) | (srcE_7t >> 2)
+		var diff_eT = srcE_11t | (srcE >> 6)
+		var same_eT = diff_eT | (srcE << 6)
+		var srcO_3t = srcO | (srcO << 1) | (srcO >> 1)
+		var srcO_7t = srcO_3t | (srcO_3t << 2) | (srcO_3t >> 2)
+		var srcO_11t = srcO_7t | (srcO_7t << 2) | (srcO_7t >> 2)
+		var diff_oT = srcO_11t | (srcO << 6)
+		var same_oT = diff_oT | (srcO >> 6)
+		var lo_t = startCouple > 6 ? startCouple - 6 : 0
+		var hi_t = startCouple < 11 ? startCouple + 6 : 17
+		for (var c = lo_t; c <= hi_t; c++) {
+			var dc = startCouple - c
+			var sumE = same_eT
+			if (dc <= 5) sumE |= diff_oT
+			var sumO = same_oT
+			if (dc >= -5) sumO |= diff_eT
+			acct[c] |= (sumE | (sumO << 24)) & OBS[c]
+		}
+
+		var lo_tj = lo_t
+		var hi_tj = hi_t
+		var TGT_INIT = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+		// Init Step C: TotalTele(accj) → TGT_INIT (multi-source, accumulate)
+		for (var sc = lo_j; sc <= hi_j; sc++) {
+			var v = accj[sc]
+			if (v == 0) continue
+			var e = v & 262143
+			var o = v >> 24
+			var e_3 = e | (e << 1) | (e >> 1)
+			var e_7 = e_3 | (e_3 << 2) | (e_3 >> 2)
+			var e_11 = e_7 | (e_7 << 2) | (e_7 >> 2)
+			var diff_e_s = e_11 | (e >> 6)
+			var same_e_s = diff_e_s | (e << 6)
+			var o_3 = o | (o << 1) | (o >> 1)
+			var o_7 = o_3 | (o_3 << 2) | (o_3 >> 2)
+			var o_11 = o_7 | (o_7 << 2) | (o_7 >> 2)
+			var diff_o_s = o_11 | (o << 6)
+			var same_o_s = diff_o_s | (o >> 6)
+			var combo_mid = (same_e_s | diff_o_s) | ((same_o_s | diff_e_s) << 24)
+			var combo_p6 = same_e_s | ((same_o_s | diff_e_s) << 24)
+			var combo_n6 = (same_e_s | diff_o_s) | (same_o_s << 24)
+			if (sc >= 6) TGT_INIT[sc - 6] |= combo_p6
+			if (sc <= 11) TGT_INIT[sc + 6] |= combo_n6
+			var clo = sc > 5 ? sc - 5 : 0
+			var chi = sc < 12 ? sc + 5 : 17
+			for (var c = clo; c <= chi; c++) TGT_INIT[c] |= combo_mid
+		}
+
+		// Init Step D: TotalJump(acct) → TGT_INIT (multi-source, accumulate)
+		for (var sc = lo_t; sc <= hi_t; sc++) {
+			var v = acct[sc]
+			if (v == 0) continue
+			var e = v & 262143
+			var o = v >> 24
+			var e_3 = e | (e << 1) | (e >> 1)
+			var o_3 = o | (o << 1) | (o >> 1)
+			var o_4 = o_3 | (o << 2)
+			var e_4 = e_3 | (e >> 2)
+			var combo_mid_j = (e_3 | o_4) | ((o_3 | e_4) << 24)
+			var combo_p2_target = e_4 << 24
+			var combo_n2_target = o_4
+			if (sc >= 2) TGT_INIT[sc - 2] |= combo_p2_target
+			if (sc <= 15) TGT_INIT[sc + 2] |= combo_n2_target
+			var jlo = sc > 0 ? sc - 1 : 0
+			var jhi = sc < 17 ? sc + 1 : 17
+			for (var c = jlo; c <= jhi; c++) TGT_INIT[c] |= combo_mid_j
+		}
+
+		// Sweep TGT_INIT → acctj (emit at mp=0, dense chunk decode)
+		for (var c: var reachedBits in TGT_INIT) {
+			if (reachedBits == 0) continue
+			var d = reachedBits & OBS[c] & ~acctj[c]
+			if (d) {
+				acctj[c] |= d
+				var t = BINARY_TO_CELL_BY_COUPLE[c]
+				if ((d & 262143) != 0) {
+					var ch = d & 63
+					if (ch != 0) for (var cell in t[0][ch]) _final[cell] = 0
+					ch = (d >> 6) & 63
+					if (ch != 0) for (var cell in t[1][ch]) _final[cell] = 0
+					ch = (d >> 12) & 63
+					if (ch != 0) for (var cell in t[2][ch]) _final[cell] = 0
+				}
+				if ((d >> 24) != 0) {
+					var ch = (d >> 24) & 63
+					if (ch != 0) for (var cell in t[3][ch]) _final[cell] = 0
+					ch = (d >> 30) & 63
+					if (ch != 0) for (var cell in t[4][ch]) _final[cell] = 0
+					ch = (d >> 36) & 31
+					if (ch != 0) for (var cell in t[5][ch]) _final[cell] = 0
+				}
+				if (c < lo_tj) lo_tj = c
+				if (c > hi_tj) hi_tj = c
+			}
+		}
+
+		if (mp == 0) return _final
+
+		var lo_a = startCouple, hi_a = startCouple
+		var lo_aj_w = lo_j, hi_aj_w = hi_j
+		var lo_at_w = lo_t, hi_at_w = hi_t
+		var lo_atj_w = lo_tj, hi_atj_w = hi_tj
+		var TGT = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+		for (var m = 1; m <= mp; m++) {
+			// Step 1: walk acc, capture DELTA_ACC
+			if (lo_a) lo_a--
+			if (hi_a != 17) hi_a++
+			var iterEnd_a = hi_a
+			var cur_a = acc[lo_a]
+			var oSrc_a = (lo_a > 0 ? acc[lo_a - 1] | cur_a : cur_a) >> 24
+			hi_a = lo_a - 1
+			var DELTA_ACC = [:]
+			for (var c = lo_a; c <= iterEnd_a; c++) {
+				var next = acc[c + 1]
+				var eSrc = cur_a | next
+				var d = ((oSrc_a | (oSrc_a << 1)) | ((eSrc | (eSrc >> 1)) << 24)) & OBS[c] & ~cur_a
+				if (d) {
+					acc[c] = cur_a | d
+					DELTA_ACC[c] = d
+					if (hi_a < lo_a) lo_a = c
+					hi_a = c
+				}
+				cur_a = next
+				oSrc_a = eSrc >> 24
+			}
+
+			// Step 2: walk acct, capture DELTA_ACCT
+			if (lo_at_w) lo_at_w--
+			if (hi_at_w != 17) hi_at_w++
+			var iterEnd_at = hi_at_w
+			var cur_at = acct[lo_at_w]
+			var oSrc_at = (lo_at_w > 0 ? acct[lo_at_w - 1] | cur_at : cur_at) >> 24
+			var DELTA_ACCT = [:]
+			for (var c = lo_at_w; c <= iterEnd_at; c++) {
+				var next = acct[c + 1]
+				var eSrc = cur_at | next
+				var d = ((oSrc_at | (oSrc_at << 1)) | ((eSrc | (eSrc >> 1)) << 24)) & OBS[c] & ~cur_at
+				if (d) {
+					acct[c] = cur_at | d
+					DELTA_ACCT[c] = d
+				}
+				cur_at = next
+				oSrc_at = eSrc >> 24
+			}
+
+			// Step 3: walk accj, capture DELTA_ACCJ
+			if (lo_aj_w) lo_aj_w--
+			if (hi_aj_w != 17) hi_aj_w++
+			var iterEnd_aj = hi_aj_w
+			var cur_aj = accj[lo_aj_w]
+			var oSrc_aj = (lo_aj_w > 0 ? accj[lo_aj_w - 1] | cur_aj : cur_aj) >> 24
+			var DELTA_ACCJ = [:]
+			for (var c = lo_aj_w; c <= iterEnd_aj; c++) {
+				var next = accj[c + 1]
+				var eSrc = cur_aj | next
+				var d = ((oSrc_aj | (oSrc_aj << 1)) | ((eSrc | (eSrc >> 1)) << 24)) & OBS[c] & ~cur_aj
+				if (d) {
+					accj[c] = cur_aj | d
+					DELTA_ACCJ[c] = d
+				}
+				cur_aj = next
+				oSrc_aj = eSrc >> 24
+			}
+
+			// Step 4: walk acctj, emit at m
+			if (lo_atj_w) lo_atj_w--
+			if (hi_atj_w != 17) hi_atj_w++
+			var iterEnd_atj = hi_atj_w
+			var cur_atj = acctj[lo_atj_w]
+			var oSrc_atj = (lo_atj_w > 0 ? acctj[lo_atj_w - 1] | cur_atj : cur_atj) >> 24
+			for (var c = lo_atj_w; c <= iterEnd_atj; c++) {
+				var next = acctj[c + 1]
+				var eSrc = cur_atj | next
+				var d = ((oSrc_atj | (oSrc_atj << 1)) | ((eSrc | (eSrc >> 1)) << 24)) & OBS[c] & ~cur_atj
+				if (d) {
+					acctj[c] = cur_atj | d
+					var ct = CELL_BY_LSB[c]
+					while (d) { var lsb = d & -d; _final[ct[lsb]] = m; d ^= lsb }
+				}
+				cur_atj = next
+				oSrc_atj = eSrc >> 24
+			}
+
+			// Step 5+6: tele(DELTA_ACC) → acct (via TGT)  +  jump(DELTA_ACC) → accj
+			for (var sc: var v in DELTA_ACC) {
+				// tele kernel (v-direct)
+				var v_1 = v | (v << 1) | (v >> 1)
+				var v_3 = v_1 | (v_1 << 2) | (v_1 >> 2)
+				var full_combo = v_3 | (v_3 << 3) | (v_3 >> 3)
+				var shift_combo = (v << 6) | (v >> 6)
+				if (sc >= 6) TGT[sc - 6] |= full_combo
+				if (sc <= 11) TGT[sc + 6] |= full_combo
+				if (sc >= 5 && sc <= 12) {
+					TGT[sc - 5] |= shift_combo; TGT[sc - 4] |= shift_combo
+					TGT[sc - 3] |= shift_combo; TGT[sc - 2] |= shift_combo
+					TGT[sc - 1] |= shift_combo; TGT[sc]     |= shift_combo
+					TGT[sc + 1] |= shift_combo; TGT[sc + 2] |= shift_combo
+					TGT[sc + 3] |= shift_combo; TGT[sc + 4] |= shift_combo
+					TGT[sc + 5] |= shift_combo
+				} else {
+					var tlo_s = sc > 5 ? sc - 5 : 0
+					var thi_s = sc < 12 ? sc + 5 : 17
+					for (var tc = tlo_s; tc <= thi_s; tc++) TGT[tc] |= shift_combo
+				}
+
+				// jump kernel (split e/o, asymmetric) — direct OR into accj (no emit, no & ~cur)
+				var e = v & 262143
+				var o = v >> 24
+				var e_2 = (e << 1) | (e >> 2)
+				var o_2 = (o << 2) | (o >> 1)
+				var e_4 = e_2 | e | (e >> 1)
+				var o_4 = o_2 | (o << 1) | o
+				var ke_2 = e_2 << 24
+				var ke_4 = e_4 << 24
+				if (sc >= 2) {
+					accj[sc - 2] |= ke_4 & OBS[sc - 2]
+					accj[sc - 1] |= (o_4 | ke_2) & OBS[sc - 1]
+				} else if (sc) {
+					accj[0] |= (o_4 | ke_2) & OBS[0]
+				}
+				accj[sc] |= (o_2 | ke_2) & OBS[sc]
+				if (sc <= 15) {
+					accj[sc + 1] |= (o_2 | ke_4) & OBS[sc + 1]
+					accj[sc + 2] |= o_4 & OBS[sc + 2]
+				} else if (sc <= 16) {
+					accj[17] |= (o_2 | ke_4) & OBS[17]
+				}
+				if (sc - 2 < lo_aj_w) lo_aj_w = sc - 2 < 0 ? 0 : sc - 2
+				if (sc + 2 > hi_aj_w) hi_aj_w = sc + 2 > 17 ? 17 : sc + 2
+			}
+			// sweep TGT → acct (no emit)
+			for (var c: var reachedBits in TGT) {
+				if (reachedBits == 0) continue
+				TGT[c] = 0
+				var d = reachedBits & OBS[c] & ~acct[c]
+				if (d) {
+					acct[c] |= d
+					if (c < lo_at_w) lo_at_w = c
+					if (c > hi_at_w) hi_at_w = c
+				}
+			}
+
+			// Step 7+8: tele(DELTA_ACCJ) + jump(DELTA_ACCT) → acctj (via TGT, with emit at m)
+			for (var sc: var v in DELTA_ACCJ) {
+				var v_1 = v | (v << 1) | (v >> 1)
+				var v_3 = v_1 | (v_1 << 2) | (v_1 >> 2)
+				var full_combo = v_3 | (v_3 << 3) | (v_3 >> 3)
+				var shift_combo = (v << 6) | (v >> 6)
+				if (sc >= 6) TGT[sc - 6] |= full_combo
+				if (sc <= 11) TGT[sc + 6] |= full_combo
+				if (sc >= 5 && sc <= 12) {
+					TGT[sc - 5] |= shift_combo; TGT[sc - 4] |= shift_combo
+					TGT[sc - 3] |= shift_combo; TGT[sc - 2] |= shift_combo
+					TGT[sc - 1] |= shift_combo; TGT[sc]     |= shift_combo
+					TGT[sc + 1] |= shift_combo; TGT[sc + 2] |= shift_combo
+					TGT[sc + 3] |= shift_combo; TGT[sc + 4] |= shift_combo
+					TGT[sc + 5] |= shift_combo
+				} else {
+					var tlo_s = sc > 5 ? sc - 5 : 0
+					var thi_s = sc < 12 ? sc + 5 : 17
+					for (var tc = tlo_s; tc <= thi_s; tc++) TGT[tc] |= shift_combo
+				}
+			}
+			for (var sc: var v in DELTA_ACCT) {
+				var e = v & 262143
+				var o = v >> 24
+				var e_2 = (e << 1) | (e >> 2)
+				var o_2 = (o << 2) | (o >> 1)
+				var e_4 = e_2 | e | (e >> 1)
+				var o_4 = o_2 | (o << 1) | o
+				var ke_2 = e_2 << 24
+				var ke_4 = e_4 << 24
+				if (sc >= 2) {
+					TGT[sc - 2] |= ke_4
+					TGT[sc - 1] |= o_4 | ke_2
+				} else if (sc) {
+					TGT[0] |= o_4 | ke_2
+				}
+				TGT[sc] |= o_2 | ke_2
+				if (sc <= 15) {
+					TGT[sc + 1] |= o_2 | ke_4
+					TGT[sc + 2] |= o_4
+				} else if (sc <= 16) {
+					TGT[17] |= o_2 | ke_4
+				}
+			}
+			for (var c: var reachedBits in TGT) {
+				if (reachedBits == 0) continue
+				TGT[c] = 0
+				var d = reachedBits & OBS[c] & ~acctj[c]
+				if (d) {
+					acctj[c] |= d
+					var ct = CELL_BY_LSB[c]
+					while (d) { var lsb = d & -d; _final[ct[lsb]] = m; d ^= lsb }
+					if (c < lo_atj_w) lo_atj_w = c
+					if (c > hi_atj_w) hi_atj_w = c
+				}
+			}
+		}
+		return _final
+	}
+
+	/*
+	 * Plateau d'obstacles pour ce terrain et cette entité ignorée : la carte, moins les cellules
+	 * occupées. Les quatre BFS le reconstruisaient chacun à CHAQUE appel — un clone de dix-huit
+	 * mots plus une soustraction par entité vivante — alors qu'il ne dépend que de ce que
+	 * LoadIgnoreCells mutualise déjà. Même clé, donc même taux de partage : acquis, pas espéré.
+	 * Rendu en LECTURE SEULE : aucun BFS n'y écrit, ils ne font que des `& OBS[c]`.
+	 */
+	static LoadObstacleBoard(EveryStats, EntityToBeIgnored, BaseHash) {
+		var Hash = addValueToBinHash(OFFSET_BASIS ^ BaseHash, EntityToBeIgnored)
+		if (Hash in OBSTACLE_BOARD_CACHE) return OBSTACLE_BOARD_CACHE[Hash]
+		var OBS = clone(MAP_OBSTACLES_CACHE, 1)
+		for (var x in LoadIgnoreCells(EveryStats, EntityToBeIgnored, BaseHash)) {
+			OBS[MAP_CELL_TO_COUPLE[x]] -= MAP_CELL_TO_BITMASK[x]
+		}
+		OBSTACLE_BOARD_CACHE[Hash] = OBS
+		return OBS
+	}
+
+	static LoadIgnoreCells(EveryStats, EntityToBeIgnored, BaseHash) {
+		var Hash = addValueToBinHash(OFFSET_BASIS ^ BaseHash, EntityToBeIgnored)
+		if (Hash in IGNORE_CELLS_CACHE) return IGNORE_CELLS_CACHE[Hash]
+		var _final = []
+		for (var e: var stat in EveryStats) {
+			if (stat.LIFE > 0 && e != EntityToBeIgnored) push(_final, stat.CELL)
+		}
+		IGNORE_CELLS_CACHE[Hash] = _final
+		return _final
+	}
+}

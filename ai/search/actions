@@ -1,0 +1,204 @@
+/* Outils des suites : jouabilité, simulation, scoring exact et placement terminal.
+ * La politique de recherche appartient à OnlineEvolution.
+ */
+include("../imports")
+
+class ActionSuite {
+	static closeOf(node, truncateAt, alreadyValidated = false) {
+		var State = StateClass.materializeNodeState(node)
+		var combinedHfp = combinedHfpOf(node)
+		var covid = node.COVID_CONTEXT
+		if (covid == null) {
+			covid = CovidPlacement.prepare(State)
+			node.COVID_CONTEXT = covid
+		}
+		// Au large, même le coût froid entier tient. Sinon préparer item par item,
+		// avec la même garde, au lieu de refuser un bloc estimé à plusieurs millions.
+		if (!alreadyValidated || getOperations() + OPS_COLD_HEAL + OPS_COLD_PLAN + OPS_SEARCH_MARGIN > truncateAt) {
+			var sideHfp = node.HFP_BY_SIDE[State[Me].SIDE]
+			if (!FinalCell.prepareGeometry(State, truncateAt)) return null
+			if (getOperations() + OPS_SEARCH_MARGIN > truncateAt) return null
+			FinalCell.prewarm(State, node.BASE_HASH, node.CONTEXT_BY_SIDE, combinedHfp, sideHfp)
+		}
+		return FinalCell.evaluate(State, node.BASE_HASH, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, combinedHfp, node.ME_WALK_FINGERPRINT, truncateAt, true, covid)
+	}
+
+	static combinedHfpOf(node) {
+		if (node.COMBINED_HFP == null) {
+			var combined = 0
+			for (var s: var h in node.HFP_BY_SIDE) combined ^= h
+			node.COMBINED_HFP = combined
+		}
+		return node.COMBINED_HFP
+	}
+
+	static simulatePlayable(playable, Workspace, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk) {
+		var act = playable.ACTION
+		var item = act.Item
+		var node = NodeClass.ActionToNodeInTree(act, Workspace, act.From, Walk, playable.COST,
+			ITEMINFO[item], item, act.To, BaseHash, null, StateParent, Context, Hfp, playable.USES)
+		// Tous les candidats de ce parent relisent les mêmes valeurs d'avant action.
+		// Le mémo appartient au nœud immuable, jamais à un autre état ou une autre recherche.
+		// Tester la variable locale évite que l'analyseur réduise le type du champ
+		// à null au moment de lui affecter la map (avertissement dans l'éditeur).
+		var parentValues = StateParent.SCORE_VALUES
+		if (parentValues == null) {
+			parentValues = [:]
+			StateParent.SCORE_VALUES = parentValues
+		}
+		// Un parent ne stocke d'abord que les entités modifiées par son action.
+		// Une entité intacte garde la valeur du plus proche ancêtre qui l'a scorée :
+		// remonter les petits patches évite de recalculer cette même valeur complète.
+		if (StateParent.STATE_PARENT != null) for (var id: var before in node.CLONED) {
+			if (id == Me) continue // sa valeur existe déjà sur tout parent scoré
+			if (before == null || id in parentValues) continue
+			var ancestor = StateParent.STATE_PARENT
+			while (ancestor != null) {
+				var values = ancestor.SCORE_VALUES
+				if (values != null && id in values) {
+					parentValues[id] = values[id]
+					break
+				}
+				ancestor = ancestor.STATE_PARENT
+			}
+		}
+		var score = ScoringClass.getStateScoreFromParent(node, Workspace, ReferenceScore, MySide, parentValues)
+		StateClass.restoreWorkspace(Workspace, node.CLONED)
+		node.CLONED = null
+		node.SCORE = score
+		var gain = score - ReferenceScore
+		return new ScoredActionClass(playable, gain, node)
+	}
+
+	// Chaque racine est simulée et scorée dans son état courant avant son classement.
+	static scoreActions(State, BaseHash, ReferenceScore, MySide, Context, Hfp, StateParent, Walk, pairs, sortResults = true) {
+		var entries = []
+		var Workspace = null
+		for (var playable in pairs) {
+			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) break
+			if (Workspace == null) Workspace = clone(State, 1)
+			push(entries, simulatePlayable(playable, Workspace, BaseHash, ReferenceScore,
+				MySide, Context, Hfp, StateParent, Walk))
+		}
+		return sortResults ? arraySort(entries, function(a, b) { return b.GAIN - a.GAIN }) : entries
+	}
+
+	static estimateKeyOf(playable) {
+		return groupEstimateKey(playable.GROUP, playable.ACTION.RESURRECT_ID)
+	}
+
+	static groupEstimateKey(group, resurrectionTargetId) {
+		var key = group.SIGNATURE
+		if (group.Item == CHIP_RESURRECTION) key = addValueToBinHash(key, resurrectionTargetId + 1)
+		return key
+	}
+
+	static getBaseActions(State, BaseHash, ResurrectId, Walk, localOnly = false, othersOnly = false, onlyItem = null) {
+		var result = [:]
+		var mine = State[Me]
+		var groups = ActionsClass.getEveryActionsInAState(State, Walk, mine.CELL, BaseHash, localOnly, othersOnly, onlyItem)
+		var walkFingerprint = Walk.ME_FINGERPRINT
+		var availability = ActionsClass.availabilityOf(mine)
+		var baseCosts = availability.COSTS
+		var usesByItem = availability.USES
+		for (var group in groups) {
+			var item = group.Item
+			var cost = baseCosts[item]
+			if (item == CHIP_RESURRECTION && ResurrectId == null) continue
+			var playable = resolveGroup(group, mine, Walk, cost, usesByItem[item], ResurrectId, BaseHash, walkFingerprint)
+			if (playable == null) continue
+			var old = result[group.SIGNATURE]
+			if (old == null || playable.ACTION.From == mine.CELL || playable.COST < old.COST) result[group.SIGNATURE] = playable
+		}
+		return mapValues(result)
+	}
+
+	static baseCostOf(mine, item, costs, usesByItem, stocks = null) {
+        var cost = costs[item]
+        if (cost != null) return cost
+        var info = ITEMINFO[item]
+        var stock = stocks == null ? null : stocks[item]
+        if (stock == null) {
+            stock = -1
+            if (StateClass.cooldownOf(mine, item) <= 0) {
+                var uses = StateClass.usesOf(mine, item)
+                if (uses < info.MAX_USES) stock = uses
+            }
+            if (stocks != null) stocks[item] = stock
+        }
+        cost = -1
+        // Amputé interdit aussi de rééquiper une arme. Les puces restent jouables.
+        if (stock >= 0 && !(info.IS_WEAPON && EntityStateClass.hasState(mine, STATE_AMPUTATED))) {
+            usesByItem[item] = stock
+            cost = info.COST + ((info.IS_WEAPON && mine.WEAPON != item) ? 1 : 0)
+            if (cost > mine.TP) cost = -1
+        }
+        costs[item] = cost
+        return cost
+    }
+
+	static resolveGroup(group, mine, Walk, baseCost, uses, ResurrectId, BaseHash = null, WalkFingerprint = null) {
+		var from = null
+		var to = null
+		var cost = baseCost
+		if (group.IS_LOCAL) {
+			if (group.From != mine.CELL) return null // invariant : génération locale du nœud
+			from = mine.CELL
+			to = group.To
+		} else if (mine.CELL in group.ORIGINS) {
+			from = mine.CELL
+			to = group.ORIGINS[from]
+		} else {
+			var choices = null
+			if (BaseHash != null && WalkFingerprint != null) {
+				var budget = mine.TP - baseCost
+				var mask = (budget >= JUMP_COST ? 1 : 0) | (budget >= TELE_COST ? 2 : 0) | (budget >= JUMP_TELE_COST ? 4 : 0)
+				var domain = addValueToBinHash(addValueToBinHash(OFFSET_BASIS ^ BaseHash, WalkFingerprint), mask)
+				choices = ACTION_ORIGIN_CHOICE_CACHE[domain]
+				if (choices == null) { choices = [:]; ACTION_ORIGIN_CHOICE_CACHE[domain] = choices }
+			}
+			if (choices != null && group.SIGNATURE in choices) {
+				var choice = choices[group.SIGNATURE]
+				if (choice == null) return null
+				from = choice.FROM
+				to = choice.TO
+				cost = baseCost + choice.EXTRA_TP
+			} else {
+				var bestRank = MAX_VALUE
+				for (var origin: var aim in group.ORIGINS) {
+					var extra = 0
+					var rank
+					if (origin in Walk.WALK) rank = Walk.WALK[origin]
+					else if (origin in Walk.JUMP) { extra = JUMP_COST; rank = Walk.JUMP[origin] + 100 }
+					else if (origin in Walk.TELEPORTATION) { extra = TELE_COST; rank = Walk.TELEPORTATION[origin] + 1000 }
+					else if (origin in Walk.TELEPORTATION_AND_JUMP) { extra = JUMP_TELE_COST; rank = Walk.TELEPORTATION_AND_JUMP[origin] + 10000 }
+					else continue
+					if (baseCost + extra > mine.TP || rank >= bestRank) continue
+					bestRank = rank
+					from = origin
+					to = aim
+					cost = baseCost + extra
+					// La cellule courante est déjà exclue : une marche ne peut coûter moins de 1.
+					if (rank == 1) break
+				}
+				if (choices != null) choices[group.SIGNATURE] = from == null ? null : new ActionOriginChoiceClass(from, to, cost - baseCost)
+			}
+		}
+		if (from == null) return null
+		var action = new ActionClass(group.Item, from, to)
+		if (group.Item == CHIP_RESURRECTION) action.RESURRECT_ID = ResurrectId
+		return new PlayableActionClass(action, group, cost, uses)
+	}
+
+	static resurrectIdOf(State) {
+		// Chip absente de l'inventaire : la remontée de chaîne de cooldownOf la parcourrait en
+		// entier pour rien, et cette fonction est appelée à chaque développement de nœud.
+		if (!I_HAVE_RESURRECTION) return null
+		var MyStats = State[Me]
+		var resCd = StateClass.cooldownOf(MyStats, CHIP_RESURRECTION)
+		if (resCd == null || resCd > 0) return null
+		if (StateClass.usesOf(MyStats, CHIP_RESURRECTION) >= ITEMINFO[CHIP_RESURRECTION].MAX_USES) return null
+		if (MyStats.TP < ITEMINFO[CHIP_RESURRECTION].COST) return null
+		return ResurrectionClass.ScoringWichId(State).ID
+	}
+}

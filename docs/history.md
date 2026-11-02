@@ -1,5 +1,9 @@
 # Historique des recherches et mesures jusqu’au 31 octobre 2026
 
+Les chemins `New_AI/` et les noms terminés par `.leek` cités ici décrivent les
+versions historiques. Depuis le 2 novembre 2026, les sources courantes sont dans
+`ai/`, sans extension ; voir l'[organisation actuelle](../README.md#organisation-du-code).
+
 Ces notes décrivent leurs versions et campagnes datées. Les règles actives sont dans le [README](../README.md). Le beam complet est conservé sur [variable-beam-search](https://github.com/Traual/Leekwars-AI/tree/variable-beam-search), commit `3cb1123`.
 
 

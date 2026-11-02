@@ -1,0 +1,533 @@
+/*
+ * Tous les globals de cache, et le reset de début de tour.
+ */
+
+include("../imports")
+
+function ReloadCacheNewTurn() {
+    TARGETABLECACHE = [: ]
+    ACTION_EFFECT_TARGET_CACHE = [:]
+    ENTITY_COOLDOWNS_BY_ID = [: ]
+    ENTITY_CONST_BY_ID = [: ]
+    EQUIPMENT_STRENGTH_YIELD = [:]
+    EQUIPMENT_DAMAGE_RETURN_YIELD = [:]
+    EQUIPMENT_HEAL_YIELD = [:]
+    EQUIPMENT_BOOST_MAX_LIFE_YIELD = [:]
+    EQUIPMENT_ABSOLUTE_SHIELD_YIELD = [:]
+    EQUIPMENT_RELATIVE_SHIELD_YIELD = [:]
+    EQUIPMENT_POISON_YIELD = [:]
+    EQUIPMENT_SHACKLE_STRENGTH_YIELD = [:]
+    EQUIPMENT_SHACKLE_MAGIC_YIELD = [:]
+    EQUIPMENT_SHACKLE_AGILITY_YIELD = [:]
+    EQUIPMENT_SHACKLE_WISDOM_YIELD = [:]
+    EQUIPMENT_SHACKLE_TP_YIELD = [:]
+    EQUIPMENT_SHACKLE_MP_YIELD = [:]
+    EQUIPMENT_BUFF_STRENGTH_YIELD = [:]
+    EQUIPMENT_BUFF_AGILITY_YIELD = [:]
+    EQUIPMENT_BUFF_WISDOM_YIELD = [:]
+    EQUIPMENT_BUFF_RESISTANCE_YIELD = [:]
+    EQUIPMENT_BUFF_TP_YIELD = [:]
+    EQUIPMENT_BUFF_MP_YIELD = [:]
+    EQUIPMENT_NOVA_VITALITY_YIELD = [:]
+    EQUIPMENT_AFTEREFFECT_YIELD = [:]
+    EQUIPMENT_NOVA_DAMAGE_YIELD = [:]
+    EQUIPMENT_CAN_USE_SCIENCE = [:]
+    EQUIPMENT_LIFE_DAMAGE_YIELD = [:]
+    EQUIPMENT_CAN_USE_POWER = [:]
+    EQUIPMENT_CAN_USE_POISON = [:]
+    EQUIPMENT_CAN_USE_SHACKLES = [:]
+    EQUIPMENT_CAN_USE_NOVA_DAMAGE = [:]
+    EQUIPMENT_CAN_USE_LIFE_DAMAGE = [:]
+    EQUIPMENT_CAN_USE_STRENGTH = [:]
+    EQUIPMENT_CAN_USE_DAMAGE_RETURN = [:]
+    EQUIPMENT_CAN_USE_WISDOM = [:]
+    EQUIPMENT_CAN_USE_RESISTANCE = [:]
+    EQUIPMENT_CAN_USE_MAGIC = [:]
+    ENTITY_TACTICAL_IMPORTANCE_CACHE = [:]
+    SCORING_STATE_CONSTANTS_CACHE = [:]
+    ROOT_SCORING_CONSTANTS = null
+    TURN_EVOLUTION_CONTINUATION = null
+    ALLY_SUPPORT_PROFILE_CACHE = [:]
+    ROOT_ALLY_SUPPORT = null
+    ENEMY_OFFENSE_CACHE = [:]
+    ENEMY_OFFENSE_MIX_MEMO = [:]
+    ROOT_ENEMY_OFFENSE = null
+    MAP_CELL_ITEM_AOE_CACHE = [: ]
+    DANGER_ITEM_AOE_HASH_CACHE = [: ]
+    DANGER_TEAM_PLAN_CACHE = [: ]
+    SEQ_MEMO_BY_SIG = [: ]
+    PLAN_BY_SIG = [: ]
+    CELL_DANGER_GET_CACHE = [: ]
+    COMBO_FROM_ITEM_AOE_CACHE = [: ]
+    CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
+    CELL_RAWDAMAGE_FOR_ME_CACHE = [: ]
+    CELL_FLEE_HEALCOST_CACHE = [: ]
+    AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
+    AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
+    HEAL_COVERAGE_CACHE = [: ]
+    HEAL_CELL_ITEM_AOE_CACHE = [: ]
+    HEAL_COMBO_CACHE = [: ]
+    HEAL_ENTITY_INVENTORY = [: ]
+    NETDAMAGE_CACHE = [: ]
+    HEAL_MAP_CACHE = [: ]
+    HEAL_SIDE_MAP_CACHE = [:]
+    ENTITY_ACTIONS_CACHE = [: ]
+    ACTION_ORIGIN_CHOICE_CACHE = [:]
+    LOCAL_ACTION_GROUP_CACHE = [:]
+    ENTITY_CELLS_MAP_CACHE = [:]
+    LEEK_LAYERS_CACHE = [:]
+    POINT_ACTION_GROUP_CACHE = [:]
+    ACTIONS_ON_ME_CACHE = [: ]
+    ACTIONS_SUMMON_CACHE = [: ]
+    ACTIONS_ON_VOID_CACHE = [: ]
+    PLANT_ZONE_BY_ID = [: ]
+    REAL_AWAKEN_MARKS = [: ]
+    AWAKEN_PATH_CACHE = [: ]
+    AWAKENING_DEPTH = 0
+
+    // Reset obligatoire : getItemsList est clé par ID et filtre cooldown > 1 au moment du
+    // calcul — sans reset, un item en cooldown à la première évaluation resterait exclu tout
+    // le combat (danger sous-estimé). Les listes triées de DANGER_ENTITY_CACHE en dérivent
+    // et leur clé ne porte pas les cooldowns : les deux se rafraîchissent ensemble.
+    DANGER_ENTITY_INVENTORY = [: ]
+    DANGER_SELF_TP_CACHE = [: ]
+    DANGER_ENTITY_CACHE = [: ]
+    DANGER_TEMPLATE_CACHE = [: ]
+
+    // Frontière de tour : les nets qu'ils portent dérivent de listes d'items filtrées par
+    // cooldown (DANGER_ENTITY_CACHE), que leurs clés n'encodent pas. Vidage inconditionnel.
+    PLACEMENT_COST_CACHE = [: ]
+    FINAL_PLACEMENT_CACHE = [: ]
+}
+
+// STATE
+
+// Clé = bit-set des vivants (getHashedEntities) : une résurrection flippe le bit du ressuscité,
+// et son ordre assigné est une fonction pure de (INITIAL_TURN_ORDER, set des vivants).
+global ENTITY_SORTED_BY_TURN_ORDER_CACHE = [: ]
+
+// Proxy de l'initialOrder du moteur : entité de début de combat -> son rang au tour 1.
+// PERSISTANT tout le combat, capturé une fois (summons exclus, comme dans le moteur).
+// Consommé par ResurrectionClass.Update pour l'ordre du ressuscité.
+global INITIAL_TURN_ORDER = [: ]
+
+// CELL
+
+// TABLEAUX et non maps : leur clé est la cellule, un domaine DENSE de 0 à 612. Une lecture
+// de tableau coûte la moitié d'une lecture de map, et ces trois-là sont lus dans les
+// géométries les plus chaudes.
+global CELL_X = []
+global CELL_Y = []
+// Index de la cellule dans XY_FREE, pré-additionné : x · 1024 + y. Les géométries le
+// recalculaient à chaque appel à partir des deux coordonnées, et un voisin s'obtient par
+// simple addition — (x±r)·1024 + y vaut base ± r·1024, et x·1024 + (y±r) vaut base ± r.
+global CELL_BASE = []
+
+// Décroissance de zone : AOE_FALLOFF[d] vaut 1 - d · 0,2. Les formules de conséquences la
+// recalculaient à chaque effet et à chaque cible. La table est remplie par CETTE même
+// expression, donc chaque entrée est le flottant exact qu'elles produisaient.
+global AOE_FALLOFF = []
+
+global TMPOBSTACLES = []
+
+// [pack borné -> mix64(pack)] : les contributions de hash prennent un pack (id, cellule) qui
+// ne compte qu'environ 7 000 valeurs distinctes sur une carte. PERSISTANT (mix64 est pure).
+global MIX64_MEMO = [: ]
+
+// PLATEAU DE BITS (x, y) — pour les dilatations de zone d'AoE.
+// Layout : un ENTIER par ligne x, le bit y dans cet entier. Décalé pour que tout tienne dans
+// les bits positifs avec une bande de garde de 4 de chaque côté : un décalage de zone ne
+// dépasse jamais 3, donc aucune contamination entre lignes ni débordement de signe.
+//   ligne  = x + AOEB_XOFF, bit = y + AOEB_YOFF, et un décalage (dx, dy) devient
+//   out[i] = in[i - dx] << dy (ou >> -dy).
+// AOEB_FREE : les cellules SANS obstacle (le résultat d'une zone les exclut déjà).
+// AOEB_CELL_BY_BIT[ligne][bit isolé] -> cellule, pour décoder un mot en cellules.
+// AOEB_ZERO : gabarit de plateau vide à cloner.
+// Posés par Preload.InitCellClass, jamais vidés (la carte ne change pas).
+global AOEB_XOFF = 0
+global AOEB_YOFF = 0
+global AOEB_ROWS = 0
+// Première et dernière ligne pouvant porter une cellule : les bandes de garde de 4 de
+// chaque côté sont vides par construction.
+global AOEB_FIRST_ROW = 4
+global AOEB_LAST_ROW = 0
+global AOEB_FREE = []
+global AOEB_CELL_BY_BIT = []
+global AOEB_ZERO = []
+// Ligne et bit d'une cellule LIBRE, pré-additionnés : poser une cellule sur un plateau
+// relisait CELL_X et CELL_Y puis refaisait l'offset et le décalage, une fois par cellule et
+// par dilatation. TABLEAUX denses : une cellule bloquée y porte (0, 0), valeur jamais lue
+// puisqu'elle n'est jamais posée sur un plateau, mais qui garde l'indexation directe.
+global AOEB_ROW_OF = []
+global AOEB_BIT_OF = []
+
+// [zone -> décalages (dx, dy, distance d'AoE) à plat, TRIÉS par distance croissante, centre
+// EXCLU] : la forme d'une zone est indépendante de son centre, seuls les obstacles et les bords
+// en retirent des cellules — et ça, le masque AOEB_FREE s'en charge à l'arrivée.
+global AOEB_SHAPE = [: ]
+
+// [x·1024 + y -> cellule LIBRE] : l'inverse de CELL_X/CELL_Y, restreinte aux cellules sans
+// obstacle, bâtie une fois au chargement (Preload.InitCellClass). Les constructeurs de géométrie
+// demandaient la cellule au moteur PUIS son obstacle à TMPOBSTACLES : ici une seule lecture
+// répond aux deux questions, une clé absente valant « hors carte ou bloquée ».
+// x et y sont SIGNÉS (le moteur centre x sur la carte, y peut être négatif) : la clé reste
+// injective tant que |y| < 512, une collision exigeant |y1 - y2| >= 1024. Les lectures les plus
+// débordantes valent un rayon d'AoE hors carte, très loin de cette borne.
+// ATTENTION : la cellule 0 existe — tout lecteur teste `!= null`, jamais la vérité de la valeur.
+global XY_FREE = [: ]
+
+// [(areaType << 10) | centerCell -> [cellule -> distance d'AoE]] : les zones d'items,
+// construites paresseusement par couple réellement demandé (CellClass.getAreaDist).
+// PERSISTANT tout le combat (la carte ne change jamais) — jamais vidé au tour.
+global AREA_DIST_CACHE = [: ]
+
+// Géométries d'items PERSISTANTES, communes à Danger et Heal (buildMapCellItemAoe) — ne
+// dépendent QUE de la map de déplacement statique sans entités (movementKey =
+// (couche << 20) | (cellule << 10) | max(0, MP) — 22 bits, sans ID/camp/cooldowns/stats),
+// de la signature de lancement et de la zone. Read-only, jamais vidées au tour :
+//  - ITEM_LAUNCH_GEOMETRY_CACHE [(movementKey << 25) | LAUNCH_GEOMETRY_KEY -> cellules
+//    directement lançables] ;
+//  - ITEM_FULL_GEOMETRY_CACHE [(movementKey << 30) | FULL_GEOMETRY_KEY -> [cell -> minAoeDist]].
+// L'ASSEMBLAGE par caster (liste d'items cooldown-filtrée) reste, lui, un cache de tour
+// (MAP_CELL_ITEM_AOE_CACHE / HEAL_CELL_ITEM_AOE_CACHE).
+global ITEM_LAUNCH_GEOMETRY_CACHE = [: ]
+global ITEM_FULL_GEOMETRY_CACHE = [: ]
+
+global DISTANCE_CACHE = [: ]
+global LOS_CACHE = [: ]
+global LOS_WITH_BASE_HASH_CACHE = [: ]
+global FILLED_CELLS_CACHE = [: ]
+
+global DISC_CACHE = [: ]
+global CIRCLE_CACHE = [: ]
+// [rayon -> décalages dx·1024 + dy de l'anneau, dans l'ordre d'insertion attendu] : la forme
+// d'un anneau ne dépend pas de son centre. PERSISTANT (la carte ne change jamais).
+global RING_OFFSETS = [: ]
+global CIRCLE_WITH_LOS_CACHE = [: ]
+global DISC_WITH_LOS_CACHE = [: ]
+
+global LINE_CACHE = [: ]
+global POINTS_LINE_CACHE = [: ]
+global LINE_WITH_LOS_CACHE = [: ]
+global POINTS_LINE_WITH_LOS_CACHE = [: ]
+
+global DIAGONAL_CACHE = [: ]
+global POINTS_DIAGONAL_CACHE = [: ]
+global DIAGONAL_WITH_LOS_CACHE = [: ]
+
+global STAR_CACHE = [: ]
+global POINTS_STAR_CACHE = [: ]
+global STAR_WITH_LOS_CACHE = [: ]
+
+global INVERTED_STAR_CACHE = [: ]
+global INVERTED_STAR_WITH_LOS_CACHE = [: ]
+
+global LASERS = [: ]
+
+// ITEMS
+
+global ITEMINFO = [: ]
+
+// Coûts et cooldowns des deux chips de DÉPLACEMENT, sortis d'ITEMINFO une fois pour toutes :
+// les tests de capacité de mobilité et l'empreinte de marche les relisaient à chaque nœud, soit
+// des centaines de milliers de lectures de map pour deux constantes du combat.
+// Posés par Preload.InitItemInfo, juste après le catalogue.
+global JUMP_COST = 0
+global TELE_COST = 0
+global JUMP_TELE_COST = 0
+global JUMP_COOLDOWN = 0
+global TELE_COOLDOWN = 0
+
+// PASSIVE_INFO[arme][type d'effet passif] = ligne complète au layout de
+// getWeaponPassiveEffects (eff[1] = value1) — PAS celui des effets runtime de getEffects.
+// Peuplé une fois dans Preload.InitItemInfo pour toute arme du catalogue portant des effets
+// passifs — les procs simulés dans Consequences lisent leurs valeurs ici, jamais en dur.
+global PASSIVE_INFO = [: ]
+
+// TARGET
+
+global TARGETABLECACHE = [: ]
+global ACTION_EFFECT_TARGET_CACHE = [:]
+// Cooldowns RÉELS des entités autres que Me, relevés une fois par tour : elles ne jouent pas
+// pendant le mien, leurs cooldowns ne bougent donc pas. Map partagée par toutes les racines
+// de l'entité — personne n'écrit une racine non-Me (setCooldown ne touche que le clone de Me,
+// qui reçoit une map neuve).
+// Hash de contenu de la DERNIÈRE couverture produite par coverageOfCell. Le fold se fait
+// pendant la construction, où idx et le hash de contenu sont déjà en variables locales : un
+// second passage sur le tableau les relirait pour rien. Lu immédiatement par le seul appelant.
+global LAST_COVERAGE_HASH = 0
+
+global ENTITY_COOLDOWNS_BY_ID = [: ]
+// Champs d'entité constants pendant le tour (invocateur, camp, inventaire, nom, statique),
+// relevés une seule fois par entité. TURN_ORDER en est EXCLU : le moteur insère un summon
+// dans l'ordre en cours de tour, il est donc relu à chaque construction.
+global ENTITY_CONST_BY_ID = [: ]
+
+// CONSEQUENCES
+
+global CONSEQUENCE_TARGET_CACHE = [: ]
+
+// PLANTES
+
+// Plantes à zone d'Éveil de l'état en cours, [id -> rayon] : relevées à la virtualisation et
+// posées par l'invocation simulée d'une plante. Vidée à chaque tour, les ids virtuels
+// d'invocation étant réattribués d'un tour à l'autre.
+global PLANT_ZONE_BY_ID = [: ]
+// Réveils déclenchés par mes déplacements RÉELS depuis le début de mon tour,
+// [plante * 65536 + déclencheur -> true] : le moteur n'en déclenche qu'un par couple et par
+// tour du déclencheur. Ceux des autres entités ne sont pas observables et sont tenus pour nuls.
+global REAL_AWAKEN_MARKS = [: ]
+// Chemins de marche canoniques quand des plantes à zone sont en jeu.
+global AWAKEN_PATH_CACHE = [: ]
+// Réveil simulé en cours : le moteur ne réveille jamais une plante pendant un réveil.
+global AWAKENING_DEPTH = 0
+
+// SUMMONS
+
+global SUMMONER_LEVEL_TIMES = min(300, getLevel()) / 300
+
+// DANGER MAP
+
+global MAP_CELL_ITEM_AOE_CACHE = [: ]
+
+// Hash de contenu d'une ItemAoeMap, clé (clé de MAP_CELL_ITEM_AOE_CACHE << 10) | cellule.
+// Reset de tour OBLIGATOIRE, comme la map dont il décrit le contenu : l'inventaire
+// disponible est filtré par cooldown au moment du calcul.
+global DANGER_ITEM_AOE_HASH_CACHE = [: ]
+
+// Plans offensifs par (terrain, contexte offensif, camp visé) : qui menace ce camp, avec
+// quelle géométrie, quel pack de stats et quel facteur critique. Ne contient que des ids,
+// des nombres et des maps de caches — jamais un EntityState ni le workspace.
+global DANGER_TEAM_PLAN_CACHE = [: ]
+
+// [signature -> les trois mémos de séquences] : deux plans dont l'ordre de tour, le camp visé et
+// les ensembles « menace » / « peut changer un net » coïncident ont EXACTEMENT les mêmes
+// séquences de jeu. Leur clé de plan, elle, porte le BaseHash : un ennemi poussé fabrique un plan
+// neuf qui rebâtirait les mêmes séquences. Ils partagent donc ces maps par référence. Reset au
+// tour, comme les plans.
+global SEQ_MEMO_BY_SIG = [: ]
+
+// [signature -> le plan lui-même] : un plan ne dépend pas du BaseHash que porte sa clé rapide,
+// seulement du set des vivants, du contexte offensif adverse et du camp visé. Des alliés de la
+// cible qui se déplacent fabriquaient un plan neuf, identique. Consultée au MISS seulement.
+global PLAN_BY_SIG = [: ]
+
+global CELL_DANGER_GET_CACHE = [: ]
+
+// Reset de tour OBLIGATOIRE : la clé dérive du couple caster/cible packé, qui ne porte PAS la
+// LIFE du caster (compromis LIFE_DAMAGE documenté au README). Les valeurs de la liste triée
+// dont ce combo dépend vivent dans DANGER_ENTITY_CACHE, lui-même vidé au tour ; garder ce
+// cache-ci plus longtemps servirait un combo calculé sur des dégâts d'un tour antérieur.
+global COMBO_FROM_ITEM_AOE_CACHE = [: ]
+
+global DANGER_ENTITY_CACHE = [: ]
+
+// Gabarits du danger, sans les boucliers de la cible : mêmes entrées que DANGER_ENTITY_CACHE
+// moins curAbs/curRel. Même reset obligatoire, la liste d'items dont il dérive étant
+// filtrée par cooldown au moment du calcul.
+global DANGER_TEMPLATE_CACHE = [: ]
+global DANGER_ENTITY_INVENTORY = [: ]
+// [id -> [brut, cout, items]] des auto-buffs de TP JOUABLES du porteur, null quand il n'en a
+// aucun. Partie INVARIANTE du tour : ni son inventaire ni ses cooldowns ne bougent pendant
+// le mien. Ce qu'il PORTE deja, lui, bouge en branche et se relit au ledger — il ne se
+// deduit pas du TP total, deux buffs de meme valeur ne donnant pas le meme budget.
+global DANGER_SELF_TP_CACHE = [: ]
+
+// Résultat ENTIER de l'évaluation terminale [cellule, pénalité, net], clé = la signature
+// complète des entrées de FinalCell.evaluate. Le reclassement rouvre deux fois sur trois un
+// état déjà évalué (branches sœurs qui n'ont touché ni ma mobilité, ni mes boucliers, ni la
+// menace adverse) : le memo épargne alors tout le balayage de cellules d'un coup.
+global FINAL_PLACEMENT_CACHE = [: ]
+
+// Coût spatial, clé (BaseHash, cellule), vidé à chaque tour.
+global PLACEMENT_COST_CACHE = [: ]
+
+// Net de Me à UNE cellule où il pourrait finir le tour. Graine (statsHash ^ healersFP + vie
+// + (id, IS_SUMMON) de Me — le profil de couverture heal est un input du net) foldée avec la
+// cellule. Alimenté par le seul évaluateur terminal (FinalCell), qui repasse sur les mêmes
+// cellules pour chaque candidat qu'il classe.
+global CELL_NETDAMAGE_FOR_ME_CACHE = [: ]
+
+// Somme du danger de Me avant soins, clé identique à CELL_DANGER_GET_CACHE.
+// Indépendante de la vie et des soigneurs : leur changement réutilise cette somme.
+global CELL_RAWDAMAGE_FOR_ME_CACHE = [: ]
+
+// Soin que la cellule consomme : ce qui passe les boucliers, moins ce que j'encaisse vraiment.
+// Même clé que le net, et rempli en même temps que lui — un net déjà en cache a donc toujours
+// son coût de soin à côté. Vide tant qu'aucun poids ne le réclame.
+global CELL_FLEE_HEALCOST_CACHE = [: ]
+
+// WALKCELLS (par layer)
+
+global WALKABLE_CACHE = [: ]
+global JUMP_CACHE = [: ]
+global TELEPORTATION_CACHE = [: ]
+global TELEPORTATION_AND_JUMP_CACHE = [: ]
+global IGNORE_CELLS_CACHE = [: ]
+// Plateau d'obstacles dérivé des mêmes cellules ignorées, sous la MÊME clé : les quatre
+// BFS le reconstruisaient chacun à chaque appel. PERSISTANT comme lui — la clé porte le
+// terrain, qui pinne les positions vivantes. Rendu en LECTURE SEULE.
+global OBSTACLE_BOARD_CACHE = [: ]
+
+// Variante "NoEntities" : ignore les entités comme obstacles, seuls les obstacles de la carte
+// comptent. Utilisée par le danger — l'approximation s'échange contre un cache PERSISTANT tout
+// le combat (clé (cell << 32) | mp, aucune dépendance au board).
+global WALKABLE_CACHE_NOENT = [: ]
+global JUMP_CACHE_NOENT = [: ]
+global TELE_CACHE_NOENT = [: ]
+global TELE_JUMP_CACHE_NOENT = [: ]
+
+// ACTIONS
+
+global ENTITY_ACTIONS_CACHE = [: ]   // catalogues d'origines par plateau et item
+global ACTION_ORIGIN_CHOICE_CACHE = [:] // choix d'origine par mobilité et budget de déplacement
+global LOCAL_ACTION_GROUP_CACHE = [:] // empreinte des actions locales par plateau/cellule/item
+global ENTITY_CELLS_MAP_CACHE = [:] // vivants hors Me, lecture seule, par BaseHash
+global LEEK_LAYERS_CACHE = [:] // quatre couches de Me par plateau et mobilité
+global POINT_ACTION_GROUP_CACHE = [:] // points sans LoS : portée complète, filtrée à la résolution
+global ACTIONS_ON_ME_CACHE = [: ]    // actions sur moi (même cellule ou AoE)
+global ACTIONS_SUMMON_CACHE = [: ]   // actions d'invocation (bulbes, résurrection)
+global ACTIONS_ON_VOID_CACHE = [: ]  // actions dans le vide à effet positif (glaive...)
+global COEFFED_MAP_ENTITY_CACHE = [: ]
+
+// Distances moyennes aux alliés/ennemis (placement des bulbes).
+global AVERAGE_DISTANCE_FROM_ALLIES_CACHE = [: ]
+global AVERAGE_DISTANCE_FROM_ENNEMIES_CACHE = [: ]
+
+// HEAL MAP — trois couches, miroir de la danger map :
+//  - HEAL_COVERAGE_CACHE : la couverture d'un caster, résolue PAR CELLULE À LA DEMANDE et par
+//    profil de cible (pas de SELF : le séquenceur exclut la cible de sa liste de casters),
+//    clé (id, couche de deplacement, cell, mp, wis, tp) — le fast path. Le déroulé du net
+//    n'interroge qu'une cellule par appel : tout assembler serait du travail jeté.
+//  - HEAL_CELL_ITEM_AOE_CACHE : la GÉOMÉTRIE paresseuse par item, clé
+//    (id<<22)|(couche<<20)|(cell<<10)|max(0,mp) — position + couche de deplacement future
+//    (canJumpNextTurn), COMMUNE aux deux profils ; elle porte aussi les hashs de contenu des
+//    cellules déjà assemblées. Un buff/shackle WIS/TP ne reconstruit que la couche valeur,
+//    SAUF franchissement du coût de Jump (couche géométrique).
+//  - HEAL_COMBO_CACHE : la VALEUR [heal, vitalité], memoïsée par CONTENU (fold des entrées
+//    [item -> dist] + wis/tp + PROFIL) — deux profils ne partagent jamais un combo, deux
+//    casters de types différents partagent un combo allié identique.
+//    (USES pas dans la clé : tout heal caster a USES = 0 — le moteur les clear au endTurn,
+//    les bulbes virtuels partent à 0, et Me est exclu de la map.)
+// Plus la liste d'items de heal par caster. Tout reset au tour (cooldowns/positions).
+global HEAL_COVERAGE_CACHE = [: ]
+global HEAL_CELL_ITEM_AOE_CACHE = [: ]
+
+global HEAL_COMBO_CACHE = [: ]
+global HEAL_ENTITY_INVENTORY = [: ]
+
+// DELTA : net par entité, clé (statsHash ^ healersFP[side], pack cell/life/totallife) salée
+// par (id, IS_SUMMON) — le profil de couverture heal (poireau/summon) est un input du net
+// depuis la vitalité. Une entité intouchée saute danger + heal + séquençage. Reset au tour.
+global NETDAMAGE_CACHE = [: ]
+
+// Heal map externe [casterId -> couverture par profil] (healers des DEUX camps), clé = fold
+// COMBINÉ des fingerprints de healers. Renvoyée PAR RÉFÉRENCE (read-only en aval). Le split
+// par side du même fold sale NETDAMAGE_CACHE — porté sur les nœuds (HFP_BY_SIDE). Reset au tour.
+global HEAL_MAP_CACHE = [: ]
+global HEAL_SIDE_MAP_CACHE = [:] // couverture d'un seul camp, pour le placement de Me
+
+// ============================================================================
+// WalkCells : BFS bitmap par couples de lignes (voir geometry/movement)
+// ============================================================================
+// Layout : 1 int par COUPLE de lignes (18 couples).
+//   bits 0-17  : ligne paire 2c   (18 cellules)
+//   bits 18-23 : trou (toujours 0) — bloque la contamination inter-lignes pour les shifts <= 6
+//   bits 24-40 : ligne impaire 2c+1 (17 cellules)
+// Le couple 17 ne porte que la ligne paire 34 (la 35 n'existe pas).
+
+global OBSTACLES_ARRAY = getObstacles()
+
+// MAP_CELL_TO_COUPLE[cell] / MAP_CELL_TO_BITMASK[cell] = index de couple + masque à 1 bit.
+// MAP_OBSTACLES_CACHE = baseline obstacles seuls (18 ints). ACC_TEMPLATE = 19 zéros
+// (sentinelle pour lire acc[c+1] sans garde). CELL_BY_LSB[couple][lsb] = cellule du bit `lsb`.
+// Peuplés dans Preload.InitCellClass ; les appelants clonent ce dont ils ont besoin.
+global MAP_CELL_TO_COUPLE   = []
+global MAP_CELL_TO_BITMASK  = []
+global MAP_OBSTACLES_CACHE  = []; for (var i = 0; i < 18; i++) push(MAP_OBSTACLES_CACHE, 0)
+global ACC_TEMPLATE         = []; for (var i = 0; i < 19; i++) push(ACC_TEMPLATE, 0)
+global CELL_BY_LSB          = []
+
+// ---------------------------------------------------------------------------
+// BUDGET D'OPERATIONS
+// Le plafond du moteur vaut cores x 1e6 par tour, et getOperations() est CUMULATIF sur la VM :
+// un poireau et ses bulbes se partagent le meme compteur et le meme plafond. La date limite
+// est donc ABSOLUE, jamais relative, et le proprietaire doit reserver de quoi finir son tour
+// ET de quoi laisser jouer ses bulbes.
+// OPS_CAP survit au tour : le bulbe lit celui de son invocateur (getCores() rendrait le sien).
+global OPS_CAP = null
+global OPS_DEADLINE = 0
+// Marge commune, calibrée initialement sur des préparations de ~195k.
+// Les grosses géométries froides se contrôlent entre origines, pas en un bloc.
+global OPS_SEARCH_MARGIN = 250000
+// Reserve de fin de tour : choisir la cellule finale et s'y rendre. MESURE sur bench_4v4_full,
+// 49 tours d'entite : mediane 12 882 operations, p90 32 234, maximum 82 861. La reserve vaut
+// donc 1,8 fois le pire cas observe, pas cinq fois comme la premiere version qui rendait la
+// recherche perdante en tronquant plus qu'elle n'evitait d'avortements.
+//
+// DELIBEREMENT GENEREUSE, en attendant la refonte du scoring. Cette reserve est une fonction
+// du COUT du scoring, pas une valeur absolue : un scoring plus cher pour la position rend
+// FinalCell plus cher, donc la reserve doit monter avec lui. La regler finement maintenant
+// reviendrait a ajuster quelque chose que la refonte deplacera. On la met haute et on la
+// reglera avec le nouveau scoring.
+//
+// Dose-reponse mesuree jusqu'ici, 480 combats par point, plan apparie :
+//   90 000  -> -0,121 +/- 0,027 (t = -4,48), les quatre bandes reculent
+//   150 000 -> reference
+//   220 000 -> +0,050 +/- 0,034, et +0,118 +/- 0,050 (t = +2,34) a 9-12 coeurs
+//   300 000 -> +0,061 +/- 0,030 (t = +2,00) de plus
+// La courbe MONTAIT encore a 300 000 : 500 000 va dans le sens mesure, il n'est simplement
+// pas verifie que l'optimum soit la.
+// Cette reserve ne couvre pas que le placement : la vidange de chaine, l'execution de la
+// derniere action reelle et la part que les bulbes trouveront ensuite dans le compteur partage
+// en dependent aussi. Tout ce qu'on rend a la recherche est pris a quelque chose qui en a plus
+// besoin.
+global OPS_RESERVE_TURN = 500000
+// Part laissee a chaque summon qui joue APRES moi et cherche dans le MEME compteur.
+// DELIBEREMENT GENEREUSE, meme raison que la reserve de tour : ce qu'un bulbe consomme depend
+// du cout du scoring, que la refonte va changer. On lui donne large maintenant et on reglera
+// la courbe avec le nouveau scoring.
+//
+// Ce qui est mesure : le cout fixe d'une decision vaut 531 k operations et un tour de bulbe
+// complet 877 k, donc sous ce seuil le bulbe ne termine AUCUNE decision et se tait. A 250 k,
+// sur six matchups a 4-9 cœurs : 0,50 action par tour de bulbe ; a 550 k : 0,56, au-dessus de
+// main. Aucune dose-reponse n'a jamais ete faite au-dela — 1 000 000 n'est pas un optimum
+// verifie, c'est une marge assumee.
+//
+// Arithmetique a garder en tete : le poireau garde cœurs x 1e6 - 500 k - 1 000 k par summon
+// jouant apres lui. Le seul cas ou cela descend sous le cout d'une decision est 4 cœurs avec
+// trois bulbes a jouer apres — 500 k restants. Il lui reste alors de quoi vidanger sa chaine
+// et se placer, pas de quoi replanifier.
+global OPS_RESERVE_PER_BULB = 1000000
+// Part STRICTE du placement final, celle que la vidange de chaine n'a pas le droit d'entamer.
+// Le maximum historique de 82 861 ne couvrait pas les profils offensifs et leurs
+// empreintes sur de longs combats avec invocations. Les combats comparatifs du
+// 2026-10-12 épuisent 100 k dans EnemyOffense.prepare/Delta au placement réel.
+// Garder 300 k pour la capture, les profils, le balayage borné et le déplacement.
+// L'ecart avec OPS_RESERVE_TURN est ce qui finance la vidange, sans agrandir la reserve.
+global OPS_RESERVE_PLACEMENT = 300000
+// Cout d'une action REELLE (deplacement puis lancer), le plus cher observe dans ce combat.
+// Mesure de depart sur 77 executions a 4 et 8 coeurs : mediane 3 682, p90 7 521, maximum
+// 16 194 ; on part au-dessus du pire cas vu, et chaque execution releve la valeur si besoin.
+global OPS_EXEC_MAX = 20000
+// Marge laissee au deplacement final APRES le balayage de placement : le balayage s'interrompt
+// quand il ne reste plus que ca. Mesure : un deplacement-puis-lancer reel coute 3 682 operations
+// en mediane et 16 194 au pire sur 77 executions ; 25 000 couvre le pire cas vu.
+global OPS_MOVE_MARGIN = 25000
+// Actions restantes du meilleur plan après retrait de son premier cast : quand le budget
+// ne finance plus un plan, ses actions suivantes se jouent telles quelles.
+global SEARCH_LAST_CHAIN = []
+
+// Vrai seulement si la suite retenue a une clôture terminale complète avec danger.
+// Copié par la recherche et relu par la vidange ; reset par Play à chaque tour.
+global SEARCH_LAST_CHAIN_DANGER_VALIDATED = false
+// Ordre de tour de Me, relu une fois par Virtualize. Sert a dater les ticks restants des
+// flux periodiques : un effet tombe au tour de son LANCEUR mais tique a celui du PORTEUR,
+// donc le compte depend de qui des deux rejoue en premier vu de MON tour.
+global MY_TURN_ORDER = 0
+// [id du lanceur -> son ordre de tour], memo d'un tour. Vide a chaque Virtualize, remplie
+// pendant l'import des effets : plusieurs lignes partagent le meme lanceur.
+global TURN_ORDER_BY_ID = [: ]
+// Marque, dans SHIELD_EXPIRY, un retrait deja acquis quand la fenetre s'ouvre : il vaut pour
+// TOUS les attaquants du cycle. Un id d'entite n'etant jamais negatif, la place est libre.
+global EXPIRY_PRE_OPENING = -1

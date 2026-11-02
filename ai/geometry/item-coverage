@@ -1,0 +1,351 @@
+/*
+ * Géométrie d'items, commune à Danger et Heal : quelles cellules chaque item atteint depuis
+ * l'ensemble des positions accessibles d'un caster, et à quelle distance d'AoE.
+ * Ne connaît ni les dégâts, ni les soins, ni les camps — seulement des portées et des zones.
+ */
+
+include("../imports")
+
+class ItemCoverageClass {
+
+	// Lecture seule des mêmes clés que geometryOfItem. Un nouvel assemblage
+	// de caster peut être froid alors que toutes ses géométries sont déjà payées.
+	static geometriesReady(items, movementKey) {
+		for (var item in items) {
+			var info = ITEMINFO[item]
+			if (!(((movementKey << 25) | info.LAUNCH_GEOMETRY_KEY) in ITEM_LAUNCH_GEOMETRY_CACHE)) return false
+			if (info.AREA_MAX > 0 && !(((movementKey << 30) | info.FULL_GEOMETRY_KEY) in ITEM_FULL_GEOMETRY_CACHE)) return false
+		}
+		return true
+	}
+
+	/* Hash de contenu d'une map [item -> dist] : chaîne NON LINÉAIRE, entrée (item 9 bits |
+	 * dist 4 bits). Dépendant de l'ordre d'itération : deux maps de même contenu construites
+	 * dans des ordres différents FRAGMENTENT seulement, elles ne collisionnent jamais.
+	 * Digest de longueur variable que personne ne vérifie : chaîne à MULTIPLICATION puis un
+	 * seul finaliseur — la variante bon marché de la famille 3, décrite dans le contrat des
+	 * clés en tête de runtime/constants. C'est le fold le plus chaud de l'IA, d'où le finaliseur
+	 * unique plutôt qu'un mix64 par item. */
+	static hashItemAoeMap(ItemAoeMap) {
+		var Hash_Final = 0
+		for (var item: var dist in ItemAoeMap) {
+			Hash_Final = (Hash_Final ^ ((item << 4) | dist)) * MIX_A
+		}
+		return mix64(Hash_Final)
+	}
+
+	/*
+	 * [cell -> [item -> minAoeDist]] pour une liste d'items et les walkcells du caster.
+	 * Les géométries vivent dans deux caches PERSISTANTS (jamais vidés au tour) clés par
+	 * (movementKey, signature) — movementKey détermine exactement la map NoEntities,
+	 * elle-même statique : même contexte au tour suivant ou chez un autre caster -> géométrie
+	 * réutilisée telle quelle. Même FULL_GEOMETRY_KEY -> toute la map d'AoE partagée ; même
+	 * LAUNCH_GEOMETRY_KEY -> l'union des cellules directement lançables partagée. Maps cachées
+	 * STRICTEMENT read-only.
+	 * Seul l'ASSEMBLAGE dépend de la liste d'items (cooldown-filtrée par tour) — il reste
+	 * caché par tour chez les appelants. L'ordre d'insertion des items = l'ordre de la liste
+	 * (le fold dépendant de l'ordre de hashItemAoeMap, les clés de combo et l'ordre glouton
+	 * en dépendent).
+	 */
+	static buildMapCellItemAoe(items, walkCellsMap, movementKey) {
+		var _final = [: ]
+		// Le PREMIER item écrit dans une map vide : aucune de ses cellules ne peut déjà y
+		// figurer, et ses deux couches sont disjointes entre elles. Son passage n'a donc aucun
+		// test d'appartenance à payer — l'ordre d'insertion, dont dépend le hash de contenu,
+		// est rigoureusement le même.
+		var fresh = true
+		for (var Item in items) {
+			var geom = geometryOfItem(Item, walkCellsMap, movementKey)
+			var aoeOnly = geom[1]
+			if (fresh) {
+				fresh = false
+				for (var Cell: var Direct in geom[0]) {
+					var m = [: ]
+					m[Item] = 0
+					_final[Cell] = m
+				}
+				if (aoeOnly != null) {
+					for (var Cell: var MinAoeDist in aoeOnly) {
+						var m = [: ]
+						m[Item] = MinAoeDist
+						_final[Cell] = m
+					}
+				}
+				continue
+			}
+			// Couche directe : distance nulle, aucune valeur à relire.
+			// La map de la cellule est REMPLIE avant d'être posée : l'écrire puis la relire
+			// pour y insérer l'item coûtait une lecture de map par cellule créée.
+			for (var Cell: var Direct in geom[0]) {
+				if (Cell in _final) {
+					_final[Cell][Item] = 0
+				} else {
+					var m = [: ]
+					m[Item] = 0
+					_final[Cell] = m
+				}
+			}
+			if (aoeOnly == null) continue
+			// Couche de zone : disjointe de la précédente par construction.
+			for (var Cell: var MinAoeDist in aoeOnly) {
+				if (Cell in _final) {
+					_final[Cell][Item] = MinAoeDist
+				} else {
+					var m = [: ]
+					m[Item] = MinAoeDist
+					_final[Cell] = m
+				}
+			}
+		}
+		return _final
+	}
+
+	/*
+	 * Géométrie d'UN item en DEUX couches disjointes : [0] les cellules directement lançables
+	 * (distance de zone nulle par définition), [1] les seules cellules atteintes PAR LA ZONE,
+	 * null si l'item n'en a pas. Les fusionner recopierait la première couche dans la seconde
+	 * à chaque géométrie produite — or elle est déjà cachée à part, et les deux consommateurs
+	 * lisent deux couches aussi bien qu'une.
+	 * AREA_MAX ne dépend que d'AREA, lui-même dans FULL_GEOMETRY_KEY : deux items ne peuvent
+	 * pas partager une entrée du cache avec des AREA_MAX différents.
+	 */
+	static geometryOfItem(Item, walkCellsMap, movementKey) {
+		var Infos = ITEMINFO[Item]
+		var launchKey = (movementKey << 25) | Infos.LAUNCH_GEOMETRY_KEY
+		var directCells
+		if (launchKey in ITEM_LAUNCH_GEOMETRY_CACHE) {
+			directCells = ITEM_LAUNCH_GEOMETRY_CACHE[launchKey]
+		} else {
+			directCells = getMapHittableCellsTotal(Infos, walkCellsMap)
+			ITEM_LAUNCH_GEOMETRY_CACHE[launchKey] = directCells
+		}
+		if (Infos.AREA_MAX == 0) return [directCells, null]
+		var fullKey = (movementKey << 30) | Infos.FULL_GEOMETRY_KEY
+		var aoeOnly
+		if (fullKey in ITEM_FULL_GEOMETRY_CACHE) {
+			aoeOnly = ITEM_FULL_GEOMETRY_CACHE[fullKey]
+		} else {
+			aoeOnly = getMapAoeForItem(Infos, directCells)
+			ITEM_FULL_GEOMETRY_CACHE[fullKey] = aoeOnly
+		}
+		return [directCells, aoeOnly]
+	}
+
+	/*
+	 * Même information que buildMapCellItemAoe, gardée sous forme des géométries par item :
+	 * l'assemblage d'une cellule n'a lieu qu'à la demande. Pour un consommateur qui ne lit que
+	 * quelques cellules sur les quelques centaines que le caster atteint, l'assemblage complet
+	 * est presque entièrement du travail jeté.
+	 */
+	static buildLazyCellItemAoe(items, walkCellsMap, movementKey) {
+		var directs = []
+		var aoes = []
+		for (var Item in items) {
+			var geom = geometryOfItem(Item, walkCellsMap, movementKey)
+			push(directs, geom[0])
+			push(aoes, geom[1])
+		}
+		return new LazyCoverageClass(items, directs, aoes)
+	}
+
+	/*
+	 * [item -> distance d'AoE minimale] à UNE cellule, ou null si aucun item ne l'atteint.
+	 * L'ordre d'insertion suit la liste d'items, exactement comme l'assemblage complet — le
+	 * hash de contenu et l'ordre glouton en dépendent. Mémorisé, absences comprises.
+	 */
+	static itemAoeAt(Coverage, Cell) {
+		var memo = Coverage.CELLS
+		if (Cell in memo) return memo[Cell]
+		var items = Coverage.ITEMS
+		var directs = Coverage.DIRECTS
+		var aoes = Coverage.AOES
+		var _final = null
+		for (var k: var item in items) {
+			var dist
+			if (Cell in directs[k]) {
+				dist = 0
+			} else {
+				var aoe = aoes[k]
+				if (aoe == null || !(Cell in aoe)) continue
+				dist = aoe[Cell]
+			}
+			if (_final == null) _final = [: ]
+			_final[item] = dist
+		}
+		memo[Cell] = _final
+		return _final
+	}
+
+	/* Hash de contenu de la cellule, mémorisé sur la géométrie : partagé par tous ceux qui
+	 * réutilisent cette géométrie (mêmes déplacements, stats différentes). */
+	static contentHashAt(Coverage, Cell, ItemAoeMap) {
+		var memo = Coverage.HASHES
+		if (Cell in memo) return memo[Cell]
+		var h = hashItemAoeMap(ItemAoeMap)
+		memo[Cell] = h
+		return h
+	}
+
+	/*
+	 * [cellule -> distance de zone minimale] pour les SEULES cellules atteintes par la zone :
+	 * les cellules touchables en direct (MapCellsBool) en sont exclues — l'appelant les tient
+	 * déjà à part et leur distance vaut zéro. Ne dépend que de la map directe et d'AREA.
+	 * Appelée pour les seuls items à zone (AREA_MAX > 0).
+	 */
+	static getMapAoeForItem(ItemInfos, MapCellsBool) {
+		var shape = AOEB_SHAPE[ItemInfos.AREA]
+		if (shape != null) return dilateAoe(shape, MapCellsBool)
+		return getMapAoeForItemByCell(ItemInfos, MapCellsBool)
+	}
+
+	/*
+	 * La même chose par DILATATION de bits. Le résultat est exactement
+	 * « dilaté(directes) privé des directes, sans les obstacles », étiqueté par la plus petite
+	 * distance de zone : seule la frontière des directes contribue, et un plateau de bits rend
+	 * ce fait gratuit là où la version par cellule visitait aussi tout l'intérieur (97,5 % du
+	 * travail jeté, mesuré).
+	 *
+	 * Les décalages arrivent triés par distance croissante et `couvert` accumule tout ce qui est
+	 * déjà attribué : la première fois qu'une cellule est atteinte, c'est donc par son minimum.
+	 * Les obstacles sont masqués à L'ARRIVÉE, jamais à chaque pas — une zone les exclut de son
+	 * résultat mais ne s'y arrête pas (getDisc assemble des anneaux purement géométriques).
+	 */
+	static dilateAoe(shape, MapCellsBool) {
+		var _final = [: ]
+		// Plateau des cellules directes + bornes de lignes réellement occupées.
+		var board = clone(AOEB_ZERO)
+		for (var cell: var bool in MapCellsBool) {
+			board[AOEB_ROW_OF[cell]] |= AOEB_BIT_OF[cell]
+		}
+		// Bornes retrouvées par BALAYAGE du plateau, et non suivies à chaque cellule directe :
+		// le balayage parcourt le COMPLÉMENT de l'étendue occupée, donc il est d'autant plus
+		// court que la pose a été longue. Mêmes bornes, donc mêmes lignes d'arrivée balayées —
+		// et une ligne qu'un bornage plus serré exclurait est exactement une ligne dont la
+		// source est nulle, que la boucle interne saute déjà.
+		var lo = AOEB_FIRST_ROW
+		while (lo <= AOEB_LAST_ROW && board[lo] == 0) lo++
+		if (lo > AOEB_LAST_ROW) return _final
+		var hi = AOEB_LAST_ROW
+		while (board[hi] == 0) hi--
+		// Cellules encore ATTRIBUABLES : libres, et pas déjà prises. Les directes en sont
+		// exclues d'emblée — elles appartiennent à l'autre couche. Un seul tableau au lieu du
+		// couple (masque des libres, déjà attribué) : la boucle chaude ne lit qu'une case par
+		// pas de ligne, et une émission le met à jour par un XOR (les bits émis en font partie).
+		// Bornée aux lignes qu'un décalage peut atteindre : |dx| ne dépasse jamais 3, toute ligne
+		// au-delà reste à zéro et n'est jamais lue.
+		var avail = clone(AOEB_ZERO)
+		var aLo = lo > 3 ? lo - 3 : 0
+		var aHi = hi + 3 < AOEB_ROWS ? hi + 3 : AOEB_ROWS - 1
+		for (var row = aLo; row <= aHi; row++) avail[row] = AOEB_FREE[row] & ~board[row]
+		var ns = count(shape)
+		for (var s = 0; s < ns; s += 3) {
+			var dx = shape[s]
+			var dy = shape[s + 1]
+			var dist = shape[s + 2]
+			// Lignes d'ARRIVÉE possibles pour ce décalage, bornées par les lignes occupées.
+			var from = lo + dx
+			var to = hi + dx
+			if (from < 0) from = 0
+			if (to >= AOEB_ROWS) to = AOEB_ROWS - 1
+			for (var row = from; row <= to; row++) {
+				var src = board[row - dx]
+				if (src == 0) continue
+				// Les deux côtés du miroir d'un coup (voir Preload.foldMirrors) : un décalage
+				// d'axe a dy nul et rend la source des deux côtés, donc le cas est absorbé.
+				var moved = (src << dy) | (src >> dy)
+				var d = moved & avail[row]
+				if (d == 0) continue
+				avail[row] ^= d
+				var byBit = AOEB_CELL_BY_BIT[row]
+				while (d) {
+					var lsb = d & -d
+					_final[byBit[lsb]] = dist
+					d ^= lsb
+				}
+			}
+		}
+		return _final
+	}
+
+	/*
+	 * Version par CELLULE, conservée comme référence : elle définit le résultat attendu et sert
+	 * de repli pour une zone sans forme déclarée.
+	 */
+	static getMapAoeForItemByCell(ItemInfos, MapCellsBool) {
+		var _final = [: ]
+		var area = ItemInfos.AREA
+		for (var cell: var bool in MapCellsBool) {
+			for (var Aoe: var AoeDist in CellClass.getAreaDist(area, cell)) {
+				// Une cellule directement lançable appartient à l'AUTRE couche : l'écrire ici
+				// la dédoublerait. Le set direct est dense, c'est le cas de la grande majorité
+				// des cellules de zone visitées, et le test d'appartenance coûte trois fois
+				// moins qu'une lecture.
+				if (Aoe in MapCellsBool) continue
+				var ActualCellDist = _final[Aoe]
+				if (ActualCellDist == null || ActualCellDist > AoeDist) {
+					_final[Aoe] = AoeDist
+				}
+			}
+		}
+		return _final
+	}
+
+	// Même union que getMapHittableCellsTotal, interruptible entre origines.
+	// Une géométrie incomplète n'est jamais publiée ; les LoS complètes déjà
+	// calculées restent dans leur cache habituel et accélèrent un nouvel essai.
+	static warmGeometryBefore(Item, walkCellsMap, movementKey, limit) {
+		var info = ITEMINFO[Item]
+		var launchKey = (movementKey << 25) | info.LAUNCH_GEOMETRY_KEY
+		if (!(launchKey in ITEM_LAUNCH_GEOMETRY_CACHE)) {
+			var direct = [:]
+			var launch = info.NEEDLOS ? ActionsClass.LaunchWithLos[info.LAUNCHTYPE] : ActionsClass.LaunchWithoutLos[info.LAUNCHTYPE]
+			for (var origin: var mp in walkCellsMap) {
+				if (getOperations() + OPS_SEARCH_MARGIN > limit) return false
+				direct += launch(origin, info.MINRANGE, info.MAXRANGE)
+			}
+			ITEM_LAUNCH_GEOMETRY_CACHE[launchKey] = direct
+		}
+		if (getOperations() + OPS_SEARCH_MARGIN > limit) return false
+		geometryOfItem(Item, walkCellsMap, movementKey)
+		return true
+	}
+
+	/*
+	 * [cellule -> true] : toutes les cellules touchables en direct par l'item depuis
+	 * n'importe quelle cellule accessible du caster.
+	 */
+	static getMapHittableCellsTotal(ItemInfos, WalkCellsMap) {
+		var _final = [: ]
+		var LaunchType = ItemInfos.LAUNCHTYPE
+		var MinRange = ItemInfos.MINRANGE
+		var MaxRange = ItemInfos.MAXRANGE
+		// La fonction de lancement est résolue UNE fois : la lire dans la boucle coûtait une
+		// lecture de map par cellule accessible, soit le gros des appels de ce fichier.
+		var launch = ItemInfos.NEEDLOS ? ActionsClass.LaunchWithLos[LaunchType] : ActionsClass.LaunchWithoutLos[LaunchType]
+		for (var EntityCell: var mp in WalkCellsMap) {
+			_final += launch(EntityCell, MinRange, MaxRange)
+		}
+
+		return _final
+	}
+}
+
+/*
+ * Couverture d'un caster gardée par item, avec les cellules déjà assemblées et leurs hashs de
+ * contenu. Personne ne l'itère : on lui demande une cellule, via ItemCoverageClass.
+ */
+class LazyCoverageClass {
+	ITEMS    // liste d'items, dans l'ordre qui fixe l'assemblage et l'ordre glouton
+	DIRECTS  // [k] = cellules directement lançables de ITEMS[k], distance nulle
+	AOES     // [k] = [cellule -> distance] atteintes par la zone, null si l'item n'en a pas
+	CELLS    // [cellule -> [item -> distance]] assemblées à la demande, absences comprises
+	HASHES   // [cellule -> hash de contenu], mémorisé au premier besoin
+
+	constructor(ThisItems, ThisDirects, ThisAoes) {
+		this.ITEMS = ThisItems
+		this.DIRECTS = ThisDirects
+		this.AOES = ThisAoes
+		this.CELLS = [: ]
+		this.HASHES = [: ]
+	}
+}

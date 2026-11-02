@@ -1,0 +1,1597 @@
+/*
+ * Consequences : la simulation des effets d'un item sur l'état — la vérité moteur de l'IA
+ * (multiplicateurs de stats, shields, kills en cascade, steals, débuffs...).
+ */
+
+include("../imports")
+
+class ConsequencesClass {
+
+	/*
+	 * Les types d'effet qui touchent l'un des dix inputs de capability (STR/MAG/WIS/SCI/AGI/
+	 * RES/TOTAL_TP/TOTAL_MP/ABS/REL). Toute écriture de ces champs dans ce fichier est
+	 * immédiatement suivie d'un passage au ledger — RecordCastedEffect à l'application,
+	 * removeCastedEffect au retrait — d'où deux seuls points de marquage pour la cinquantaine
+	 * de sites d'écriture. C'est ce qui permet à diffMaskOf de sauter les comparaisons.
+	 * INVARIANT : un nouveau case qui écrit une capability doit entrer ici.
+	 */
+	static CAP_EFFECT_TYPES = [
+		EFFECT_ABSOLUTE_SHIELD: true,
+		EFFECT_ABSOLUTE_VULNERABILITY: true,
+		EFFECT_BUFF_AGILITY: true,
+		EFFECT_BUFF_MP: true,
+		EFFECT_BUFF_RESISTANCE: true,
+		EFFECT_BUFF_STRENGTH: true,
+		EFFECT_BUFF_TP: true,
+		EFFECT_BUFF_WISDOM: true,
+		EFFECT_RAW_ABSOLUTE_SHIELD: true,
+		EFFECT_RAW_BUFF_AGILITY: true,
+		EFFECT_RAW_BUFF_MAGIC: true,
+		EFFECT_RAW_BUFF_MP: true,
+		EFFECT_RAW_BUFF_RESISTANCE: true,
+		EFFECT_RAW_BUFF_SCIENCE: true,
+		EFFECT_RAW_BUFF_STRENGTH: true,
+		EFFECT_RAW_BUFF_TP: true,
+		EFFECT_RAW_BUFF_WISDOM: true,
+		EFFECT_RAW_RELATIVE_SHIELD: true,
+		EFFECT_RELATIVE_SHIELD: true,
+		EFFECT_SHACKLE_AGILITY: true,
+		EFFECT_SHACKLE_MAGIC: true,
+		EFFECT_SHACKLE_MP: true,
+		EFFECT_SHACKLE_STRENGTH: true,
+		EFFECT_SHACKLE_TP: true,
+		EFFECT_SHACKLE_WISDOM: true,
+		EFFECT_STEAL_ABSOLUTE_SHIELD: true,
+		EFFECT_VULNERABILITY: true
+	]
+
+	static applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds, PrevEffectTotal) {
+		var isEffectStackable = Effect[5] & EFFECT_MODIFIER_STACKABLE
+		var baseEffectValue = Effect[1] * Multiplier
+		// STEALS (moteur vérifié, Attack.java) : chaque effet RETOURNE son total appliqué (somme sur
+		// ses cibles) et l'effet SUIVANT du même item le reçoit en PrevEffectTotal — les STEAL_* sont
+		// indexés dessus ("voler" le total du DERNIER effet : [vulné, steal_abs_shield], [dégâts,
+		// steal_life]...). Seuls les cas à valeur naturelle alimentent le total (dégâts, vulnés,
+		// poison, nova, aftereffect) ; les autres laissent 0 — à étendre si un item associe un jour
+		// un steal à autre chose.
+		var effectTotal = 0
+		switch (EffectType) {
+			case EFFECT_NOVA_VITALITY:
+				// PAS de ledger : comme BOOST_MAX_LIFE, addTotalLife est irréversible côté
+				// moteur (removeEffect ne le défait pas — EffectMultiplyStats.java:39).
+				// SCIENCE non planchée, et AUCUN garde sur le résultat : le moteur passe la valeur
+				// telle quelle à addTotalLife, négative comprise (EffectNovaVitality.java:11-15).
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
+				for (var targetId: var aoeDistance in RealTargets) State[targetId].TOTAL_LIFE += round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+				break
+			case EFFECT_HEAL:
+				var casterStatMultiplier = baseEffectValue * max(0, 1 + CastStats.WISDOM / 100)   // le moteur floor le RÉSULTAT (EffectHeal/Vitality) : WIS -50 soigne 50%, <= -100 soigne 0
+				var effectDuration = Effect[3]
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					// UNHEALABLE ne bloque QUE le soin INSTANTANE : la garde EffectHeal.java:18 est
+					// SOUS le test turns == 0. Un soin sur la duree se pose normalement — le moteur
+					// remplace la ligne precedente (Effect.java:240-253), cree la sienne avec la
+					// valeur pleine (:269), et saute le TICK un par un au debut du tour du porteur
+					// (EffectHeal.java:31). Si l'etat tombe, les ticks restants soignent : ligne et
+					// flux la portent donc en BRUT, comme l'import la lit deja du moteur.
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					var healTicks = effectDuration
+					if (effectDuration > 0) {
+						healTicks = datedTicks(State, Caster, targetStats, effectDuration)
+						if (healTicks > 0) targetStats.HEAL += calculatedValue
+						targetStats.HEAL_OVER_TIME += calculatedValue * healTicks
+					} else if (!EntityStateClass.hasState(targetStats, STATE_UNHEALABLE)) {
+						targetStats.LIFE += min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
+					}
+					// HoT seulement (durée 0 = soin instantané, le gate du helper l'écarte).
+					RecordCastedEffectDated(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5], healTicks)
+				}
+				break
+			case EFFECT_DAMAGE:
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.STRENGTH) / 100) * (1 + CastStats.POWER / 100) // le moteur plancher STRENGTH à l'usage mais PAS power
+				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
+				break
+			case EFFECT_RELATIVE_SHIELD:
+				// RESISTANCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.RESISTANCE / 100)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					if (calculatedValue <= 0) continue   // EffectRelativeShield.java : if (value > 0)
+					targetStats.RELATIVE_SHIELD += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_BUFF_MP:
+				// SCIENCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					if (calculatedValue <= 0) continue   // EffectBuffMP.java : if (value > 0)
+					targetStats.MP += calculatedValue
+					targetStats.TOTAL_MP += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_BUFF_AGILITY:
+				// SCIENCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					if (calculatedValue <= 0) continue   // EffectBuffAgility.java : if (value > 0)
+					targetStats.AGILITY += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_BUFF_TP:
+				// SCIENCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					if (calculatedValue <= 0) continue   // EffectBuffTP.java : if (value > 0)
+					targetStats.TP += calculatedValue
+					targetStats.TOTAL_TP += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_ADD_STATE:
+				// L'IA peut elle-meme lancer un chip qui pose un etat (divine_protection sur ses
+				// allies, awakening sur un mort). L'ordinal est en value1, comme cote moteur
+				// (EffectAddState.java:12-14).
+				// Un etat vit par sa LIGNE : le moteur reconstruit l'ensemble des etats depuis les
+				// lignes portees a chaque retrait (Entity.updateBuffStats:892-902). Sans ligne au
+				// ledger, aucun etat ne retombe jamais dans la simulation, pas meme en tuant son
+				// lanceur, alors que Entity.die le fait tomber chez toutes ses cibles.
+				// La ligne n'est ni empilable ni fusionnable : createEffect force stacks = false
+				// pour ADD_STATE (Effect.java:238), d'ou un remplacement (type, item) sans
+				// condition, et l'exclut de la fusion (:258), qui additionnerait deux ordinaux et
+				// donnerait un etat qui n'existe pas.
+				var stateBit = 1 << Effect[1]
+				// Une ligne de duree nulle n'entre pas au ledger (Effect.java:269) : l'etat serait
+				// pose sans rien pour le porter. Duree invariante par cible, testee une fois.
+				var stateLingers = Effect[3] != 0
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					ReplacementChangeStats(Item, Effect, targetStats)
+					targetStats.STATES |= stateBit
+					if (Effect[1] == STATE_AMPUTATED) targetStats.WEAPON = null
+					if (stateLingers) targetStats.EFFECTS = targetStats.EFFECTS + [[EffectType, Effect[1], Caster, Effect[3], CAST_IS_CRITICAL, Item, targetId, Effect[5], Effect[3]]]
+				}
+				break
+			case EFFECT_BOOST_MAX_LIFE:
+				// PAS de ledger : removeEffect ne défait JAMAIS addTotalLife
+				// (EffectMultiplyStats.java:39) — le gain de vie max est irréversible côté
+				// moteur, l'enregistrer promettrait un déroulé qui n'existe pas.
+				// UNHEALABLE bloque les PV rendus, pas la jauge : la vie max monte seule
+				// (EffectVitality.java, branche NOVA_VITALITY).
+				var casterStatMultiplier = baseEffectValue * max(0, 1 + CastStats.WISDOM / 100)   // le moteur floor le RÉSULTAT (EffectHeal/Vitality) : WIS -50 soigne 50%, <= -100 soigne 0
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					if (!EntityStateClass.hasState(targetStats, STATE_UNHEALABLE)) targetStats.LIFE += calculatedValue
+					targetStats.TOTAL_LIFE += calculatedValue
+				}
+				break
+			case EFFECT_ABSOLUTE_SHIELD:
+				// RESISTANCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.RESISTANCE / 100)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					if (calculatedValue <= 0) continue   // EffectAbsoluteShield.java : if (value > 0)
+					targetStats.ABSOLUTE_SHIELD += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_DEBUFF:
+				for (var targetId: var aoeDistance in RealTargets) getEntityDebuffConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster, false)
+				break
+			case EFFECT_RAW_BUFF_TP:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(baseEffectValue * AOE_FALLOFF[aoeDistance])
+					targetStats.TP += calculatedValue
+					targetStats.TOTAL_TP += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_LIFE_DAMAGE:
+				// Le moteur divise la VALEUR de l'effet par 100 avant de la multiplier par la vie
+				// (EffectLifeDamage.java:16 : ((value1 + jet*value2) / 100) * caster.getLife()) ;
+				// diviser la vie a la place change le dernier bit et fait diverger l'arrondi final.
+				var casterStatMultiplier = baseEffectValue / 100 * CastStats.LIFE * (1 + CastStats.POWER / 100)
+				for (var targetId: var aoeDistance in RealTargets) effectTotal += getEntityLifeDamageConsequences(aoeDistance, casterStatMultiplier, Effect, State[targetId], CastStats, targetId == Caster, State, clonedIds)
+				break
+			case EFFECT_ANTIDOTE:
+				// Entity.clearPoisons : retire UNIQUEMENT les lignes EffectPoison — les flux
+				// AFTEREFFECT* et HEAL* restent intacts. Déroulé PAR LIGNE via
+				// removeCastedEffect (source unique : POISON/POISON_OVER_TIME redescendent
+				// exactement), puis ledger purgé — plus de second déroulé à la mort du caster
+				// ni au remplacement.
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					var newEffects = []
+					for (var eff in targetStats.EFFECTS) {
+						if (eff[0] == EFFECT_POISON) {
+							removeCastedEffect(EFFECT_POISON, targetStats, eff[1], eff[8], eff[3])
+						} else {
+							push(newEffects, eff)
+						}
+					}
+					// Pas de refreshShieldExpiry : seules des lignes de POISON sont retirées.
+					targetStats.EFFECTS = newEffects
+				}
+				break
+			case EFFECT_RAW_BUFF_STRENGTH:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(baseEffectValue * AOE_FALLOFF[aoeDistance])
+					targetStats.STRENGTH += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_RAW_BUFF_WISDOM:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(baseEffectValue * AOE_FALLOFF[aoeDistance])
+					targetStats.WISDOM += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_VULNERABILITY:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(baseEffectValue * AOE_FALLOFF[aoeDistance])
+					targetStats.RELATIVE_SHIELD -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					effectTotal += calculatedValue
+				}
+				break
+			case EFFECT_RAW_HEAL:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					// EffectRawHeal.java:12 : sort AVANT tout calcul sur un porteur d'UNHEALABLE.
+					if (EntityStateClass.hasState(targetStats, STATE_UNHEALABLE)) continue
+					targetStats.LIFE += min(round(baseEffectValue * AOE_FALLOFF[aoeDistance]), targetStats.TOTAL_LIFE - targetStats.LIFE)
+				}
+				break
+			case EFFECT_AFTEREFFECT:
+				// SCIENCE non planchée : le moteur plancher le RÉSULTAT (EffectAftereffect.java:14).
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
+				var effectDuration = Effect[3]
+				var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = EntityStateClass.hasState(targetStats, STATE_INVINCIBLE) ? 0 : max(0, round(casterStatMultiplier * AOE_FALLOFF[aoeDistance]))
+					// Léthal : même cascade que les dégâts — LIFE=0 + déroulé des buffs du mort +
+					// procs on-kill. Érosion sur les dégâts réellement encaissés (cap à la vie
+					// restante), comme getEntityDamageConsequences.
+					var appliedDamage = min(calculatedValue, targetStats.LIFE)
+					if (appliedDamage >= targetStats.LIFE && targetStats.LIFE > 0) {
+						getKillConsequences(targetStats, CastStats, State, clonedIds)
+					} else {
+						targetStats.LIFE -= appliedDamage
+					}
+					var afterErosion = round(appliedDamage * erosionRate)
+					targetStats.TOTAL_LIFE -= afterErosion
+					// Érosion immédiate -> proc nova (EffectAftereffect.java:27), qui reçoit
+					// l'entier. Les ticks FUTURS et leurs procs restent hors modèle — chantier
+					// ticks/ledger.
+					if (targetStats.SPECIAL_WEAPON != 0) applyOnNovaDamagePassive(targetStats, afterErosion)
+					var afterTicks = datedTicks(State, Caster, targetStats, effectDuration)
+					if (afterTicks > 0) targetStats.AFTEREFFECT += calculatedValue
+					targetStats.AFTEREFFECT_OVER_TIME += calculatedValue * afterTicks
+					// La ligne enregistre la valeur des ticks FUTURS : son retrait déroule
+					// AFTEREFFECT/AFTEREFFECT_OVER_TIME seulement, jamais les dégâts immédiats.
+					RecordCastedEffectDated(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5], afterTicks)
+					effectTotal += appliedDamage
+				}
+				break
+			case EFFECT_BUFF_STRENGTH:
+				// SCIENCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					if (calculatedValue <= 0) continue   // EffectBuffStrength.java : if (value > 0)
+					targetStats.STRENGTH += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_REMOVE_SHACKLES:
+				for (var targetId: var aoeDistance in RealTargets) getEntityRemoveShacklesConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster)
+				break
+			case EFFECT_NOVA_DAMAGE:
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.SCIENCE) / 100) * (1 + CastStats.POWER / 100) // SCIENCE planchée, POWER non (EffectNovaDamage du moteur)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					var calculatedValue = EntityStateClass.hasState(targetStats, STATE_INVINCIBLE) ? 0 : round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					var damageAmount = min(calculatedValue, targetStats.TOTAL_LIFE - targetStats.LIFE)
+					targetStats.TOTAL_LIFE -= damageAmount
+					// onNovaDamage moteur : seul test isDead, PAS d'exclusion self.
+					if (targetStats.SPECIAL_WEAPON != 0) applyOnNovaDamagePassive(targetStats, damageAmount)
+					effectTotal += damageAmount
+				}
+				break
+			case EFFECT_STEAL_LIFE:
+				// Moteur : le CASTER récupère le TOTAL de l'effet PRÉCÉDENT, cappé à sa vie
+				// manquante — sauf s'il porte UNHEALABLE, EffectStealLife.java:12 sortant
+				// avant tout credit.
+				var stolen = EntityStateClass.hasState(CastStats, STATE_UNHEALABLE) ? 0 : min(PrevEffectTotal, CastStats.TOTAL_LIFE - CastStats.LIFE)
+				CastStats.LIFE += stolen
+				effectTotal = stolen
+				break
+			case EFFECT_ATTRACT:
+			case EFFECT_PUSH:
+				// Géométrie moteur (Attack.java:186-198 + Map.getPush/AttractLastAvailableCell) :
+				// l'entité GLISSE vers la cellule VISÉE To, jamais au-delà, stoppée par la
+				// première case indisponible — la VALEUR de l'effet n'intervient pas. To reste
+				// la cellule de CAST (Play.useItem la reçoit telle quelle), seule la destination
+				// SIMULÉE change. STATIC gate en tête comme State.slideEntity.
+				var occupied = [: ]
+				for (var oid: var ostat in State) if (ostat.LIFE > 0) occupied[ostat.CELL] = true
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					// ENRACINÉ bloque la glissade comme STATIC (State.slideEntity), pas l'inversion.
+					if (targetStats.STATIC || EntityStateClass.hasState(targetStats, STATE_ROOTED) || targetStats.LIFE <= 0) continue
+					var oldCell = targetStats.CELL
+					var newCell = CellClass.slideDestination(oldCell, To, State[Caster].CELL, EffectType == EFFECT_ATTRACT, occupied)
+					if (newCell == oldCell) continue
+					targetStats.CELL = newCell
+					occupied[oldCell] = false
+					occupied[newCell] = true
+					// Déplacement subi RÉEL (State.slideEntity -> onMoved seulement si la
+					// cellule change) : Explorer proc exactement une fois, sur la vraie arrivée.
+					if (targetStats.SPECIAL_WEAPON != 0) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, newCell)
+					if (!mapIsEmpty(PLANT_ZONE_BY_ID)) {
+						AwakeningClass.onSlide(State, targetId, oldCell, newCell, clonedIds)
+						occupied = [: ]
+						for (var oid: var ostat in State) if (ostat.LIFE > 0) occupied[ostat.CELL] = true
+					}
+				}
+				break
+			case EFFECT_REPEL:
+				// Recul d'un nombre de cases FIXE, loin du lanceur (Attack.java:206-217). Trois
+				// differences avec la poussee : la distance est la VALEUR de l'effet et non la
+				// cellule visee, le critique porte sur cette distance avec l'arrondi des autres
+				// effets, et le lanceur est explicitement epargne — la lance du soleil porte
+				// pourtant le bit de cible CASTER, elle se repousserait donc elle-meme.
+				// Ni la zone ni le nombre de cibles n'entrent dans la distance : le moteur ne lit
+				// que value1.
+				var repelDistance = round(Effect[1] * (CAST_IS_CRITICAL ? CRITICAL_FACTOR : 1))
+				if (repelDistance > 0) {
+					var repelOccupied = [: ]
+					for (var oid: var ostat in State) if (ostat.LIFE > 0) repelOccupied[ostat.CELL] = true
+					var repelCasterCell = State[Caster].CELL
+					for (var targetId: var aoeDistance in RealTargets) {
+						if (targetId == Caster) continue
+						var targetStats = State[targetId]
+						if (targetStats.STATIC || EntityStateClass.hasState(targetStats, STATE_ROOTED) || targetStats.LIFE <= 0) continue
+						var oldCell = targetStats.CELL
+						var newCell = CellClass.repelDestination(oldCell, repelCasterCell, repelDistance, repelOccupied)
+						if (newCell == oldCell) continue
+						targetStats.CELL = newCell
+						repelOccupied[oldCell] = false
+						repelOccupied[newCell] = true
+						if (targetStats.SPECIAL_WEAPON != 0) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, newCell)
+						if (!mapIsEmpty(PLANT_ZONE_BY_ID)) {
+							AwakeningClass.onSlide(State, targetId, oldCell, newCell, clonedIds)
+							repelOccupied = [: ]
+							for (var oid: var ostat in State) if (ostat.LIFE > 0) repelOccupied[ostat.CELL] = true
+						}
+					}
+				}
+				break
+			case EFFECT_SHACKLE_AGILITY:
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					targetStats.AGILITY -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_RAW_BUFF_RESISTANCE:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(baseEffectValue * AOE_FALLOFF[aoeDistance])
+					targetStats.RESISTANCE += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_INVERT:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (targetStats.STATIC) continue
+					var oldCell = targetStats.CELL
+					targetStats.CELL = From
+					State[Caster].CELL = To
+					// La CIBLE subit le déplacement (invertEntities : target.onMoved(caster)) ;
+					// le caster s'auto-ignore (onMoved : by == this -> return).
+					if (targetStats.SPECIAL_WEAPON != 0) applyOnMovedPassive(targetStats, targetId, Caster, oldCell, From)
+					// Les deux positions changent AVANT les tests d'entrée : le lanceur, puis la cible.
+					if (!mapIsEmpty(PLANT_ZONE_BY_ID)) {
+						AwakeningClass.onStep(State, Caster, From, To, clonedIds)
+						AwakeningClass.onStep(State, targetId, oldCell, From, clonedIds)
+					}
+				}
+				break
+			case EFFECT_RAW_BUFF_MP:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(baseEffectValue * AOE_FALLOFF[aoeDistance])
+					targetStats.MP += calculatedValue
+					targetStats.TOTAL_MP += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_DAMAGE_RETURN:
+				var casterStatMultiplier = baseEffectValue * max(0, 1 + CastStats.AGILITY / 100)   // EffectDamageReturn : appliqué seulement si positif -> AGI -50 = 50%, <= -100 = 0
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					targetStats.DAMAGE_RETURN += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_RAW_BUFF_AGILITY:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(baseEffectValue * AOE_FALLOFF[aoeDistance])
+					targetStats.AGILITY += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_RAW_BUFF_MAGIC:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(baseEffectValue * AOE_FALLOFF[aoeDistance])
+					targetStats.MAGIC += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_RAW_BUFF_SCIENCE:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(baseEffectValue * AOE_FALLOFF[aoeDistance])
+					targetStats.SCIENCE += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_POISON:
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) * (1 + CastStats.POWER / 100) // MAGIC planchée à l'usage, POWER non (EffectPoison du moteur)
+				var effectDuration = Effect[3]
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					// Valeur BRUTE : EffectPoison.apply ne teste aucun etat, il fige la valeur une
+					// fois pour toutes (EffectPoison.java:12). L'invincibilite s'applique au TICK,
+					// un par un (:23-25) — si le lanceur de la protection meurt, les ticks
+					// restants blessent. La ligne, les agregats et le total rendu au vol de vie
+					// portent donc la valeur pleine, comme le moteur.
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					var poisonTicks = datedTicks(State, Caster, targetStats, effectDuration)
+					if (poisonTicks > 0) targetStats.POISON += calculatedValue
+					targetStats.POISON_OVER_TIME += calculatedValue * poisonTicks
+					RecordCastedEffectDated(targetStats, EffectType, calculatedValue, Caster, effectDuration, CAST_IS_CRITICAL, Item, Effect[5], poisonTicks)
+					effectTotal += calculatedValue
+				}
+				break
+			case EFFECT_ABSOLUTE_VULNERABILITY:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(baseEffectValue * AOE_FALLOFF[aoeDistance])
+					targetStats.ABSOLUTE_SHIELD -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+					effectTotal += calculatedValue
+				}
+				break
+			case EFFECT_SHACKLE_TP:
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					targetStats.TP -= calculatedValue
+					targetStats.TOTAL_TP -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_STEAL_ABSOLUTE_SHIELD:
+				// Moteur : le CASTER gagne un bouclier absolu égal au TOTAL de l'effet PRÉCÉDENT
+				// de l'item (rien n'est retiré à la cible ici — le "vol" vient de l'effet d'avant,
+				// typiquement une vulné absolue). EffectStealAbsoluteShield vérifié : buff NORMAL
+				// (stats.setStat) -> remplacement + ledger comme les autres shields (les gates
+				// durée/valeur écartent seuls les variantes instantanées).
+				if (!isEffectStackable) ReplacementChangeStats(Item, Effect, CastStats)
+				CastStats.ABSOLUTE_SHIELD += PrevEffectTotal
+				RecordCastedEffect(CastStats, EffectType, PrevEffectTotal, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				effectTotal = PrevEffectTotal
+				break
+			case EFFECT_KILL:
+				for (var targetId: var aoeDistance in RealTargets) getKillConsequences(State[targetId], CastStats, State, clonedIds)
+				break
+			case EFFECT_SHACKLE_MP:
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					targetStats.MP -= calculatedValue
+					targetStats.TOTAL_MP -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_BUFF_RESISTANCE:
+				// SCIENCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					if (calculatedValue <= 0) continue   // EffectBuffResistance.java : if (value > 0)
+					targetStats.RESISTANCE += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_BUFF_WISDOM:
+				// SCIENCE non planchée : le moteur la prend telle quelle et garde le RÉSULTAT.
+				var casterStatMultiplier = baseEffectValue * (1 + CastStats.SCIENCE / 100)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					if (calculatedValue <= 0) continue   // EffectBuffWisdom.java : if (value > 0)
+					targetStats.WISDOM += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_RAW_ABSOLUTE_SHIELD:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(baseEffectValue * AOE_FALLOFF[aoeDistance])
+					targetStats.ABSOLUTE_SHIELD += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_RAW_BUFF_POWER:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(baseEffectValue * AOE_FALLOFF[aoeDistance])
+					targetStats.POWER += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_RAW_RELATIVE_SHIELD:
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(baseEffectValue * AOE_FALLOFF[aoeDistance])
+					targetStats.RELATIVE_SHIELD += calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_SHACKLE_MAGIC:
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					targetStats.MAGIC -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_SHACKLE_STRENGTH:
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					targetStats.STRENGTH -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			// Place en QUEUE de switch a dessein : le switch LeekScript teste les cas un par un,
+			// et un seul item du jeu porte cet effet — une puce de boss que personne n'equipe.
+			// Le mettre plus haut ferait payer une comparaison a tous les effets d'en dessous.
+			case EFFECT_TOTAL_DEBUFF:
+				// Meme reduction que la Liberation, mais Entity.reduceEffectsTotal n'a PAS
+				// l'exemption d'irreductibilite de son jumeau reduceEffects : a 100 % il efface
+				// aussi le POWER systeme de BR, le multiplicateur colossus et le RAW_AGILITY du
+				// Dark Katana. C'est la SEULE difference entre les deux cote moteur.
+				for (var targetId: var aoeDistance in RealTargets) getEntityDebuffConsequences(aoeDistance, Multiplier, Effect, State[targetId], CastStats, targetId == Caster, true)
+				break
+			case EFFECT_SHACKLE_WISDOM:
+				var casterStatMultiplier = baseEffectValue * (1 + max(0, CastStats.MAGIC) / 100) // plancher à l'usage, comme le moteur (une stat peut être stockée négative)
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					if (!isEffectStackable) ReplacementChangeStats(Item, Effect, targetStats)
+					var calculatedValue = round(casterStatMultiplier * AOE_FALLOFF[aoeDistance])
+					targetStats.WISDOM -= calculatedValue
+					RecordCastedEffect(targetStats, EffectType, calculatedValue, Caster, Effect[3], CAST_IS_CRITICAL, Item, Effect[5])
+				}
+				break
+			case EFFECT_TELEPORT:
+				var teleStart = State[Caster].CELL
+				State[Caster].CELL = To
+				// Seule l'arrivée est examinée (State.teleportEntity).
+				if (!mapIsEmpty(PLANT_ZONE_BY_ID)) AwakeningClass.onStep(State, Caster, teleStart, To, clonedIds)
+				break
+			case EFFECT_SUPERINFECTION:
+				// EffectSuperinfection : une fraction de la SOMME des ticks, arrondie une fois.
+				// Chaque poison fini perd un tick entier, sans réduire sa valeur par tick.
+				// Invincible annule les dégâts, pas ce tick consommé ; irréductible ne le protège pas.
+				var ratio = min(1, (Effect[1] / 100) * (CAST_IS_CRITICAL ? CRITICAL_FACTOR : 1))
+				var superErosionRate = CAST_IS_CRITICAL ? EROSION_POISON + EROSION_CRITICAL_BONUS : EROSION_POISON
+				for (var targetId: var aoeDistance in RealTargets) {
+					var targetStats = State[targetId]
+					var converted = 0
+					var hasPoisonLine = false
+					for (var eff in targetStats.EFFECTS) {
+						if (eff[0] == EFFECT_POISON && eff[3] > 0) {
+							hasPoisonLine = true
+							break
+						}
+					}
+					if (hasPoisonLine) {
+						var reducedEffects = []
+						for (var eff in targetStats.EFFECTS) {
+							if (eff[0] != EFFECT_POISON || eff[3] <= 0) {
+								push(reducedEffects, eff)
+								continue
+							}
+							converted += eff[1]
+							if (eff[3] == 1) {
+								removeCastedEffect(EFFECT_POISON, targetStats, eff[1], eff[8], eff[3])
+							} else {
+								targetStats.POISON_OVER_TIME -= eff[1]
+								push(reducedEffects, [eff[0], eff[1], eff[2], eff[3] - 1, eff[4], eff[5], eff[6], eff[7], eff[8] - 1])
+							}
+						}
+						targetStats.EFFECTS = reducedEffects
+					}
+					var superDamage = min(round(converted * ratio), targetStats.LIFE)
+					if (EntityStateClass.hasState(targetStats, STATE_INVINCIBLE)) superDamage = 0
+					if (superDamage > 0) {
+						// removeLife puis onPoisonDamage et onNovaDamage, sans boucliers ni
+						// multiplicateur : ce sont des degats de poison deja chiffres.
+						var superErosion = round(superDamage * superErosionRate)
+						if (superDamage >= targetStats.LIFE) {
+							getKillConsequences(targetStats, CastStats, State, clonedIds)
+						} else {
+							targetStats.LIFE -= superDamage
+						}
+						targetStats.TOTAL_LIFE -= superErosion
+						if (targetStats.SPECIAL_WEAPON != 0) {
+							applyOnPoisonDamagePassive(targetStats, superDamage)
+							applyOnNovaDamagePassive(targetStats, superErosion)
+						}
+					}
+					effectTotal += superDamage
+				}
+				break
+		}
+		return effectTotal
+	}
+
+	/* Applique tous les effets de l'item sur l'état (From nécessaire pour les lasers). */
+	static getConsequences(State, Item, From, To, Caster, BaseHash, clonedIds, ResurrectId) {
+		BenchOps.Start("Consequences")
+		applyItemEffects(State, Item, From, To, Caster, ConsequenceTargets(Item, From, To, State, Caster, BaseHash), clonedIds, ResurrectId)
+		BenchOps.Stop("Consequences")
+	}
+
+	/*
+	 * Lancer d'une entité qui n'est PAS Me (plante réveillée) : la carte de cibles se calcule
+	 * sans cache, la clé de celui-ci ne portant pas la cellule de Me.
+	 */
+	static getConsequencesUncached(State, Item, From, To, Caster, clonedIds) {
+		var Targets = [: ]
+		ApplyAreaConsequence(ITEMINFO[Item].AREA, Targets, Item, From, To, State, Caster)
+		applyItemEffects(State, Item, From, To, Caster, Targets, clonedIds, null)
+	}
+
+	static applyItemEffects(State, Item, From, To, Caster, Targets, clonedIds, ResurrectId) {
+		var CastStats = State[Caster]
+		var prevEffectTotal = 0   // STEALS : total appliqué de l'effet précédent de CE cast (contrat Attack.java)
+		// Crit du CAST : roll unique AVANT les effets (Attack.applyOnCell) — un self-buff d'AGI
+		// en cours de cast ne change pas le verdict des effets suivants. Lu aussi par les
+		// fonctions de dégâts pour l'érosion.
+		CAST_IS_CRITICAL = CastStats.AGILITY >= MIN_AGILITY_TO_FULLY_CRIT
+		// Unstable Destroyer : UN soin par cast critique, AVANT le premier effet (State.java
+		// appelle onCritical avant applyOnCell — armes, puces, summon, resurrect).
+		if (CAST_IS_CRITICAL && CastStats.SPECIAL_WEAPON != 0) applyOnCriticalPassive(CastStats)
+		for (var Effect in ITEMINFO[Item].EFFECTS) {
+			if (CastStats.LIFE <= 0) break   // caster mort en route (retour léthal) : le moteur saute les effets restants
+			var EffectType = Effect[0]
+			switch (EffectType) {
+				case EFFECT_SUMMON:
+					// Fixed id per bulb TYPE this turn (chips have cooldowns -> a type can't be summoned
+					// twice in a branch) -> same id <=> same type, order-independent across branches.
+					var Id = SUMMON_ID_BASE + BulbState.getTypeOffset(Item)
+					// Engine-exact tie-break (Order.addSummon inserts at indexOf(owner)+1): the MOST
+					// RECENT summon plays FIRST among the owner's summons. Count this branch's earlier
+					// virtual bulbs of this summoner (dead included: deterministic offsets).
+					var nPriorVirtuals = 0
+					for (var vid: var vstat in State) if (vid > SUMMON_ID_BASE && vstat.SUMMONER == Caster) nPriorVirtuals++
+					// Le critique gouverne AUSSI le bulbe : summonEntity tire son generateCritical
+					// et le passe à createInvocation, qui multiplie les neuf stats par 1,2.
+					var EntityStats = new BulbState(Id, SUMMONER_LEVEL_TIMES, Item, To, Caster, CastStats, nPriorVirtuals, CAST_IS_CRITICAL)
+					// SEULE mutation de la map extérieure faite ici : elle s'enregistre à la
+					// SOURCE, comme ensureCloned pour une entité mutée — ancien état s'il y en
+					// avait un (collision d'id : le workspace le retrouvera à la restauration),
+					// null sinon (entité NÉE dans l'action -> retirée du workspace). Jamais
+					// d'écrasement d'une entrée déjà enregistrée : clonedIds garde l'état
+					// d'AVANT le cast entier.
+					if (!(Id in clonedIds)) clonedIds[Id] = (Id in State) ? State[Id] : null
+					State[Id] = EntityStats
+					// Une invocation qui sort de terre dans une zone d'Éveil réveille la plante, et
+					// une plante posée est réveillée par ce qui l'entoure (Fight.summonEntity).
+					AwakeningClass.onSummoned(State, Id, clonedIds)
+					break
+				case EFFECT_RESURRECT:
+					ResurrectionClass.Update(To, State, ResurrectId, clonedIds)
+					break
+			}
+			var TmpTargets = RealConsequenceTargets(Targets, Effect, State, CastStats, Caster, Item)
+			var Multiplier = (Effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS) ? mapSize(TmpTargets) : 1 //Saving Multiplier
+			if (CAST_IS_CRITICAL) Multiplier *= CRITICAL_FACTOR
+			var RealTargets = Effect[5] & EFFECT_MODIFIER_ON_CASTER ? [Caster: 0] : TmpTargets
+			// Clonage PARESSEUX : chaque cible réellement applicable est clonée au premier
+			// effet qui la touche (garde d'ensureCloned — clonedIds conserve l'état d'AVANT
+			// le cast entier). Les filtres ci-dessus ont lu l'état courant, identique en
+			// valeur ; la mutation d'applyEffect n'écrit que le clone rebindé.
+			for (var lazyTarget: var lazyDist in RealTargets) {
+				StateClass.ensureCloned(State, lazyTarget, clonedIds)
+			}
+			prevEffectTotal = applyEffect(EffectType, State, From, To, Effect, Caster, Multiplier, Item, RealTargets, CastStats, clonedIds, prevEffectTotal)
+		}
+	}
+
+	static isHitable(Effect, TarStats, CastStats, TarIsCaster) {
+		if (TarStats.LIFE <= 0) return false
+		var effMask = Effect[4]
+
+		if (TarIsCaster && !(effMask & EFFECT_TARGET_CASTER)) return false
+
+		// 0: Enemy Leek, 1: Enemy Summon, 2: Ally Leek, 3: Ally Summon
+		var targetType = (CastStats.SIDE == TarStats.SIDE ? 2 : 0) | (TarStats.IS_SUMMON ? 1 : 0)
+
+		switch (targetType) {
+			case 0:
+				return (effMask & EFFECT_TARGET_ENEMIES) && (effMask & EFFECT_TARGET_NON_SUMMONS)
+			case 1:
+				return (effMask & EFFECT_TARGET_ENEMIES) && (effMask & EFFECT_TARGET_SUMMONS)
+			case 2:
+				return (effMask & EFFECT_TARGET_ALLIES) && (effMask & EFFECT_TARGET_NON_SUMMONS)
+			case 3:
+				return (effMask & EFFECT_TARGET_ALLIES) && (effMask & EFFECT_TARGET_SUMMONS)
+		}
+		return false
+	}
+
+	// DurationOfEffect = ticks périodiques (eff[8]) ; RemainingTurns = durée brute (eff[3]).
+	static removeCastedEffect(EffectType, StatsTarget, ValueOfEffect, DurationOfEffect, RemainingTurns) {
+		if (EffectType in CAP_EFFECT_TYPES) StatsTarget.CAP_DIRTY = true
+		switch (EffectType) {
+			case EFFECT_BUFF_TP:
+			case EFFECT_RAW_BUFF_TP:
+				StatsTarget.TP -= ValueOfEffect
+				StatsTarget.TOTAL_TP -= ValueOfEffect
+				break
+			case EFFECT_HEAL:
+				// DurationOfEffect = les ticks DATES de la ligne (index 8), la meme valeur que
+				// celle qui a nourri l'agregat ; l'agregat par tick, lui, n'a recu la ligne que
+				// s'il en restait au moins un.
+				if (DurationOfEffect > 0) StatsTarget.HEAL -= ValueOfEffect
+				StatsTarget.HEAL_OVER_TIME -= ValueOfEffect * DurationOfEffect
+				break
+			case EFFECT_BUFF_WISDOM:
+			case EFFECT_RAW_BUFF_WISDOM:
+				StatsTarget.WISDOM -= ValueOfEffect
+				BuffDuration.updateWisdom(StatsTarget, -ValueOfEffect, RemainingTurns)
+				break
+			case EFFECT_DAMAGE_RETURN:
+				StatsTarget.DAMAGE_RETURN -= ValueOfEffect
+				break
+			case EFFECT_BUFF_MP:
+			case EFFECT_RAW_BUFF_MP:
+				StatsTarget.MP -= ValueOfEffect
+				StatsTarget.TOTAL_MP -= ValueOfEffect
+				break
+			case EFFECT_RAW_RELATIVE_SHIELD:
+			case EFFECT_RELATIVE_SHIELD:
+				StatsTarget.RELATIVE_SHIELD -= ValueOfEffect
+				break
+			case EFFECT_BUFF_STRENGTH:
+			case EFFECT_RAW_BUFF_STRENGTH:
+				StatsTarget.STRENGTH -= ValueOfEffect
+				BuffDuration.updateStrength(StatsTarget, -ValueOfEffect, RemainingTurns)
+				break
+			case EFFECT_BUFF_RESISTANCE:
+			case EFFECT_RAW_BUFF_RESISTANCE:
+				StatsTarget.RESISTANCE -= ValueOfEffect
+				BuffDuration.updateResistance(StatsTarget, -ValueOfEffect, RemainingTurns)
+				break
+			case EFFECT_BUFF_AGILITY:
+			case EFFECT_RAW_BUFF_AGILITY:
+				StatsTarget.AGILITY -= ValueOfEffect
+				BuffDuration.updateAgility(StatsTarget, -ValueOfEffect, RemainingTurns)
+				break
+			case EFFECT_ABSOLUTE_SHIELD:
+			case EFFECT_RAW_ABSOLUTE_SHIELD:
+			case EFFECT_STEAL_ABSOLUTE_SHIELD:
+				StatsTarget.ABSOLUTE_SHIELD -= ValueOfEffect
+				break
+			case EFFECT_RAW_BUFF_MAGIC:
+				StatsTarget.MAGIC -= ValueOfEffect
+				BuffDuration.updateMagic(StatsTarget, -ValueOfEffect, RemainingTurns)
+				break
+			case EFFECT_RAW_BUFF_SCIENCE:
+				StatsTarget.SCIENCE -= ValueOfEffect
+				BuffDuration.updateScience(StatsTarget, -ValueOfEffect, RemainingTurns)
+				break
+			case EFFECT_VULNERABILITY:
+				StatsTarget.RELATIVE_SHIELD += ValueOfEffect
+				break
+			case EFFECT_SHACKLE_TP:
+				StatsTarget.TP += ValueOfEffect
+				StatsTarget.TOTAL_TP += ValueOfEffect
+				StatsTarget.SHACKLE_TP -= ValueOfEffect
+				break
+			case EFFECT_ABSOLUTE_VULNERABILITY:
+				StatsTarget.ABSOLUTE_SHIELD += ValueOfEffect
+				break
+			case EFFECT_SHACKLE_MP:
+				StatsTarget.MP += ValueOfEffect
+				StatsTarget.TOTAL_MP += ValueOfEffect
+				StatsTarget.SHACKLE_MP -= ValueOfEffect
+				break
+			case EFFECT_SHACKLE_AGILITY:
+				StatsTarget.AGILITY += ValueOfEffect
+				StatsTarget.SHACKLE_AGILITY -= ValueOfEffect
+				break
+			case EFFECT_AFTEREFFECT:
+				// DurationOfEffect = les ticks DATES de la ligne (index 8), la meme valeur que
+				// celle qui a nourri l'agregat ; l'agregat par tick, lui, n'a recu la ligne que
+				// s'il en restait au moins un.
+				if (DurationOfEffect > 0) StatsTarget.AFTEREFFECT -= ValueOfEffect
+				StatsTarget.AFTEREFFECT_OVER_TIME -= ValueOfEffect * DurationOfEffect
+				break
+			case EFFECT_POISON:
+				// DurationOfEffect = les ticks DATES de la ligne (index 8), la meme valeur que
+				// celle qui a nourri l'agregat ; l'agregat par tick, lui, n'a recu la ligne que
+				// s'il en restait au moins un.
+				if (DurationOfEffect > 0) StatsTarget.POISON -= ValueOfEffect
+				StatsTarget.POISON_OVER_TIME -= ValueOfEffect * DurationOfEffect
+				break
+			case EFFECT_RAW_BUFF_POWER:
+				StatsTarget.POWER -= ValueOfEffect
+				break
+			case EFFECT_SHACKLE_MAGIC:
+				StatsTarget.MAGIC += ValueOfEffect
+				StatsTarget.SHACKLE_MAGIC -= ValueOfEffect
+				break
+			case EFFECT_SHACKLE_STRENGTH:
+				StatsTarget.STRENGTH += ValueOfEffect
+				StatsTarget.SHACKLE_STRENGTH -= ValueOfEffect
+				break
+			case EFFECT_SHACKLE_WISDOM:
+				StatsTarget.WISDOM += ValueOfEffect
+				StatsTarget.SHACKLE_WISDOM -= ValueOfEffect
+				break
+		}
+	}
+
+	/*
+	 * Enregistre un effet PERSISTANT dans le ledger de sa cible — réplique
+	 * Effect.createEffect:232-249 : FUSION avec la première ligne de même (type, item,
+	 * durée, caster) — mergeWith cumule la valeur et GARDE le critique, la cible et les
+	 * modifiers de la ligne existante (Effect.java:336-342) — sinon ajout d'une ligne
+	 * neuve. Gate d'ajout moteur : durée != 0 ET valeur appliquée > 0. Layout COMPLET du
+	 * moteur (EntityAI.getEffectArray, même format que getEffects) :
+	 * [type, value, caster, turns, critical, item, target, modifiers] — les modifiers
+	 * portent notamment MODIFIER_IRREDUCTIBLE, que Libération respecte ligne à ligne.
+	 * Tableau et lignes JAMAIS mutés en place (partagés avec les parents).
+	 * NB : la clé de fusion (type+item+durée+caster) n'est PAS celle du remplacement
+	 * non-stackable (type+item), déjà passé AVANT l'application (ReplacementChangeStats).
+	 */
+	static RecordCastedEffect(TarStats, EffectType, AppliedValue, CasterId, Duration, Critical, Item, Modifiers) {
+		RecordCastedEffectDated(TarStats, EffectType, AppliedValue, CasterId, Duration, Critical, Item, Modifiers, Duration)
+	}
+
+	// PeriodicEffect : même nombre de ticks quel que soit l'ordre du lanceur ou du porteur.
+	static datedTicks(State, CasterId, TarStats, Duration) {
+		return Duration
+	}
+
+	/* RecordCastedEffect, ticks datés fournis par l'appelant (index 8 de la ligne). */
+	static RecordCastedEffectDated(TarStats, EffectType, AppliedValue, CasterId, Duration, Critical, Item, Modifiers, Dated) {
+		// AVANT les portes du ledger : l'écriture de capability a déjà eu lieu chez l'appelant,
+		// même si la ligne d'effet, elle, n'est pas enregistrable.
+		if (EffectType in CAP_EFFECT_TYPES) TarStats.CAP_DIRTY = true
+		if (Duration == 0 || AppliedValue <= 0) return;
+		// Une fusion cumule la valeur mais conserve la durée : ajouter seulement le delta.
+		ShackleScoring.record(TarStats, EffectType, AppliedValue)
+		if (EffectType == EFFECT_BUFF_STRENGTH || EffectType == EFFECT_RAW_BUFF_STRENGTH) {
+			BuffDuration.updateStrength(TarStats, AppliedValue, Duration)
+		} else if (EffectType == EFFECT_BUFF_AGILITY || EffectType == EFFECT_RAW_BUFF_AGILITY) {
+			BuffDuration.updateAgility(TarStats, AppliedValue, Duration)
+		} else if (EffectType == EFFECT_BUFF_WISDOM || EffectType == EFFECT_RAW_BUFF_WISDOM) {
+			BuffDuration.updateWisdom(TarStats, AppliedValue, Duration)
+		} else if (EffectType == EFFECT_BUFF_RESISTANCE || EffectType == EFFECT_RAW_BUFF_RESISTANCE) {
+			BuffDuration.updateResistance(TarStats, AppliedValue, Duration)
+		} else if (EffectType == EFFECT_RAW_BUFF_MAGIC) {
+			BuffDuration.updateMagic(TarStats, AppliedValue, Duration)
+		} else if (EffectType == EFFECT_RAW_BUFF_SCIENCE) {
+			BuffDuration.updateScience(TarStats, AppliedValue, Duration)
+		}
+		var effects = TarStats.EFFECTS
+		var mergeIdx = -1
+		for (var i: var eff in effects) {
+			if (eff[0] == EffectType && eff[5] == Item && eff[3] == Duration && eff[2] == CasterId) { mergeIdx = i; break }
+		}
+		// Une ligne d'UN tour peut entrer dans SHIELD_EXPIRY — les vulnérabilités de la méta
+		// durent exactement un tour — et la poser comme la fusionner périme la liste de la cible.
+		// Aucune autre durée n'y entre depuis une branche : le lanceur y est moi ou un de mes
+		// bulbes, et ni l'un ni l'autre ne joue deux fois avant sa cible. D'où une garde à un seul
+		// test sur ce chemin, le plus chaud du ledger.
+		if (mergeIdx == -1) {
+			TarStats.EFFECTS = effects + [[EffectType, AppliedValue, CasterId, Duration, Critical, Item, TarStats.ID, Modifiers, Dated]]
+			if (Duration == 1) EntityStateClass.refreshShieldExpiry(TarStats)
+			return;
+		}
+		var newEffects = []
+		for (var i: var old in effects) {
+			if (i == mergeIdx) {
+				push(newEffects, [old[0], old[1] + AppliedValue, old[2], old[3], old[4], old[5], old[6], old[7], old[8]])
+			} else {
+				push(newEffects, old)
+			}
+		}
+		TarStats.EFFECTS = newEffects
+		if (Duration == 1) EntityStateClass.refreshShieldExpiry(TarStats)
+	}
+
+	/*
+	 * Remplacement moteur (Effect.createEffect:215-228) : un effet NON stackable de durée
+	 * non nulle retire LA PREMIÈRE ligne active de même type ET même item d'origine (break
+	 * après la première — un item à plusieurs effets persistants garde ses autres types).
+	 * La ligne est annulée (removeCastedEffect) PUIS retirée du ledger via un tableau NEUF
+	 * rebindé — jamais de mutation du tableau partagé avec les états parents. La ligne
+	 * disparue ne sera pas re-déroulée à la mort de son ancien caster.
+	 */
+	/*
+	 * CONTRAT D'ENTRÉE : l'effet n'est PAS empilable. Les 34 sites d'appel le garantissent, par
+	 * trois voies — 32 par `if (!isEffectStackable)` dans applyEffect, où isEffectStackable est
+	 * le même bit du même objet Effect, un par `!(passiveRow[5] & EFFECT_MODIFIER_STACKABLE)`, où
+	 * passiveRow[5] devient Effect[5], et un par la règle moteur : un ADD_STATE n'empile jamais,
+	 * quel que soit son bit (Effect.java:238).
+	 * Reposer la question ici coûtait une lecture, un ET et un branchement à chaque
+	 * remplacement. Tout NOUVEAU site d'appel doit honorer ce contrat.
+	 */
+	static ReplacementChangeStats(Item, Effect, TarStats) {
+		if (Effect[3] == 0) return;
+		// Pré-scan : pas de match -> aucune allocation (chemin ultra-majoritaire).
+		var found = false
+		for (var eff in TarStats.EFFECTS) {
+			if (eff[0] == Effect[0] && eff[5] == Item) { found = true; break }
+		}
+		if (!found) return;
+		var newEffects = []
+		var removed = false
+		var statesDirty = false
+		for (var eff in TarStats.EFFECTS) {
+			if (!removed && eff[0] == Effect[0] && eff[5] == Item) {
+				removeCastedEffect(eff[0], TarStats, eff[1], eff[8], eff[3])
+				if (eff[0] == EFFECT_ADD_STATE) statesDirty = true
+				removed = true
+				continue   // la ligne remplacée ne passe pas dans le nouveau tableau
+			}
+			push(newEffects, eff)
+		}
+		TarStats.EFFECTS = newEffects
+		// Ligne d'etat disparue : le masque se relit dans les lignes qui restent.
+		if (statesDirty) EntityStateClass.refreshStates(TarStats)
+		EntityStateClass.refreshShieldExpiry(TarStats)
+	}
+
+	/*
+	 * Déroule tous les effets castés par une entité (à sa mort) ET retire leurs lignes du
+	 * ledger des cibles (Entity.die : removeLaunchedEffect + removeEffect) — TOUTES les
+	 * lignes du caster, pas seulement la première. Tableau neuf rebindé (jamais de mutation
+	 * du partagé) -> un second appel avec le même caster est un no-op.
+	 */
+	static RemoveCastedEffects(EveryStats, Caster, clonedIds) {
+		// Clone-on-write : un porteur d'effet peut être HORS du set pré-cloné (= partagé avec
+		// l'état parent). Collecter d'abord, puis cloner+muter — ensureCloned remplace des
+		// valeurs de map, ne jamais muter une map en l'itérant.
+		var touched = []
+		for (var e: var stat in EveryStats) {
+			for (var eff in stat.EFFECTS) {
+				if (eff[2] == Caster) {
+					push(touched, e)
+					break
+				}
+			}
+		}
+		for (var e in touched) {
+			var stat = StateClass.ensureCloned(EveryStats, e, clonedIds)
+			var newEffects = []
+			var statesDirty = false
+			for (var eff in stat.EFFECTS) {
+				if (eff[2] == Caster) {
+					removeCastedEffect(eff[0], stat, eff[1], eff[8], eff[3])
+					if (eff[0] == EFFECT_ADD_STATE) statesDirty = true
+				} else {
+					push(newEffects, eff)
+				}
+			}
+			stat.EFFECTS = newEffects
+			// La mort du lanceur retire l'etat qu'il accordait, comme Entity.die.
+			if (statesDirty) EntityStateClass.refreshStates(stat)
+			EntityStateClass.refreshShieldExpiry(stat)
+		}
+	}
+
+	/*
+	 * Mort d'une entité — réplique State.onPlayerDie puis Entity.die, dans l'ordre moteur :
+	 * bonus BR du killer -> bonus coffre -> Dark Katana (alliés VIVANTS de la victime, victime
+	 * non-summon) -> Enhanced Lightninger (le killer SEUL, vivant) -> retrait des effets lancés
+	 * par la victime -> cascade des summons vivants (killer null : aucun bonus, aucun proc).
+	 * KillerStats == null pour une mort de cascade. Idempotente : victime déjà morte = no-op.
+	 */
+	static getKillConsequences(VictimStats, KillerStats, EveryStats, clonedIds) {
+		if (VictimStats.LIFE <= 0) return;
+		VictimStats = StateClass.ensureCloned(EveryStats, VictimStats.ID, clonedIds)
+		VictimStats.LIFE = 0
+		var Killed = VictimStats.ID
+		var killer = (KillerStats != null) ? StateClass.ensureCloned(EveryStats, KillerStats.ID, clonedIds) : null
+
+		// Bonus BR + coffre (State.onPlayerDie — killer non-null seulement, PAS de check
+		// vivant : un renvoyeur mort touche quand même son bonus, comme le moteur).
+		if (killer != null) {
+			if (FIGHT_TYPE == FIGHT_TYPE_BATTLE_ROYALE) {
+				// Approx déclarée : le moteur lit le seul effet RAW_BUFF_POWER SYSTÈME de la
+				// victime (attack == null) ; notre POWER agrège aussi les buffs d'items.
+				killer.POWER += (VictimStats.IS_SUMMON ? 2 : 10) + floor(VictimStats.POWER / 2)
+			}
+			switch (VictimStats.NAME) {
+				case "wooden_chest": killer.POWER += 10; break
+				case "iron_chest": killer.POWER += 50; break
+				case "diamond_chest": killer.POWER += 100; break
+			}
+		}
+
+		// Dark Katana : la mort d'un NON-summon buffe l'AGILITY des alliés VIVANTS porteurs de
+		// la victime (Entity.onAllyKilled : jamais elle-même, jamais l'autre camp, morts
+		// exclus). Collecter les ids PUIS cloner+muter (pas de mutation pendant le parcours).
+		if (!VictimStats.IS_SUMMON) {
+			var darkIds = []
+			for (var e: var stat in EveryStats) {
+				if (e != Killed && stat.LIFE > 0 && stat.SIDE == VictimStats.SIDE && (stat.SPECIAL_WEAPON & SPW_DARK_KATANA)) push(darkIds, e)
+			}
+			var darkRow = PASSIVE_INFO[WEAPON_DARK_KATANA][EFFECT_ALLY_KILLED_TO_AGILITY]
+			for (var e in darkIds) {
+				applyPassiveRawEffect(StateClass.ensureCloned(EveryStats, e, clonedIds), EFFECT_RAW_BUFF_AGILITY, darkRow[1], WEAPON_DARK_KATANA, darkRow, false)
+			}
+		}
+
+		// Enhanced Lightninger : le KILLER SEUL, s'il est VIVANT et porteur (Entity.onKill :
+		// isDead() return). Les autres porteurs ne gagnent rien.
+		if (killer != null && killer.LIFE > 0 && (killer.SPECIAL_WEAPON & SPW_ENHANCED_LIGHTNINGER)) {
+			var killRow = PASSIVE_INFO[WEAPON_ENHANCED_LIGHTNINGER][EFFECT_KILL_TO_TP]
+			// forceStackable : Entity.activateOnKillPassiveEffect crée le RAW TP stackable EN DUR.
+			applyPassiveRawEffect(killer, EFFECT_RAW_BUFF_TP, killRow[1], WEAPON_ENHANCED_LIGHTNINGER, killRow, true)
+		}
+
+		// Entity.die fait DEUX vidanges, dans cet ordre : les effets LANCÉS par la victime,
+		// retirés de leurs porteurs...
+		RemoveCastedEffects(EveryStats, Killed, clonedIds)
+
+		// ...puis les effets que la victime PORTE, quel qu'en soit le lanceur, suivis d'un
+		// updateBuffStats sur une liste vide : le cadavre repart sur ses stats de base, sans
+		// bouclier, sans entrave et sans état. Défaire chaque ligne au lieu de vider sec, les
+		// agrégats étant tenus incrémentalement. C'est aussi ce qui rend le ledger cohérent
+		// plus tard : la ligne ayant disparu du cadavre, la mort ultérieure de son lanceur ne
+		// la décomptera pas une seconde fois — le moteur l'a lui aussi retirée de son côté.
+		var victim = StateClass.ensureCloned(EveryStats, Killed, clonedIds)
+		if (count(victim.EFFECTS) > 0) {
+			for (var eff in victim.EFFECTS) removeCastedEffect(eff[0], victim, eff[1], eff[8], eff[3])
+			victim.EFFECTS = []
+			EntityStateClass.refreshShieldExpiry(victim)
+		}
+		victim.STATES = 0
+
+		// Cascade : les summons VIVANTS de la victime meurent avec killer null (récursif :
+		// summons de summons).
+		var cascadeIds = []
+		for (var e: var stat in EveryStats) {
+			if (stat.LIFE > 0 && stat.SUMMONER == Killed) push(cascadeIds, e)
+		}
+		for (var e in cascadeIds) {
+			getKillConsequences(EveryStats[e], null, EveryStats, clonedIds)
+		}
+	}
+
+	/*
+	 * Passifs d'armes événementiels — calqués sur Entity.java (onDirectDamage, onNovaDamage,
+	 * onCritical, onMoved) : porteur VIVANT seulement, valeurs lues dans PASSIVE_INFO.
+	 * Les call sites gatent sur un masque SPECIAL_WEAPON non nul pour ne payer l'appel que chez les
+	 * porteurs. Hors modèle (documenté) : les procs des ticks FUTURS de poison (Illicit
+	 * Grenade Launcher : POISON_TO_SCIENCE au tick) et d'aftereffect — chantier ticks/ledger.
+	 */
+
+	/*
+	 * Proc PERSISTANT d'une arme passive : le porteur se lance à LUI-MÊME un effet RAW
+	 * (activateOn*PassiveEffect -> createEffect(..., this, this, weapon.attack) avec
+	 * critical = false). Applique le RAW aux agrégats ET l'enregistre au ledger — type RAW
+	 * réel (jamais le type événementiel), caster = porteur, item = l'arme, durée = la ligne
+	 * passive. Le flag stackable vient des modifiers de la ligne (le moteur le lit là, SAUF
+	 * Entity.activateOnKillPassiveEffect qui force TRUE en dur, d'où forceStackable) : non-stackable
+	 * -> remplacement moteur sur (type RAW, arme) AVANT application, via une ligne
+	 * synthétique au layout attendu par ReplacementChangeStats.
+	 */
+	static applyPassiveRawEffect(stats, rawType, value, weapon, passiveRow, forceStackable) {
+		if (value <= 0) return;
+		var duration = passiveRow[3]
+		if (!forceStackable && !(passiveRow[5] & EFFECT_MODIFIER_STACKABLE)) {
+			ReplacementChangeStats(weapon, [rawType, 0, 0, duration, 0, passiveRow[5]], stats)
+		}
+		if (rawType == EFFECT_RAW_ABSOLUTE_SHIELD) {
+			stats.ABSOLUTE_SHIELD += value
+		} else if (rawType == EFFECT_RAW_BUFF_STRENGTH) {
+			stats.STRENGTH += value
+		} else if (rawType == EFFECT_RAW_BUFF_MAGIC) {
+			stats.MAGIC += value
+		} else if (rawType == EFFECT_RAW_BUFF_AGILITY) {
+			stats.AGILITY += value
+		} else if (rawType == EFFECT_RAW_BUFF_RESISTANCE) {
+			stats.RESISTANCE += value
+		} else if (rawType == EFFECT_RAW_BUFF_SCIENCE) {
+			stats.SCIENCE += value
+		} else if (rawType == EFFECT_RAW_BUFF_MP) {
+			stats.MP += value
+			stats.TOTAL_MP += value
+		} else if (rawType == EFFECT_RAW_BUFF_TP) {
+			stats.TP += value
+			stats.TOTAL_TP += value
+		}
+		// passiveRow[5] = les modifiers de la ligne passive — le RAW_AGILITY du Dark Katana
+		// garde ainsi son bit IRREDUCTIBLE (modifiers 17), que Libération respecte.
+		RecordCastedEffect(stats, rawType, value, stats.ID, duration, false, weapon, passiveRow[5])
+	}
+
+	/* Dégâts DIRECTS encaissés (EFFECT_DAMAGE + EFFECT_LIFE_DAMAGE, après dégâts+érosion,
+	 * avant lifesteal/retour) : Revoked M-Laser -> STRENGTH, Mysterious Electrisor -> shield,
+	 * Bazooka au plutonium -> RESISTANCE. */
+	static applyOnDirectDamagePassive(stats, appliedDamage) {
+		if (stats.LIFE <= 0 || appliedDamage <= 0) return;
+		// Double arrondi moteur : onDirectDamage reçoit un ENTIER — les appelants le passent
+		// déjà arrondi — puis l'effet RAW_* arrondit le proc lui-même :
+		// round((value1+jet·value2)·aoe·crit), jet=0/aoe=1/crit=false pour un passif.
+		// 12 dégâts × 4% -> 0, pas 0.48.
+		var dmg = appliedDamage
+		// Trois tests INDEPENDANTS, plus une cascade : le moteur declenche le passif de chaque
+		// arme portee, un poireau qui en porte deux les recoit tous les deux.
+		var spw = stats.SPECIAL_WEAPON
+		if (spw & SPW_REVOKED_M_LASER) {
+			var row = PASSIVE_INFO[WEAPON_REVOKED_M_LASER][EFFECT_DAMAGE_TO_STRENGTH]
+			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_STRENGTH, round(dmg * row[1] / 100), WEAPON_REVOKED_M_LASER, row, false)
+		}
+		if (spw & SPW_MYSTERIOUS_ELECTRISOR) {
+			var row = PASSIVE_INFO[WEAPON_MYSTERIOUS_ELECTRISOR][EFFECT_DAMAGE_TO_ABSOLUTE_SHIELD]
+			applyPassiveRawEffect(stats, EFFECT_RAW_ABSOLUTE_SHIELD, round(dmg * row[1] / 100), WEAPON_MYSTERIOUS_ELECTRISOR, row, false)
+		}
+		if (spw & SPW_PLUTONIUM_BAZOOKA) {
+			var row = PASSIVE_INFO[WEAPON_PLUTONIUM_BAZOOKA][EFFECT_DAMAGE_TO_RESISTANCE]
+			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_RESISTANCE, round(dmg * row[1] / 100), WEAPON_PLUTONIUM_BAZOOKA, row, false)
+		}
+	}
+
+	/* Érosion/nova encaissée : Unbridled Gazor -> MAGIC (érosion des dégâts et life damage,
+	 * du retour de EffectDamage, de l'aftereffect immédiat, nova pur SANS exclusion self —
+	 * le moteur ne teste que isDead. PAS le retour de EffectLifeDamage : le Java n'y appelle
+	 * pas onNovaDamage). */
+	static applyOnNovaDamagePassive(stats, appliedErosion) {
+		if (stats.LIFE <= 0 || appliedErosion <= 0) return;
+		if (stats.SPECIAL_WEAPON & SPW_UNBRIDLED_GAZOR) {
+			// L'érosion reçue est déjà entière, seul le proc arrondit : érosion 3 -> 1 magie, 2 -> 0.
+			var row = PASSIVE_INFO[WEAPON_UNBRIDLED_GAZOR][EFFECT_NOVA_DAMAGE_TO_MAGIC]
+			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_MAGIC, round(appliedErosion * row[1] / 100), WEAPON_UNBRIDLED_GAZOR, row, false)
+		}
+	}
+
+	/* Degats de POISON encaisses pendant un cast (Surinfection) : lance-grenades illicite ->
+	 * SCIENCE. Entity.activateOnPoisonDamagePassiveEffect pose inputValue * (value1 / 100),
+	 * arrondi par l'effet brut. Les ticks de poison des tours suivants restent hors modele. */
+	static applyOnPoisonDamagePassive(stats, appliedDamage) {
+		if (stats.LIFE <= 0 || appliedDamage <= 0) return;
+		if (stats.SPECIAL_WEAPON & SPW_ILLICIT_GRENADE_LAUNCHER) {
+			var row = PASSIVE_INFO[WEAPON_ILLICIT_GRENADE_LAUNCHER][EFFECT_POISON_TO_SCIENCE]
+			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_SCIENCE, round(appliedDamage * (row[1] / 100)), WEAPON_ILLICIT_GRENADE_LAUNCHER, row, false)
+		}
+	}
+
+	/* Cast critique (UNE fois par cast, AVANT les effets — State.java appelle onCritical
+	 * avant applyOnCell, pour armes, puces, summon ET resurrect) : Unstable Destroyer se
+	 * soigne de value1 (jet = 0, convention sim), cappé à la vie manquante. Le crit
+	 * DÉCLENCHE le passif, il ne le multiplie pas (pas de CRITICAL_FACTOR). */
+	static applyOnCriticalPassive(CastStats) {
+		if (CastStats.LIFE <= 0) return;
+		if ((CastStats.SPECIAL_WEAPON & SPW_UNSTABLE_DESTROYER) && CastStats.LIFE < CastStats.TOTAL_LIFE) {
+			// RAW_HEAL instantané (durée 0) : JAMAIS enregistré au ledger, et refusé tel quel à
+			// un porteur d'UNHEALABLE — le passif passe par createEffect(TYPE_RAW_HEAL)
+			// (Entity.java:763), dont la garde sort avant tout calcul (EffectRawHeal.java:12).
+			if (EntityStateClass.hasState(CastStats, STATE_UNHEALABLE)) return;
+			CastStats.LIFE = min(CastStats.TOTAL_LIFE, CastStats.LIFE + PASSIVE_INFO[WEAPON_UNSTABLE_DESTROYER][EFFECT_CRITICAL_TO_HEAL][1])
+		}
+	}
+
+	/* Déplacement SUBI (push, attract, cible d'un invert — Entity.onMoved ignore les
+	 * automouvements, donc jamais le caster de l'invert) : Explorer Rifle -> MP + TOTAL_MP. */
+	static applyOnMovedPassive(stats, movedId, moverId, oldCell, newCell) {
+		if (stats.LIFE <= 0 || movedId == moverId || oldCell == newCell) return;
+		if (stats.SPECIAL_WEAPON & SPW_EXPLORER_RIFLE) {
+			var row = PASSIVE_INFO[WEAPON_EXPLORER_RIFLE][EFFECT_MOVED_TO_MP]
+			applyPassiveRawEffect(stats, EFFECT_RAW_BUFF_MP, row[1], WEAPON_EXPLORER_RIFLE, row, false)
+		}
+	}
+
+	static getEntityDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, clonedIds) {
+		var BaseDamages = base * AOE_FALLOFF[Dist]
+		// Érosion : +10 points si le cast est critique (crit binaire à 950), le RETOUR érode
+		// au MÊME taux (celui de l'attaque, comme le moteur).
+		var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
+		// Groupement du moteur, au caractere pres (EffectDamage.java:26) :
+		//     d -= d * (rel / 100.0) + abs
+		// et non d * (1 - rel/100) - abs. Les deux sont algebriquement egaux, pas en IEEE-754 :
+		// le facteur (1 - rel/100) porte un arrondi de plus que le moteur n'a pas, et il tombe
+		// toujours du meme cote — la valeur passe un ulp SOUS un demi-entier exact, round()
+		// descend d'une unite, et l'IA sous-estime. Balayage exhaustif degat 1..500 x bouclier
+		// relatif 0..100 : 138 couples divergents, 138 sous-estimations, zero sur-estimation.
+		var DamagesWithShield = max(0, BaseDamages - (BaseDamages * (TarStats.RELATIVE_SHIELD / 100) + TarStats.ABSOLUTE_SHIELD))
+		var TargetLife = TarStats.LIFE
+		var Damage = min(round(DamagesWithShield), TargetLife)
+		// Retour de degats FIGE AVANT la mort, comme le moteur : EffectDamage.java:21-22 calcule
+		// returnDamage sur la cible encore vivante et encore porteuse de son buff, avant meme les
+		// boucliers, et le bloc de retour :64-77 n'est jamais conditionne a sa survie. Lu apres,
+		// il valait ZERO sur tout coup letal — getKillConsequences deroule les effets AUTO-LANCES
+		// de la victime, et Thorn comme Mirror en sont (targets=30, bit TARGET_CASTER). L'IA
+		// evaluait donc tout coup de grace comme gratuit face a un renvoyeur.
+		var TargetDamageReturn = TarStats.DAMAGE_RETURN
+		// Cible INVINCIBLE : le moteur met les degats a zero APRES les boucliers et APRES avoir
+		// fige le retour (EffectDamage.java:21-31). Le retour survit donc — frapper un porteur
+		// d'invincibilite equipe d'un renvoyeur blesse bel et bien l'attaquant pour rien.
+		if (EntityStateClass.hasState(TarStats, STATE_INVINCIBLE)) Damage = 0
+		// Le moteur fige le montant du vol de vie AVANT de retirer la vie a la cible
+		// (EffectDamage.java:41 puis :47) : la sagesse lue est celle d'AVANT le kill. La relire
+		// apres crediterait une sagesse que la mort de la victime vient de rendre au lanceur, en
+		// deroulant les entraves qu'elle avait posees sur lui.
+		var rawSteal = round(Damage * max(0, CastStats.WISDOM) / 1000)
+		if (Damage >= TargetLife && TargetLife > 0) {
+			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
+		} else {
+			TarStats.LIFE -= Damage
+		}
+		var directErosion = round(Damage * erosionRate)
+		TarStats.TOTAL_LIFE -= directErosion
+		// Passifs de la cible (EffectDamage : onDirectDamage puis onNovaDamage APRÈS les
+		// dégâts, AVANT lifesteal et retour ; cible morte -> aucun proc).
+		if (TarStats.SPECIAL_WEAPON != 0) {
+			applyOnDirectDamagePassive(TarStats, Damage)
+			applyOnNovaDamagePassive(TarStats, directErosion)
+		}
+		if (!TarIsCaster) {
+			// Lanceur INVINCIBLE : le moteur n'applique aucun retour sur lui
+			// (EffectDamage.java:64, EffectLifeDamage.java:45).
+			// Le moteur divise le PRODUIT (EffectDamage.java:22 : d * getDamageReturn() / 100.0),
+			// il ne multiplie pas par un taux pre-divise : meme valeur en algebre, pas au bit.
+			var Damage_Return = EntityStateClass.hasState(CastStats, STATE_INVINCIBLE) ? 0 : round(BaseDamages * TargetDamageReturn / 100)
+			// Ordre moteur (EffectDamage) : dégâts -> LIFESTEAL crédité au caster -> PUIS retour,
+			// plafonné à la vie restante POST-lifesteal — un gros lifesteal peut donc sauver d'un
+			// retour léthal. L'érosion suit le retour APPLIQUÉ, pas le brut.
+			// Lifesteal : le moteur le refuse a un lanceur UNHEALABLE (EffectDamage.java:52). Le
+			// montant a ete fige avant le kill ; seul le PLAFOND se lit maintenant, comme le
+			// moteur qui relit la vie du lanceur apres avoir retire celle de la cible (:54).
+			var stolen = EntityStateClass.hasState(CastStats, STATE_UNHEALABLE) ? 0 : min(rawSteal, CastStats.TOTAL_LIFE - CastStats.LIFE)
+			var lifeAfterSteal = CastStats.LIFE + stolen // WIS clampée : le moteur gate lifeSteal > 0, une sagesse shacklée négative ne DRAINE pas
+			var appliedReturn = min(Damage_Return, lifeAfterSteal)
+			if (Damage_Return >= lifeAfterSteal && CastStats.LIFE > 0) {
+				// Retour léthal : le caster meurt VRAIMENT (cascade de ses summons + déroulé de
+				// ses buffs), et getConsequences saute ses effets restants — comme le moteur.
+				getKillConsequences(CastStats, TarStats, EveryStats, clonedIds)
+			} else {
+				CastStats.LIFE = lifeAfterSteal - Damage_Return
+			}
+			var returnErosion = round(appliedReturn * erosionRate)
+			CastStats.TOTAL_LIFE -= returnErosion
+			// Érosion du retour -> proc nova du caster SURVIVANT (EffectDamage.java:75), qui
+			// reçoit l'entier.
+			if (CastStats.SPECIAL_WEAPON != 0) applyOnNovaDamagePassive(CastStats, returnErosion)
+		}
+		return Damage   // STEALS : les dégâts réellement infligés alimentent PrevEffectTotal
+	}
+
+	static getEntityDebuffConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster, Total) {
+		// EffectDebuff.apply : la puissance est un ENTIER positif — value = (int)((v1+jet·v2)
+		// ·aoe·crit·targetCount) — avant reduceEffects. DebuffPower = fraction CONSERVÉE,
+		// clampée à 0 (un débuff >= 100% efface tout le réductible).
+		var removal = floor(Effect[1] * Multiplier * AOE_FALLOFF[Dist])
+		var DebuffPower = max(0, 1 - removal / 100)
+		// Passe UNIQUE sur le ledger, fidèle à Entity.reduceEffects:800-816 : une ligne
+		// MODIFIER_IRREDUCTIBLE (eff[7]) est intégralement conservée — ligne ET agrégats
+		// (le POWER système de BR, le multiplicateur colossus, le RAW_AGILITY du Dark Katana
+		// survivent par leur MODIFIER, plus par une exception de type). Sinon : newValue =
+		// round(eff[1]·p) (l'arrondi d'Effect.reduce), la part retirée est déroulée par
+		// removeCastedEffect — l'UNIQUE mécanisme de réduction des agrégats (buffs,
+		// shackles + compteurs, shields, vulnés, DR, six flux périodiques) — et une ligne
+		// tombée à 0 DISPARAÎT (reduceEffects la retire des deux côtés : plus de second
+		// déroulé à la mort de son caster). Les bonus BR simulés non enregistrés restent
+		// intacts : irréductibles par nature. Lignes et tableau NEUFS — jamais de mutation
+		// des containers du parent.
+		var newEffects = []
+		var statesDirty = false
+		for (var eff in TarStats.EFFECTS) {
+			if (!Total && (eff[7] & EFFECT_MODIFIER_IRREDUCTIBLE)) {
+				push(newEffects, eff)
+				continue
+			}
+			// Un état vaut UNE unité : round(fraction conservée) == 0 le retire.
+			// 50 % garde l'état ; Libération critique à 52 % peut le retirer.
+			// L'ordinal n'est jamais mis à l'échelle. Le filtre irréductible reste ci-dessus.
+			if (eff[0] == EFFECT_ADD_STATE) {
+				if (DebuffPower >= 0.5) {
+					push(newEffects, eff)
+				} else {
+					statesDirty = true
+				}
+				continue
+			}
+			// Colosse : le moteur ne reduit pas le FACTEUR, il reduit le VECTEUR de bonus qu'il
+			// avait pose — base x (facteur - 1) par caracteristique — puis reconstruit les stats
+			// depuis les lignes restantes. Retirer la ligne sans rendre le bonus laissait la
+			// force a 500 la ou le moteur revient a 100. La vie max, elle, ne se retire PAS :
+			// addTotalLife est irreversible cote moteur, comme pour BOOST_MAX_LIFE.
+			if (eff[0] == EFFECT_MULTIPLY_STATS) {
+				var f = eff[1]
+				if (f > 1) {
+					var bStr = TarStats.BASE_STATS[STAT_STRENGTH] * (f - 1)
+					var bWis = TarStats.BASE_STATS[STAT_WISDOM] * (f - 1)
+					var bAgi = TarStats.BASE_STATS[STAT_AGILITY] * (f - 1)
+					var bRes = TarStats.BASE_STATS[STAT_RESISTANCE] * (f - 1)
+					var bSci = TarStats.BASE_STATS[STAT_SCIENCE] * (f - 1)
+					var bMag = TarStats.BASE_STATS[STAT_MAGIC] * (f - 1)
+					var bMp  = TarStats.BASE_STATS[STAT_MP] * (f - 1)
+					var bTp  = TarStats.BASE_STATS[STAT_TP] * (f - 1)
+					TarStats.STRENGTH   -= bStr - round(bStr * DebuffPower)
+					TarStats.WISDOM     -= bWis - round(bWis * DebuffPower)
+					TarStats.AGILITY    -= bAgi - round(bAgi * DebuffPower)
+					TarStats.RESISTANCE -= bRes - round(bRes * DebuffPower)
+					TarStats.SCIENCE    -= bSci - round(bSci * DebuffPower)
+					TarStats.MAGIC      -= bMag - round(bMag * DebuffPower)
+					var dMp = bMp - round(bMp * DebuffPower)
+					TarStats.MP -= dMp
+					TarStats.TOTAL_MP -= dMp
+					var dTp = bTp - round(bTp * DebuffPower)
+					TarStats.TP -= dTp
+					TarStats.TOTAL_TP -= dTp
+					TarStats.CAP_DIRTY = true
+				}
+				var keptFactor = round(f * DebuffPower)
+				if (keptFactor > 0) push(newEffects, [eff[0], keptFactor, eff[2], eff[3], eff[4], eff[5], eff[6], eff[7], eff[8]])
+				continue
+			}
+			var newValue = round(eff[1] * DebuffPower)
+			var removedValue = eff[1] - newValue
+			if (removedValue != 0) removeCastedEffect(eff[0], TarStats, removedValue, eff[8], eff[3])
+			if (newValue > 0) push(newEffects, [eff[0], newValue, eff[2], eff[3], eff[4], eff[5], eff[6], eff[7], eff[8]])
+		}
+		TarStats.EFFECTS = newEffects
+		if (statesDirty) EntityStateClass.refreshStates(TarStats)
+		EntityStateClass.refreshShieldExpiry(TarStats)
+	}
+
+	/*
+	 * Manumission/Rémission — Entity.removeShackles : retire TOUTES les lignes des six
+	 * familles de shackles. Déroulé PAR LIGNE via removeCastedEffect (stat restaurée), puis
+	 * ledger purgé : la mort ultérieure du casteur des shackles ne restaure plus une seconde
+	 * fois. Les sommes SHACKLE_* suivent ces retraits pour le scoring seulement : elles
+	 * ne restaurent JAMAIS les stats de simulation (sinon double restauration).
+	 */
+	static getEntityRemoveShacklesConsequences(Dist, Multiplier, Effect, TarStats, CastStats, TarIsCaster) {
+		var newEffects = []
+		for (var eff in TarStats.EFFECTS) {
+			var t = eff[0]
+			if (t == EFFECT_SHACKLE_AGILITY || t == EFFECT_SHACKLE_MAGIC || t == EFFECT_SHACKLE_MP
+				|| t == EFFECT_SHACKLE_STRENGTH || t == EFFECT_SHACKLE_TP || t == EFFECT_SHACKLE_WISDOM) {
+				removeCastedEffect(t, TarStats, eff[1], eff[8], eff[3])
+			} else {
+				push(newEffects, eff)
+			}
+		}
+		// Pas de refreshShieldExpiry : seules des lignes de SHACKLE sont retirées.
+		TarStats.EFFECTS = newEffects
+	}
+
+	static getEntityLifeDamageConsequences(Dist, base, Effect, TarStats, CastStats, TarIsCaster, EveryStats, clonedIds) {
+		var BaseDamages = base * AOE_FALLOFF[Dist]
+		var erosionRate = CAST_IS_CRITICAL ? EROSION_CRIT : EROSION_NO_POISON
+		// Invincibilite : le moteur annule le brut AVANT les boucliers (EffectLifeDamage.java:18),
+		// a l'inverse d'EFFECT_DAMAGE qui l'annule apres (EffectDamage.java:29). L'annulation
+		// precede aussi le calcul du retour (:24), qui tombe donc a zero lui aussi.
+		// Consequence a garder : un bouclier absolu NEGATIF est soustrait apres, donc
+		// 0 - (-25) = 25 degats passent a travers l'invincibilite. Annuler le brut ici, et
+		// laisser la chaine de boucliers se derouler, reproduit les deux cas d'un coup.
+		if (EntityStateClass.hasState(TarStats, STATE_INVINCIBLE)) BaseDamages = 0
+		// Meme groupement que le moteur (EffectLifeDamage.java:28), voir getEntityDamageConsequences.
+		var InitialDamages = max(0, BaseDamages - (BaseDamages * (TarStats.RELATIVE_SHIELD / 100) + TarStats.ABSOLUTE_SHIELD))
+		var TargetLife = TarStats.LIFE
+		var Damage = min(round(InitialDamages), TargetLife)
+		var TargetDamageReturn = TarStats.DAMAGE_RETURN
+		if (Damage >= TargetLife && TargetLife > 0) {
+			getKillConsequences(TarStats, CastStats, EveryStats, clonedIds)
+		} else {
+			TarStats.LIFE -= Damage
+		}
+		var lifeErosion = round(Damage * erosionRate)
+		TarStats.TOTAL_LIFE -= lifeErosion
+		// Passifs de la cible (EffectLifeDamage : onDirectDamage puis onNovaDamage, comme
+		// les dégâts directs ; cible morte -> aucun proc).
+		if (TarStats.SPECIAL_WEAPON != 0) {
+			applyOnDirectDamagePassive(TarStats, Damage)
+			applyOnNovaDamagePassive(TarStats, lifeErosion)
+		}
+		if (!TarIsCaster) {
+			// Meme groupement que le moteur (EffectLifeDamage.java:24).
+			var Damage_Return = EntityStateClass.hasState(CastStats, STATE_INVINCIBLE) ? 0 : round(BaseDamages * TargetDamageReturn / 100)
+			var appliedReturn = min(Damage_Return, CastStats.LIFE)   // plafonné à la vie restante (érosion sur l'appliqué)
+			if (Damage_Return >= CastStats.LIFE && CastStats.LIFE > 0) {
+				// Retour léthal : voir getEntityDamageConsequences.
+				getKillConsequences(CastStats, TarStats, EveryStats, clonedIds)
+			} else {
+				CastStats.LIFE -= Damage_Return
+			}
+			CastStats.TOTAL_LIFE -= round(appliedReturn * erosionRate)
+			// PAS de proc nova ici : EffectLifeDamage.java n'appelle pas onNovaDamage sur le retour.
+		}
+		return Damage   // STEALS : les dégâts réellement infligés alimentent PrevEffectTotal
+	}
+
+	static ApplyAreaConsequence(AreaType, _final, Item, From, To, EveryStats, Me) {
+		switch (AreaType) {
+			case AREA_CIRCLE_1:
+			case AREA_CIRCLE_2:
+			case AREA_CIRCLE_3:
+			case AREA_PLUS_2:
+			case AREA_PLUS_3:
+			case AREA_SQUARE_1:
+			case AREA_SQUARE_2:
+			case AREA_X_1:
+			case AREA_X_2:
+			case AREA_X_3:
+				var MapAoe = ActionsClass.AoeDistItem(Item, To)
+				var MapFrom = MapAoe[From]
+				if (MapFrom != null) _final[Me] = MapFrom
+				for (var e: var stat in EveryStats) {
+					if (e == Me || stat.LIFE <= 0) continue
+					var Dist = MapAoe[stat.CELL]
+					if (Dist != null) _final[e] = Dist
+				}
+				break
+			// Zones a l'echelle du CAMP : le moteur ne fait aucune geometrie, il prend les
+			// cellules de toutes les entites du camp vise (AreaEnemies.java:18-28,
+			// AreaAllies.java:18-30). Elles ne peuvent donc pas passer par getAreaDist, qui est
+			// purement geometrique et mis en cache — la cible depend du State, pas de la carte.
+			// Deux items seulement, tous deux de niveau 1 : apocalypse (ennemis) et
+			// divine_protection (allies, caster COMPRIS — c'est ainsi qu'une equipe entiere
+			// devient invincible).
+			// L'exclusion moteur des entites dont le nom contient « crystal » n'est pas reprise :
+			// aucune entite invocable de ce jeu ne porte ce nom.
+			case AREA_ENEMIES:
+				var MyCampE = EveryStats[Me].SIDE
+				for (var e: var stat in EveryStats) {
+					if (stat.LIFE <= 0 || stat.SIDE == MyCampE) continue
+					_final[e] = 0
+				}
+				break
+			case AREA_ALLIES:
+				var MyCampA = EveryStats[Me].SIDE
+				for (var e: var stat in EveryStats) {
+					if (stat.LIFE <= 0 || stat.SIDE != MyCampA) continue
+					_final[e] = 0
+				}
+				break
+			case AREA_FIRST_INLINE:
+				var MapEntity = [: ]
+				for (var e: var stat in EveryStats)
+					if (e != Me && stat.LIFE > 0) MapEntity[stat.CELL] = true // STRICT : les cadavres ne bloquent pas les tirs (et la clé du cache ne pinne que les vivants)
+				var MapAoe = From == To ? [From: true] : CellClass.getFirstInlineAoe(From, To, ITEMINFO[Item].MINRANGE, ITEMINFO[Item].MAXRANGE, MapEntity)
+				for (var e: var stat in EveryStats)
+					if (MapAoe[stat.CELL]) _final[e] = 0
+				break
+			case AREA_LASER_LINE:
+				var MapAoe = From == To ? [From: true] : CellClass.getLaserAoe(From, To, ITEMINFO[Item].MINRANGE, ITEMINFO[Item].MAXRANGE)
+				for (var e: var stat in EveryStats)
+					if (e != Me && stat.LIFE > 0 && MapAoe[stat.CELL]) _final[e] = 0
+				break
+			case AREA_POINT:
+				var MapAoe = ActionsClass.AoeDistItem(Item, To)
+				var MapFrom = MapAoe[From]
+				if (MapFrom != null) _final[Me] = MapFrom
+				for (var e: var stat in EveryStats)
+					if (e != Me && stat.LIFE > 0 && MapAoe[stat.CELL] != null) _final[e] = 0
+				break
+		}
+	}
+
+	static ConsequenceTargets(Item, From, To, EveryStats, Me, BaseHash) {
+		var Hash = ConsequenceTargetsHash(BaseHash, Item, From, To)
+		if (Hash in CONSEQUENCE_TARGET_CACHE) return CONSEQUENCE_TARGET_CACHE[Hash]
+		var Tars = [: ]
+		ApplyAreaConsequence(ITEMINFO[Item].AREA, Tars, Item, From, To, EveryStats, Me)
+		CONSEQUENCE_TARGET_CACHE[Hash] = Tars
+		return Tars
+	}
+
+	static ConsequenceTargetsHash(BaseHash, Item, From, To) {
+		// Me dans la clé (bits 40-45) : le cache est PERSISTANT et sa valeur embarque le caster
+		// (_final[Me] est calculé depuis From), or le propriétaire et ses bulbes partagent la
+		// même VM — sans le caster dans la clé, le BFS d'un bulbe pouvait relire les maps de
+		// cibles du proprio. BaseHash pinne déjà toutes les positions vivantes.
+		// Pack : To bits 0-14 | From 15-29 | Item 30-39.
+		return addValueToBinHash(OFFSET_BASIS ^ BaseHash, (Me << 40) | (Item << 30) | (From << 15) | To)
+	}
+
+	static RealConsequenceTargets(AllTargets, Effect, State, CastStats, Caster, Item) {
+		var _final = [: ]
+		// NON REMPLAÇABLE : le moteur écarte la cible AVANT tout calcul quand elle porte déjà
+		// une ligne du MÊME item (Attack.java:248-251). Son prédicat, Entity.hasEffect:855, ne
+		// teste QUE l'item — ni le type d'effet, ni le lanceur : une ligne posée par un ennemi
+		// bloque donc mon propre cast. La cible n'entre pas dans la liste, createEffect n'est
+		// jamais appelé, rien n'est posé et le coût du cast est perdu.
+		// Un seul item du jeu porte ce bit : covid, dont le poison dure 7 tours et se propage
+		// tout seul de porteur en porteur. Le drapeau est lu UNE fois, hors de la boucle.
+		var notReplaceable = Effect[5] & EFFECT_MODIFIER_NOT_REPLACEABLE
+		for (var tar: var dist in AllTargets) {
+			var TarStats = State[tar]
+			if (!isHitable(Effect, TarStats, CastStats, tar == Caster)) continue
+			if (notReplaceable) {
+				var already = false
+				for (var eff in TarStats.EFFECTS) {
+					if (eff[5] == Item) { already = true; break }
+				}
+				if (already) continue
+			}
+			_final[tar] = dist
+		}
+		return _final
+	}
+
+}

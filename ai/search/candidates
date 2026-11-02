@@ -1,0 +1,948 @@
+/*
+ * Actions : l'énumération de toutes les actions jouables d'un état — sur moi, dans le
+ * vide, summons, et sur les autres entités (avec dédoublonnage par hash de cibles).
+ */
+
+include("../imports")
+
+class ActionsClass {
+
+	static ToSkipItems = [
+		CHIP_TELEPORTATION: true,
+		CHIP_JUMP: true
+	]
+
+	static SpecialItems = [
+		CHIP_RESURRECTION: true,
+		CHIP_PUNY_BULB: true,
+		CHIP_ROCKY_BULB: true,
+		CHIP_ICED_BULB: true,
+		CHIP_HEALER_BULB: true,
+		CHIP_FIRE_BULB: true,
+		CHIP_WIZARD_BULB: true,
+		CHIP_METALLIC_BULB: true,
+		CHIP_SAVANT_BULB: true,
+		CHIP_TACTICIAN_BULB: true,
+		CHIP_LIGHTNING_BULB: true,
+		CHIP_CORN: true,
+		CHIP_CHILLI_PEPPER: true,
+		CHIP_PROTOTAXITE: true
+	]
+
+	/* Les actions locales sont recréées depuis MyCell à CHAQUE nœud. Leur origine
+	 * ne vient jamais d'une liste scorée dans une ancienne position. Les groupes sur
+	 * les autres conservent toutes les origines du domaine de mobilité courant. */
+	static getEveryActionsInAState(State, WalkCells, MyCell, BaseHash, localOnly = false, othersOnly = false, onlyItem = null) {
+		BenchOps.Start("Actions")
+		var _final = []
+		var LeekCells = StateClass.getEntityCellsMap(State, BaseHash)
+		var local = []
+        var onMe = MY_INVENTORY_ON_ME
+        var onVoid = MY_INVENTORY_ON_VOID
+        var summons = MY_INVENTORY_SUMMON
+        var onEveryone = MY_INVENTORY_ON_EVERYONE
+        if (onlyItem != null) {
+            var one = [onlyItem]
+            onMe = search(onMe,onlyItem)>=0 ? one : []
+            onVoid = search(onVoid,onlyItem)>=0 ? one : []
+            summons = search(summons,onlyItem)>=0 ? one : []
+            onEveryone = search(onEveryone,onlyItem)>=0 ? one : []
+        }
+        if (!othersOnly) {
+			pushAll(local, getEveryActionsOnMe(MyCell, onMe, State, BaseHash))
+			pushAll(local, getEveryActionsInVoid(MyCell, onVoid, State, LeekCells, BaseHash))
+			pushAll(local, getEverySummonActions(MyCell, summons, State, LeekCells, BaseHash))
+		}
+		var localKey = addValueToBinHash(OFFSET_BASIS ^ BaseHash, MyCell)
+		for (var action in local) {
+			// Une même action locale peut aussi venir du chemin « vide ». La visée
+			// entre donc dans la clé, sans figer sa disponibilité dans le cache.
+			var key = addValueToBinHash(localKey, (action.Item << 10) | action.To)
+			var group = LOCAL_ACTION_GROUP_CACHE[key]
+			if (group == null) {
+				var targets = ConsequencesClass.ConsequenceTargets(action.Item, action.From, action.To, State, Me, BaseHash)
+				var targetHash = hashTargets(targets, action.Item, State)
+				group = new ActionGroupClass(action.Item, action.From, action.To,
+					groupSignature(action.Item, targetHash, action.From, action.To), targetHash, true)
+				LOCAL_ACTION_GROUP_CACHE[key] = group
+			}
+			push(_final, group)
+		}
+		if (!localOnly) pushAll(_final, getEveryActionsOnEveryOne(MyCell, onEveryone, State, WalkCells, BaseHash, LeekCells))
+		BenchOps.Stop("Actions")
+		return _final
+	}
+
+	// XOR de contributions non linéaires : même ensemble de (id, distance), même hash,
+	// indépendamment de l'ordre d'insertion (local, zone, laser, invocation virtuelle).
+	static targetContribution(id, distance) {
+		return mix64Memo(((id + 1) << MAX_AOE_DIST_BINARY) | distance)
+	}
+
+	static hashTargets(targets, item = null, State = null) {
+		var hash = 0
+		for (var id: var distance in targets) {
+			if (item != null && !affectsSignature(item, State[id], State[Me])) continue
+			hash ^= targetContribution(id, distance)
+		}
+		return hash
+	}
+
+	// Garder aussi les effets néfastes collatéraux, que Target ne propose pas de viser.
+	// Un effet ON_CASTER sans multiplicateur ne dépend pas des cibles de la zone.
+	static affectsSignature(item, target, caster) {
+		var key = ((target.ID == caster.ID ? 1 : 0) << 36)
+			| ((target.IS_SUMMON ? 1 : 0) << 34) | ((target.LIFE > 0 ? 1 : 0) << 33)
+			| ((target.SIDE == caster.SIDE ? 1 : 0) << 32) | item
+		if (key in ACTION_EFFECT_TARGET_CACHE) return ACTION_EFFECT_TARGET_CACHE[key]
+		for (var effect in ITEMINFO[item].EFFECTS) {
+			if ((effect[5] & EFFECT_MODIFIER_ON_CASTER) && !(effect[5] & EFFECT_MODIFIER_MULTIPLIED_BY_TARGETS)) continue
+			if (ConsequencesClass.isHitable(effect, target, caster, target.ID == caster.ID)) {
+				ACTION_EFFECT_TARGET_CACHE[key] = true
+				return true
+			}
+		}
+		ACTION_EFFECT_TARGET_CACHE[key] = false
+		return false
+	}
+
+	static groupSignature(item, targetHash, from, to) {
+		var hash = addValueToBinHash(OFFSET_BASIS ^ targetHash, item)
+		// Poussée, inversion, répulsion... la même cible peut aboutir ailleurs. Ne jamais
+		// fusionner ces géométries sous le seul hash des cibles.
+		if (ITEMINFO[item].ORIGIN_SENSITIVE) hash = addValueToBinHash(hash, (from << 10) | to)
+		return hash
+	}
+
+	static appendGroup(result, groups, item, from, to, targetHash) {
+		var signature = groupSignature(item, targetHash, from, to)
+		var group = groups[signature]
+		if (group == null) {
+			group = new ActionGroupClass(item, from, to, signature, targetHash)
+			groups[signature] = group
+			push(result, group)
+		} else {
+			group.addOrigin(from, to)
+		}
+	}
+
+	static getInventoryOnMe(Inventory, EntityState) {
+		var _final = []
+		for (var item in Inventory) {
+			if (!(item in ToSkipItems) && Target.Targetable(item, EntityState, EntityState)) {
+				push(_final, item)
+			}
+		}
+		return _final
+	}
+
+	static getEveryActionsOnMe(MyCell, Inventory, State, BaseHash) {
+		var prefix = addValueToBinHash(OFFSET_BASIS ^ BaseHash, MyCell)
+		var _final = []
+		var availability = availabilityOf(State[Me])
+		var costs = availability.COSTS
+		for (var item in Inventory) {
+			var Infos = ITEMINFO[item]
+			var cost = costs[item]
+			if (cost == null) cost = ActionSuite.baseCostOf(State[Me], item, costs, availability.USES, availability.STOCKS)
+			if (cost < 0) continue
+			var key = addValueToBinHash(prefix, item)
+			if (!(key in ACTIONS_ON_ME_CACHE)) ACTIONS_ON_ME_CACHE[key] = getActionOnMe(MyCell, Infos.LAUNCHTYPE, Infos.MINRANGE, Infos.MAXRANGE, item, Infos.NEEDLOS, State, BaseHash)
+			var Act = ACTIONS_ON_ME_CACHE[key]
+			if (Act) push(_final, Act)
+		}
+		return _final
+	}
+
+	// Filtrer AVANT toute géométrie, en dehors de ses clés : un item redevient
+	// immédiatement visible après un gain de PT ou un retrait de cooldown.
+	static canUseItem(stat, item, info) {
+		var memo = availabilityOf(stat)
+		return ActionSuite.baseCostOf(stat, item, memo.COSTS, memo.USES, memo.STOCKS) >= 0
+	}
+
+	static availabilityOf(stat) {
+        var memo = stat.AVAILABILITY_MEMO
+        if (memo != null && memo.TP == stat.TP && memo.WEAPON == stat.WEAPON && memo.STATES == stat.STATES) return memo
+        var parent = stat.ITEM_STATE_PARENT
+        var previous = parent == null ? null : parent.AVAILABILITY_MEMO
+        var children = previous == null ? null : previous.CHILDREN
+        var inputs = null
+        var key = null
+        if (previous != null) {
+            // L'identité du mémo parent certifie le même inventaire EFFECTIF.
+            // Le vecteur capture les valeurs, pas les maps qui seront invalidées.
+            inputs = []
+            key = addValueToBinHash(OFFSET_BASIS ^ stat.TP, stat.WEAPON)
+            key = addValueToBinHash(key, stat.STATES)
+            for (var item: var cd in stat.COOLDOWNS) {
+                push(inputs,item); push(inputs,cd)
+                key = addValueToBinHash(addValueToBinHash(key,item),cd)
+            }
+            push(inputs,null)
+            key = addValueToBinHash(key,-1)
+            for (var item: var uses in stat.USES) {
+                push(inputs,item); push(inputs,uses)
+                key = addValueToBinHash(addValueToBinHash(key,item),uses)
+            }
+            var cached = children == null ? null : children[key]
+            if (cached != null && cached.TP == stat.TP && cached.WEAPON == stat.WEAPON && cached.STATES == stat.STATES && cached.PATCH_INPUTS == inputs) {
+                stat.AVAILABILITY_MEMO = cached
+                return cached
+            }
+        }
+        memo = new ActionAvailabilityClass(stat.TP,stat.WEAPON,stat.STATES)
+        if (previous != null) {
+            memo.STOCKS = clone(previous.STOCKS,1)
+            for (var item: var _cd in stat.COOLDOWNS) mapRemove(memo.STOCKS,item)
+            for (var item: var _uses in stat.USES) mapRemove(memo.STOCKS,item)
+            memo.PATCH_INPUTS = inputs
+            if (children == null) { children = [:]; previous.CHILDREN = children }
+            if (mapSize(children) < 64) children[key] = memo
+        }
+        stat.AVAILABILITY_MEMO = memo
+        return memo
+    }
+
+	/* La meilleure façon de me cibler moi-même avec l'item (cellule d'AoE la plus proche si minrange > 0). */
+	static getActionOnMe(MyCell, LaunchType, MinRange, MaxRange, item, NeedLos, State, BaseHash) {
+		// Représentant SELF unique (To = ma cellule) : le collatéral éventuel autour de moi
+		// est volontairement simulé par Consequences, pas dédoublé ici — un seul nœud self
+		// évite de multiplier les branches, et les visées avec une autre cible utile passent
+		// déjà par getActionsOnEveryone.
+		if (MinRange == 0) return new ActionClass(item, MyCell, MyCell)
+		var MinDist = 1000
+		var MinDistCell
+		if (NeedLos) {
+			var Circle = LaunchWithLos[LaunchType](MyCell, MinRange, MaxRange)
+			for (var to: var dist in AoeDistItem(item, MyCell)) {
+				if (Circle[to] && dist < MinDist && CellClass.getLosWithBaseHash(MyCell, to, State, BaseHash)) {
+					MinDist = dist
+					MinDistCell = to
+				}
+			}
+		} else {
+			var Circle = LaunchWithoutLos[LaunchType](MyCell, MinRange, MaxRange)
+			for (var to: var dist in AoeDistItem(item, MyCell)) {
+				if (Circle[to] && dist < MinDist) {
+					MinDist = dist
+					MinDistCell = to
+				}
+			}
+		}
+		if (MinDistCell != null) {
+			return new ActionClass(item, MyCell, MinDistCell)
+		}
+	}
+
+	static getInventorySummon(Inventory) {
+		var _final = []
+		for (var item in Inventory) {
+			if (item in SpecialItems) {
+				push(_final, item)
+			}
+		}
+		return _final
+	}
+
+	static getEverySummonActions(MyCell, Inventory, State, LeekCells, BaseHash) {
+		// STERILE (sabre du desert) : le moteur refuse l'invocation, et RIEN d'autre. La garde
+		// est dans summonEntity (State.java:887, USE_FAILED) ; resurrectEntity est une methode
+		// distincte qui ne la porte pas — un sterile peut donc toujours ressusciter.
+		//
+		// L'etat SALE LA CLE du cache, il ne peut pas rester hors d'elle : BaseHash exclut Me
+		// par construction (c'est ce qui permet a une liste de survivre a mes propres
+		// deplacements), donc sans ce sel une liste calculee avant le coup de sabre serait
+		// resservie apres. Sel nul dans le cas courant : la cle ne bouge pas tant que je ne
+		// suis pas sterile.
+		var sterile = EntityStateClass.hasState(State[Me], STATE_STERILE)
+		var TmpHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), MyCell)
+		if (sterile) TmpHash = TmpHash ^ STERILE_KEY_SALT
+		// Summons vivants du camp, comptés si une invocation disponible en a besoin (bulbes virtuels de la branche
+		// inclus — ils sont dans State). Sain sous le cache : le compte est une fonction du
+		// set des vivants, que BaseHash pinne (summon/mort en branche -> nouvelle clé).
+		var livingSummons = null
+		var _final = []
+		var availability = availabilityOf(State[Me])
+		var costs = availability.COSTS
+		for (var item in Inventory) {
+			var Infos = ITEMINFO[item]
+			var cost = costs[item]
+			if (cost == null) cost = ActionSuite.baseCostOf(State[Me], item, costs, availability.USES, availability.STOCKS)
+			if (cost < 0) continue
+			// Bulbe : une place libre suffit. Résurrection : action GÉOMÉTRIQUE pure, TOUJOURS
+			// générée — le filtre "existe-t-il un candidat ?" vit dans le BFS (resurrectIdOf) :
+			// ce cache est partagé par BaseHash, qui n'encode PAS un summon virtuel MORT
+			// ressuscitable (contributions LIFE-gated), un candidat dépendant du State ici
+			// servirait des listes fausses.
+			if (item != CHIP_RESURRECTION && !sterile && livingSummons == null) livingSummons = StateClass.countLivingSummons(State, State[Me].SIDE)
+			var castable = (item == CHIP_RESURRECTION) || (!sterile && livingSummons < SUMMON_LIMIT)
+			if (castable) {
+				var key = addValueToBinHash(TmpHash, item)
+				if (!(key in ACTIONS_SUMMON_CACHE)) ACTIONS_SUMMON_CACHE[key] = getSummonAction(Infos.LAUNCHTYPE, MyCell, Infos.MINRANGE, Infos.MAXRANGE, LeekCells, item, State, BaseHash)
+				var Act = ACTIONS_SUMMON_CACHE[key]
+				if (Act) push(_final, Act)
+			}
+		}
+		return _final
+	}
+
+	/* Cellule d'invocation : près des ennemis pour un bulbe offensif (MeanBulbs), près des
+	 * alliés pour un bulbe doux. La résurrection prend un troisième critère : l'entité revient
+	 * à vie partielle et ne joue qu'à la ronde suivante, donc elle doit d'abord SURVIVRE une
+	 * ronde entière. On la pose près des alliés mais à l'écart des ennemis, les deux distances
+	 * étant dans la même unité. */
+	// Pas de cache local : le résultat est déjà couvert par ACTIONS_SUMMON_CACHE (clé
+	// BaseHash + cellule), et les distances moyennes ont leurs propres caches.
+	static getSummonAction(LaunchType, basefrom, MinRange, MaxRange, LeekCells, item, State, base_hash) {
+
+		var CellToSummon
+		var BestScore = MAX_VALUE
+		var entity_side = State[Me].SIDE
+		if (item in PLANT_SUMMON_CHIPS) {
+			return getPlantSummonAction(LaunchType, basefrom, MinRange, MaxRange, LeekCells, item, State, base_hash)
+		}
+		if (item in MeanBulbs) {
+			for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
+				if (c in LeekCells) continue
+				if (CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) {
+					var ScoreOfTestedCell = StateClass.getAverageDistFromEnnemies(entity_side, State, c, ID_NOBODY, base_hash)
+					if (ScoreOfTestedCell < BestScore) {
+						BestScore = ScoreOfTestedCell
+						CellToSummon = c
+					}
+				}
+			}
+		} else if (item == CHIP_RESURRECTION) {
+			for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
+				if (c in LeekCells) continue
+				if (CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) {
+					var ScoreOfTestedCell = StateClass.getAverageDistFromAllies(entity_side, State, c, ID_NOBODY, base_hash)
+						- StateClass.getAverageDistFromEnnemies(entity_side, State, c, ID_NOBODY, base_hash)
+					if (ScoreOfTestedCell < BestScore) {
+						BestScore = ScoreOfTestedCell
+						CellToSummon = c
+					}
+				}
+			}
+		} else {
+			for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
+				if (c in LeekCells) continue
+				if (CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) {
+					var ScoreOfTestedCell = StateClass.getAverageDistFromAllies(entity_side, State, c, ID_NOBODY, base_hash)
+					if (ScoreOfTestedCell < BestScore) {
+						BestScore = ScoreOfTestedCell
+						CellToSummon = c
+					}
+				}
+			}
+		}
+
+		if (CellToSummon != null) return new ActionClass(item, basefrom, CellToSummon)
+	}
+
+	/*
+	 * Cellule d'une plante. Une plante posée est réveillée par chaque entité déjà dans sa zone :
+	 * le Piment se plante là où sa zone couvre le plus d'ennemis, le Maïs là où elle couvre le
+	 * plus d'alliés blessés, en départageant par la distance moyenne au camp visé. Le
+	 * Prototaxite, sans action, s'interpose : la cellule la plus proche de l'ennemi le plus
+	 * proche parmi celles au contact de moi (distance 1 ou 2).
+	 */
+	static getPlantSummonAction(LaunchType, basefrom, MinRange, MaxRange, LeekCells, item, State, base_hash) {
+		var side = State[Me].SIDE
+		var zone = PLANT_REACH
+		var best = null
+		var bestKey = null
+		for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
+			if (c in LeekCells || !CellClass.getLosWithBaseHash(basefrom, c, State, base_hash)) continue
+			var key
+			if (item == CHIP_PROTOTAXITE) {
+				if (CellClass.getDist(basefrom, c) > 2) continue
+				var nearest = MAX_VALUE
+				for (var e: var stat in State) {
+					if (stat.LIFE <= 0 || stat.SIDE == side) continue
+					var d = CellClass.getDist(stat.CELL, c)
+					if (d < nearest) nearest = d
+				}
+				key = nearest
+			} else {
+				var covered = 0
+				for (var e: var stat in State) {
+					if (stat.LIFE <= 0 || CellClass.getDist(stat.CELL, c) > zone) continue
+					if (item == CHIP_CHILLI_PEPPER && stat.SIDE != side) covered++
+					if (item == CHIP_CORN && stat.SIDE == side && stat.LIFE < stat.TOTAL_LIFE) covered++
+				}
+				var spread = (item == CHIP_CHILLI_PEPPER)
+					? StateClass.getAverageDistFromEnnemies(side, State, c, ID_NOBODY, base_hash)
+					: StateClass.getAverageDistFromAllies(side, State, c, ID_NOBODY, base_hash)
+				key = spread - covered * 100
+			}
+			if (bestKey == null || key < bestKey || (key == bestKey && c < best)) {
+				bestKey = key
+				best = c
+			}
+		}
+		if (best != null) return new ActionClass(item, basefrom, best)
+	}
+
+	static getInventoryOnEveryOne(Inventory) {
+		var _final = []
+		for (var item in Inventory) {
+			if (!(item in ToSkipItems)) {
+				push(_final, item)
+			}
+		}
+		return _final
+	}
+
+	/* Un catalogue par (plateau, item), indépendant de ma position/mes MP.
+	 * Son domaine grandit seulement quand de NOUVELLES origines deviennent accessibles.
+	 * Un auto-buff ou un déplacement dans le domaine connu ne reconstruit pas les zones.
+	 * Les disponibilités sont filtrées ici sans être mémorisées dans la géométrie. */
+	static getEveryActionsOnEveryOne(MyCell, Inventory, State, WalkCells, BaseHash, LeekCells) {
+		var mine = State[Me]
+		var domain = WalkCells.ME_FINGERPRINT
+		var sorted = null
+		var result = []
+		var availability = availabilityOf(State[Me])
+		var costs = availability.COSTS
+		for (var item in Inventory) {
+			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) break // arrêter entre deux extensions, jamais cacher un domaine partiel
+			var info = ITEMINFO[item]
+			var cost = costs[item]
+			if (cost == null) cost = ActionSuite.baseCostOf(State[Me], item, costs, availability.USES, availability.STOCKS)
+			if (cost < 0) continue
+			var key = addValueToBinHash(OFFSET_BASIS ^ BaseHash, item)
+			var catalog = ENTITY_ACTIONS_CACHE[key]
+			if (catalog == null) {
+				catalog = new ActionOriginCatalogClass()
+				ENTITY_ACTIONS_CACHE[key] = catalog
+			}
+			if (!(domain in catalog.COVERED_DOMAINS)) {
+				var missing = [:]
+				for (var cell: var _mp in WalkCells.MAX) {
+					if (!(cell in catalog.COVERED_CELLS)) missing[cell] = true
+				}
+				if (!mapIsEmpty(missing)) {
+					if (sorted == null) sorted = WalkCellsClass.LoadSortedWalkCells(WalkCells)
+					var cells = []
+					for (var cell in sorted) if (cell in missing) push(cells, cell)
+					var additions = info.AREA == AREA_FIRST_INLINE
+						? getFirstInlineActions(State, info, item, cells, BaseHash)
+						: getActionsOnEveryone(State, item, BaseHash, cells, LeekCells, missing)
+					for (var group in additions) {
+						var known = catalog.BY_SIGNATURE[group.SIGNATURE]
+						if (known == null) {
+							catalog.BY_SIGNATURE[group.SIGNATURE] = group
+							push(catalog.GROUPS, group)
+						} else {
+							if (known == group) continue // groupe ponctuel complet déjà partagé
+							for (var from: var to in group.ORIGINS) known.addOrigin(from, to)
+						}
+					}
+					// Même une origine sans visée légale a été calculée : ne pas la retenter.
+					for (var cell: var _covered in missing) catalog.COVERED_CELLS[cell] = true
+				}
+				catalog.COVERED_DOMAINS[domain] = true
+			}
+			pushAll(result, catalog.GROUPS)
+		}
+		return result
+	}
+
+	/* Un groupe par signature d'effets, avec ses origines. La LoS du cast est
+	 * vérifiée pour chaque origine ; la simulation n'est faite qu'après regroupement.
+	 * Un laser utilise TOUTES ses cibles réelles, pas seulement son endpoint. */
+	static getActionsOnEveryone(State, Item, BaseHash, SortedWalkCells, LeekCells, WalkSet) {
+		if (ITEMINFO[Item].AREA == AREA_POINT) return getPointActions(State, Item, BaseHash, SortedWalkCells)
+		var areaInfo = ITEMINFO[Item]
+		if (areaInfo.AREA_MAX > 0 && areaInfo.AREA != AREA_LASER_LINE && areaInfo.AREA != AREA_ALLIES && areaInfo.AREA != AREA_ENEMIES) return getAreaActions(State, Item, BaseHash, SortedWalkCells)
+		var HashedMapAoe = LoadHashedMapAoe(State, Item, BaseHash, SortedWalkCells, WalkSet)
+		var groups = [:]
+		var _final = []
+		var Infos = ITEMINFO[Item]
+		var isLaser = Infos.AREA == AREA_LASER_LINE
+		var needLos = Infos.NEEDLOS
+		var losPrefix = CellClass.losKeyPrefix(BaseHash)
+		var laserDone = isLaser ? [:] : null
+		var rayDone = isLaser && !Infos.ORIGIN_SENSITIVE ? [:] : null
+		var campArea = Infos.AREA == AREA_ALLIES || Infos.AREA == AREA_ENEMIES
+		var campHash = campArea ? hashTargets(ConsequencesClass.ConsequenceTargets(Item, State[Me].CELL, State[Me].CELL, State, Me, BaseHash), Item, State) : null
+
+		for (var from in SortedWalkCells) {
+			if (!(from in HashedMapAoe)) continue
+			for (var to: var targetHash in HashedMapAoe[from]) {
+				if (campArea) targetHash = campHash
+				var known = null
+				if (!isLaser && !Infos.ORIGIN_SENSITIVE) {
+					known = groups[targetHash]
+					// Une origine a besoin d'UNE visée légale par groupe, pas de toutes
+					// les visées équivalentes de cette zone. Éviter leurs LoS aussi.
+					if (known != null && from in known.ORIGINS) continue
+				}
+				var ray = null
+				if (rayDone != null) {
+					var dx = CELL_X[to] > CELL_X[from] ? 1 : (CELL_X[to] < CELL_X[from] ? -1 : 0)
+					var dy = CELL_Y[to] > CELL_Y[from] ? 1 : (CELL_Y[to] < CELL_Y[from] ? -1 : 0)
+					ray = (from << 4) | ((dx + 1) * 3 + dy + 1)
+					if (ray in rayDone) continue
+				}
+				var actualTo = to
+				if (needLos && !CellClass.getLosWithPrefix(from, to, State, BaseHash, losPrefix)) {
+					if (!isLaser || !CellClass.getLos(from, to)) continue
+					var blockers = CellClass.getFirstInlineAoe(from, to, 1, CellClass.getDist(from, to) - 1, LeekCells)
+					actualTo = null
+					for (var c: var _b in blockers) { actualTo = c; break }
+					if (actualTo == null || CellClass.getDist(from, actualTo) < Infos.MINRANGE) continue
+				}
+				if (isLaser) {
+					var shot = (from << 10) | actualTo
+					if (shot in laserDone) continue
+					laserDone[shot] = true
+					targetHash = hashTargets(ConsequencesClass.ConsequenceTargets(Item, from, actualTo, State, Me, BaseHash), Item, State)
+					if (rayDone != null) rayDone[ray] = true // seulement après un cast LÉGAL
+					if (!Infos.ORIGIN_SENSITIVE) known = groups[targetHash]
+				}
+				if (Infos.ORIGIN_SENSITIVE) {
+					appendGroup(_final, groups, Item, from, actualTo, targetHash)
+				} else if (known == null) {
+					known = new ActionGroupClass(Item, from, actualTo, groupSignature(Item, targetHash, from, actualTo), targetHash)
+					groups[targetHash] = known
+					push(_final, known)
+				} else {
+					known.addOrigin(from, actualTo)
+				}
+			}
+		}
+		return _final
+	}
+
+	/* Une cible ponctuelle n'a pas besoin d'une map de maps (from -> to -> hash).
+	 * L'intersection portée/origines donne directement le groupe de cette cible.
+	 * Les items qui déplacent gardent une signature distincte pour chaque origine. */
+	static getPointActions(State, item, BaseHash, origins) {
+		var info = ITEMINFO[item]
+		var needLos = info.NEEDLOS
+		var originSensitive = info.ORIGIN_SENSITIVE
+		var launch = needLos ? LaunchWithLos[info.LAUNCHTYPE] : LaunchWithoutLos[info.LAUNCHTYPE]
+		var caster = State[Me]
+		var prefix = CellClass.losKeyPrefix(BaseHash)
+		var result = []
+		var groups = [:]
+		for (var id: var target in State) {
+			if (id == Me || target.LIFE <= 0 || !Target.Targetable(item, target, caster)) continue
+			var reachable = launch(target.CELL, info.MINRANGE, info.MAXRANGE)
+			var targetHash = affectsSignature(item, target, caster) ? targetContribution(id, 0) : 0
+			// Sans LoS et sans déplacement de cible, le domaine de portée ne dépend
+			// d'aucun autre occupant du plateau. Le partager même après une invocation.
+			// Un groupe à cible réelle unique n'est jamais fusionné avec un autre To.
+			if (!needLos && !originSensitive && targetHash != 0) {
+				var active = false
+				for (var from in origins) if (from in reachable) { active = true; break }
+				if (!active) continue
+				var signature = groupSignature(item, targetHash, 0, target.CELL)
+				var key = addValueToBinHash(signature, target.CELL)
+				var complete = POINT_ACTION_GROUP_CACHE[key]
+				if (complete == null) {
+					complete = new ActionGroupClass(item, 0, target.CELL, signature, targetHash)
+					complete.ORIGINS = [:]
+					for (var from: var _distance in reachable) complete.ORIGINS[from] = target.CELL
+					POINT_ACTION_GROUP_CACHE[key] = complete
+				}
+				push(result, complete)
+				continue
+			}
+			// Sans déplacement de cible, toutes les origines partagent cette signature.
+			var signature = originSensitive ? null : groupSignature(item, targetHash, 0, target.CELL)
+			var known = signature == null ? null : groups[signature]
+			for (var from in origins) {
+				if (!(from in reachable)) continue
+				if (needLos && !CellClass.getLosWithPrefix(from, target.CELL, State, BaseHash, prefix)) continue
+				if (originSensitive) appendGroup(result, groups, item, from, target.CELL, targetHash)
+				else if (known == null) {
+					known = new ActionGroupClass(item, from, target.CELL, signature, targetHash)
+					groups[signature] = known
+					push(result, known)
+				} else known.addOrigin(from, target.CELL)
+			}
+		}
+		return result
+	}
+
+	/* Une zone centrée sur To touche les mêmes AUTRES entités depuis toutes
+	 * ses origines. Calculer ce fold une fois par centre, puis ajouter seulement
+	 * Me à sa distance depuis From. Ne pas construire from -> to -> hash.
+	 * Les formes traitées ici sont symétriques, comme LoadMapFromAoeForAnEntity. */
+	static getAreaActions(State, item, BaseHash, origins) {
+		var info = ITEMINFO[item]
+		var needLos = info.NEEDLOS
+		var originSensitive = info.ORIGIN_SENSITIVE
+		var caster = State[Me]
+		var centers = [:]
+		var affected = [:]
+		for (var id: var target in State) {
+			if (id == Me || target.LIFE <= 0) continue
+			if (Target.Targetable(item, target, caster)) centers += AoeDistItem(item, target.CELL)
+			if (affectsSignature(item, target, caster)) affected[id] = target.CELL
+		}
+		var includeMe = affectsSignature(item, caster, caster)
+		var selfHashes = [:]
+		var launch = needLos ? LaunchWithLos[info.LAUNCHTYPE] : LaunchWithoutLos[info.LAUNCHTYPE]
+		var losPrefix = CellClass.losKeyPrefix(BaseHash)
+		var groups = [:]
+		var result = []
+		for (var to: var _distance in centers) {
+			var area = AoeDistItem(item, to)
+			var otherHash = 0
+			for (var id: var cell in affected) {
+				var dist = area[cell]
+				if (dist != null) otherHash ^= targetContribution(id, dist)
+			}
+			var reachable = launch(to, info.MINRANGE, info.MAXRANGE)
+			for (var from in origins) {
+				if (!(from in reachable)) continue
+				var hash = otherHash
+				var selfDistance = includeMe ? area[from] : null
+				if (selfDistance != null) {
+					if (!(selfDistance in selfHashes)) selfHashes[selfDistance] = targetContribution(Me, selfDistance)
+					hash ^= selfHashes[selfDistance]
+				}
+				var known = originSensitive ? null : groups[hash]
+				if (known != null && from in known.ORIGINS) continue
+				if (needLos && !CellClass.getLosWithPrefix(from, to, State, BaseHash, losPrefix)) continue
+				if (originSensitive) appendGroup(result, groups, item, from, to, hash)
+				else if (known == null) {
+					known = new ActionGroupClass(item, from, to, groupSignature(item, hash, from, to), hash)
+					groups[hash] = known
+					push(result, known)
+				} else known.ORIGINS[from] = to
+			}
+		}
+		return result
+	}
+
+	/*
+	 * Actions push/attract (AREA_FIRST_INLINE) : To est une cellule de VISÉE/direction, PAS
+	 * une cellule d'arrivée — le moteur fait glisser l'entité VERS To et s'arrête au premier
+	 * blocage (CellClass.slideDestination). Push vise le plus loin possible dans le
+	 * prolongement, attract au plus près du caster : les gates de direction moteur sont
+	 * satisfaits par construction.
+	 */
+	static getFirstInlineActions(State, Infos, Item, SortedWalkCells, BaseHash) {
+		var _final = []
+		var groups = [:]
+		var occupied = WalkCellsClass.LoadIgnoreCells(State, Me, BaseHash)
+		var attract = isAttract(Infos)
+		var launch = LaunchWithLos[Infos.LAUNCHTYPE]
+		var losPrefix = CellClass.losKeyPrefix(BaseHash)
+		for (var e: var stat in State) {
+			if (e == Me || stat.LIFE <= 0) continue
+			var hittable = launch(stat.CELL, Infos.MINRANGE, Infos.MAXRANGE)
+			for (var from in SortedWalkCells) {
+				if (!(from in hittable) || !CellClass.getLosWithPrefix(from, stat.CELL, State, BaseHash, losPrefix)) continue
+				var to = attract ? getClosestCellToAttract(from, stat.CELL, Infos.MINRANGE, Infos.MAXRANGE, occupied)
+				                 : getFarthestCellToPush(from, stat.CELL, Infos.MINRANGE, Infos.MAXRANGE, occupied)
+				if (to == null) to = stat.CELL // glissement nul : les autres effets restent jouables
+				var targets = ConsequencesClass.ConsequenceTargets(Item, from, to, State, Me, BaseHash)
+				appendGroup(_final, groups, Item, from, to, hashTargets(targets, Item, State))
+			}
+		}
+		return _final
+	}
+
+	static getFarthestCellToPush(from, EntityCell, MinRange, MaxRange, ArrayCellsOccupied) {
+		var EntityDist = CellClass.getDist(from, EntityCell)
+		var MaxDist = EntityDist
+		var MaxDistCell
+		var PossiblesCellsToPush = CellClass.getLaserAoe(from, EntityCell, MinRange, MaxRange)
+		for (var c: var bool2 in PossiblesCellsToPush) {
+			var ThisDist = CellClass.getDist(c, from)
+			// Le moteur n'ignore qu'UNE entité en ligne (la première, donc la cible) : un
+			// second corps au-delà d'elle bloque la LoS vers toute cellule plus lointaine et
+			// fait refuser le cast entier. La cible est le seul corps en deçà, la LoS jusqu'à
+			// elle ayant été validée par l'appelant. getLaserAoe insère par distance
+			// croissante : couper ici écarte exactement les cellules illégales.
+			if (c in ArrayCellsOccupied) {
+				if (ThisDist > EntityDist) break
+				continue
+			}
+			if (MaxDist < ThisDist) {
+				MaxDist = ThisDist
+				MaxDistCell = c
+			}
+		}
+		return MaxDistCell
+	}
+
+	static getClosestCellToAttract(from, EntityCell, MinRange, MaxRange, ArrayCellsOccupied) {
+		var MinDist = CellClass.getDist(from, EntityCell)
+		var MinDistCell
+		var PossiblesCellsToAttract = CellClass.getLaserAoe(from, EntityCell, MinRange, MaxRange)
+		for (var c: var bool2 in PossiblesCellsToAttract) {
+			if (c in ArrayCellsOccupied) continue
+			var ThisDist = CellClass.getDist(c, from)
+			if (MinDist > ThisDist) {
+				MinDist = ThisDist
+				MinDistCell = c
+			}
+		}
+		return MinDistCell
+	}
+
+	static isAttract(Infos) { // seuls attract et push existent pour l'instant
+		for (var eff in Infos.EFFECTS) {
+			if (eff[0] == EFFECT_ATTRACT) return true
+		}
+		return false
+	}
+
+	/* [from -> [to -> hash des (entité, distance d'AoE) touchées]] pour un item — la matière
+	 * du dédoublonnage de getActionsOnEveryone. */
+	static LoadHashedMapAoe(State, Item, BaseHash, SortedWalkCells, WalkSet) {
+		// Pas de cache : il ne pourrait pas servir. La map est RESTREINTE à mes cellules de tir,
+		// sa clé porterait donc le terrain, l'item et mon empreinte de mobilité — exactement ce
+		// que porte déjà la clé du cache d'actions au-dessus. Un appel n'arrive ici QUE sur un
+		// miss de celui-là, où l'un de ces champs a forcément changé. Mesuré sur trois combats
+		// de 64 tours : 37 873 écritures pour ZÉRO lecture utile.
+		var _final = [: ]
+		var Infos = ITEMINFO[Item]
+		var LaunchFct = Infos.NEEDLOS ? LaunchWithLos[Infos.LAUNCHTYPE] : LaunchWithoutLos[Infos.LAUNCHTYPE]
+		var CastState = State[Me]
+		var nWalk = count(SortedWalkCells)
+		// Zone PONCTUELLE : même disjonction que CellClass.getAreaDist, qui rend alors
+		// littéralement [cellule du centre : 0]. La map de cibles d'une cellule de tir est donc
+		// un SINGLETON, et son fold se déroule à un tour — par construction, pas par hypothèse.
+		var area = Infos.AREA
+		var pointArea = area == AREA_POINT || area == AREA_FIRST_INLINE || area == AREA_LASER_LINE
+		for (var entity: var EntityState in State) {
+			// Prédicats rangés par coût : la vie est une lecture de champ, la ciblabilité est
+			// une construction de clé à cinq champs et quatre ternaires même sur un hit de son
+			// cache. Un cadavre ne la paie plus.
+			if (entity == Me || EntityState.LIFE <= 0 || !Target.Targetable(Item, EntityState, CastState)) continue
+			// Les cellules retenues sont l'INTERSECTION de mes cellules de tir et des cellules de
+			// lancement de l'item sur cette entité : on parcourt le plus petit des deux ensembles
+			// et on teste l'appartenance à l'autre. Le résultat est identique dans les deux sens —
+			// l'ordre d'insertion des `to` d'un `from` donné ne dépend que de la boucle d'entités,
+			// et l'ordre des clés de _final lui-même n'est jamais lu.
+			var FromMap = LoadMapFromAoeForAnEntity(Item, EntityState.CELL, Infos, LaunchFct)
+			// L'entité est déjà décalée à sa place dans le hash : le fold est appelé une fois par
+			// cellule de tir, il n'a pas à refaire le même décalage à chacune.
+			var packed = affectsSignature(Item, EntityState, CastState) ? (entity + 1) << MAX_AOE_DIST_BINARY : 0
+			if (pointArea) {
+				// Une seule cible, de distance nulle : « packed | 0 » vaut packed, et l'empreinte
+				// d'une cellule de tir NEUVE ne dépend que de l'entité — calculée une fois ici au
+				// lieu d'une fois par cellule.
+				var eCell = EntityState.CELL
+				var freshHash = packed == 0 ? 0 : mix64(packed)
+				if (nWalk < mapSize(FromMap)) {
+					for (var from in SortedWalkCells) {
+						if (from in FromMap) foldAoePoint(_final, from, eCell, freshHash, packed)
+					}
+				} else {
+					for (var from: var MapToHash in FromMap) {
+						if (from in WalkSet) foldAoePoint(_final, from, eCell, freshHash, packed)
+					}
+				}
+				continue
+			}
+			if (nWalk < mapSize(FromMap)) {
+				for (var from in SortedWalkCells) {
+					if (from in FromMap) foldAoeFrom(_final, from, FromMap[from], packed)
+				}
+			} else {
+				for (var from: var MapToHash in FromMap) {
+					// Cellule d'où je ne peux pas tirer : la boucle d'énumération ne la lira jamais.
+					if (from in WalkSet) foldAoeFrom(_final, from, MapToHash, packed)
+				}
+			}
+		}
+		if (!pointArea) {
+			for (var id: var stat in State) {
+				if (id == Me || stat.LIFE <= 0 || Target.Targetable(Item, stat, CastState)
+					|| !affectsSignature(Item, stat, CastState)) continue
+				var collateral = LoadMapFromAoeForAnEntity(Item, stat.CELL, Infos, LaunchFct)
+				for (var from: var toHashes in _final) {
+					if (!(from in collateral)) continue
+					var distances = collateral[from]
+					for (var to: var _h in toHashes) {
+						if (to in distances) toHashes[to] ^= targetContribution(id, distances[to])
+					}
+				}
+			}
+		}
+		// M'ajoute au hash si je suis dans l'AoE depuis from (même packing entité-haut/dist-bas).
+		// Les items sans effet applicable sur Me ne découpent pas artificiellement les
+		// groupes selon ma distance à la zone (grenade qui exclut son lanceur, etc.).
+		if (Infos.AREA_MAX > 0 && Infos.MINRANGE <= Infos.AREA_MAX && affectsSignature(Item, CastState, CastState)) {
+			for (var from: var MapToHash in _final) {
+				var MapAoeCellsOfFrom = CellClass.getAreaDist(area, from)
+				for (var to: var TmpHash in MapToHash) {
+					if (to in MapAoeCellsOfFrom) {
+						MapToHash[to] = MapToHash[to] ^ targetContribution(Me, MapAoeCellsOfFrom[to])
+					}
+				}
+			}
+		}
+		return _final
+	}
+
+	/* Contributions non linéaires, composables par XOR : la géométrie d'une
+	 * ancienne cible garde sa contribution quand une invocation s'ajoute à la zone. */
+	static foldAoePoint(_final, from, to, freshHash, packed) {
+		if (from in _final) {
+			var Tmp = _final[from]
+			if (to in Tmp) {
+				Tmp[to] = Tmp[to] ^ (packed == 0 ? 0 : mix64(packed))
+			} else {
+				Tmp[to] = freshHash
+			}
+		} else {
+			var Tmp = [: ]
+			Tmp[to] = freshHash
+			_final[from] = Tmp
+		}
+	}
+
+	static foldAoeFrom(_final, from, MapToHash, packed) {
+		if (from in _final) {
+			var Tmp = _final[from]
+			for (var to: var TmpHash in MapToHash) {
+				if (to in Tmp) {
+					Tmp[to] = Tmp[to] ^ (packed == 0 ? 0 : mix64(packed | TmpHash))
+				} else {
+					Tmp[to] = packed == 0 ? 0 : mix64(packed | TmpHash)
+				}
+			}
+		} else {
+			// Cellule de tir vue pour la PREMIÈRE fois : sa map est neuve, aucune cible ne peut
+			// déjà y figurer — le test d'appartenance ne rendrait jamais vrai. Elle est remplie
+			// avant d'être posée, pour n'être traversée qu'une fois.
+			var Tmp = [: ]
+			for (var to: var TmpHash in MapToHash) {
+				Tmp[to] = packed == 0 ? 0 : mix64(packed | TmpHash)
+			}
+			_final[from] = Tmp
+		}
+	}
+
+	static LoadMapFromAoeForAnEntity(Item, EntityCell, Infos, LaunchFunction) {
+		// IDs objets entiers 32 bits : le sabre lumineux (609) dépasse l'ancien slot de 9.
+		var Hash = (EntityCell << 32) | Item
+		if (Hash in COEFFED_MAP_ENTITY_CACHE) return COEFFED_MAP_ENTITY_CACHE[Hash]
+		var MinRange = Infos.MINRANGE
+		var MaxRange = Infos.MAXRANGE
+		var _final = [: ]
+		for (var to: var dist in AoeDistItem(Item, EntityCell)) {
+			for (var from: var bool in LaunchFunction(to, MinRange, MaxRange)) {
+				// La map de la cellule est prise UNE fois : la créer puis la relire pour y
+				// insérer coûtait une lecture de map par couple (cellule de tir, cible).
+				var Tmp = from in _final ? _final[from] : _final[from] = [: ]
+				Tmp[to] = dist
+			}
+		}
+		COEFFED_MAP_ENTITY_CACHE[Hash] = _final
+		return _final
+	}
+
+	static getInventoryOnVoid(Inventory) {
+		var _final = []
+		for (var item in Inventory) {
+			var Infos = ITEMINFO[item]
+			if (!(item in ToSkipItems) && Target.ImTargetable(Infos.EFFECTS)) {
+				push(_final, item)
+			}
+		}
+		return _final
+	}
+
+	static getEveryActionsInVoid(MyCell, Inventory, State, LeekCells, BaseHash) {
+		var TmpHash = addValueToBinHash((OFFSET_BASIS ^ BaseHash), MyCell)
+		var _final = []
+		var availability = availabilityOf(State[Me])
+		var costs = availability.COSTS
+		for (var item in Inventory) {
+			var Infos = ITEMINFO[item]
+			var cost = costs[item]
+			if (cost == null) cost = ActionSuite.baseCostOf(State[Me], item, costs, availability.USES, availability.STOCKS)
+			if (cost < 0) continue
+			var key = addValueToBinHash(TmpHash, item)
+			if (!(key in ACTIONS_ON_VOID_CACHE)) ACTIONS_ON_VOID_CACHE[key] = getActionInVoid(MyCell, Infos.LAUNCHTYPE, Infos.MINRANGE, Infos.MAXRANGE, LeekCells, item, State, BaseHash)
+			var Act = ACTIONS_ON_VOID_CACHE[key]
+			if (Act) push(_final, Act)
+		}
+		return _final
+	}
+
+	/* Cellule "vide" pour un item à effet positif de zone (type glaive) : la première cellule
+	 * visible dont l'AoE ne touche aucune entité. */
+	static getActionInVoid(basefrom, LaunchType, MinRange, MaxRange, LeekCells, Item, State, BaseHash) {
+		for (var c: var bool in LaunchWithLos[LaunchType](basefrom, MinRange, MaxRange)) {
+			var GoodCell = true
+			if (CellClass.getLosWithBaseHash(basefrom, c, State, BaseHash)) {
+				for (var aoe: var dist in AoeDistItem(Item, c)) {
+					if (aoe in LeekCells) {
+						GoodCell = false
+						break
+					}
+				}
+				if (GoodCell) {
+					return new ActionClass(Item, basefrom, c)
+				}
+			}
+		}
+	}
+
+	/* [cellule touchée -> distance d'AoE] de l'item centré sur to (lasers exclus) —
+	 * délégué à la source unique paresseuse CellClass.getAreaDist (AREA_PLUS_1 compris). */
+	static AoeDistItem(item, to) {
+		return CellClass.getAreaDist(ITEMINFO[item].AREA, to)
+	}
+
+	static LaunchWithLos = [
+		LAUNCH_TYPE_CIRCLE: function(to, MinRange, MaxRange) {
+			return CellClass.getDiscWithLos(to, MinRange, MaxRange)
+		},
+		LAUNCH_TYPE_LINE: function(to, MinRange, MaxRange) {
+			return CellClass.getLineWithLos(to, MinRange, MaxRange)
+		},
+		LAUNCH_TYPE_LINE_INVERTED: function(to, MinRange, MaxRange) {
+			debugW("LineInverted Not Coded ATM (LaunchWithLos, Actions)")
+		},
+		LAUNCH_TYPE_DIAGONAL: function(to, MinRange, MaxRange) {
+			return CellClass.getDiagonalWithLos(to, MinRange, MaxRange)
+		},
+		LAUNCH_TYPE_DIAGONAL_INVERTED: function(to, MinRange, MaxRange) {
+			debugW("Diag Inverted Not Coded ATM (LaunchWithLos, Actions)")
+		},
+		LAUNCH_TYPE_STAR: function(to, MinRange, MaxRange) {
+			return CellClass.getStarWithLos(to, MinRange, MaxRange)
+		},
+		LAUNCH_TYPE_STAR_INVERTED: function(to, MinRange, MaxRange) {
+			return CellClass.getInvertedStarWithLos(to, MinRange, MaxRange)
+		}
+	]
+
+	static LaunchWithoutLos = [
+		LAUNCH_TYPE_CIRCLE: function(to, MinRange, MaxRange) {
+			return CellClass.getDisc(to, MinRange, MaxRange)
+		},
+		LAUNCH_TYPE_LINE: function(to, MinRange, MaxRange) {
+			return CellClass.getLine(to, MinRange, MaxRange)
+		},
+		LAUNCH_TYPE_LINE_INVERTED: function(to, MinRange, MaxRange) {
+			debugW("LineInverted Not Coded ATM (LaunchWithoutLos, Actions)")
+		},
+		LAUNCH_TYPE_DIAGONAL: function(to, MinRange, MaxRange) {
+			return CellClass.getDiagonal(to, MinRange, MaxRange)
+		},
+		LAUNCH_TYPE_DIAGONAL_INVERTED: function(to, MinRange, MaxRange) {
+			debugW("Diag Inverted Not Coded ATM (LaunchWithoutLos, Actions)")
+		},
+		LAUNCH_TYPE_STAR: function(to, MinRange, MaxRange) {
+			return CellClass.getStar(to, MinRange, MaxRange)
+		},
+		LAUNCH_TYPE_STAR_INVERTED: function(to, MinRange, MaxRange) {
+			return CellClass.getInvertedStar(to, MinRange, MaxRange)
+		}
+	]
+}

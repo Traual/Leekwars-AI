@@ -1,0 +1,254 @@
+/*
+ * BulbState : l'état virtuel d'un bulbe invoqué en branche (stats interpolées par le
+ * niveau de l'invocateur via getBulbStats / getBulbChips).
+ */
+
+include("../imports")
+
+class BulbState {
+	// Fight Stats
+	ABSOLUTE_SHIELD
+	RELATIVE_SHIELD
+	DAMAGE_RETURN
+	POWER
+	SUMMONER
+	IS_SUMMON
+	TYPE_TAG    // (id << 1) | est-ce un summon, même contrat qu'EntityClass : immuable
+	ID
+	WEAPON
+	INVENTORY
+	COOLDOWNS
+	USES
+	ITEM_STATE_PARENT   // null = racine (même contrat qu'EntityState) — un bulbe n'est jamais patché
+	AVAILABILITY_MEMO
+	SIDE
+	SPECIAL_WEAPON
+	EFFECTS
+	STATES               // masque d'états du moteur, même contrat qu'EntityState
+	SHIELD_EXPIRY        // même contrat qu'EntityState : null tant qu'aucun bouclier n'expire
+	SHIELD_EXPIRY_HASH   // digest de la liste, exactement 0 quand elle est vide
+	CAP_MEMO    // memos de champs dérivés, même contrat qu'EntityState (copiés au clone puis validés)
+	TLSQ_MEMO
+	PKEY_MEMO   // contribution de ce porteur a la cle de couverture antidote (ScoringClass.poisonKeyOf)
+	ANTICD_MEMO // cooldown effectif d'Antidote, 99 sans le chip (DangerComboClass.antidoteCdOf)
+	JCD_MEMO    // cooldowns effectifs de Saut et de Télépo, -1 sans le chip (même contrat)
+	TCD_MEMO
+	MCD_MEMO = null
+	CAP_DIRTY   // un effet a touché une capability pendant l'action (même contrat qu'EntityState)
+	POISON
+	POISON_OVER_TIME
+	AFTEREFFECT
+	AFTEREFFECT_OVER_TIME
+	HEAL
+	HEAL_OVER_TIME
+	TURN_ORDER
+	// Leek Stats
+	LIFE
+	TOTAL_LIFE
+	BASE_STATS   // bases vraies par constante STAT_* (même contrat qu'EntityState : immuable)
+	STRENGTH
+	STRENGTH_BUFF = 0
+	STRENGTH_BUFF_WEIGHTED = 0
+	WISDOM
+	WISDOM_BUFF = 0
+	WISDOM_BUFF_WEIGHTED = 0
+	AGILITY
+	AGILITY_BUFF = 0
+	AGILITY_BUFF_WEIGHTED = 0
+	CRITICAL_SCALE_MEMO = null
+	IMPORTANCE_MEMO = null
+	SCORE_MEMO = null
+	CHARACTERISTICS_MEMO = null
+	POTENTIAL_MEMO = null
+	RESISTANCE
+	RESISTANCE_BUFF = 0
+	RESISTANCE_BUFF_WEIGHTED = 0
+	SCIENCE
+	SCIENCE_BUFF = 0
+	SCIENCE_BUFF_WEIGHTED = 0
+	MAGIC
+	MAGIC_BUFF = 0
+	MAGIC_BUFF_WEIGHTED = 0
+	// Même contrat de scoring que pour EntityState, aucune entrave à la naissance.
+	SHACKLE_STRENGTH = 0
+	SHACKLE_AGILITY = 0
+	SHACKLE_WISDOM = 0
+	SHACKLE_MAGIC = 0
+	SHACKLE_TP = 0
+	SHACKLE_MP = 0
+	MP
+	TOTAL_MP
+	TP
+	TOTAL_TP
+	NAME
+	// Map Stats
+	CELL
+	STATIC
+	AWAKEN_MARKS         // même contrat qu'EntityState : null, un bulbe n'est jamais Me
+
+	/*
+	 * Une caractéristique de bulbe, transcrite mot pour mot de BulbTemplate.base :
+	 * (int)((base + floor((bonus - base) * coeff)) * multiplier). Les deux arrondis et leur
+	 * ORDRE comptent — le plancher tombe sur l'interpolation seule, la troncature sur le
+	 * produit final — et le multiplicateur d'un cast critique vaut 1,2 ici, pas le 1,3 des
+	 * autres effets. Garder l'expression identique fait tomber les mêmes entiers que le
+	 * moteur, y compris quand le produit par 1,2 passe juste sous la borne.
+	 */
+	static interpolate(row, coeff, multiplier) {
+		return floor((row[0] + floor((row[1] - row[0]) * coeff)) * multiplier)
+	}
+
+	constructor(id, SummonerLevelTimes, Chip, To, Summoner, SummonerStats, NPriorVirtuals, Critical) {
+		// Charger les stats dynamiques via l'API
+		var stats = getBulbStats(Chip)
+
+		// === Fight Stats ===
+		this.ABSOLUTE_SHIELD = 0
+		this.RELATIVE_SHIELD = 0
+		this.DAMAGE_RETURN = 0
+		this.POWER = 0
+		this.STATES = 0   // un bulbe nait sans aucun etat ; une plante recoit ENRACINE plus bas
+		this.SUMMONER = Summoner
+		this.IS_SUMMON = true
+		this.ID = id
+		this.TYPE_TAG = (id << 1) | 1
+		this.INVENTORY = getBulbChips(Chip)
+		this.ITEM_STATE_PARENT = null   // racine : maps complètes
+		this.COOLDOWNS = [: ]
+		this.USES = [: ]
+		// Cooldowns INITIAUX (State.applyInitialCooldowns) : une puce dont le cooldown initial
+		// n'est pas encore echu en pose un de (initial + 2 - tour) sur toute invocation qui
+		// nait. Trois puces seulement ont un cooldown initial, toutes a 1 et aucune partagee
+		// par l'equipe : Inversion, Teleportation et Foudre. La condition `initial >= tour` ne
+		// tient donc qu'au tour 1, ou elles naissent a 2. Le bulbe tacticien porte les deux
+		// premieres : sans cela l'IA lui creditait une Telepo et une Inversion injouables.
+		var initialCd = getTurn() == 1 ? 2 : 0
+		for (var i in this.INVENTORY) {
+			this.COOLDOWNS[i] = (initialCd > 0 && (i == CHIP_TELEPORTATION || i == CHIP_INVERSION || i == CHIP_THUNDER)) ? initialCd : 0
+			this.USES[i] = 0
+		}
+		this.SIDE = SummonerStats.SIDE
+		this.SPECIAL_WEAPON = 0   // masque vide : une invocation ne porte pas d'arme
+		this.EFFECTS = []
+		// Un bulbe naît sans effet : aucun bouclier ne peut expirer sur lui. Posés en dur, ce
+		// constructeur ne passant pas par celui d'EntityStateClass.
+		this.SHIELD_EXPIRY = null
+		this.SHIELD_EXPIRY_HASH = 0
+		this.POISON = 0
+		this.POISON_OVER_TIME = 0
+		this.AFTEREFFECT = 0
+		this.AFTEREFFECT_OVER_TIME = 0
+		this.HEAL = 0
+		this.HEAL_OVER_TIME = 0
+		// Fractionnaire : le moteur INSÈRE le summon juste après son invocateur, donc le plus
+		// RÉCENT joue en PREMIER parmi ceux du même invocateur. 0.5/(1+n) reproduit ça
+		// exactement (1er bulbe +0.5, 2e +0.25, ...) sans jamais collisionner avec les ordres
+		// entiers réels ni les slots x.75 des ressuscités. TURN_ORDER lu depuis SummonerStats
+		// (l'état de BRANCHE), cohérent si l'invocateur porte lui-même un ordre fractionnaire.
+		this.TURN_ORDER = SummonerStats.TURN_ORDER + 0.5 / (1 + NPriorVirtuals)
+
+		// === Leek Stats ===
+		// Un cast critique donne un bulbe entièrement +20 % : le moteur passe le drapeau
+		// jusqu'à createInvocation, qui l'applique aux NEUF caractéristiques.
+		var multiplier = Critical ? 1.2 : 1.0
+		this.LIFE = interpolate(stats[STAT_LIFE], SummonerLevelTimes, multiplier)
+		this.TOTAL_LIFE = this.LIFE
+		this.STRENGTH = interpolate(stats[STAT_STRENGTH], SummonerLevelTimes, multiplier)
+		this.WISDOM = interpolate(stats[STAT_WISDOM], SummonerLevelTimes, multiplier)
+		this.AGILITY = interpolate(stats[STAT_AGILITY], SummonerLevelTimes, multiplier)
+		this.RESISTANCE = interpolate(stats[STAT_RESISTANCE], SummonerLevelTimes, multiplier)
+		this.SCIENCE = interpolate(stats[STAT_SCIENCE], SummonerLevelTimes, multiplier)
+		this.MAGIC = interpolate(stats[STAT_MAGIC], SummonerLevelTimes, multiplier)
+		this.MP = interpolate(stats[STAT_MP], SummonerLevelTimes, multiplier)
+		this.TOTAL_MP = this.MP
+		this.TP = interpolate(stats[STAT_TP], SummonerLevelTimes, multiplier)
+		this.TOTAL_TP = this.TP
+		this.NAME = getNameFromChip(Chip)
+
+		// === Bases vraies (résurrection) — un bulbe naît sans aucun effet ===
+		this.BASE_STATS = [
+			STAT_STRENGTH:   this.STRENGTH,
+			STAT_WISDOM:     this.WISDOM,
+			STAT_AGILITY:    this.AGILITY,
+			STAT_RESISTANCE: this.RESISTANCE,
+			STAT_SCIENCE:    this.SCIENCE,
+			STAT_MAGIC:      this.MAGIC,
+			STAT_POWER:      this.POWER,
+			STAT_MP:         this.TOTAL_MP,
+			STAT_TP:         this.TOTAL_TP
+		]
+
+		// === Map Stats ===
+		this.CELL = To
+		this.STATIC = false
+		this.AWAKEN_MARKS = null
+
+		// === Plante : État permanent ENRACINÉ, et zone d'Éveil ===
+		// State.applySummonStates : ADD_STATE infini, irréductible, auto-lancé, sans item. La
+		// ligne le porte comme une ligne importée du moteur (item 0, tours -1).
+		if (this.NAME in PLANT_ZONE_BY_NAME) {
+			this.STATES = 1 << STATE_ROOTED
+			this.EFFECTS = [[EFFECT_ADD_STATE, STATE_ROOTED, id, -1, false, 0, id, EFFECT_MODIFIER_IRREDUCTIBLE, -1]]
+			var zone = PLANT_ZONE_BY_NAME[this.NAME]
+			if (zone > 0) PLANT_ZONE_BY_ID[id] = zone
+		}
+	}
+
+	static getNameFromChip(Chip) {
+		switch (Chip) {
+			case CHIP_PUNY_BULB:
+				return "puny_bulb"
+			case CHIP_ROCKY_BULB:
+				return "rocky_bulb"
+			case CHIP_ICED_BULB:
+				return "iced_bulb"
+			case CHIP_HEALER_BULB:
+				return "healer_bulb"
+			case CHIP_FIRE_BULB:
+				return "fire_bulb"
+			case CHIP_WIZARD_BULB:
+				return "wizard_bulb"
+			case CHIP_METALLIC_BULB:
+				return "metallic_bulb"
+			case CHIP_SAVANT_BULB:
+				return "savant_bulb"
+			case CHIP_TACTICIAN_BULB:
+				return "tactician_bulb"
+			case CHIP_LIGHTNING_BULB:
+				return "lightning_bulb"
+			case CHIP_CORN:
+				return "corn"
+			case CHIP_CHILLI_PEPPER:
+				return "chilli_pepper"
+			case CHIP_PROTOTAXITE:
+				return "prototaxite"
+		}
+	}
+
+	/*
+	 * Index distinct par TYPE d'invocation (1..10 les bulbes, 11..13 les plantes), ajouté à SUMMON_ID_BASE (max des ids réels au
+	 * début du tour, morts inclus) : l'id d'un bulbe virtuel est FIXE par type tout le tour —
+	 * même id <=> même type quel que soit l'ordre des summons entre branches, donc les caches
+	 * clés par id seul ne peuvent pas collisionner entre types. Toujours > tout id réel (pas
+	 * d'écrasement, cadavres ressuscitables inclus). Les cooldowns actuels des chips rendent
+	 * impossible un second summon virtuel du même type dans une même branche.
+	 */
+	static getTypeOffset(Chip) {
+		switch (Chip) {
+			case CHIP_PUNY_BULB:      return 1
+			case CHIP_ROCKY_BULB:     return 2
+			case CHIP_ICED_BULB:      return 3
+			case CHIP_HEALER_BULB:    return 4
+			case CHIP_FIRE_BULB:      return 5
+			case CHIP_WIZARD_BULB:    return 6
+			case CHIP_METALLIC_BULB:  return 7
+			case CHIP_SAVANT_BULB:    return 8
+			case CHIP_TACTICIAN_BULB: return 9
+			case CHIP_LIGHTNING_BULB: return 10
+			case CHIP_CORN:           return 11
+			case CHIP_CHILLI_PEPPER:  return 12
+			case CHIP_PROTOTAXITE:    return 13
+		}
+		return 1   // unknown summon chip -> still +1 (free id, no overwrite)
+	}
+}

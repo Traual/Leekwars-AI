@@ -1,0 +1,255 @@
+/*
+ * Constantes du jeu et primitives de hash.
+ */
+
+include("../imports")
+
+
+
+// Liste des entités réelles, rafraîchie à CHAQUE StateClass.Virtualize (jamais figée ici :
+// le premier Virtualize précède toute génération d'action). Sert d'ignore-list à la LoS
+// statique de CellClass.getLos.
+global EVERYONE
+
+global Me// = getEntity()
+global BASE_INVENTORY// = getWeapons(Me) + getChips(Me)
+global MY_INVENTORY_ON_ME// = Actions.getInventoryOnMe(BASE_INVENTORY, ASSS.MAP)
+global MY_INVENTORY_ON_VOID// = Actions.getInventoryOnVoid(BASE_INVENTORY)
+global MY_INVENTORY_SUMMON// = Actions.getInventorySummon(BASE_INVENTORY)
+global MY_INVENTORY_ON_EVERYONE// = Actions.getInventoryOnEveryOne(BASE_INVENTORY)
+
+// Bulbes offensifs : invoqués PRÈS des ennemis (cellule minimisant la distance moyenne aux
+// ennemis, Actions.getSummonAction). Tout summon hors de cette liste (bulbes doux /
+// résurrection) est placé près des alliés.
+global MeanBulbs = [
+	CHIP_ROCKY_BULB,
+	CHIP_ICED_BULB,
+	CHIP_FIRE_BULB,
+	CHIP_WIZARD_BULB,
+	CHIP_TACTICIAN_BULB,
+	CHIP_LIGHTNING_BULB
+]
+
+// PLANTES
+// Rayon de la zone d'Éveil par espèce, recopié de data/summons.json (champ zone) : aucune API ne
+// le donne pour une plante pas encore invoquée. Une plante réelle le relit par getAwakeningZone.
+// Le nom sert aussi de test « est une plante » (le Prototaxite est enraciné sans zone).
+global PLANT_ZONE_BY_NAME = ["corn": 3, "chilli_pepper": 3, "prototaxite": 0]
+global PLANT_TYPE_BY_NAME = ["corn": PLANT_CORN, "chilli_pepper": PLANT_CHILLI_PEPPER, "prototaxite": PLANT_PROTOTAXITE]
+// Puces de plante : portée 1 à 3 cases (zone de rayon 3 pour les grosses), coûts, et plafond de
+// lancers par réveil (7 TP au plus en donnent deux).
+global PLANT_REACH = 3
+global PLANT_SMALL_COST = 3
+global PLANT_BIG_COST = 6
+global PLANT_MAX_CASTS = 4
+// Puces d'invocation de plante.
+global PLANT_SUMMON_CHIPS = [CHIP_CORN: true, CHIP_CHILLI_PEPPER: true, CHIP_PROTOTAXITE: true]
+
+// Coût TP minimal de l'inventaire (court-circuite l'expansion quand il ne reste plus assez).
+global MINIMUM_COST_ITEM
+// La Résurrection est-elle dans mon inventaire ? Posé au tour (Preload.InitStateClass) : sans
+// elle, resurrectIdOf n'a plus à remonter toute la chaîne d'inventaire à chaque nœud développé.
+global I_HAVE_RESURRECTION = false
+global SUMMON_ID_BASE = 0   // max des ids RÉELS au début du tour ; id de bulbe virtuel = base + offset de type (Preload.InitStateClass)
+
+// Id sentinelle "personne" pour les fonctions à entité-à-skipper (placement des summons :
+// le bulbe n'est pas encore dans le State). > tout id réel ; ni -1 ni null, qui casseraient
+// les clés bit-packées.
+global ID_NOBODY = 1000
+
+// HASH
+
+global MAX_CELL_BINARY = 11
+global MAX_AOE_DIST_BINARY = 3
+
+global MAX_VALUE = 9223372036854775807
+global OFFSET_BASIS = 1469598103934665603
+global SHIFT = 13
+global HIGH_SHIFT = 64 - SHIFT
+global MASK_HIGH = (1 << SHIFT) - 1
+// Deux pas enchaînés : voir addTwoValuesToBinHash. Dérivés de SHIFT pour le suivre.
+global SHIFT2 = SHIFT * 2
+global HIGH_SHIFT2 = 64 - SHIFT2
+global MASK_HIGH2 = (1 << SHIFT2) - 1
+
+/*
+ * CONTRAT DES CLÉS DE CACHE — trois familles, une règle par famille.
+ *
+ * 1. PACKING EXACT : les champs tiennent dans des slots disjoints de 64 bits, la clé est
+ *    injective par construction (ex. (cell << 14) | (minradius << 7) | radius). Aucune
+ *    collision possible, aucune vérification à écrire. C'est la majorité des caches.
+ * 2. CHAÎNE SUR UN NOMBRE FIXE DE SCALAIRES BORNÉS : addValueToBinHash suffit — les entrées
+ *    sont elles-mêmes des packings exacts, en nombre connu, et surtout ÉTROITES. La rotation
+ *    de 13 bits ne sépare que ce qui tient dans le décalage, ce qui se paie de deux façons :
+ *      - une entrée LARGE recouvre la précédente — mesuré sur la clé de couple caster/cible,
+ *        dont le pack de cible fait 51 bits ;
+ *      - deux entrées ÉTROITES se recouvrent quand même si la rotation pose l'une sur les bits
+ *        que l'autre occupe déjà. La rotation étant linéaire, la clé ne dépend alors du couple
+ *        que par son XOR. Mesuré sur la clé de géométrie d'item : l'item (9 bits, posé en 13-21)
+ *        retombait sur les trois bits de capacité de déplacement portés par l'empreinte de
+ *        mobilité, et deux items dont les ids diffèrent de moins de 8 partageaient une entrée.
+ *    Une empreinte n'est JAMAIS un scalaire borné : elle occupe des bits partout, y compris là
+ *    où la rotation posera le terme suivant. Entrée large ou composite -> 3b.
+ * 3. DIGEST DE CONTENU DE LONGUEUR VARIABLE (fold sur une map, une liste, un ensemble
+ *    d'entités) : la CHAÎNE elle-même doit être non linéaire. Mélanger seulement les TERMES ne
+ *    suffit PAS : une chaîne linéaire reste confinée au span GF(2) de ce qu'elle absorbe, et
+ *    l'alphabet de ces folds est petit (quelques milliers de contenus distincts sur un combat)
+ *    — mesuré collisionnant.
+ *    Un fold XOR (sans rotation) exige en plus que la contribution porte sa POSITION, sinon
+ *    deux entités qui permutent leurs champs rendent le même hash.
+ *
+ *    Deux instruments admis, tous deux non linéaires À CHAQUE PAS :
+ *      a. mix64 par pas — avalanche complète en continu, le défaut ;
+ *      b. `h = (h ^ terme) * MIX_A` par pas — pour les folds chauds. La multiplication par une
+ *         constante impaire est une bijection modulo 2^64 : l'accumulateur ne s'effondre
+ *         jamais, et elle propage les bits bas vers les hauts, ce qui casse le span GF(2).
+ *         Sa faiblesse est locale : le bit k d'un produit ne dépend que des bits <= k, donc les
+ *         bits BAS sont peu brassés (le bit 0 reste linéaire).
+ *      Vérifié sur le banc : sur 562 642 contenus hachés (3 083 distincts), (a) et (b)
+ *      induisent la MÊME partition, zéro collision dans les deux sens.
+ *
+ *    QUAND FINALISER PAR mix64 — un finaliseur est une BIJECTION, il ne retire donc aucune
+ *    collision et ne sert jamais à « renforcer » un digest comparé en entier. Il est requis
+ *    dès que la valeur est consommée AUTREMENT qu'en égalité pleine : tranche de bits,
+ *    troncature, ou insertion dans un slot d'une autre clé. En pratique : on finalise (b)
+ *    quand le digest voyage vers d'autres constructions de clés, pas quand il ne sert que de
+ *    clé de map comparée telle quelle et qu'il agrège des termes déjà avalanchés.
+ *
+ * Aucune de ces clés n'est doublée d'une vérification structurelle : la famille 3 a été
+ * mesurée collisionnante en linéaire (un combat de banc sur quatre divergeait), et ne l'est
+ * plus en mix64. Ajouter un mixeur à la source, jamais une comparaison à l'arrivée.
+ */
+
+/* Chaînage de hash : rotation 13 bits + XOR de la nouvelle valeur. LINÉAIRE — réservé à la
+ * famille 2 ; pour un digest de contenu variable, passer par mix64 ci-dessous. */
+function addValueToBinHash(BaseHashValue, AddedValue) {
+    return ((BaseHashValue << SHIFT) | ((BaseHashValue >> HIGH_SHIFT) & MASK_HIGH)) ^ AddedValue
+}
+
+/*
+ * DEUX valeurs chaînées d'un coup — rend EXACTEMENT
+ * addValueToBinHash(addValueToBinHash(base, Premiere), Seconde), et non une variante.
+ *
+ * Pourquoi c'est la même valeur : le pas est rotl(base) ^ v, et une rotation est une
+ * PERMUTATION DE POSITIONS de bits, donc elle distribue sur le XOR bit à bit :
+ *   rotl(rotl(b) ^ P) ^ S  =  rotl²(b) ^ rotl(P) ^ S
+ * Deux rotations de SHIFT valent une rotation de 2·SHIFT, d'où la forme ci-dessous.
+ *
+ * PRÉCONDITION : Premiere doit tenir sous 2^HIGH_SHIFT, sans quoi rotl(Premiere) ne se
+ * réduit pas à un simple décalage et le résultat diffère. Un pack de champs bornés la
+ * satisfait largement ; une empreinte pleine 64 bits, NON — enchaîner addValueToBinHash
+ * reste la forme correcte pour celles-là.
+ */
+function addTwoValuesToBinHash(BaseHashValue, FirstValue, SecondValue) {
+    return ((BaseHashValue << SHIFT2) | ((BaseHashValue >> HIGH_SHIFT2) & MASK_HIGH2)) ^ (FirstValue << SHIFT) ^ SecondValue
+}
+
+// mix64 : mixeur 64 bits non linéaire (finaliseur type splitmix64) pour les folds XOR
+// COMPOSABLES. addValueToBinHash est linéaire -> un fold XOR de ses sorties collisionne sur
+// les échanges (deux entités qui permutent leurs cellules donnent le même hash) ; la
+// MULTIPLICATION ici casse cette linéarité. Contraintes vérifiées sur LeekWars : les
+// littéraux > 2^63 deviennent des FLOATS -> constantes < 2^63 ; `*` wrap mod 2^64 ; `>>` est
+// ARITHMÉTIQUE (étend le signe) -> chaque shift est masqué pour émuler le logique.
+global MIX_A   = 6364136223846793005    // 0x5851F42D4C957F2D, impair, < 2^63 (multiplicateur MMIX/Knuth)
+global MIX_B   = 2685821657736338717    // 0x2545F4914F6CDD1D, impair, < 2^63
+global MIX_M34 = 17179869183            // (1<<34)-1, masque un >>30
+global MIX_M37 = 137438953471           // (1<<37)-1, masque un >>27
+global MIX_M33 = 8589934591             // (1<<33)-1, masque un >>31
+// Sel XORé dans POISON_KEY quand Me est mort en branche (BaseHash exclut Me, carrierFold ne
+// le porte que s'il a antidote — sans ce sel, ma mort ne changerait pas la clé).
+global POISON_ME_DEAD_SALT = 6148914691236517205   // 0x5555555555555555, < 2^63
+
+function mix64(x) {
+    x = (x ^ ((x >> 30) & MIX_M34)) * MIX_A
+    x = (x ^ ((x >> 27) & MIX_M37)) * MIX_B
+    return x ^ ((x >> 31) & MIX_M33)
+}
+
+/*
+ * mix64 mémorisé, pour les seules entrées à domaine BORNÉ — un pack (id, cellule) ne prend
+ * qu'environ 7 000 valeurs sur une carte, réutilisées des centaines de milliers de fois.
+ * Le mélange coûte trois décalages, trois masques, trois XOR et deux multiplications ; une
+ * lecture de map en coûte deux. Table PERSISTANTE : la fonction est pure, sa valeur ne périme
+ * jamais.
+ * NE PAS l'utiliser sur une entrée large (digest de contenu, fold de contexte) : elle ne
+ * ferait que remplir la table sans jamais servir.
+ */
+function mix64Memo(x) {
+    if (x in MIX64_MEMO) return MIX64_MEMO[x]
+    var v = mix64(x)
+    MIX64_MEMO[x] = v
+    return v
+}
+
+
+// CONSEQUENCES
+// Armes a PASSIF, en masque de bits : le moteur declenche les passifs de TOUTES les armes
+// portees (Entity.onCritical boucle sur mWeapons), pas seulement d'une. Le lance-grenades
+// illicite se declenche sur des degats de POISON : au tick, hors de la simulation d'un cast,
+// mais aussi pendant un cast de Surinfection, qui inflige ses degats convertis tout de suite.
+global SPW_REVOKED_M_LASER      = 1
+global SPW_MYSTERIOUS_ELECTRISOR = 2
+global SPW_PLUTONIUM_BAZOOKA    = 4
+global SPW_UNBRIDLED_GAZOR      = 8
+global SPW_UNSTABLE_DESTROYER   = 16
+global SPW_EXPLORER_RIFLE       = 32
+global SPW_DARK_KATANA          = 64
+global SPW_ENHANCED_LIGHTNINGER = 128
+global SPW_ILLICIT_GRENADE_LAUNCHER = 256
+// Peuplee au preload : [arme -> son bit]. L'appartenance sert aussi de test « a un passif
+// que je sais jouer », a la place de l'ancien parcours de PASSIVE_EFFECTS.
+global SPECIAL_WEAPON_BIT = [: ]
+
+global EROSION_NO_POISON = 0.05
+global EROSION_POISON = 0.10
+// +10 points d'érosion sur un effet CRITIQUE (Effect.java : erosionRate += 0.10 si crit).
+global EROSION_CRIT = 0.15
+global EROSION_CRITICAL_BONUS = 0.10
+
+// JEU
+
+global MAX_USEFUL_RELATIVE_SHIELD = 100
+
+// Crit BINAIRE asymétrique — jamais d'espérance : chaque nombre simulé doit correspondre à
+// un cast réel possible (les seuils de kill / le TTK l'exigent). Doctrine "pire cas pour
+// moi", symétrique à 5% près :
+//   - ce qui joue POUR moi (mes casts, heals de mes alliés) ne crite qu'à partir de
+//     MIN_AGILITY_TO_FULLY_CRIT (95%+ de chance : je ne compte pas sur la chance) ;
+//   - ce qui joue CONTRE moi (danger ennemi, heals des healers ennemis) est craint
+//     critique dès MIN_AGILITY_ENEMY_CRIT (5% de chance suffisent à le craindre).
+global MIN_AGILITY_TO_FULLY_CRIT = 950
+global MIN_AGILITY_ENEMY_CRIT = 50
+// Crit du cast en cours de sim — posé par getConsequences AVANT la boucle d'effets (le moteur
+// roll une fois par CAST, pas par effet : Attack.applyOnCell), lu par la boucle et les
+// fonctions de dégâts pour l'érosion. Transient : toujours écrit avant lecture.
+global CAST_IS_CRITICAL = false
+global FIGHT_TYPE = getFightType() // sert au calcul du power dans Consequences
+
+// Bits du masque différentiel d'une entité clonée (StateClass.diffMaskOf) : quels groupes
+// d'inputs ont RÉELLEMENT changé entre l'état parent et le clone après l'action.
+global DIFF_BASE = 1        // contribution BaseHash (vivant<->mort, cellule d'un vivant)
+global DIFF_CONTEXT = 2     // contribution contexte danger (inputs effectifs offensifs)
+global DIFF_HFP = 4         // contribution fingerprint heal (inputs effectifs de healer)
+global DIFF_LOCAL_TERM = 8  // un input LOCAL du terme de scoring a bougé
+
+// Les ordinaux d'etat (STATE_INVINCIBLE, STATE_UNHEALABLE, STATE_PACIFIST, STATE_STATIC) sont
+// des constantes du MOTEUR, exposees par FightConstants : rien a redeclarer ici.
+
+// Ligne ON_CASTER du chip de saut, lue dans data/chips.json (chip 144, effet 41) : agilite brute
+// +100 pendant deux tours. Le chip porte aussi un EFFECT_TELEPORT, deja joue par la couche de
+// deplacement — seule cette ligne-ci est appliquee.
+global JUMP_AGILITY_BUFF = 100
+global JUMP_AGILITY_TURNS = 2
+
+// Ligne ON_CASTER du chip de teleportation (chip 59, effet 12) : EFFECT_BOOST_MAX_LIFE de 15,
+// instantane. Valeur de base seule, le jet (value2 = 5) n'etant pas simule.
+global TELE_VITALITY = 15
+
+// Sel de la cle du cache d'actions d'invocation quand Me est STERILE. Une constante quelconque
+// non nulle suffit : elle ne sert qu'a separer deux mondes qui ne doivent jamais partager une
+// liste. Choisie dans les bits hauts pour ne recouvrir ni la cellule ni le BaseHash.
+global STERILE_KEY_SALT = 6148914691236517205
+
+// Facteurs des cartes de danger et de soin, indépendants du scoring.
+global DANGER_COEF = 1.0
+global HEAL_COEF = 1.0

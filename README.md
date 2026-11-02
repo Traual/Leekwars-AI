@@ -33,11 +33,13 @@ ne constitue pas une nouvelle mesure de taux de victoire.
 
 ## Utilisation
 
-Importer `New_AI/` en conservant son arborescence et les chemins des `include`.
-Le point d'entrée est [`New_AI/Main.leek`](New_AI/Main.leek). `User/Evolution.leek`
-porte la recherche ; `User/ActionSuite.leek` contient ses outils de jouabilité,
+Importer `ai/` en conservant son arborescence et les chemins des `include`.
+Le point d'entrée est [`ai/main`](ai/main). `search/evolution`
+porte la recherche ; `search/actions` contient ses outils de jouabilité,
 simulation et clôture. Le moteur beam et son sélecteur ne sont plus embarqués.
 Les outils de développement et les builds restent dans le dépôt séparé indiqué plus bas.
+Les outils d'import et de validation doivent lire les sources de `ai/` sans filtre
+d'extension et utiliser `ai/main` comme point d'entrée.
 
 ## Recherche par online evolution
 
@@ -134,7 +136,7 @@ flowchart TD
     G -->|Non| I[Capture réelle et placement final]
 ```
 
-1. `Main.leek` charge le catalogue et la géométrie au premier tour, puis appelle
+1. `main` charge le catalogue et la géométrie au premier tour, puis appelle
    `ReloadCacheNewTurn` **avant** `Preload.InitStateClass`. Cette dernière fixe `Me`,
    l'inventaire, les catégories d'actions et le coût minimal d'un item disponible.
 2. `Play` capture le combat avec `StateClass.Virtualize`. Les caractéristiques,
@@ -168,20 +170,50 @@ pas les globals du joueur dont l'action est interrompue.
 
 ## Organisation du code
 
-| Ensemble | Fichiers principaux | Rôle |
-| --- | --- | --- |
-| Entrée | `Main.leek`, `includes.leek` | Chargement et lancement du tour. |
-| Initialisation | `Load/Preload.leek`, `Constants.leek`, `Cache.leek`, `Binary_To_Cells.leek` | Catalogue moteur, constantes, tables de cellules/bitmaps, hashes et durée de vie des caches. |
-| Entités et état | `Models/Entity.leek`, `EntityState.leek`, `State.leek` | Identité/inventaire, état courant, import des effets, clones et patches. |
-| Géométrie et items | `Models/Item.leek`, `Cell.leek`, `Target.leek` | Métadonnées et vues d'effets, distances/zones/LoS, masques et catégories de cibles. |
-| Actions | `Models/Action.leek`, `Maps/Actions.leek` | Actions concrètes, groupes d'origines, disponibilités et catalogues. |
-| Déplacements | `Maps/WalkCells.leek` | Marche, Saut, Téléportation, combinaison, reconstruction et exécution du trajet. |
-| Conséquences | `Modifier/Consequences.leek` | Effets des casts, protections, dégâts, passifs, registre d'effets et cascades de mort. |
-| Invocations | `Modifier/BulbState.leek`, `Resurrection.leek`, `Awakening.leek` | Entités virtuelles, résurrection, politique des plantes et simulation des réveils. |
-| Projection | `Maps/ItemCoverage.leek`, `Danger/*`, `Heal/Heal.leek`, `Delta/Delta.leek` | Couvertures, combos adverses, soin projeté et dégâts nets séquencés. |
-| Valeur et placement | `Scoring/*` | Valeur d'état, coefficients manuels, frais de cooldown et pénalités de position. |
-| Décision et exécution | `User/Node.leek`, `Evolution.leek`, `ActionSuite.leek`, `FinalCell.leek`, `Play.leek`, `BulbAI.leek` | Simulation d'un nœud, recherche, clôture du plan et appels moteur réels. |
-| Mesures | `Utils/Benchmark.leek` | Profilage facultatif des opérations par catégorie. |
+Les fichiers n'ont pas d'extension. Les noms et dossiers sont en minuscules,
+avec des tirets quand plusieurs mots sont nécessaires. Le point d'entrée est
+[`ai/main`](ai/main) ; [`ai/imports`](ai/imports) conserve l'ordre de chargement
+des modules. Chaque chemin d'inclusion est relatif au fichier qui le déclare.
+
+```text
+ai/
+  main                         entrée de l'IA
+  imports                      liste des modules, dans l'ordre de chargement
+  runtime/                     initialisation, caches, constantes, tours
+  models/                      entités, états, actions, objets et cibles
+  geometry/                    déplacements, bitmaps de cellules, couvertures
+  search/                      évolution, candidats et évaluation des actions
+  simulation/                  effets, nœuds, invocations, résurrection, plantes
+  projection/
+    danger/                    couvertures, combos, plans et dégâts adverses
+    healing                    soins projetés
+    net-damage                 séquençage dégâts/soins
+  scoring/                     valeur d'état, caractéristiques et coefficients
+  placement/                   cellule finale, danger et préférences spatiales
+  diagnostics/                 coefficients et profilage des opérations
+```
+
+| Pour modifier… | Fichiers |
+| --- | --- |
+| La boucle de jeu réelle | `runtime/turn`, `runtime/summon-turn` |
+| Le chargement et les durées de vie des caches | `runtime/initialize`, `runtime/caches`, `runtime/constants` |
+| La recherche des suites | `search/evolution` |
+| Les actions candidates et leur jouabilité | `search/candidates`, `search/actions` |
+| La simulation des conséquences | `simulation/effects`, `simulation/action-node` |
+| Les invocations et les réveils | `simulation/summons`, `simulation/resurrection`, `simulation/plants` |
+| Les trajets et la géométrie | `geometry/movement`, `geometry/item-coverage`, `geometry/cell-bitmaps` |
+| La menace et les soins projetés | `projection/danger/`, `projection/healing`, `projection/net-damage` |
+| Les formules de valeur | `scoring/state`, `scoring/coefficients`, `scoring/importance` et les autres modules de `scoring/` |
+| Le placement final | `placement/final-cell`, `placement/score`, `placement/covid`, `placement/ally-support`, `placement/enemy-offense` |
+| Les journaux | `diagnostics/coefficients`, `diagnostics/operations` |
+
+Les chemins du tableau sont relatifs à `ai/`. La réorganisation du 2 novembre
+change seulement les noms, les inclusions et les références documentaires ;
+les classes, fonctions, formules, budgets et ordre de chargement sont conservés.
+Les 48 fichiers ont été vérifiés hors chemins d'inclusion et commentaires. Les
+72 contrats passent ; 32 recherches conservent leurs suites, scores, traces et nombres
+d'opérations, et 25 scores finaux ont été recalculés. Les quatre combats complets
+de contrôle reproduisent exactement leurs flux d'actions, sans erreur ni interruption.
 
 ## État virtuel et simulation
 
@@ -238,21 +270,21 @@ plus pessimiste, détaillée dans la section danger.
 
 Quinze fichiers :
 
-- [`Coefficients.leek`](New_AI/Scoring/Coefficients.leek) : coefficients bruts par statistique et deux multiplicateurs communs PT/PM.
-- [`Importance.leek`](New_AI/Scoring/Importance.leek) : bonus de présence selon les caractéristiques utiles, les puces tactiques et les multiplicateurs de PT/PM.
-- [`Equipment.leek`](New_AI/Scoring/Equipment.leek) : utilitaires de rendement de l'équipement, mis en cache par entité et par tour.
-- [`StateConstants.leek`](New_AI/Scoring/StateConstants.leek) : proportions de cibles adverses/alliées en cache par `BaseHash`, et échelle du bonus critique.
-- [`BuffDuration.leek`](New_AI/Scoring/BuffDuration.leek) : durée des buffs de force, agilité, sagesse, résistance, science et magie.
-- [`Scoring.leek`](New_AI/Scoring/Scoring.leek) : potentiel courant des caractéristiques et de la tactique multiplié par PT/PM, puis autres contributions, alliés moins adversaires.
-- [`Shackles.leek`](New_AI/Scoring/Shackles.leek) : décote des six entraves selon Manumission, synergies PT/PM comprises.
-- [`ShieldProfile.leek`](New_AI/Scoring/ShieldProfile.leek) : profil offensif adverse grossier, calculé par camp et conservé dans le contexte de racine.
-- [`PeriodicEffects.leek`](New_AI/Scoring/PeriodicEffects.leek) : avenir du poison/contrecoup, plafond de PV commun et décote Antidote du porteur, sans parcours des lignes d'effets.
-- [`Covid.leek`](New_AI/Scoring/Covid.leek) : transmissions liées à la cellule finale, valeur marginale du poison et borne du bonus pour le classement terminal.
-- [`Debug.leek`](New_AI/Scoring/Debug.leek) : affichage optionnel des coefficients de chaque vivant au début du tour, désactivé par défaut et sans pause. `ScoringDebug.ENABLED = true` active l'affichage ; coefficients bruts avant durée/PT/PM, potentiel courant, facteurs communs et leur produit sont affichés séparément.
-- [`Placement.leek`](New_AI/Scoring/Placement.leek) : distances et exposition au danger, soustraites à la fin des suites d’actions.
-- [`AllySupport.leek`](New_AI/Scoring/AllySupport.leek) : potentiel de buffs/boucliers alliés et coût de l'éloignement.
-- [`EnemyOffense.leek`](New_AI/Scoring/EnemyOffense.leek) : potentiel offensif obtenu avec les conséquences et le scoring communs, puis décote hors portée.
-- [`Cooldowns.leek`](New_AI/Scoring/Cooldowns.leek) : prix des cooldowns consommés et filtre de Régénération sans soin.
+- [`scoring/coefficients`](ai/scoring/coefficients) : coefficients bruts par statistique et deux multiplicateurs communs PT/PM.
+- [`scoring/importance`](ai/scoring/importance) : bonus de présence selon les caractéristiques utiles, les puces tactiques et les multiplicateurs de PT/PM.
+- [`scoring/equipment`](ai/scoring/equipment) : utilitaires de rendement de l'équipement, mis en cache par entité et par tour.
+- [`Stateruntime/constants`](ai/scoring/context) : proportions de cibles adverses/alliées en cache par `BaseHash`, et échelle du bonus critique.
+- [`scoring/buff-duration`](ai/scoring/buff-duration) : durée des buffs de force, agilité, sagesse, résistance, science et magie.
+- [`scoring/state`](ai/scoring/state) : potentiel courant des caractéristiques et de la tactique multiplié par PT/PM, puis autres contributions, alliés moins adversaires.
+- [`scoring/shackles`](ai/scoring/shackles) : décote des six entraves selon Manumission, synergies PT/PM comprises.
+- [`scoring/shields`](ai/scoring/shields) : profil offensif adverse grossier, calculé par camp et conservé dans le contexte de racine.
+- [`scoring/periodic-effects`](ai/scoring/periodic-effects) : avenir du poison/contrecoup, plafond de PV commun et décote Antidote du porteur, sans parcours des lignes d'effets.
+- [`placement/covid`](ai/placement/covid) : transmissions liées à la cellule finale, valeur marginale du poison et borne du bonus pour le classement terminal.
+- [`diagnostics/coefficients`](ai/diagnostics/coefficients) : affichage optionnel des coefficients de chaque vivant au début du tour, désactivé par défaut et sans pause. `ScoringDebug.ENABLED = true` active l'affichage ; coefficients bruts avant durée/PT/PM, potentiel courant, facteurs communs et leur produit sont affichés séparément.
+- [`placement/score`](ai/placement/score) : distances et exposition au danger, soustraites à la fin des suites d’actions.
+- [`placement/ally-support`](ai/placement/ally-support) : potentiel de buffs/boucliers alliés et coût de l'éloignement.
+- [`placement/enemy-offense`](ai/placement/enemy-offense) : potentiel offensif obtenu avec les conséquences et le scoring communs, puis décote hors portée.
+- [`scoring/cooldowns`](ai/scoring/cooldowns) : prix des cooldowns consommés et filtre de Régénération sans soin.
 
 ### Calcul du score
 
@@ -274,15 +306,15 @@ exactes du parent ou d'un ancêtre intact. Le danger projeté n'est pas un terme
 
 ### Présence, vie et ressources
 
-Une entité morte vaut zéro. Le bonus fixe de présence est remplacé par `EntityImportance.value(stat)` : **(caractéristiques utiles + tactique) × multiplicateur PT × multiplicateur PM**. Les poids et les paliers sont des valeurs de départ à régler manuellement dans `Importance.leek`.
+Une entité morte vaut zéro. Le bonus fixe de présence est remplacé par `EntityImportance.value(stat)` : **(caractéristiques utiles + tactique) × multiplicateur PT × multiplicateur PM**. Les poids et les paliers sont des valeurs de départ à régler manuellement dans `scoring/importance`.
 
 Les coefficients de **vie et de vie maximale** utilisent chacun des tranches de points : les 1 000 premiers valent ×2, les points de 1 000 à 3 000 ×1,75, de 3 000 à 5 000 ×1,5, de 5 000 à 7 000 ×1,25, et ceux au-delà de 7 000 ×1. Les contributions des tranches s'additionnent, puis la somme est multipliée par `EntityImportance.value(stat) / 3000` pour la vie, et par `EntityImportance.value(stat) / 2000` pour la vie maximale. Le score reste continu aux seuils : un poids ne s'applique jamais rétroactivement à tous les PV.
 
-`life` et `totalLife` rendent le coefficient moyen `importance / diviseur × points pondérés / points`, avec une garde pour les valeurs nulles ou négatives. Le scoring conserve ainsi son calcul avant/après. Pour une importance de 3 000, la perte de 9 000 à 8 000 PV rapporte 1 000 sur le terme de vie, celle de 2 000 à 1 000 rapporte 1 750, et celle de 1 000 à 0 rapporte 2 000, avant les autres contributions du kill. Les soins suivent la même courbe en sens inverse. La vie maximale utilise exclusivement `TOTAL_LIFE` pour ses tranches, sans dépendre des blessures courantes ; un gain de vitalité qui augmente à la fois vie et vie max valorise les deux deltas. Les deux fonctions ont les mêmes tranches, mais des diviseurs distincts (3 000 pour la vie, 2 000 pour la vie max), réglables séparément dans `Coefficients.leek`.
+`life` et `totalLife` rendent le coefficient moyen `importance / diviseur × points pondérés / points`, avec une garde pour les valeurs nulles ou négatives. Le scoring conserve ainsi son calcul avant/après. Pour une importance de 3 000, la perte de 9 000 à 8 000 PV rapporte 1 000 sur le terme de vie, celle de 2 000 à 1 000 rapporte 1 750, et celle de 1 000 à 0 rapporte 2 000, avant les autres contributions du kill. Les soins suivent la même courbe en sens inverse. La vie maximale utilise exclusivement `TOTAL_LIFE` pour ses tranches, sans dépendre des blessures courantes ; un gain de vitalité qui augmente à la fois vie et vie max valorise les deux deltas. Les deux fonctions ont les mêmes tranches, mais des diviseurs distincts (3 000 pour la vie, 2 000 pour la vie max), réglables séparément dans `scoring/coefficients`.
 
 Le terme de **caractéristiques et ressources** est unique : `ScoringClass.characteristicsPotential(stat) × Coefficients.tpMultiplier(stat) × Coefficients.mpMultiplier(stat)`. Le potentiel additionne les caractéristiques **courantes**, pondérées par leurs coefficients bruts et les durées existantes, puis les poids tactiques des puces. Il est planché à zéro pour qu'un potentiel négatif ne récompense pas une perte de PT/PM. Aucun terme direct `TOTAL_TP × coefficient` ou `TOTAL_MP × coefficient` ne s'ajoute. Buffs de caractéristiques et buffs de ressources renforcent donc la même contribution ; à état final identique, le gain cumulé reste le même quel que soit l'ordre des buffs.
 
-Les facteurs suivent `TOTAL_TP` et `TOTAL_MP`, **avec buffs/entraves, sans les dépenses du tour**. Ils sont continus par tranches, sans plateau final : chaque point positif supplémentaire garde une valeur. Réglages de départ dans `Coefficients.leek` :
+Les facteurs suivent `TOTAL_TP` et `TOTAL_MP`, **avec buffs/entraves, sans les dépenses du tour**. Ils sont continus par tranches, sans plateau final : chaque point positif supplémentaire garde une valeur. Réglages de départ dans `scoring/coefficients` :
 
 - PT : chaque point jusqu'à 16 ajoute `1/16`, de 16 à 32 `1/32`, puis `1/64`. Facteurs : 0 PT → 0 ; 16 → 1 ; 32 → 1,5 ; 48 → 1,75.
 - PM : socle `0,75`, puis chaque point jusqu'à 5 ajoute `0,05`, de 5 à 10 `0,025`, puis `0,01`. Facteurs : 0 PM → 0,75 ; 5 → 1 ; 10 → 1,125. Une statique utilise un facteur fixe de **0,1** sur les caractéristiques et leurs buffs. Une entité seulement enracinée utilise toujours 0 PM, soit `0,75`. Dans les deux cas, un buff de PM ne rapporte rien.
@@ -327,7 +359,7 @@ Le scoring soustrait cette base du coefficient total pour valoriser séparément
 
 **Critique :** les points d'agilité utiles sont limités à **[0, 1000]**, conformément à la probabilité moteur `agilité / 1000`, puis pondérés par la durée des buffs. Le coefficient brut vaut désormais `0,16 × (1 + max(0, meilleure caractéristique de base) / 100)`, avec le maximum de force, magie, sagesse, science et résistance. La constante 0,16 conserve l'ancien coefficient à 16 PT et 5 PM, où les facteurs communs valent 1. L'échelle de puissance du porteur reste mémorisée sur l'entité, car `BASE_STATS` est immuable. Les ressources interviennent ensuite une seule fois dans le produit commun : un gain de PT ne multiplie pas deux fois le critique. Avec une meilleure base de 400, le coefficient brut vaut 0,8 ; à 14 PT et 5 PM, son coefficient après facteurs communs vaut 0,7. Le renvoi et le critique suivent tous deux la même règle de durée ; en cas de buffs de durées différentes franchissant un plancher ou plafond, la partie utile est répartie au prorata de leurs valeurs.
 
-Les poids sont les proportions exactes parmi les adversaires vivants : 60 % d'invocations donnent 40 % poireaux / 60 % invocations ; aucune invocation donne 100 % poireaux / 0 % invocations. Sans aucun adversaire vivant, les deux poids valent zéro. `StateConstants.leek` calcule ces proportions par camp (BR inclus) et conserve le résultat par `BaseHash` au sein du tour. La recherche prend le contexte de sa racine avant tout score, résurrection incluse, puis le fige pour tout l'arbre. Une mort simulée ne revalorise pas les porteurs non modifiés ; une action réelle fournit le contexte de la nouvelle racine à la recherche suivante.
+Les poids sont les proportions exactes parmi les adversaires vivants : 60 % d'invocations donnent 40 % poireaux / 60 % invocations ; aucune invocation donne 100 % poireaux / 0 % invocations. Sans aucun adversaire vivant, les deux poids valent zéro. `Stateruntime/constants` calcule ces proportions par camp (BR inclus) et conserve le résultat par `BaseHash` au sein du tour. La recherche prend le contexte de sa racine avant tout score, résurrection incluse, puis le fige pour tout l'arbre. Une mort simulée ne revalorise pas les porteurs non modifiés ; une action réelle fournit le contexte de la nouvelle racine à la recherche suivante.
 
 Ce rendement considère une cible au centre de la zone, au coût nominal de l'item ; il ignore cooldowns, limites d'usage, portée, équipement de l'arme, protections et multiplicateurs du porteur. Les lignes d'un même cast s'additionnent, mais pas les armes entre elles. Puces et armes sont couvertes ; Châtiment, poison, nova et dégâts sur soi sont exclus. C'est une estimation simple du potentiel futur, pas une prévision de dégâts réalisables au tour courant.
 
@@ -339,11 +371,11 @@ Le **bouclier absolu** vaut `valeur par tranches × importance de base / 3000 ×
 
 Le **bouclier relatif** suit le même poids d'importance et de profil adverse, avec une échelle par point de pourcentage : 10 pour les 30 premiers points, 8 de 30 à 60, puis 5 de 60 à 100. Le stock valorisé est limité à 100 pour cette estimation de protection ; ce n'est pas une limite du moteur. Une vulnérabilité relative garde une valeur signée de 10 par point. Le **renvoi de dégâts** utilise aussi ce poids : 5 pour les 50 premiers points, 10 de 50 à 100, 8 de 100 à 200, puis 3 au-delà, sans plafond. Il ne dépend ni des PV courants du porteur ni de ses boucliers, puisque le moteur calcule le renvoi avant les protections.
 
-Les deux boucliers reçoivent un **bonus additif de protection à faible vie**, séparé du barème de stock. Les fonctions `absoluteShieldLifeBonus` et `relativeShieldLifeBonus` sont réglables indépendamment dans `Coefficients.leek`. À 3 000 PV ou plus, le bonus est nul ; à 2 000 PV, il vaut respectivement 0,1 et 1 par point ; à 1 000 PV, 0,25 et 2,5 ; à 0 PV, 0,5 et 5. Entre ces repères, les tranches se remplissent progressivement, sans saut de score. Le bonus absolu porte uniquement sur les 600 premiers points, et le relatif sur les 100 premiers ; avec ces valeurs de départ, leur revalorisation cumulée reste inférieure à la perte du terme de vie lorsque le porteur subit des dégâts. Les vulnérabilités n'en bénéficient pas. Le debug affiche ces bonus bruts avant importance et profil adverse. Une entité morte reste toujours à zéro dans le scoring.
+Les deux boucliers reçoivent un **bonus additif de protection à faible vie**, séparé du barème de stock. Les fonctions `absoluteShieldLifeBonus` et `relativeShieldLifeBonus` sont réglables indépendamment dans `scoring/coefficients`. À 3 000 PV ou plus, le bonus est nul ; à 2 000 PV, il vaut respectivement 0,1 et 1 par point ; à 1 000 PV, 0,25 et 2,5 ; à 0 PV, 0,5 et 5. Entre ces repères, les tranches se remplissent progressivement, sans saut de score. Le bonus absolu porte uniquement sur les 600 premiers points, et le relatif sur les 100 premiers ; avec ces valeurs de départ, leur revalorisation cumulée reste inférieure à la perte du terme de vie lorsque le porteur subit des dégâts. Les vulnérabilités n'en bénéficient pas. Le debug affiche ces bonus bruts avant importance et profil adverse. Une entité morte reste toujours à zéro dans le scoring.
 
 Le **facteur adverse** de `ShieldProfile` oppose deux poids de profils offensifs : attaques de force/Châtiment, et poison/nova/contrecoup. Les inventaires sont filtrés par les utilitaires d'équipement en cache. Force, magie et science de BASE donnent un poids de 0 sous 100, 0,25 dès 100, 0,5 dès 200, 1 dès 400 et 1,5 dès 800 ; Châtiment garantit un poids de 1 dans le canal sensible aux boucliers. Chaque entité peut contribuer aux deux canaux, mais seule sa meilleure famille compte dans chacun. Les purs soutiens n'ajoutent aucun poids. Les vivants, invocations incluses, sont regroupés par camp, et tous les autres camps sont considérés adverses en BR.
 
-Si au moins 66 % du poids offensif adverse est sensible au bouclier, le facteur vaut 1 ; à partir de 25 %, il vaut 0,6 ; sinon 0,25, y compris sans menace significative identifiée. Ce même facteur oriente les deux boucliers et le renvoi. Les poids et seuils se règlent dans `ShieldProfile.leek`. C'est une orientation grossière : aucune portée, distance, combinaison d'attaques ou disponibilité de puce n'est calculée. Le résultat est conservé par `BaseHash` dans `ScoringStateConstants` et **figé pendant toute la recherche**, pour ne pas revaloriser des entités non clonées lors d'une mort simulée. Une nouvelle racine réelle actualise le contexte si les vivants changent. Le debug affiche le facteur en plus des coefficients finaux.
+Si au moins 66 % du poids offensif adverse est sensible au bouclier, le facteur vaut 1 ; à partir de 25 %, il vaut 0,6 ; sinon 0,25, y compris sans menace significative identifiée. Ce même facteur oriente les deux boucliers et le renvoi. Les poids et seuils se règlent dans `scoring/shields`. C'est une orientation grossière : aucune portée, distance, combinaison d'attaques ou disponibilité de puce n'est calculée. Le résultat est conservé par `BaseHash` dans `ScoringStateConstants` et **figé pendant toute la recherche**, pour ne pas revaloriser des entités non clonées lors d'une mort simulée. Une nouvelle racine réelle actualise le contexte si les vivants changent. Le debug affiche le facteur en plus des coefficients finaux.
 
 ### Effets périodiques
 
@@ -459,7 +491,7 @@ no affordable terminal plan, stop actions`.
 
 Au placement final, le vrai repli sans danger affiche `[placement] danger not taken into account: spatial cost only`. Un résultat complet déjà en cache reste utilisé et ne produit pas cet avertissement. Ce repli n'ajoute aucune estimation de danger par nœud ; les réserves sont détaillées dans la section budget.
 
-Le **Covid de placement** utilise `Scoring/Covid.leek`. Me infecté transmet aux
+Le **Covid de placement** utilise `placement/covid`. Me infecté transmet aux
 vivants non infectés à deux cases, sans LoS : bonus pour un ennemi, malus pour un
 allié, poids `TRANSMISSION_WEIGHT = 1`. Me sain reçoit un malus de poids
 `RECEPTION_WEIGHT = 0.5` pour le premier porteur à portée dans l'ordre de jeu, aux
@@ -477,13 +509,13 @@ désactivé ; les malus de contamination restent actifs. Le danger conserve son 
 habituel, sans obligation de rejoindre une cible infectable. `CovidPlacement.DEBUG`
 affiche le score Covid, le coût du danger et le coût spatial du placement final choisi.
 
-Le **placement près des alliés** dépend du soutien qu'ils peuvent apporter à Me, dans `Scoring/AllySupport.leek`. Aucun soin n'y est ajouté : la heal map le compte déjà. Les buffs utiles sont filtrés selon l'équipement de Me et les masques de cible ; les effets réservés au lanceur sont exclus. Une famille scientifique vaut 20, puis +20 à 200 science de base, +20 à 400 et +10 à 600. Les boucliers suivent les mêmes seuils en résistance de base. Les buffs bruts ont leurs propres poids fixes, sans science ; force 20, agilité 15, sagesse/résistance/magie/science 20, puissance/PT 30, PM 15. Les boucliers bruts valent 20 sans résistance.
+Le **placement près des alliés** dépend du soutien qu'ils peuvent apporter à Me, dans `placement/ally-support`. Aucun soin n'y est ajouté : la heal map le compte déjà. Les buffs utiles sont filtrés selon l'équipement de Me et les masques de cible ; les effets réservés au lanceur sont exclus. Une famille scientifique vaut 20, puis +20 à 200 science de base, +20 à 400 et +10 à 600. Les boucliers suivent les mêmes seuils en résistance de base. Les buffs bruts ont leurs propres poids fixes, sans science ; force 20, agilité 15, sagesse/résistance/magie/science 20, puissance/PT 30, PM 15. Les boucliers bruts valent 20 sans résistance.
 
 La meilleure possibilité compte dans chacune des trois familles (buff scientifique, buff brut, bouclier), puis les alliés s'additionnent. Les poids de portée sont **1 sur place, 0,6 après marche, 0,4 avec Saut et 0,3 avec Téléportation**. Chaque item garde ensemble son potentiel, sa portée et son coût. Les cooldowns doivent être disponibles au prochain tour (≤ 1), et les PT totaux doivent financer le déplacement et le soutien, changement d'arme éventuel inclus. La distance géométrique ignore obstacles, LoS, portée minimale et formes de lancer ; il n'y a pas de recherche de combinaison de casts ni de nouvelle carte de mobilité.
 
 Les profils sont mis en cache et figés à chaque racine réelle. Le balayage ne relit pas les inventaires : une lecture par distance et allié suffit. Le coût vaut le potentiel de référence moins le soutien accessible, toujours positif ou nul ; tuer un soutien en branche ne réduit pas la référence. Nouvelles invocations, buffs de mobilité et disponibilités sont actualisés au replan réel suivant. Les clés du coût spatial et de `FinalCell` portent ce contexte, car `BaseHash` seul n'encode pas les cooldowns et les PT/PM. Le potentiel offensif ci-dessous remplace le barème fixe de distance ennemie.
 
-La **distance aux ennemis** utilise `Scoring/EnemyOffense.leek` et remplace la préférence fixe pour cinq cases. À la racine réelle, chaque item disponible au prochain tour est simulé sur un ennemi isolé supposé à portée, avec les conséquences communes et le delta de score de la recherche. Le gain utilise donc les protections, les PV, le poison/Antidote, les entraves, les passifs et les cascades de mort déjà implémentés. Les auto-buffs seuls et leur contrecoup ne créent pas de potentiel offensif. Les valeurs d'avant-cast sont réutilisées dans un cache réservé à ces simulations indépendantes ; la recherche conserve ses propres mémos par parent simulé, avec les mêmes formules.
+La **distance aux ennemis** utilise `placement/enemy-offense` et remplace la préférence fixe pour cinq cases. À la racine réelle, chaque item disponible au prochain tour est simulé sur un ennemi isolé supposé à portée, avec les conséquences communes et le delta de score de la recherche. Le gain utilise donc les protections, les PV, le poison/Antidote, les entraves, les passifs et les cascades de mort déjà implémentés. Les auto-buffs seuls et leur contrecoup ne créent pas de potentiel offensif. Les valeurs d'avant-cast sont réutilisées dans un cache réservé à ces simulations indépendantes ; la recherche conserve ses propres mémos par parent simulé, avec les mêmes formules.
 
 Le gain d'un cast est multiplié par `min(MAX_USES, floor((TOTAL_TP − équipement) / COST))`. Le changement d'arme coûte un PT une seule fois ; une puce qui déclenche un cooldown est limitée à un lancer, et un cooldown courant supérieur à un exclut l'item du prochain tour. Les PT restants et les usages déjà dépensés ce tour ne servent pas à cette estimation. Multiplier le premier gain reste une approximation : aucune chaîne de lancers répétés n'est simulée, notamment après un kill ou pour un effet non cumulable.
 
@@ -495,7 +527,7 @@ Quand tous les gains sont entièrement décotés, `FAR_DISTANCE_WEIGHT = 0.2` co
 
 ## Coût des cooldowns
 
-Les **coûts de consommation des cooldowns** se règlent dans `Scoring/Cooldowns.leek` : Régénération **300**, Élévation **150**, Résurrection **200** ; Antidote **20** seulement si la pression adverse de poison atteint **1**, Manumission **20** seulement si celle des entraves atteint **1**. Les autres items valent zéro. Une puce sans cooldown ne paie rien. Le prix appartient au cast et s'ajoute aux frais des casts précédents dans la suite simulée ; une replanification réelle repart du score de l'état, sans refacturer les consommations passées. `EnemyOffense` utilise le même prix avant de multiplier le gain par les usages possibles.
+Les **coûts de consommation des cooldowns** se règlent dans `scoring/cooldowns` : Régénération **300**, Élévation **150**, Résurrection **200** ; Antidote **20** seulement si la pression adverse de poison atteint **1**, Manumission **20** seulement si celle des entraves atteint **1**. Les autres items valent zéro. Une puce sans cooldown ne paie rien. Le prix appartient au cast et s'ajoute aux frais des casts précédents dans la suite simulée ; une replanification réelle repart du score de l'état, sans refacturer les consommations passées. `EnemyOffense` utilise le même prix avant de multiplier le gain par les usages possibles.
 
 Les pressions sont calculées par camp dans le contexte de racine et mises en cache avec `ScoringStateConstants`. Un adversaire vivant équipé de poison ou d'une des six entraves apporte **0,25 / 0,5 / 1 / 1,5** selon sa magie de **base ≥ 100 / 200 / 400 / 800**. Les deux familles sont indépendantes : un pur empoisonneur ne compte pas dans les entraves. Un hybride contribue aux deux, les alliés sont exclus, et tous les autres camps comptent en BR. Les seuils se règlent séparément ; aucun inventaire ni registre d'effets n'est parcouru par nœud pour calculer ces pressions.
 

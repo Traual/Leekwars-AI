@@ -1,0 +1,403 @@
+/*
+ * Plan offensif : qui menace une cible, avec quelle géométrie et quelles stats.
+ *
+ * Un plan est construit UNE fois par (terrain, contexte offensif, camp de la cible) et
+ * partagé par toutes les cibles de ce camp et toutes leurs cellules. Il ne retient que des
+ * ids, des nombres et des maps issues des caches de tour — JAMAIS un EntityState ni une
+ * référence vers le workspace, qu'une restauration pourrait rendre incohérente.
+ */
+
+include("../../imports")
+
+class DangerPlanClass {
+
+	static MOVEMENT_KEY_MASK = 4194303   // (1 << 22) - 1 : isole movementKey dans la clé
+
+	/* Clé de MAP_CELL_ITEM_AOE_CACHE — SOURCE UNIQUE, aussi utilisée comme préfixe EXACT des
+	 * clés de DANGER_ITEM_AOE_HASH_CACHE (un hash de contenu ne doit jamais survivre au
+	 * changement de map qui l'a produit).
+	 * L'ID est OBLIGATOIRE : la valeur embarque la liste d'items du caster, deux ennemis
+	 * déplacés sur la même cellule (attract/push) avec le même MP ne doivent pas partager
+	 * d'entrée. La COUCHE (dangerLayerOf, source unique) tient sur deux bits : un buff ou un
+	 * shackle de TP franchissant le coût de Saut ou de Télépo la change sans toucher
+	 * ID/cellule/MP, et ils garantissent que la map reçue et la clé décrivent la même.
+	 * Le bit 22 porte le blocage d'armes au prochain tour ; les bits d'identité commencent à 23.
+	 * Pack direct injectif : cellule <= 612 (10 bits), MP < 1024 (10 bits), mp clampé
+	 * (shacklé négatif == 0). */
+	static mapCellItemAoeKeyOf(EntityStats) {
+		return mapCellItemAoeKeyForLayer(EntityStats, WalkCellsClass.dangerLayerOf(EntityStats))
+	}
+
+	/* La meme clé pour une couche IMPOSEE. Sert a la couverture de marche seule, qui partage
+	 * ainsi son entree avec celle d'un caster reellement immobile. */
+	static mapCellItemAoeKeyForLayer(EntityStats, layer) {
+		var inventory = (EntityStats.ID << 1) | (EntityStateClass.hasStateNextTurn(EntityStats, STATE_AMPUTATED) ? 1 : 0)
+		return (inventory << 22) | (layer << 20) | (EntityStats.CELL << 10) | WalkCellsClass.dangerMpOf(EntityStats)
+	}
+
+	/* Couverture paresseuse : les géométries d'items sont partagées, mais la
+	 * panoplie d'une cellule n'est assemblée que lorsqu'un placement la lit.
+	 * TmpHash est la clé DÉJÀ calculée par l'appelant, jamais reconstruite ici. */
+	static getMapCellItemAoe(EntityStats, EntityWalkCells, TmpHash) {
+		if (TmpHash in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[TmpHash]
+		// Les 22 bits bas sont exactement movementKey, clé des géométries persistantes.
+		var _final = ItemCoverageClass.buildLazyCellItemAoe(EntityDangerClass.getItemsList(EntityStats), EntityWalkCells, TmpHash & MOVEMENT_KEY_MASK)
+		MAP_CELL_ITEM_AOE_CACHE[TmpHash] = _final
+		return _final
+	}
+
+	/*
+	 * Hash de contenu d'une ItemAoeMap, mémorisé par (map, cellule) : le contenu n'est donc
+	 * itéré qu'UNE fois par couple de tout le tour, au lieu d'un scan à chaque signature de
+	 * couverture ET à chaque appel de combo. Clé exacte et injective (pas de hash
+	 * probabiliste) : la clé de MAP_CELL_ITEM_AOE_CACHE décalée de 10 bits, plus la cellule.
+	 */
+	static itemAoeHashOf(MapKey, Cell, ItemAoeMap) {
+		var key = (MapKey << 10) | Cell
+		if (key in DANGER_ITEM_AOE_HASH_CACHE) return DANGER_ITEM_AOE_HASH_CACHE[key]
+		var contentHash = ItemCoverageClass.hashItemAoeMap(ItemAoeMap)
+		DANGER_ITEM_AOE_HASH_CACHE[key] = contentHash
+		return contentHash
+	}
+
+	/*
+	 * Couverture offensive d'un caster isolé : [cellule -> ItemAoeMap], EXACTEMENT celle que
+	 * le plan retiendrait pour lui. Sert au ciblage exact caster -> cibles du scoring, qui ne
+	 * doit PAS construire un plan d'équipe entier pour tester un caster sale.
+	 * null quand le caster ne menace personne : absent, Me (toujours exclu du danger), mort,
+	 * ou sans item menaçant. Map issue de MAP_CELL_ITEM_AOE_CACHE — READ-ONLY.
+	 */
+	static offensiveCoverageOf(CasterStats, CasterId, MapKey) {
+		if (CasterStats == null || CasterId == Me || CasterStats.LIFE <= 0) return null
+		if (count(EntityDangerClass.getItemsList(CasterStats)) == 0) return null
+		if (MapKey in MAP_CELL_ITEM_AOE_CACHE) return MAP_CELL_ITEM_AOE_CACHE[MapKey]
+		return getMapCellItemAoe(CasterStats, WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(CasterStats), MapKey)
+	}
+
+	/*
+	 * SOURCE UNIQUE des deux clés de plan : un digest de (domaine, contexte offensif, camp).
+	 *
+	 * Chaîne à MULTIPLICATION (contrat des clés, famille 3b) et non addValueToBinHash : les deux
+	 * premiers termes sont des EMPREINTES LARGES, et addValueToBinHash n'est qu'une rotation
+	 * suivie d'un XOR — donc LINÉAIRE. Enchaînée sur deux digests, elle les fait se recouvrir au
+	 * lieu de les séparer : une différence de domaine peut être annulée par une différence de
+	 * contexte, et deux états distincts partagent alors le même plan offensif. Le même défaut
+	 * avait été mesuré collisionnant sur dangerPairKey (267 combos servis pour d'autres entrées
+	 * en un seul combat). Le camp, lui, est un scalaire étroit, mais il passe par le même pas
+	 * pour n'avoir qu'une seule forme à raisonner.
+	 */
+	static planDigestOf(DomainHash, OffensiveContextHash, TargetSide) {
+		var h = (OFFSET_BASIS ^ DomainHash) * MIX_A
+		h = (h ^ OffensiveContextHash) * MIX_A
+		return (h ^ TargetSide) * MIX_A
+	}
+
+	/* Clé du plan d'équipe : terrain + contexte offensif du camp visé + ce camp. Volontairement
+	 * CONSERVATRICE — elle peut fragmenter sur une stat offensive sans effet géométrique, mais
+	 * elle est exacte et ne coûte aucun nouveau scan : BaseHash et le contexte viennent des
+	 * fingerprints déjà portés par le Node.
+	 * Elle ne contient NI les shields, NI l'antidote, NI la LIFE, NI l'id de la cible : deux
+	 * cibles du même camp partagent leur plan, seul leur point de départ dans l'ordre diffère. */
+	static dangerTeamPlanKeyOf(BaseHash, OffensiveContextHash, TargetSide, OrderHash = 0) {
+        var domain = (OFFSET_BASIS ^ BaseHash) * MIX_A
+        domain = (domain ^ OrderHash) * MIX_A
+        return planDigestOf(domain, OffensiveContextHash, TargetSide)
+    }
+
+	/*
+	 * LA PARTITION, écrite deux fois ci-dessous parce qu'elle n'a que deux consommateurs et
+	 * qu'ils la filtrent tous les deux : les indices de ORDER de ceux qui jouent APRÈS la cible
+	 * (TURN_ORDER >= le sien, cible exclue), puis ceux qui ont déjà joué. C'est une PARTITION
+	 * sur les TURN_ORDER, pas une rotation d'index : le tableau trié est un cache persistant clé
+	 * par le set des vivants, il peut être désynchronisé des ordres relus au tour.
+	 * La seconde passe n'a pas à exclure la cible : son propre ordre est ÉGAL à targetOrder,
+	 * elle est donc déjà partie avec la première.
+	 * Chaque séquence est construite UNE fois par (plan, cible) et réutilisée par toutes les
+	 * cellules et tous les nœuds qui partagent ce plan.
+	 */
+
+	/*
+	 * Séquence RESTREINTE aux casters qui menacent réellement ce camp. Les entrées à map
+	 * offensive nulle (Me, morts, même camp, sans item menaçant) ne produisent jamais de
+	 * couverture : les écarter ne change aucun résultat, mais la boucle par cellule froide ne
+	 * balaie plus tout l'ordre de tour.
+	 * NE PAS l'utiliser pour le déroulé du net : un caster sans menace peut être un soigneur.
+	 */
+	static coverageSequenceFor(Plan, TargetId) {
+		if (TargetId in Plan.COV_SEQ_BY_ID) return Plan.COV_SEQ_BY_ID[TargetId]
+		var order = Plan.ORDER
+		var ords = Plan.TURN_ORDERS
+		var maps = Plan.OFFENSIVE_MAPS
+		var targetOrder = Plan.ORDER_BY_ID[TargetId]
+		var cov = []
+		for (var i: var o in ords) {
+			if (o < targetOrder) continue
+			if (order[i] == TargetId) continue
+			if (maps[i] == null) continue
+			push(cov, i)
+		}
+		for (var i: var o in ords) {
+			if (o >= targetOrder) continue
+			if (maps[i] == null) continue
+			push(cov, i)
+		}
+		Plan.COV_SEQ_BY_ID[TargetId] = cov
+		return cov
+	}
+
+	/*
+	 * Même séquence, restreinte aux casters qui peuvent CHANGER le net de la cible : ceux qui
+	 * la menacent (map offensive non nulle — les seuls qui peuvent entrer dans la map de danger)
+	 * et ceux qui peuvent la soigner (vivants, non-Me, porteurs d'un item de soin — les seuls
+	 * que la heal map contient). Les autres traversent le déroulé sans jamais rien y ajouter :
+	 * les écarter ne change ni valeur ni ordre des additions flottantes.
+	 *
+	 * Contrairement aux deux séquences ci-dessus, elle porte les IDENTIFIANTS des casters et
+	 * non leurs index : son seul consommateur, le déroulé du net, les résout à chaque cellule.
+	 *
+	 * Le camp est encodé DANS l'identifiant : un caster du camp de la cible y figure sous
+	 * -id-1, les autres tels quels. Un allié ne peut pas menacer son propre camp, donc sa map
+	 * offensive est nulle et il n'est JAMAIS dans la map de danger — le signe suffit donc à
+	 * dire lequel des deux traitements s'applique, là où le déroulé payait les deux tests
+	 * pour chaque caster, à chaque cellule et à chaque nœud.
+	 */
+	static netSequenceFor(Plan, TargetId) {
+		if (TargetId in Plan.NET_SEQ_BY_ID) return Plan.NET_SEQ_BY_ID[TargetId]
+		var order = Plan.ORDER
+		var ords = Plan.TURN_ORDERS
+		var actives = Plan.ACTIVE
+		var sameSides = Plan.SAME_SIDE
+		var targetOrder = Plan.ORDER_BY_ID[TargetId]
+		var netSeq = []
+		for (var i: var o in ords) {
+			if (o < targetOrder) continue
+			if (order[i] == TargetId) continue
+			if (!actives[i]) continue
+			push(netSeq, sameSides[i] ? -order[i] - 1 : order[i])
+		}
+		for (var i: var o in ords) {
+			if (o >= targetOrder) continue
+			if (!actives[i]) continue
+			push(netSeq, sameSides[i] ? -order[i] - 1 : order[i])
+		}
+		Plan.NET_SEQ_BY_ID[TargetId] = netSeq
+		return netSeq
+	}
+
+	/*
+	 * Plan offensif contre un camp. Une SEULE boucle sur l'ordre de tour global : chaque entrée
+	 * reçoit sa map offensive (null si elle ne menace pas ce camp), sa clé de map, son pack
+	 * offensif canonique et son facteur critique — tous calculés une seule fois.
+	 *
+	 * ORDRE : le tableau trié est un cache PERSISTANT clé par le set des vivants, il peut donc
+	 * être désynchronisé des TURN_ORDER relus à chaque tour. La séquence de jeu ne se déduit
+	 * PAS de ses index : elle se reconstruit par PARTITION sur les TURN_ORDER (ceux >= celui de
+	 * la cible d'abord, cible exclue, puis ceux <), exactement comme le séquenceur historique.
+	 * Le plan porte donc les TURN_ORDER alignés sur l'ordre.
+	 */
+	static sequenceKeyOf(Plan, TargetSide) {
+        // Every sequence reader is represented without truncating a wide digest
+        // or wrapping an activity bit after the 64th entry.
+        var hash = (OFFSET_BASIS ^ TargetSide) * MIX_A
+        for (var i: var id in Plan.ORDER) {
+            hash = (hash ^ id) * MIX_A
+            hash = (hash ^ mix64Memo(realBits(Plan.TURN_ORDERS[i]))) * MIX_A
+            var flags = (Plan.ACTIVE[i] ? 1 : 0)
+                | (Plan.OFFENSIVE_MAPS[i] != null ? 2 : 0)
+                | (Plan.SAME_SIDE[i] ? 4 : 0)
+            hash = (hash ^ flags) * MIX_A
+        }
+        return mix64(hash)
+    }
+
+	static getTeamPlan(State, BaseHash, OffensiveContextHash, TargetSide) {
+		var orderHash = StateClass.turnOrderFingerprint(State)
+		var key = dangerTeamPlanKeyOf(BaseHash, OffensiveContextHash, TargetSide, orderHash)
+		if (key in DANGER_TEAM_PLAN_CACHE) return DANGER_TEAM_PLAN_CACHE[key]
+		// MISS de la clé rapide. Or un plan ne dépend PAS du BaseHash : des alliés de la cible qui
+		// se déplacent en fabriquent un neuf, identique. Ce dont il dépend vraiment : le set des
+		// VIVANTS (il pinne l'ordre de tour, et l'aliveness est tout ce que le plan lit du camp de
+		// la cible), le contexte offensif adverse (positions et stats des menaces) et le camp visé.
+		// La signature n'est calculée qu'ICI, sur le chemin lent. Même digest que la clé rapide,
+		// seul le DOMAINE change : le set des vivants au lieu du terrain complet.
+		var liveDomain = (OFFSET_BASIS ^ StateClass.getHashedEntities(State)) * MIX_A
+		liveDomain = (liveDomain ^ orderHash) * MIX_A
+		var planSig = planDigestOf(liveDomain, OffensiveContextHash, TargetSide)
+		if (planSig in PLAN_BY_SIG) {
+			var shared = PLAN_BY_SIG[planSig]
+			DANGER_TEAM_PLAN_CACHE[key] = shared
+			return shared
+		}
+		var order = StateClass.getSortedEntityByTurnOrder(State, orderHash)
+		var ordersById = [: ]
+		var orders = []
+		var maps = []
+		var coverageKeys = []
+		var seeds = []
+		var actives = []
+		var sameSides = []
+		var tierMaps = []
+		var tierKeys = []
+		var tierCrits = []
+		var tierPacks = []
+		var tierTps = []
+
+		for (var i: var id in order) {
+			ordersById[id] = State[id] == null ? 0 : State[id].TURN_ORDER
+			push(orders, ordersById[id])
+			var stat = State[id]
+			var offMap = null
+			var mapKey = null
+			var pack = null
+			var crit = 1
+			var tiers = null
+			var tierKey = null
+			var tierCrit = null
+			var tierPack = null
+			var tierTp = null
+			// Exclusions : Me (ma menace est le travail du BFS, jamais le danger ambiant),
+			// le camp de la cible, les morts, et les casters sans item menaçant — la liste
+			// d'items EST la qualification, aucun second scan d'inventaire.
+			if (id != Me && stat.LIFE > 0 && stat.SIDE != TargetSide && count(EntityDangerClass.getItemsList(stat)) > 0) {
+				mapKey = mapCellItemAoeKeyOf(stat)
+				// Walkcells évaluées SEULEMENT au miss : l'argument était calculé à chaque
+				// caster alors que la map est déjà en cache neuf fois sur dix.
+				offMap = (mapKey in MAP_CELL_ITEM_AOE_CACHE) ? MAP_CELL_ITEM_AOE_CACHE[mapKey]
+					: getMapCellItemAoe(stat, WalkCellsClass.getMaxWalkOrJumpNoEntitiesFull(stat), mapKey)
+				crit = DangerComboClass.critFactorOf(stat)
+				pack = DangerComboClass.casterOffensivePack(stat, crit)
+				// Une couverture par PALIER de déplacement. Le caster choisit une position et une
+				// panoplie ; franchir lui coûte des TP qu'il n'aura plus pour attaquer, et le prix
+				// est celui du palier SUFFISANT — un saut à 4 pour une cellule que le saut donne,
+				// même s'il pouvait aussi se téléporter. Les clés forcent le palier, donc celle du
+				// palier 0 est exactement celle d'un caster immobile et partage son entrée.
+				// Un palier sauteur joue une autre CLASSE DE CRITIQUE, et son pack doit porter ce
+				// bit. Deux valeurs suffisent — sautée ou non — résolues une fois par caster,
+				// jamais par cellule.
+				tierCrit = DangerComboClass.tierCritFactorsOf(stat)
+				var jPack = (tierCrit[1] == crit) ? pack : DangerComboClass.casterOffensivePack(stat, tierCrit[1])
+				tiers = [null, null, null, null]
+				tierKey = [0, 0, 0, 0]
+				tierPack = [pack, jPack, pack, jPack]
+				// Coût NET de chaque palier : son prix, moins ce qu'un auto-buff de TP rentable
+				// rapporte au caster. Les deux ORDRES sont essayés — le moteur laisse le choix — et
+				// ils ne portent pas le même critique : buffer d'abord se joue sur l'agilité
+				// d'avant déplacement, franchir d'abord sur celle du palier, Saut posant +100.
+				// Chacun a sa condition de paiement, et on garde le meilleur RÉELLEMENT payable.
+				tierTp = [0, 0, 0, 0]
+				var prof = EntityDangerClass.selfTpProfileOf(stat)
+				// Le budget de depart n'est pas le TP capture : ce qu'une ligne mourante y ajoute
+				// aura disparu quand ce caster agira, et il repart donc dans le cout du palier.
+				var totTp = (prof == null) ? stat.TOTAL_TP : stat.TOTAL_TP - prof[3]
+				for (var t = 0; t < 4; t++) {
+					var moveCost = WalkCellsClass.dangerLayerTpCost(t)
+					tierTp[t] = moveCost
+					if (prof == null) continue
+					var best = 0
+					// Buff puis franchissement : il faut pouvoir l'avancer, et le franchir ensuite.
+					var vA = EntityDangerClass.selfTpValueAt(prof, tierCrit[0])
+					if (totTp >= prof[1] && totTp - prof[1] + vA >= moveCost) {
+						var gA = vA - prof[2] - prof[1]
+						if (gA > best) best = gA
+					}
+					// Franchissement puis buff : le palier est deja paye, le critique est le sien.
+					if (totTp - moveCost >= prof[1]) {
+						var gB = EntityDangerClass.selfTpValueAt(prof, tierCrit[t]) - prof[2] - prof[1]
+						if (gB > best) best = gB
+					}
+					tierTp[t] = moveCost - best + prof[3]
+				}
+				for (var t = 0; t < 4; t++) {
+					if (!WalkCellsClass.dangerTierAvailable(stat, t)) continue
+					var tk = mapCellItemAoeKeyForLayer(stat, t)
+					tierKey[t] = tk
+					tiers[t] = (tk in MAP_CELL_ITEM_AOE_CACHE) ? MAP_CELL_ITEM_AOE_CACHE[tk]
+						: getMapCellItemAoe(stat, WalkCellsClass.getDangerLayerCells(stat, t), tk)
+				}
+			}
+			push(maps, offMap)
+			push(coverageKeys, mapKey)
+			push(tierMaps, tiers)
+			push(tierKeys, tierKey)
+			push(tierCrits, tierCrit)
+			push(tierPacks, tierPack)
+			push(tierTps, tierTp)
+			push(seeds, DangerComboClass.casterSeedOf(id))
+			// Peut-il changer le net d'une cible de ce camp ? Menace, ou soigneur éligible à la
+			// heal map (mêmes conditions que healerContributionOf).
+			var active = offMap != null || (id != Me && stat.LIFE > 0 && HealClass.hasHealItem(stat))
+			push(actives, active)
+			// Signature des séquences : ce dont elles dépendent RÉELLEMENT, et rien d'autre.
+
+			// Le plan est TOUJOURS construit avec le camp de sa propre cible : « du même camp
+			// que la cible » est donc une constante du plan, pas une question à reposer à
+			// chaque cellule et à chaque nœud dans le déroulé du net.
+			push(sameSides, stat != null && stat.SIDE == TargetSide)
+		}
+		var plan = new DangerTeamPlanClass(order, ordersById, orders, maps, coverageKeys, seeds, actives, sameSides, tierMaps, tierKeys, tierCrits, tierPacks, tierTps)
+		// Les séquences de jeu ne dépendent QUE de l'ordre de tour (donc du set des vivants, qui
+		// pinne le tri), du camp visé, de qui menace et de qui peut changer un net. La clé du plan,
+		// elle, porte le BaseHash : un ennemi poussé fabrique un plan neuf dont les séquences
+		// seraient pourtant identiques. Deux plans de même signature partagent donc leurs trois
+		// mémos PAR RÉFÉRENCE — ce qu'un plan construit sert immédiatement à l'autre.
+		var sig = sequenceKeyOf(plan, TargetSide)
+		if (sig in SEQ_MEMO_BY_SIG) {
+			var shared = SEQ_MEMO_BY_SIG[sig]
+			plan.COV_SEQ_BY_ID = shared[0]
+			plan.NET_SEQ_BY_ID = shared[1]
+		} else {
+			SEQ_MEMO_BY_SIG[sig] = [plan.COV_SEQ_BY_ID, plan.NET_SEQ_BY_ID]
+		}
+		DANGER_TEAM_PLAN_CACHE[key] = plan
+		PLAN_BY_SIG[planSig] = plan
+		return plan
+	}
+}
+
+/*
+ * Tableaux PARALLÈLES alignés sur ORDER (l'ordre de tour global, morts compris — les
+ * consommateurs filtrent déjà). Un seul objet par plan : pas d'objet par caster, donc pas
+ * d'allocation ni d'accès de champ supplémentaires par entrée.
+ */
+class DangerTeamPlanClass {
+	ORDER           // ids du tableau trié (cache persistant, potentiellement désynchronisé)
+	ORDER_BY_ID     // [id -> son TURN_ORDER] : pivot de la partition
+	TURN_ORDERS     // [i] = TURN_ORDER de ORDER[i], aligné
+	COV_BY_CELL     // [(id cible << 10) | cellule -> [couverture, son hash]] : la couverture ne
+	                // dépend pas des boucliers, elle se partage donc entre toutes les graines
+	COV_SEQ_BY_ID   // [id cible -> indices de ORDER dans l'ordre de jeu], restreints aux casters
+	                // à map offensive non nulle — construit paresseusement
+	NET_SEQ_BY_ID   // idem, restreinte aux casters qui peuvent changer le net (menace ou soin) ;
+	                // un caster du camp de la cible y est encodé -id-1 (voir netSequenceFor)
+	SAME_SIDE       // [i] = ce caster est-il du camp visé par le plan ?
+	ACTIVE          // [i] = ce caster peut-il changer un net de ce camp ?
+	OFFENSIVE_MAPS  // [i] = LazyCoverageClass du caster, ou null s'il ne menace pas
+	MAP_KEYS        // [i] = clé de cette map (préfixe des hashs de contenu), ou null
+	TIER_MAPS       // [i] = [couverture du palier 0..3], null aux paliers que ce caster ne
+	                // peut pas jouer. Le palier 0 (marche) est toujours présent.
+	TIER_KEYS       // [i] = la clé de chacune de ces couvertures, pour son hash de contenu
+	TIER_CRITS      // [i] = [facteur critique du palier 0..3] : les paliers sauteurs portent
+	                // les +100 AGI que Saut pose, et ne jouent donc pas la même classe
+	TIER_PACKS      // [i] = [pack offensif du palier 0..3], aligné sur TIER_CRITS
+	TIER_TP         // [i] = [coût NET du palier 0..3] : son prix de franchissement moins ce
+	                // qu'un auto-buff de TP rentable rapporte, donc parfois négatif
+	CASTER_SEEDS    // [i] = premier pas de la chaîne de clé, fonction du seul identifiant
+	constructor(ThisOrder, ThisOrderById, ThisTurnOrders, ThisMaps, ThisMapKeys, ThisSeeds, ThisActives, ThisSameSides, ThisTierMaps, ThisTierKeys, ThisTierCrits, ThisTierPacks, ThisTierTp) {
+		this.ORDER = ThisOrder
+		this.ORDER_BY_ID = ThisOrderById
+		this.TURN_ORDERS = ThisTurnOrders
+		this.COV_BY_CELL = [: ]
+		this.COV_SEQ_BY_ID = [: ]
+		this.NET_SEQ_BY_ID = [: ]
+		this.SAME_SIDE = ThisSameSides
+		this.ACTIVE = ThisActives
+		this.OFFENSIVE_MAPS = ThisMaps
+		this.MAP_KEYS = ThisMapKeys
+		this.TIER_MAPS = ThisTierMaps
+		this.TIER_KEYS = ThisTierKeys
+		this.TIER_CRITS = ThisTierCrits
+		this.TIER_PACKS = ThisTierPacks
+		this.TIER_TP = ThisTierTp
+		this.CASTER_SEEDS = ThisSeeds
+	}
+}

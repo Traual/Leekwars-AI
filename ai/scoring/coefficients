@@ -1,0 +1,335 @@
+// Réglages manuels. Utilitaires dans scoring/equipment, Stateruntime/constants et scoring/periodic-effects.
+// Coefficients bruts, sans PT/PM internes : leurs facteurs communs s'appliquent dans Scoring.
+// Chaque fonction reçoit l'état du porteur. Les poids de cibles sont figés par recherche.
+include("../imports")
+
+class Coefficients {
+    static presence(stat)       { return EntityImportance.value(stat) }
+
+    // Poids par TRANCHE de PV : seuls les points de cette tranche prennent ce poids.
+    // Cela garde un score continu et croissant, même quand on franchit un seuil.
+    static life(stat) {
+        var life = stat.LIFE
+        if (life <= 0) return 0
+        var weightedLife = min(life, 1000) * 2
+        if (life > 1000) weightedLife += min(life - 1000, 2000) * 1.75
+        if (life > 3000) weightedLife += min(life - 3000, 2000) * 1.5
+        if (life > 5000) weightedLife += min(life - 5000, 2000) * 1.25
+        if (life > 7000) weightedLife += (life - 7000) * 1
+        // Scoring multiplie ce coefficient moyen par LIFE, puis compare après - avant.
+        return EntityImportance.value(stat) / 3000 * (weightedLife / life)
+    }
+
+    // Même barème de départ, réglable séparément de life (poids et diviseur).
+    // Seule TOTAL_LIFE choisit les tranches : perdre des PV ne revalorise pas la jauge.
+    static totalLife(stat) {
+        var totalLife = stat.TOTAL_LIFE
+        if (totalLife <= 0) return 0
+        var weightedLife = min(totalLife, 1000) * 2
+        if (totalLife > 1000) weightedLife += min(totalLife - 1000, 2000) * 1.75
+        if (totalLife > 3000) weightedLife += min(totalLife - 3000, 2000) * 1.5
+        if (totalLife > 5000) weightedLife += min(totalLife - 5000, 2000) * 1.25
+        if (totalLife > 7000) weightedLife += (totalLife - 7000) * 1
+        return EntityImportance.value(stat) / 2000 * (weightedLife / totalLife)
+    }
+
+    // Paliers sur la force courante. Le rendement sert seulement à vérifier qu'on peut attaquer.
+    static strength(stat) {
+        if (!Equipment.canUseStrength(stat)) return 0
+        var coef = 0.2
+        if (stat.STRENGTH > 0) coef += 0.2
+        if (stat.STRENGTH >= 200) coef += 0.3
+        if (stat.STRENGTH >= 400) coef += 0.3
+        if (stat.STRENGTH >= 600) coef += 0.2
+        if (stat.STRENGTH >= 800) coef += 0.2
+        if (stat.STRENGTH >= 1000) coef += 0.1
+        // La puissance multiplie les dégâts : cumulés, +0.2 dès 20, +0.5 dès 50, +1 dès 100, +2 dès 200.
+        if (stat.POWER >= 20) coef += 0.2
+        if (stat.POWER >= 50) coef += 0.3
+        if (stat.POWER >= 100) coef += 0.5
+        if (stat.POWER >= 200) coef += 1
+        return coef
+    }
+    // Paliers sur la sagesse courante, si l'équipement peut soigner ou donner de la vitalité.
+    static wisdom(stat) {
+        if (!Equipment.canUseWisdom(stat)) return 0
+        var coef = 0.2
+        if (stat.WISDOM > 0) coef += 0.2
+        if (stat.WISDOM >= 200) coef += 0.3
+        if (stat.WISDOM >= 400) coef += 0.3
+        if (stat.WISDOM >= 500) coef += 0.1
+        if (stat.WISDOM >= 600) coef += 0.1
+        if (stat.WISDOM >= 700) coef += 0.1
+        return coef
+    }
+    // Base critique pour tous, puis paliers sur l'agilité courante si on peut poser du renvoi.
+    static agility(stat) {
+        var criticalCoef = criticalAgility(stat)
+        if (!Equipment.canUseDamageReturn(stat)) return criticalCoef
+        var coef = 0
+        if (stat.AGILITY > 0) coef += 0.2
+        if (stat.AGILITY >= 200) coef += 0.3
+        if (stat.AGILITY >= 400) coef += 0.3
+        if (stat.AGILITY >= 600) coef += 0.2
+        if (stat.AGILITY >= 800) coef += 0.2
+        if (stat.AGILITY >= 1000) coef += 0.1
+        return criticalCoef + coef
+    }
+    // Échelle conservée, normalisée à 16 PT (facteur commun = 1). Les PT/PM sont
+    // appliqués ensuite UNE fois, comme pour le renvoi et les autres caractéristiques.
+    static criticalAgility(stat) { return 0.16 * ScoringStateConstants.criticalScale(stat) }
+    // Paliers sur la résistance courante, si l'équipement peut poser un bouclier.
+    static resistance(stat) {
+        if (!Equipment.canUseResistance(stat)) return 0
+        var coef = 0.2
+        if (stat.RESISTANCE > 0) coef += 0.2
+        if (stat.RESISTANCE >= 200) coef += 0.3
+        if (stat.RESISTANCE >= 400) coef += 0.3
+        if (stat.RESISTANCE >= 500) coef += 0.1
+        if (stat.RESISTANCE >= 600) coef += 0.1
+        if (stat.RESISTANCE >= 700) coef += 0.1
+        return coef
+    }
+    // Paliers sur la science courante, si l'équipement peut buffer, lancer une nova ou un contrecoup.
+    static science(stat) {
+        if (!Equipment.canUseScience(stat)) return 0
+        var coef = 0.2
+        if (stat.SCIENCE > 0) coef += 0.2
+        if (stat.SCIENCE >= 200) coef += 0.3
+        if (stat.SCIENCE >= 400) coef += 0.3
+        if (stat.SCIENCE >= 600) coef += 0.2
+        if (stat.SCIENCE >= 800) coef += 0.2
+        if (stat.SCIENCE >= 1000) coef += 0.1
+        // La puissance multiplie les dégâts nova, pas les buffs : même cascade que la force.
+        if (Equipment.canUseNovaDamage(stat)) {
+            if (stat.POWER >= 20) coef += 0.1
+            if (stat.POWER >= 50) coef += 0.2
+            if (stat.POWER >= 100) coef += 0.2
+            if (stat.POWER >= 200) coef += 0.4
+        }
+        return coef
+    }
+    // Paliers sur la magie courante, si l'équipement peut empoisonner ou entraver.
+    // Une seule entrave suffit : buffer la magie d'un allié qui entrave la force vaut le coup.
+    static magic(stat) {
+        if (!Equipment.canUseMagic(stat)) return 0
+        var coef = 0.2
+        if (stat.MAGIC > 0) coef += 0.2
+        if (stat.MAGIC >= 200) coef += 0.3
+        if (stat.MAGIC >= 400) coef += 0.3
+        if (stat.MAGIC >= 600) coef += 0.2
+        if (stat.MAGIC >= 800) coef += 0.2
+        if (stat.MAGIC >= 1000) coef += 0.1
+        // La puissance multiplie le poison, pas les entraves : même cascade que la force.
+        if (Equipment.canUsePoison(stat)) {
+            if (stat.POWER >= 20) coef += 0.1
+            if (stat.POWER >= 50) coef += 0.2
+            if (stat.POWER >= 100) coef += 0.3
+            if (stat.POWER >= 200) coef += 0.6
+        }
+        return coef
+    }
+    // La puissance multiplie quatre familles d'effets, cumulables dans un même tour (arme de
+    // force et poison, par exemple) : une part par famille lançable, et la somme des parts.
+    static power(stat) {
+        if (!Equipment.canUsePower(stat)) return 0
+        return powerStrengthPart(stat) + powerMagicPart(stat) + powerSciencePart(stat) + powerLifeDamagePart(stat)
+    }
+    // Dégâts : paliers sur la force, si l'entité peut frapper.
+    static powerStrengthPart(stat) {
+        if (!Equipment.canUseStrength(stat)) return 0
+        var coef = 0.2
+        if (stat.STRENGTH > 0) coef += 0.2
+        if (stat.STRENGTH >= 200) coef += 0.3
+        if (stat.STRENGTH >= 400) coef += 0.3
+        if (stat.STRENGTH >= 600) coef += 0.2
+        if (stat.STRENGTH >= 800) coef += 0.2
+        if (stat.STRENGTH >= 1000) coef += 0.1
+        return coef
+    }
+    // Poison : paliers sur la magie, si l'entité peut empoisonner. Les entraves n'entrent pas.
+    static powerMagicPart(stat) {
+        if (!Equipment.canUsePoison(stat)) return 0
+        var coef = 0.2
+        if (stat.MAGIC > 0) coef += 0.2
+        if (stat.MAGIC >= 200) coef += 0.3
+        if (stat.MAGIC >= 400) coef += 0.3
+        if (stat.MAGIC >= 600) coef += 0.2
+        if (stat.MAGIC >= 800) coef += 0.2
+        if (stat.MAGIC >= 1000) coef += 0.1
+        return coef
+    }
+    // Dégâts nova : paliers sur la science, si l'entité peut lancer une nova.
+    static powerSciencePart(stat) {
+        if (!Equipment.canUseNovaDamage(stat)) return 0
+        var coef = 0.2
+        if (stat.SCIENCE > 0) coef += 0.2
+        if (stat.SCIENCE >= 200) coef += 0.3
+        if (stat.SCIENCE >= 400) coef += 0.3
+        if (stat.SCIENCE >= 600) coef += 0.2
+        if (stat.SCIENCE >= 800) coef += 0.2
+        if (stat.SCIENCE >= 1000) coef += 0.1
+        return coef
+    }
+    // Châtiment : ses dégâts suivent la vie du lanceur, paliers sur la vie courante.
+    static powerLifeDamagePart(stat) {
+        if (!Equipment.canUseLifeDamage(stat)) return 0
+        var coef = 0.2
+        if (stat.LIFE > 0) coef += 0.2
+        if (stat.LIFE >= 1000) coef += 0.3
+        if (stat.LIFE >= 2000) coef += 0.3
+        if (stat.LIFE >= 3000) coef += 0.2
+        if (stat.LIFE >= 4000) coef += 0.2
+        if (stat.LIFE >= 5000) coef += 0.1
+        return coef
+    }
+    // Facteur commun de capacité : TOTAL_TP inclut buffs/entraves, pas les dépenses.
+    // Tranches continues, rendement décroissant, aucune marche ni plafond dur.
+    // Repères : 0 PT -> 0 ; 16 -> 1 ; 32 -> 1.5 ; 48 -> 1.75.
+    static tpMultiplier(stat) {
+        var tp = max(0, stat.TOTAL_TP)
+        var factor = min(tp, 16) / 16
+        if (tp > 16) factor += min(tp - 16, 16) / 32
+        if (tp > 32) factor += (tp - 32) / 64
+        return factor
+    }
+
+    // La mobilité augmente le potentiel sans annuler celui d'un porteur immobile.
+    // Repères : 0 PM -> 0.75 ; 5 -> 1 ; 10 -> 1.125 ; 15 -> 1.175.
+    // Statique : facteur fixe de 0.1. Enraciné : facteur de 0 PM (0.75).
+    // Dans les deux cas, un buff de PM ne rapporte rien.
+    // TOTAL_MP, pas les PM restants ; la cellule réelle reste évaluée par le placement.
+    static mpMultiplier(stat) {
+        if (stat.STATIC) return 0.1
+        var mp = EntityStateClass.hasState(stat, STATE_ROOTED) ? 0 : max(0, stat.TOTAL_MP)
+        var factor = 0.75 + min(mp, 5) * 0.05
+        if (mp > 5) factor += min(mp - 5, 5) * 0.025
+        if (mp > 10) factor += (mp - 10) * 0.01
+        return factor
+    }
+
+    // Part conservée de la perte de score des SIX entraves. Cooldown au prochain
+    // tour du porteur (tour courant pour Me). Barème volontairement simple à régler.
+    // Sans Manumission, ou sans la capacité PT de la jouer, le multiplicateur vaut 1.
+    static shackleMultiplier(cooldown) {
+        if (cooldown <= 0) return 0.5
+        if (cooldown == 1) return 0.65
+        if (cooldown == 2) return 0.8
+        return 1
+    }
+
+    // Bonus ADDITIFS pour protéger les porteurs blessés, réglables séparément.
+    // Chaque tranche se remplit progressivement : pas de saut au passage d'un seuil.
+    // Repères absolu : 3000 PV -> 0 ; 2000 -> +0.1 ; 1000 -> +0.25 ; 0 -> +0.5.
+    static absoluteShieldLifeBonus(stat) {
+        var life = max(0, stat.LIFE)
+        var bonus = 0
+        if (life < 3000) bonus += min(3000 - life, 1000) / 1000 * 0.1
+        if (life < 2000) bonus += min(2000 - life, 1000) / 1000 * 0.15
+        if (life < 1000) bonus += (1000 - life) / 1000 * 0.25
+        return bonus
+    }
+
+    // Repères relatif : 3000 PV -> 0 ; 2000 -> +1 ; 1000 -> +2.5 ; 0 -> +5.
+    static relativeShieldLifeBonus(stat) {
+        var life = max(0, stat.LIFE)
+        var bonus = 0
+        if (life < 3000) bonus += min(3000 - life, 1000) / 1000 * 1
+        if (life < 2000) bonus += min(2000 - life, 1000) / 1000 * 1.5
+        if (life < 1000) bonus += (1000 - life) / 1000 * 2.5
+        return bonus
+    }
+
+    // Boucliers et renvoi hors du produit caractéristiques × PT × PM.
+    // Importance de BASE et profil adverse figé en cache. Tranches cumulées :
+    // aucun score perdu en franchissant un seuil, coefficient moyen rendu au scoring.
+    static absoluteShield(stat) {
+        var weight = EntityImportance.value(stat) / 3000 * ShieldProfile.forEntity(stat)
+        var shield = stat.ABSOLUTE_SHIELD
+        // Le bonus d'urgence concerne une protection positive, pas une vulnérabilité.
+        if (shield < 0) return 2 * weight
+        var lifeBonus = absoluteShieldLifeBonus(stat)
+        if (shield == 0) return (2 + lifeBonus) * weight
+        var value = min(shield, 100) * 2
+        if (shield > 100) value += min(shield - 100, 200) * 1.5
+        if (shield > 300) value += min(shield - 300, 300) * 1
+        if (shield > 600) value += (shield - 600) * 0.5
+        // Bonus sur les 600 premiers points seulement : un gros stock ne doit pas
+        // rendre une perte de PV rentable en revalorisant toute la protection.
+        value += min(shield, 600) * lifeBonus
+        // Le scoring multiplie déjà ce coefficient moyen par ABSOLUTE_SHIELD.
+        return value / shield * weight
+    }
+
+    // Un point de relatif est un point de pourcentage, d'où une échelle distincte.
+    // Tranches : 0-30 -> 10 ; 30-60 -> 8 ; 60-100 -> 5. Au-delà de 100,
+    // aucun gain de protection valorisé ici ; les interactions restent au placement.
+    static relativeShield(stat) {
+        var weight = EntityImportance.value(stat) / 3000 * ShieldProfile.forEntity(stat)
+        var shield = stat.RELATIVE_SHIELD
+        if (shield < 0) return 10 * weight
+        var lifeBonus = relativeShieldLifeBonus(stat)
+        if (shield == 0) return (10 + lifeBonus) * weight
+        var useful = min(shield, 100)
+        var value = min(useful, 30) * 10
+        if (useful > 30) value += min(useful - 30, 30) * 8
+        if (useful > 60) value += (useful - 60) * 5
+        value += useful * lifeBonus
+        return value / shield * weight
+    }
+
+    // Renvoi : même profil adverse, sans bonus de vie ni décote par nos boucliers.
+    // Le moteur le calcule avant les protections. Aucun plafond à 100 % :
+    // tranches 0-50 -> 5 ; 50-100 -> 10 ; 100-200 -> 8 ; au-delà -> 3.
+    static damageReturn(stat) {
+        var weight = EntityImportance.value(stat) / 3000 * ShieldProfile.forEntity(stat)
+        var damageReturn = stat.DAMAGE_RETURN
+        if (damageReturn <= 0) return 2 * weight
+        var value = min(damageReturn, 50) * 5
+        if (damageReturn > 50) value += min(damageReturn - 50, 50) * 10
+        if (damageReturn > 100) value += min(damageReturn - 100, 100) * 8
+        if (damageReturn > 200) value += (damageReturn - 200) * 3
+        return value / damageReturn * weight
+    }
+    // Poids des ticks futurs, communs au poison et au contrecoup. Le quatrième
+    // poids s'applique aussi à tous les suivants, sans multiplication de durée en plus.
+    static periodicTickWeight(tick) {
+        switch (tick) {
+            case 1: return 1
+            case 2: return 0.8
+            case 3: return 0.6
+            default: return 0.4
+        }
+    }
+
+    // Cooldown effectif au prochain tour (courant pour Me), 99 si inutilisable.
+    static antidoteMultiplier(cooldown) {
+        if (cooldown <= 0) return 0.4
+        if (cooldown == 1) return 0.6
+        if (cooldown == 2) return 0.8
+        return 1
+    }
+
+    // Coefficients moyens : Scoring multiplie déjà par *_OVER_TIME. La projection
+    // commune est fournie une seule fois par entité ; les appels isolés restent valides.
+    static poison(stat, periodic = null) {
+        if (stat.POISON_OVER_TIME <= 0) return 0
+        if (periodic == null) periodic = PeriodicScoring.damageValues(stat)
+        if (periodic == null) return 0
+        return -EntityImportance.value(stat) / 3000 * periodic.POISON / stat.POISON_OVER_TIME
+    }
+
+    static aftereffect(stat, periodic = null) {
+        if (stat.AFTEREFFECT_OVER_TIME <= 0) return 0
+        if (periodic == null) periodic = PeriodicScoring.damageValues(stat)
+        if (periodic == null) return 0
+        return -EntityImportance.value(stat) / 3000 * periodic.AFTEREFFECT / stat.AFTEREFFECT_OVER_TIME
+    }
+
+    // Le soin continu reste simple : durée déjà incluse, sans plafond aux PV
+    // manquants actuels ni décote d'avenir. Les blessures futures peuvent l'utiliser.
+    static heal(stat) {
+        if (EntityStateClass.hasState(stat, STATE_UNHEALABLE)) return 0
+        return 0.5 * EntityImportance.value(stat) / 3000
+    }
+}
