@@ -47,7 +47,7 @@ include("placement/score")
 
 include("simulation/action-node")
 include("search/actions")
-include("search/evolution")
+include("search/greedy")
 include("placement/final-cell")
 include("runtime/turn")
 include("runtime/summon-turn")

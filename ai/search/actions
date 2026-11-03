@@ -1,5 +1,5 @@
 /* Outils des suites : jouabilité, simulation, scoring exact et placement terminal.
- * La politique de recherche appartient à OnlineEvolution.
+ * La politique de recherche appartient à GreedySearch.
  */
 include("../imports")
 

@@ -1,0 +1,67 @@
+// Une action et son placement final par candidat ; aucune suite entre les casts.
+include("../imports")
+
+class GreedySearch {
+    static getBestAction(State) {
+        SEARCH_LAST_CHAIN = []
+        SEARCH_LAST_CHAIN_DANGER_VALIDATED = false
+        var mine = State[Me]
+        if (mine.TP < MINIMUM_COST_ITEM) return null
+        var bh = StateClass.getBaseHash(State)
+        ROOT_SCORING_CONSTANTS = ScoringStateConstants.get(State, bh)
+        AllySupport.prepare(State)
+        EnemyOffense.prepare(State, bh)
+        var walk = WalkCellsClass.getAllLayers(State, Me, bh)
+        var values = [:]
+        var initial = ScoringClass.stateValue(State, mine.SIDE, OPS_DEADLINE, values)
+        if (initial == null) {
+            debugW("[GREEDY] stop actions: initial scoring exceeded planning budget")
+            return null
+        }
+        var root = new NodeClass(null, State, null)
+        root.SCORE = initial
+        root.SCORE_VALUES = values
+        root.BASE_HASH = bh
+        root.ME_WALK_FINGERPRINT = walk.ME_FINGERPRINT
+        root.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(State)
+        root.HFP_BY_SIDE = HealClass.buildHfpBySide(State)
+        root.STATE_PATCH = [:]
+        var resurrection = ActionSuite.resurrectIdOf(State)
+        var workspace = clone(State, 1)
+        var best = null
+        var bestValue = -MAX_VALUE
+        var validated = false
+        var idle = ActionSuite.closeOf(root, OPS_DEADLINE)
+        if (idle != null && count(idle) == 3) { bestValue = -idle[1]; validated = true }
+        var seen = [:]
+        var evaluated = 0
+        var unfinanced = 0
+        var complete = true
+        // Financer d'abord les actions locales, avant une éventuelle géométrie froide.
+        for (var phase in [0, 1]) {
+            if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) { complete = false; break }
+            var pairs = ActionSuite.getBaseActions(State, bh, resurrection, walk, phase == 0, phase == 1)
+            for (var playable in pairs) {
+                if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) { complete = false; break }
+                var key = playable.GROUP.SIGNATURE
+                if (key in seen) continue
+                seen[key] = true
+                var actual = ActionSuite.simulatePlayable(playable, workspace, bh, initial,
+                    mine.SIDE, root.CONTEXT_BY_SIDE, root.HFP_BY_SIDE, root, walk)
+                var close = ActionSuite.closeOf(actual.NODE, OPS_DEADLINE, validated)
+                if (close == null || count(close) > 3) { unfinanced++; continue }
+                evaluated++
+                var value = actual.GAIN - close[1]
+                if (!validated || value > bestValue) {
+                    bestValue = value; best = actual.PLAYABLE.ACTION; validated = true
+                }
+            }
+        }
+        if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) complete = false
+        debug("[GREEDY] " + (complete ? "completed" : "budget reached")
+            + " | evaluated: " + evaluated + " | unfinanced: " + unfinanced
+            + " | value: " + (validated ? bestValue : null))
+        if (!validated) debugW("[GREEDY] danger not taken into account: no affordable terminal plan, stop actions")
+        return best
+    }
+}
