@@ -48,7 +48,37 @@ changement de case supplémentaire n’améliore la suite retenue sur ces 32 ét
 ## Comparaison 4v4 figée
 
 100 combats frais contre main `aa28d97`, 50 paires miroir, budgets natifs,
-seed 2026110302. Aucun réglage ni arrêt selon les résultats intermédiaires.
-Les résultats seront ajoutés après la série complète. Aucune promotion automatique.
+seed 2026110302. Candidat glouton par case `ad94c40`, figé pendant toute la série.
+Aucun réglage ni arrêt selon les résultats intermédiaires.
+
+| Combos par case / online evolution | Résultat |
+|---|---:|
+| Victoires / nuls / défaites | 37 / 22 / 41 |
+| Points, un nul vaut un demi-point | 48,0 % |
+| Intervalle apparié à 95 % | 45,0–51,0 % |
+| Erreurs / avortements natifs | 0 / 0 |
+
+Le coût observé moyen par cycle de VM est de 7,475 M opérations pour les combos
+par case, contre 6,980 M pour l’évolution (+7,1 %). Les trajectoires diffèrent :
+ce ratio de combat ne mesure pas un coût causal constant de l’algorithme.
+Sur les mêmes 32 premiers états fixes, le surcoût est de 16,8 %.
+
+1 057 recherches sur 41 759 (2,53 %) sélectionnent une suite avec un déplacement
+vers une autre case après la première action. Ce compteur inclut les héros et
+leurs invocations ; le plan peut changer après une action réellement jouée.
+Il ne compte pas comme déplacement volontaire une inversion imposée par une puce.
+
+Les cycles VM sont lus par l’observateur Java externe vérifié, invocations
+observées comprises, initialisation séparée. Un callback immédiatement avant
+un reset peut échapper à une lecture de frontière ; le total n’est pas un
+compteur absolu de tout le calcul.
+
+**Conserver l’online evolution sur main.** Cette première version est plus courte,
+mais ne démontre pas de gain de force et consomme davantage d’opérations.
+L’intervalle traverse 50 % : ni supériorité ni équivalence ne sont établies.
+Le choix d’un seul ordre glouton par case peut manquer de bons enchaînements de
+buffs ; ce résultat ne condamne pas toute recherche organisée par cases.
+Main et la sauvegarde beam restent inchangés.
+
 Les reçus et résultats bruts restent dans le chantier local
 `work/cell-combos-20261103`, hors du dépôt de l’IA.
