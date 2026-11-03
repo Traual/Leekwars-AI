@@ -45,12 +45,12 @@ class Play {
 			// des actions estimees sur un etat perime. La vidange ne sert que quand aucun plan
 			// n'est plus finançable du tout.
 			if (getOperations() + OPS_SEARCH_MARGIN > OPS_DEADLINE) {
-				if (State[Me].TP >= MINIMUM_COST_ITEM) debugW("[OEP] stop actions: planning budget exhausted"
+				if (State[Me].TP >= MINIMUM_COST_ITEM) debugW("[CELL] stop actions: planning budget exhausted"
 					+ " | used: " + getOperations() + " | limit: " + OPS_DEADLINE + " | TP: " + State[Me].TP)
 				drainChain(StateClass.countSummonsAfterMe(State))
 				break
 			}
-			var Action = OnlineEvolution.getBestAction(State)
+			var Action = CellComboSearch.getBestAction(State)
 			if (Action == null) break
 			var From = Action.From
 			var Item = Action.Item
@@ -61,7 +61,6 @@ class Play {
 			// Déplacement raté -> l'item n'est PAS lancé.
 			var opsBeforeExec = getOperations()
 			var res = moveRes[0] ? executeAction(Action) : moveRes
-			OnlineEvolution.actionPlayed(Action, res[0])
 			// Le plus cher deplacement-puis-lancer du combat : c'est la marge que la vidange
 			// exige avant de tenter une action de plus.
 			var execCost = getOperations() - opsBeforeExec

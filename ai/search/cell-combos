@@ -1,0 +1,184 @@
+// Une suite gloutonne par case, puis une nouvelle case depuis le meilleur préfixe.
+include("../imports")
+
+global CELL_COMBO_LINKS = true
+
+class CellComboContext {
+    INITIAL
+    SIDE
+    BEST
+    VALUE = -MAX_VALUE
+    EXHAUSTED = false
+    CELLS = 0
+    LINKS = 0
+    PASSES = 0
+    SIMULATIONS = 0
+    TERMINALS = 0
+    UNFINANCED = 0
+    constructor(initial, side) { this.INITIAL = initial; this.SIDE = side }
+}
+
+class CellComboSearch {
+    static room(context) {
+        if (getOperations() + OPS_SEARCH_MARGIN <= OPS_DEADLINE) return true
+        context.EXHAUSTED = true
+        return false
+    }
+
+    static close(node, context) {
+        if (!room(context)) return null
+        var terminal = ActionSuite.closeOf(node, OPS_DEADLINE, context.BEST != null)
+        if (terminal == null || count(terminal) != 3) { context.UNFINANCED++; return null }
+        context.TERMINALS++
+        var value = node.SCORE - context.INITIAL - terminal[1]
+        if (context.BEST == null || value > context.VALUE) {
+            context.BEST = node; context.VALUE = value
+        }
+        return value
+    }
+
+    // Domaine singleton distinct des domaines de mobilité complets. Les catalogues
+    // géométriques restent partagés, mais leurs groupes sont filtrés sur CETTE case.
+    // Aucun cache de choix d'origine ne reçoit ce domaine restreint.
+    static localOptions(node) {
+        var State = StateClass.materializeNodeState(node)
+        var mine = State[Me]
+        if (mine.LIFE <= 0 || mine.TP < MINIMUM_COST_ITEM) return []
+        var point = [mine.CELL: 0]
+        var still = new LayersClass(point, [:], [:], [:], point)
+        still.ME_FINGERPRINT = "cell:" + mine.CELL
+        var groups = ActionsClass.getEveryActionsInAState(State, still, mine.CELL, node.BASE_HASH)
+        var availability = ActionsClass.availabilityOf(mine)
+        var resurrection = ActionSuite.resurrectIdOf(State)
+        var result = []
+        var seen = [:]
+        for (var group in groups) {
+            if (group.SIGNATURE in seen) continue
+            seen[group.SIGNATURE] = true
+            if (!group.IS_LOCAL && !(mine.CELL in group.ORIGINS)) continue
+            if (group.Item == CHIP_RESURRECTION && resurrection == null) continue
+            var playable = ActionSuite.resolveGroup(group, mine, still,
+                availability.COSTS[group.Item], availability.USES[group.Item], resurrection)
+            if (playable != null) push(result, playable)
+        }
+        return result
+    }
+
+    static score(node, pairs, context) {
+        var State = StateClass.materializeNodeState(node)
+        var walk = WalkCellsClass.getAllLayers(State, Me, node.BASE_HASH, node.ME_WALK_FINGERPRINT)
+        var workspace = clone(State, 1)
+        var entries = []
+        for (var pair in pairs) {
+            if (!room(context)) break
+            var actual = ActionSuite.simulatePlayable(pair, workspace, node.BASE_HASH,
+                node.SCORE, context.SIDE, node.CONTEXT_BY_SIDE, node.HFP_BY_SIDE, node, walk)
+            actual.NODE.PARENT = node
+            context.SIMULATIONS++
+            push(entries, actual)
+        }
+        return entries
+    }
+
+    static best(entries) {
+        var best = null
+        for (var entry in entries) if (best == null || entry.GAIN > best.GAIN) best = entry
+        return best
+    }
+
+    // Les gains sont recalculés après CHAQUE action. Une inversion change la case
+    // physique du prochain pas ; une mort ou un cooldown change son catalogue.
+    // Les préfixes restent évaluables : remplir les PT ne doit pas imposer un mauvais
+    // dernier cast. Un pas négatif peut aussi préparer une suite rentable.
+    static combo(first, context) {
+        context.CELLS++
+        var node = first.NODE
+        close(node, context)
+        while (room(context)) {
+            var chosen = best(score(node, localOptions(node), context))
+            if (chosen == null || !room(context)) break
+            node = chosen.NODE
+            close(node, context)
+        }
+    }
+
+    static getBestAction(State) {
+        SEARCH_LAST_CHAIN = []
+        SEARCH_LAST_CHAIN_DANGER_VALIDATED = false
+        var mine = State[Me]
+        if (mine.TP < MINIMUM_COST_ITEM) return null
+        var bh = StateClass.getBaseHash(State)
+        ROOT_SCORING_CONSTANTS = ScoringStateConstants.get(State, bh)
+        AllySupport.prepare(State)
+        EnemyOffense.prepare(State, bh)
+        var walk = WalkCellsClass.getAllLayers(State, Me, bh)
+        var values = [:]
+        var initial = ScoringClass.stateValue(State, mine.SIDE, OPS_DEADLINE, values)
+        if (initial == null) { debugW("[CELL] initial scoring exceeded planning budget"); return null }
+        var root = new NodeClass(null, State, null)
+        root.SCORE = initial
+        root.SCORE_VALUES = values
+        root.BASE_HASH = bh
+        root.ME_WALK_FINGERPRINT = walk.ME_FINGERPRINT
+        root.CONTEXT_BY_SIDE = DeltaClass.buildContextBySide(State)
+        root.HFP_BY_SIDE = HealClass.buildHfpBySide(State)
+        root.STATE_PATCH = [:]
+        var context = new CellComboContext(initial, mine.SIDE)
+        close(root, context)
+
+        // Un cast local validé avant la géométrie froide, comme les autres moteurs.
+        var entries = score(root, ActionSuite.getBaseActions(State, bh,
+            ActionSuite.resurrectIdOf(State), walk, true), context)
+        var local = best(entries)
+        if (local != null) close(local.NODE, context)
+
+        var anchor = root
+        while (room(context)) {
+            context.PASSES++
+            var current = StateClass.materializeNodeState(anchor)
+            if (current[Me].LIFE <= 0 || current[Me].TP < MINIMUM_COST_ITEM) break
+            var layers = WalkCellsClass.getAllLayers(current, Me, anchor.BASE_HASH, anchor.ME_WALK_FINGERPRINT)
+            if (anchor == root) {
+                pushAll(entries, score(anchor, ActionSuite.getBaseActions(current, anchor.BASE_HASH,
+                    ActionSuite.resurrectIdOf(current), layers, false, true), context))
+            } else {
+                entries = score(anchor, ActionSuite.getBaseActions(current, anchor.BASE_HASH,
+                    ActionSuite.resurrectIdOf(current), layers), context)
+            }
+            var byCell = [:]
+            for (var entry in entries) {
+                var cell = entry.PLAYABLE.ACTION.From
+                var previous = byCell[cell]
+                if (previous == null || entry.GAIN > previous.GAIN) byCell[cell] = entry
+            }
+            var starts = arraySort(mapValues(byCell), function(a,b) { return b.GAIN - a.GAIN })
+            for (var start in starts) {
+                if (!room(context)) break
+                combo(start, context)
+            }
+            // Pas de somme de combos indépendants : repartir de l'état exact du
+            // meilleur préfixe, avec ses PT/PM et toutes ses conséquences.
+            if (!CELL_COMBO_LINKS || context.BEST == null || context.BEST == anchor) break
+            anchor = context.BEST
+        }
+
+        var chain = []
+        var node = context.BEST
+        while (node != null && node.PARENT != null) {
+            if (node.PARENT.ACTION != null && node.ACTION.From != StateClass.materializeNodeState(node.PARENT)[Me].CELL) context.LINKS++
+            insert(chain, node.ACTION, 0)
+            node = node.PARENT
+        }
+        debug("[CELL] " + (context.EXHAUSTED ? "budget reached" : "completed")
+            + " | cells: " + context.CELLS + " | links: " + context.LINKS
+            + " | passes: " + context.PASSES
+            + " | depth: " + count(chain) + " | simulations: " + context.SIMULATIONS
+            + " | terminals: " + context.TERMINALS + " | unfinanced: " + context.UNFINANCED)
+        if (context.BEST == null) { debugW("[CELL] no affordable terminal plan, stop actions"); return null }
+        SEARCH_LAST_CHAIN_DANGER_VALIDATED = true
+        if (count(chain) == 0) return null
+        var action = shift(chain)
+        SEARCH_LAST_CHAIN = chain
+        return action
+    }
+}
